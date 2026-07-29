@@ -35,8 +35,8 @@ DEBIT_NORMAL_TYPES = ("asset", "expense")
 # Statuses used by the COGS audit report (FR4 / AC4):
 #   ok         — COGS entry exists, no zero-cost items, ratio >= COGS_LOW_RATIO
 #   missing    — no order_cogs journal entry recorded for the order
-#   zero-cost  — order_cogs entry exists but some non-extra/non-gift order_items
-#                still have cost_at_sale = 0 (cost never resolved at delivery)
+#   zero-cost  — order_cogs entry exists but some non-gift order_items (incl.
+#                sold extras) still have cost_at_sale = 0 (cost never resolved)
 #   low        — COGS/revenue ratio below COGS_LOW_RATIO (baseline estimate is
 #                30%; a much lower ratio flags a likely mispriced or mis-costed
 #                order worth manual review)
@@ -755,7 +755,7 @@ def cogs_audit_cmd(since, until):
 
       ok         — COGS entry exists, no zero-cost items, ratio in range
       missing    — no order_cogs journal entry recorded
-      zero-cost  — order has non-extra/non-gift items with cost_at_sale = 0
+      zero-cost  — order has non-gift items (incl. sold extras) with cost_at_sale = 0
       low        — COGS/revenue ratio below the baseline estimate threshold
 
     A summary line reports totals and the count of orders in each status.
@@ -770,7 +770,7 @@ def cogs_audit_cmd(since, until):
     # gather, per order:
     #   - total revenue from `order` journal entries (4100 credit side)
     #   - total COGS from `order_cogs` journal entries (5900 debit side)
-    #   - count of non-extra/non-gift order_items with cost_at_sale = 0
+    #   - count of non-gift order_items (incl. sold extras) with cost_at_sale = 0
     #   - whether an order_cogs journal entry exists at all
     #
     # The query filters to delivered/completed orders only, scoped by the
@@ -815,12 +815,11 @@ def cogs_audit_cmd(since, until):
                    ) AS has_cogs_entry,
                    (
                      SELECT COUNT(*)
-                     FROM order_items oi
-                     WHERE oi.order_id = o.id
-                       AND oi.is_extra = 0
-                       AND oi.is_gift = 0
-                       AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
-                   ) AS zero_cost_items
+                    FROM order_items oi
+                      WHERE oi.order_id = o.id
+                        AND oi.is_gift = 0
+                        AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
+                    ) AS zero_cost_items
             FROM orders o
             WHERE {order_sql}
             ORDER BY o.id ASC
