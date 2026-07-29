@@ -1006,6 +1006,99 @@ def test_cogs_audit_rejects_invalid_since_date():
     assert "YYYY-MM-DD" in result.output
 
 
+def test_cogs_audit_flags_sold_extra_with_zero_cost_at_sale():
+    """FR10: a sold extra (is_extra=1, is_gift=0) with cost_at_sale=0 is
+    flagged as zero-cost. Pre-Phase-5 the is_extra=0 filter hid it."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        revenue = _account_id(conn, "4100")
+        cogs = _account_id(conn, "5900")
+        inventory = _account_id(conn, "1300")
+        ts = "2026-06-15T10:00:00Z"
+        conn.execute(
+            "INSERT INTO orders "
+            "(id, order_ref, customer_name, items, total_price, status, due_date, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (10, "ORD-10", "Extras customer", "[]", 100000, "delivered",
+             "2026-06-15", ts),
+        )
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, "
+            " position, status, cost_at_sale, is_extra, is_gift) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (10, "", "Banh mi", 1, 100000, 0, "delivered", 30000, 0, 0),
+        )
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, "
+            " position, status, cost_at_sale, is_extra, is_gift) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (10, "", "Nen phu kien", 1, 5000, 1, "delivered", 0, 1, 0),
+        )
+        _insert_entry(conn, debit_account_id=cash, credit_account_id=revenue,
+                      amount=100000.0, source_type="order", source_id=10,
+                      description="Order revenue: ORD-10", created_at=ts)
+        _insert_entry(conn, debit_account_id=cogs, credit_account_id=inventory,
+                      amount=30000.0, source_type="order_cogs", source_id=10,
+                      description="Order COGS: ORD-10", created_at=ts)
+    result = _invoke([
+        "report", "cogs-audit", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # ORD-10 should be flagged zero-cost because the sold extra has cost_at_sale=0
+    assert "ORD-10" in result.output
+    assert "zero-cost" in result.output
+    assert "ok=0, missing=0, zero-cost=1, low=0" in result.output
+
+
+def test_cogs_audit_excludes_gift_items_from_zero_cost_detection():
+    """FR10: gift items (is_gift=1) remain excluded from zero-cost detection
+    since their cost is recorded by the separate order_gift_cogs entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        revenue = _account_id(conn, "4100")
+        cogs = _account_id(conn, "5900")
+        inventory = _account_id(conn, "1300")
+        ts = "2026-06-15T10:00:00Z"
+        conn.execute(
+            "INSERT INTO orders "
+            "(id, order_ref, customer_name, items, total_price, status, due_date, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (11, "ORD-11", "Gift customer", "[]", 100000, "delivered",
+             "2026-06-15", ts),
+        )
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, "
+            " position, status, cost_at_sale, is_extra, is_gift) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (11, "", "Banh mi", 1, 100000, 0, "delivered", 30000, 0, 0),
+        )
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, "
+            " position, status, cost_at_sale, is_extra, is_gift) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (11, "", "Nen qua tang", 1, 5000, 1, "delivered", 0, 0, 1),
+        )
+        _insert_entry(conn, debit_account_id=cash, credit_account_id=revenue,
+                      amount=100000.0, source_type="order", source_id=11,
+                      description="Order revenue: ORD-11", created_at=ts)
+        _insert_entry(conn, debit_account_id=cogs, credit_account_id=inventory,
+                      amount=30000.0, source_type="order_cogs", source_id=11,
+                      description="Order COGS: ORD-11", created_at=ts)
+    result = _invoke([
+        "report", "cogs-audit", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "ORD-11" in result.output
+    # Gift item with cost_at_sale=0 must NOT trigger zero-cost (excluded by is_gift=0)
+    assert "ok=1, missing=0, zero-cost=0, low=0" in result.output
+
+
 # ---------------------------------------------------------------------------
 # Group registration sanity
 # ---------------------------------------------------------------------------
