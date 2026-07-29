@@ -181,4 +181,91 @@ class OrdersLabels {
 
   // Phone dialer launch failure (DG-283 review cycle 1 — CQ-1)
   static const cannotOpenDialer = 'Không mở được trình quay số.';
+
+  // Delivery schedule + GPS (DG-303 Phase 4) — door delivery only
+  static const latitudeLabel = 'Vĩ độ';
+  static const longitudeLabel = 'Kinh độ';
+  static const googleMapsUrlLabel = 'Liên kết Google Maps';
+  static const deliveryTimeSlotLabel = 'Khung giờ giao';
+  static const gpsCoordinatesLabel = 'Tọa độ GPS';
+  static const openMap = 'Mở bản đồ';
+  static const cannotOpenMap = 'Không mở được bản đồ.';
+  static const latitudeInvalid = 'Vĩ độ phải từ -90 đến 90';
+  static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
+
+  /// Predefined 1-hour delivery time slots (FR3): "6:00" … "21:00".
+  static const deliveryTimeSlots = <String>[
+    '6:00',
+    '7:00',
+    '8:00',
+    '9:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+  ];
+
+  // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.
+  static const deliverySwitchToList = 'Chuyển sang danh sách';
+  static const deliverySwitchToWeek = 'Chuyển sang tuần';
+  static const deliverySwitchToDay = 'Chuyển sang ngày';
+  static const deliveryCalendarNoSlot = 'Chưa có khung giờ';
+
+  // Delivery week calendar view (DG-306 Phase 2) — FR3, FR5, AC1–AC3.
+  static const deliveryWeekToday = 'Hôm nay';
+  static const deliveryWeekPrevTooltip = 'Tuần trước';
+  static const deliveryWeekNextTooltip = 'Tuần sau';
+  static const deliveryWeekUnscheduled = 'Chưa có giờ';
+
+  // Delivery day calendar view — day navigation.
+  static const deliveryDayToday = 'Hôm nay';
+  static const deliveryDayPrevTooltip = 'Ngày trước';
+  static const deliveryDayNextTooltip = 'Ngày sau';
+
+  /// Formats a single day label as "T2, 29/07".
+  static String deliveryDayLabel(DateTime d) {
+    final weekday = deliveryWeekdayHeaders[d.weekday - 1];
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    return '$weekday, $day/$month';
+  }
+
+  // Google Maps modal (DG-306 Phase 3) — FR6, AC6.
+  static const googleMapsContextMenuLabel = 'Google Maps';
+  static const googleMapsModalTitle = 'Liên kết Google Maps';
+  static const googleMapsModalHint =
+      'Dán liên kết Google Maps cho địa chỉ giao hàng.';
+  static const googleMapsModalEmpty = 'Chưa có liên kết Google Maps.';
+  static const googleMapsModalOpenMap = 'Mở bản đồ';
+  static const googleMapsModalSave = 'Lưu';
+  static const googleMapsModalClear = 'Xoá liên kết';
+  static const googleMapsModalSaved = 'Đã lưu liên kết Google Maps.';
+  static const googleMapsModalCleared = 'Đã xoá liên kết Google Maps.';
+
+  /// Short Vietnamese weekday headers (Mon–Sun), aligned to DateTime.weekday
+  /// (Mon=1..Sun=7 → index 0..6).
+  static const deliveryWeekdayHeaders = <String>[
+    'T2',
+    'T3',
+    'T4',
+    'T5',
+    'T6',
+    'T7',
+    'CN',
+  ];
+
+  /// Formats a week range as `dd/MM – dd/MM` (the visible week label).
+  static String deliveryWeekRangeLabel(DateTime start, DateTime end) {
+    String fmt(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    return '${fmt(start)} – ${fmt(end)}';
+  }
 }

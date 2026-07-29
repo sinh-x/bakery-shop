@@ -337,6 +337,13 @@ class Order:
     created_staff_name: str = ""
     work_ticket_printed_staff_name: str = ""
 
+    # DG-303 Phase 4.2 (FR1/FR2/FR3): door delivery GPS + schedule fields.
+    # Nullable — bus/pickup orders leave these NULL forever (NFR1, AC7).
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    google_maps_url: Optional[str] = None
+    delivery_time_slot: Optional[str] = None
+
     amount_paid = 0.0
 
     @staticmethod
@@ -371,13 +378,15 @@ class Order:
             """INSERT INTO orders (order_ref, customer_name, customer_phone, delivery_phone, items,
                total_price, status, due_date, due_time, delivery_type,
                delivery_address, notes, source, created_by, shipping_fee, public_order_code,
-               customer_id, created_at, updated_at, created_staff_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               customer_id, created_at, updated_at, created_staff_name,
+               latitude, longitude, google_maps_url, delivery_time_slot)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
               self.source, self.created_by, self.shipping_fee, self.public_order_code,
-              self.customer_id, now_utc(), now_utc(), self.created_staff_name),
+              self.customer_id, now_utc(), now_utc(), self.created_staff_name,
+              self.latitude, self.longitude, self.google_maps_url, self.delivery_time_slot),
         )
         self.id = cursor.lastrowid
 
@@ -471,6 +480,10 @@ class Order:
             acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
             created_staff_name=row["created_staff_name"] if "created_staff_name" in row.keys() else "",
             work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"] if "work_ticket_printed_staff_name" in row.keys() else "",
+            latitude=row["latitude"] if "latitude" in row.keys() else None,
+            longitude=row["longitude"] if "longitude" in row.keys() else None,
+            google_maps_url=row["google_maps_url"] if "google_maps_url" in row.keys() else None,
+            delivery_time_slot=row["delivery_time_slot"] if "delivery_time_slot" in row.keys() else None,
         )
         order.amount_paid = amount_paid
         return order
@@ -551,6 +564,10 @@ class Order:
             "workTicketPrintedStaffName": self.work_ticket_printed_staff_name,
             "acknowledgedAt": self.acknowledged_at,
             "createdStaffName": self.created_staff_name,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "googleMapsUrl": self.google_maps_url,
+            "deliveryTimeSlot": self.delivery_time_slot,
             "urgency": compute_urgency(
                 self.due_date,
                 self.due_time,

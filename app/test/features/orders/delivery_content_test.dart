@@ -243,5 +243,46 @@ void main() {
 
       expect(find.text(OrdersLabels.deliveryEmptyToday), findsOneWidget);
     });
+
+    testWidgets('AC9: toggling to calendar and back to list preserves '
+        'status-grouped list rendering', (tester) async {
+      final orders = [
+        _order(
+          id: 1,
+          ref: 'ORD-NEW',
+          status: 'new',
+          deliveryType: 'bus',
+          dueDate: '2026-07-19',
+        ),
+        _order(
+          id: 2,
+          ref: 'ORD-READY',
+          status: 'ready',
+          deliveryType: 'door',
+          dueDate: '2026-07-19',
+        ),
+      ];
+      await tester.pumpWidget(buildTestWidget(orders));
+      await tester.pumpAndSettle();
+
+      // Default list view renders both orders grouped by status.
+      expect(find.text('ORD-NEW'), findsOneWidget);
+      expect(find.text('ORD-READY'), findsOneWidget);
+
+      // Toggle to week calendar view.
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToWeek));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeliveryContent), findsOneWidget);
+
+      // Toggle to day view then back to list — the status-grouped list
+      // still renders.
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToDay));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToList));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ORD-NEW'), findsOneWidget);
+      expect(find.text('ORD-READY'), findsOneWidget);
+    });
   });
 }

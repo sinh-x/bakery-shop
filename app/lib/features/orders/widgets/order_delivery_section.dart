@@ -12,7 +12,9 @@ import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import 'due_date_time_picker_row.dart';
+import 'order_delivery_gps_section.dart';
 import 'section_header.dart';
+import 'shipping_fee_section.dart';
 import 'stage1_responsive_content.dart';
 
 class OrderDeliverySection extends StatelessWidget {
@@ -42,6 +44,12 @@ class OrderDeliverySection extends StatelessWidget {
     this.shippingFeeConfigLoading = false,
     this.shippingFeeConfigError,
     this.onRetryShippingFeeConfig,
+    this.latitude,
+    this.longitude,
+    this.googleMapsUrl,
+    this.latitudeCtrl,
+    this.longitudeCtrl,
+    this.onLaunchMap,
   });
 
   final String deliveryType;
@@ -69,7 +77,29 @@ class OrderDeliverySection extends StatelessWidget {
   final String? shippingFeeConfigError;
   final VoidCallback? onRetryShippingFeeConfig;
 
+  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only).
+  // Read-only mode consumes `latitude`, `longitude`, `googleMapsUrl`
+  // directly; editable mode uses the controllers so changes sync back to
+  // the parent provider/state. The manual `deliveryTimeSlot` dropdown was
+  // removed (DG-306 Phase 1 / FR2/AC5) — the slot is now auto-derived from
+  // `dueTime` by `deriveTimeSlot()` in `delivery_helpers.dart`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL text field was removed from
+  // create/edit forms — the URL is now managed via the Google Maps modal on
+  // the order detail screen (`google_maps_modal.dart`). The `googleMapsUrl`
+  // field is kept for read-only display.
+  final double? latitude;
+  final double? longitude;
+  final String? googleMapsUrl;
+  final TextEditingController? latitudeCtrl;
+  final TextEditingController? longitudeCtrl;
+  final VoidCallback? onLaunchMap;
+
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
+
+  /// GPS/map fields are only relevant for door delivery (FR1/FR2/AC1).
+  /// Includes legacy `'delivery'` type which behaves like `'door'` for
+  /// time slot and GPS display (FR8/AC8, DG-306 Phase 4).
+  bool get _isDoorDelivery => deliveryType == 'door' || deliveryType == 'delivery';
 
   /// Whether the customer phone should be shown in read-only mode.
   ///
@@ -131,6 +161,29 @@ class OrderDeliverySection extends StatelessWidget {
           if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
             _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
         ],
+        // DG-306 Phase 1 / FR1: the time slot is auto-derived from `dueTime`
+        // (the stored `deliveryTimeSlot` DB column is ignored by the frontend).
+        if (dueTime != null)
+          _buildInfoRow(
+            context,
+            Icons.schedule,
+            OrdersLabels.deliveryTimeSlotLabel,
+            '${dueTime!.hour}:00',
+          ),
+        if (_isDoorDelivery && latitude != null && longitude != null)
+          _buildInfoRow(
+            context,
+            Icons.my_location,
+            OrdersLabels.gpsCoordinatesLabel,
+            '$latitude, $longitude',
+          ),
+        if (_isDoorDelivery &&
+            googleMapsUrl != null &&
+            googleMapsUrl!.isNotEmpty)
+          MapLinkRow(
+            url: googleMapsUrl!,
+            onTap: onLaunchMap,
+          ),
         if (shippingFee != null && shippingFee! > 0)
           _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
         if (notes != null && notes!.isNotEmpty)
@@ -196,8 +249,26 @@ class OrderDeliverySection extends StatelessWidget {
           ),
         ],
         if ((deliveryType == 'bus' || deliveryType == 'door') &&
-            onShippingFeeChanged != null)
-          _buildShippingFeeSection(context),
+            onShippingFeeChanged != null) ...[
+          const SizedBox(height: 20),
+          const SectionHeader(VN.shippingFee),
+          ShippingFeeSection(
+            shippingFee: shippingFee,
+            onChanged: onShippingFeeChanged!,
+            loading: shippingFeeConfigLoading,
+            error: shippingFeeConfigError,
+            onRetry: onRetryShippingFeeConfig,
+          ),
+        ],
+        if (_isDoorDelivery) ...[
+          if (latitudeCtrl != null && longitudeCtrl != null) ...[
+            const SizedBox(height: 16),
+            GpsFieldsSection(
+              latitudeCtrl: latitudeCtrl!,
+              longitudeCtrl: longitudeCtrl!,
+            ),
+          ],
+        ],
         if (notesCtrl != null) ...[
           const SizedBox(height: 16),
           TextFormField(
@@ -214,83 +285,6 @@ class OrderDeliverySection extends StatelessWidget {
           const SizedBox(height: 12),
           ...summaryCardSlots,
         ],
-      ],
-    );
-  }
-
-  Widget _buildShippingFeeSection(BuildContext context) {
-    return Column(
-      children: [
-        const SizedBox(height: 20),
-        const SectionHeader(VN.shippingFee),
-        if (shippingFeeConfigLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: SizedBox(
-              height: 24,
-              width: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else if (shippingFeeConfigError != null)
-          _buildShippingFeeError(context)
-        else
-          _buildShippingFeeStepper(context),
-      ],
-    );
-  }
-
-  Widget _buildShippingFeeError(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Flexible(
-            child: Text(
-              VN.errorLoading,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          if (onRetryShippingFeeConfig != null) ...[
-            const SizedBox(width: 8),
-            TextButton.icon(
-              onPressed: onRetryShippingFeeConfig,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text(VN.retry),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShippingFeeStepper(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton.filled(
-          onPressed: (shippingFee ?? 0) >= 5000
-              ? () => onShippingFeeChanged!((shippingFee ?? 0) - 5000.0)
-              : null,
-          icon: const Icon(Icons.remove),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            (shippingFee ?? 0) == 0
-                ? VN.shippingFree
-                : formatVND(shippingFee!),
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-        ),
-        IconButton.filled(
-          onPressed: () => onShippingFeeChanged!((shippingFee ?? 0) + 5000.0),
-          icon: const Icon(Icons.add),
-        ),
       ],
     );
   }

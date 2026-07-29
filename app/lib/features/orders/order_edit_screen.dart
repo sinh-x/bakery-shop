@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
@@ -49,6 +50,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
+  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
+  // manual `deliveryTimeSlot` state was removed (DG-306 Phase 1 / FR2) — the
+  // slot is auto-derived from `_dueTime` at submit time via `deriveTimeSlot`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL field was removed from the
+  // edit form — the URL is now managed via the Google Maps modal on the
+  // order detail screen. The existing URL is preserved at save time by
+  // passing the loaded order's `googleMapsUrl` back to the backend.
+  final _latitudeCtrl = TextEditingController();
+  final _longitudeCtrl = TextEditingController();
+  String? _existingGoogleMapsUrl;
   // FR9: single-state customer model (was tri-state: _selectedCustomer +
   // _linkedCustomerId + _customerTouched). The existing linked customer is
   // loaded from `order.customerId` into `_selectedCustomer` on open.
@@ -89,6 +100,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
+    _latitudeCtrl.dispose();
+    _longitudeCtrl.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -146,6 +159,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             _deliveryPhoneCtrl.text.trim().isNotEmpty;
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);
+    // DG-303 Phase 4: prefill GPS + time slot fields from the existing order.
+    _latitudeCtrl.text =
+        order.latitude != null ? order.latitude.toString() : '';
+    _longitudeCtrl.text =
+        order.longitude != null ? order.longitude.toString() : '';
+    _existingGoogleMapsUrl = order.googleMapsUrl;
     _initializing = false;
   }
 
@@ -265,6 +284,13 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
+            latitude: double.tryParse(_latitudeCtrl.text.trim()),
+            longitude: double.tryParse(_longitudeCtrl.text.trim()),
+            googleMapsUrl: _existingGoogleMapsUrl,
+            // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
+            deliveryTimeSlot: _dueTime != null
+                ? deriveTimeSlot(_formatTime(_dueTime!))
+                : null,
           );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
@@ -302,6 +328,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         shippingFee: _shippingFee,
         notes: _notesCtrl.text,
         source: _source,
+        latitude: double.tryParse(_latitudeCtrl.text.trim()),
+        longitude: double.tryParse(_longitudeCtrl.text.trim()),
+        googleMapsUrl: _existingGoogleMapsUrl,
       );
 
   void _onCustomerSelected(Customer? c) {
@@ -414,6 +443,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),
                         onContinue: () => _goToStage(4),
+                        latitudeCtrl: _latitudeCtrl,
+                        longitudeCtrl: _longitudeCtrl,
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

@@ -17,6 +17,9 @@ class OrderCreateState {
   final String source;
   final int currentStage;
   final String? selectedCategorySlug;
+  final double? latitude;
+  final double? longitude;
+  final String? googleMapsUrl;
 
   const OrderCreateState({
     this.items = const [],
@@ -26,6 +29,9 @@ class OrderCreateState {
     this.source = '',
     this.currentStage = 1,
     this.selectedCategorySlug,
+    this.latitude,
+    this.longitude,
+    this.googleMapsUrl,
   });
 
   bool canNavigateToStage(int stage) {
@@ -47,6 +53,12 @@ class OrderCreateState {
     int? currentStage,
     String? selectedCategorySlug,
     bool clearSelectedCategorySlug = false,
+    double? latitude,
+    bool clearLatitude = false,
+    double? longitude,
+    bool clearLongitude = false,
+    String? googleMapsUrl,
+    bool clearGoogleMapsUrl = false,
   }) {
     return OrderCreateState(
       items: items ?? this.items,
@@ -58,6 +70,10 @@ class OrderCreateState {
       selectedCategorySlug: clearSelectedCategorySlug
           ? null
           : selectedCategorySlug ?? this.selectedCategorySlug,
+      latitude: clearLatitude ? null : latitude ?? this.latitude,
+      longitude: clearLongitude ? null : longitude ?? this.longitude,
+      googleMapsUrl:
+          clearGoogleMapsUrl ? null : googleMapsUrl ?? this.googleMapsUrl,
     );
   }
 }
@@ -101,6 +117,26 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     state = slug == null
         ? state.copyWith(clearSelectedCategorySlug: true)
         : state.copyWith(selectedCategorySlug: slug);
+  }
+
+  /// DG-303 Phase 4 / DG-306 Phase 1: update GPS coordinate + map URL fields
+  /// on `OrderCreateState`. Called by the Stage 3 delivery screen when the
+  /// user types in the GPS / map URL fields. The manual `deliveryTimeSlot`
+  /// dropdown was removed (DG-306 Phase 1 / FR2) — the slot is auto-derived
+  /// from `dueTime` at submit time via `deriveTimeSlot()`.
+  void updateGpsFields({
+    double? latitude,
+    bool clearLatitude = false,
+    double? longitude,
+    bool clearLongitude = false,
+    String? googleMapsUrl,
+    bool clearGoogleMapsUrl = false,
+  }) {
+    state = state.copyWith(
+      latitude: clearLatitude ? null : latitude,
+      longitude: clearLongitude ? null : longitude,
+      googleMapsUrl: clearGoogleMapsUrl ? null : googleMapsUrl,
+    );
   }
 
   Future<void> restoreCustomerFromDraft(int customerId) async {

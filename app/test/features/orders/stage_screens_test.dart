@@ -1050,6 +1050,10 @@ class _FakeCreateOrderService extends OrderService {
     double shippingFee = 0.0,
     String? status,
     String? paymentMethod,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
   }) async {
     return Order(
       id: '1',

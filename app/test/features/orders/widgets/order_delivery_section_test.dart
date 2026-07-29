@@ -297,4 +297,55 @@ void main() {
 
     expect(find.byType(Stage1ResponsiveContent), findsNothing);
   });
+
+  // DG-306 Phase 4 / FR8 / AC8: legacy 'delivery' type behaves like 'door' for
+  // GPS and time-slot display in read-only mode.
+  testWidgets(
+      'readOnly legacy "delivery" type renders GPS coordinates like "door" '
+      '(AC8)', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'delivery',
+            deliveryAddress: '45 Lê Lợi',
+            latitude: 10.775,
+            longitude: 106.695,
+            googleMapsUrl: 'https://maps.google.com/test',
+          ),
+        ),
+      ),
+    );
+
+    // Legacy 'delivery' maps to the door label.
+    expect(find.text(VN.deliveryDoor), findsOneWidget);
+    // GPS coordinates row renders (same as 'door'). _buildInfoRow appends a
+    // colon to the label, so look for the value + the label-with-colon.
+    expect(find.text('10.775, 106.695'), findsOneWidget);
+    expect(find.text('${OrdersLabels.gpsCoordinatesLabel}:'), findsOneWidget);
+    // Google Maps link row renders (same as 'door').
+    expect(find.text('${OrdersLabels.googleMapsUrlLabel}:'), findsOneWidget);
+  });
+
+  testWidgets(
+      'readOnly legacy "delivery" type renders auto-derived time slot like '
+      '"door" (AC8)', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'delivery',
+            deliveryAddress: '45 Lê Lợi',
+            dueDate: null,
+            dueTime: TimeOfDay(hour: 9, minute: 15),
+          ),
+        ),
+      ),
+    );
+
+    // Time slot row is gated on dueTime (not delivery type), so it renders.
+    // _buildInfoRow appends a colon to the label.
+    expect(find.text('${OrdersLabels.deliveryTimeSlotLabel}:'), findsOneWidget);
+    expect(find.text('9:00'), findsOneWidget);
+  });
 }

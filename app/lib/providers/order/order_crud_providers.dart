@@ -150,6 +150,10 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     int? customerId,
     bool customerTouched = false,
     double? shippingFee,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
   }) async {
     final service = ref.read(orderServiceProvider);
     final changedBy = ref.read(loggedByProvider);
@@ -169,6 +173,10 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       customerTouched: customerTouched,
       changedBy: changedBy,
       shippingFee: shippingFee,
+      latitude: latitude,
+      longitude: longitude,
+      googleMapsUrl: googleMapsUrl,
+      deliveryTimeSlot: deliveryTimeSlot,
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();

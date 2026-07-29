@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3488,7 +3488,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
         _assert_users_role_check_constraint(conn)
 
 
@@ -3554,7 +3554,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3677,7 +3677,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3751,7 +3751,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3778,7 +3778,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 86
+        assert _migrated_version(conn) == 87
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4073,3 +4073,87 @@ def test_v77_skips_collision_on_duplicate_normalized_key():
         non_null = [r["staff_id"] for r in rows if r["staff_id"] is not None]
         # At most one user gets the staff_id (first-match-wins).
         assert len(non_null) <= 1
+
+
+def test_v87_registered_in_migration_chain():
+    """v87 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 87 in MIGRATIONS
+    assert (
+        MIGRATIONS[87]["description"]
+        == "Add latitude, longitude, google_maps_url, delivery_time_slot nullable columns to orders for door delivery schedule + GPS (DG-303 Phase 4.1)"
+    )
+    assert MIGRATIONS[87]["callable"].__name__ == "_migrate_v87_order_delivery_schedule_gps"
+
+
+def test_v87_adds_delivery_schedule_gps_columns_on_incremental_db():
+    """v87 adds the four new nullable columns to orders on an existing DB.
+
+    DG-303 Phase 4.1 / FR1, FR2, FR3 / NFR1 / AC7: columns are nullable and
+    existing orders keep NULL (no data migration). Verifies backward
+    compatibility by inserting an order before v87 and confirming it remains
+    intact with NULL new fields after migration.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 86)
+        # Insert a legacy order before the v87 migration runs.
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status, delivery_type) "
+            "VALUES ('LEGACY-1', 'Khách cũ', 'new', 'pickup')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 87)
+        assert _migrated_version(conn) == 87
+
+        columns = _schema_columns(conn, "orders")
+        for col in ("latitude", "longitude", "google_maps_url", "delivery_time_slot"):
+            assert col in columns, f"missing column {col}"
+        # All four new columns are nullable (notnull == 0).
+        assert columns["latitude"]["notnull"] == 0
+        assert columns["longitude"]["notnull"] == 0
+        assert columns["google_maps_url"]["notnull"] == 0
+        assert columns["delivery_time_slot"]["notnull"] == 0
+
+        # Legacy order retained with NULL new fields (NFR1 / AC7).
+        row = conn.execute(
+            "SELECT latitude, longitude, google_maps_url, delivery_time_slot, "
+            "customer_name, status FROM orders WHERE order_ref = 'LEGACY-1'"
+        ).fetchone()
+        assert row["latitude"] is None
+        assert row["longitude"] is None
+        assert row["google_maps_url"] is None
+        assert row["delivery_time_slot"] is None
+        assert row["customer_name"] == "Khách cũ"
+        assert row["status"] == "new"
+
+
+def test_v87_idempotent_on_already_migrated_db():
+    """Re-running v87 on a DB that already has the columns is a no-op."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        # Running the callable again must not raise (PRAGMA-guarded).
+        MIGRATIONS[87]["callable"](conn)
+        columns = _schema_columns(conn, "orders")
+        assert {"latitude", "longitude", "google_maps_url", "delivery_time_slot"} <= set(columns)
+
+
+def test_v87_persists_new_fields_on_door_delivery_order():
+    """New columns accept and store real values for a door delivery order."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status, delivery_type, "
+            "latitude, longitude, google_maps_url, delivery_time_slot) "
+            "VALUES ('DOOR-1', 'Khách giao tận nhà', 'new', 'door', "
+            "10.762622, 106.660172, 'https://maps.google.com/?q=10.762622,106.660172', '8:00')"
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT latitude, longitude, google_maps_url, delivery_time_slot, delivery_type "
+            "FROM orders WHERE order_ref = 'DOOR-1'"
+        ).fetchone()
+        assert row["latitude"] == 10.762622
+        assert row["longitude"] == 106.660172
+        assert row["google_maps_url"] == "https://maps.google.com/?q=10.762622,106.660172"
+        assert row["delivery_time_slot"] == "8:00"
+        assert row["delivery_type"] == "door"

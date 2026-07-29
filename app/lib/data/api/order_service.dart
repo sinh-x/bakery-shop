@@ -55,6 +55,10 @@ class OrderService {
     double shippingFee = 0.0,
     String? status,
     String? paymentMethod,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
   }) async {
     final body = <String, dynamic>{
       'customerName': customerName,
@@ -73,6 +77,14 @@ class OrderService {
     if (createdBy.isNotEmpty) body['createdBy'] = createdBy;
     if (status != null) body['status'] = status;
     if (paymentMethod != null) body['paymentMethod'] = paymentMethod;
+    if (latitude != null) body['latitude'] = latitude;
+    if (longitude != null) body['longitude'] = longitude;
+    if (googleMapsUrl != null && googleMapsUrl.isNotEmpty) {
+      body['googleMapsUrl'] = googleMapsUrl;
+    }
+    if (deliveryTimeSlot != null && deliveryTimeSlot.isNotEmpty) {
+      body['deliveryTimeSlot'] = deliveryTimeSlot;
+    }
 
     final response = await _dio.post('/api/orders', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
@@ -94,6 +106,10 @@ class OrderService {
     String? publicCodeDateChangeDecision,
     String changedBy = '',
     double? shippingFee,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
   }) async {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
@@ -117,6 +133,12 @@ class OrderService {
     }
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     if (shippingFee != null) body['shippingFee'] = shippingFee;
+    // DG-303 Phase 4: GPS + delivery time slot — nullable, door delivery only.
+    // Send null explicitly so the backend can clear a previously-set value.
+    body['latitude'] = latitude;
+    body['longitude'] = longitude;
+    body['googleMapsUrl'] = googleMapsUrl;
+    body['deliveryTimeSlot'] = deliveryTimeSlot;
 
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);

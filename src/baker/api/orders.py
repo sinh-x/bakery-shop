@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
@@ -247,6 +247,24 @@ class DepositIn(BaseModel):
     method: str = "cash"
 
 
+def _validate_google_maps_url(value: Optional[str]) -> Optional[str]:
+    """Validate googleMapsUrl is an https:// (or http://) URL when provided.
+
+    DG-303 review-auto SEC-2: prevents arbitrary javascript:/data:/file: URIs
+    from being stored and later launched by the Flutter client. Empty strings
+    are normalized to None so callers can rely on a truthy-or-None contract.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if not (lowered.startswith("https://") or lowered.startswith("http://")):
+        raise ValueError("googleMapsUrl must be an http(s) URL")
+    return stripped
+
+
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
@@ -264,6 +282,18 @@ class OrderCreate(BaseModel):
     shippingFee: float = 0.0
     status: Optional[str] = None
     paymentMethod: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    # Pydantic Field bounds produce HTTP 422 on out-of-range values (NFR2).
+    # None is allowed so bus/pickup orders leave these unset.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
+
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_create(cls, v):
+        return _validate_google_maps_url(v)
 
 
 class OrderEdit(BaseModel):
@@ -282,6 +312,16 @@ class OrderEdit(BaseModel):
     changedBy: str = ""
     workTicketPrintedAt: Optional[str] = None
     publicCodeDateChangeDecision: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
+
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_edit(cls, v):
+        return _validate_google_maps_url(v)
 
 
 class StatusTransition(BaseModel):
@@ -607,6 +647,10 @@ def create_order(body: OrderCreate, request: Request):
             created_staff_name=created_staff_name,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
+            latitude=body.latitude,
+            longitude=body.longitude,
+            google_maps_url=body.googleMapsUrl,
+            delivery_time_slot=body.deliveryTimeSlot,
         )
         order.calculate_total()
         order.save(conn)
@@ -810,6 +854,10 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             "source": "source",
             "shippingFee": "shipping_fee",
             "workTicketPrintedAt": "work_ticket_printed_at",
+            "latitude": "latitude",
+            "longitude": "longitude",
+            "googleMapsUrl": "google_maps_url",
+            "deliveryTimeSlot": "delivery_time_slot",
         }
 
         new_due_date = data.get("dueDate", row["due_date"])
