@@ -1070,10 +1070,10 @@ def _replace_order_entry(
 def _sync_cancelled_order_journal(conn, order_id: int) -> None:
     """Reverse (locked) or delete (unlocked) accounting entries for a cancelled order.
 
-    Handles revenue, COGS, and shipping release entries — internal accounting
-    entries that can be auto-reversed on cancellation. Payment transaction
-    entries are deliberately excluded: they represent real cash that requires
-    a human decision (refund vs. manual invalidation).
+    Handles revenue, COGS, gift COGS, and shipping release entries — internal
+    accounting entries that can be auto-reversed on cancellation. Payment
+    transaction entries are deliberately excluded: they represent real cash
+    that requires a human decision (refund vs. manual invalidation).
     """
     entry_id = _find_order_entry_by_prefix(conn, order_id, _REVENUE_ENTRY_PREFIX)
     if entry_id is not None:
@@ -1088,6 +1088,13 @@ def _sync_cancelled_order_journal(conn, order_id: int) -> None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
 
     entry_id = _find_journal_entry(conn, 'order_cogs', order_id)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
+    # DG-297 Phase 3 (FR5): reverse the promotional gift COGS entry the same way
+    # as the main order_cogs entry — locked entries get a reversing entry,
+    # unlocked entries are deleted (mirrors the order_cogs pattern above).
+    entry_id = _find_journal_entry(conn, 'order_gift_cogs', order_id)
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
 
