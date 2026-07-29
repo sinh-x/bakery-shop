@@ -27,57 +27,12 @@ from baker.db.schema import (
 )
 from baker.services.accounting_validation import run_validation
 from baker.services.journal_sync import _sync_delivered_order_journal
+from tests.helpers_dg297 import _insert_order, _insert_product, _add_item
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_PRODUCT_SEQ = {"n": 0}
-
-
-def _insert_product(conn, *, name=None, category="banh_mi", base_price=100000):
-    _PRODUCT_SEQ["n"] += 1
-    if name is None:
-        name = f"SP-DG297-P4-{_PRODUCT_SEQ['n']}"
-    cur = conn.execute(
-        "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
-        "VALUES (?, ?, ?, ?, '')",
-        (name, category, base_price, base_price),
-    )
-    return int(cur.lastrowid)
-
-
-def _insert_order(conn, *, order_ref, total_price=0, status="delivered"):
-    cur = conn.execute(
-        "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
-        "VALUES (?, 'Khách thử', ?, ?, '2026-07-29')",
-        (order_ref, total_price, status),
-    )
-    return int(cur.lastrowid)
-
-
-def _add_item(
-    conn,
-    *,
-    order_id,
-    product_id,
-    product_name="Bánh mì",
-    qty=1,
-    unit_price=100000,
-    cost_at_sale=0,
-    is_extra=0,
-    is_gift=0,
-):
-    cur = conn.execute(
-        "INSERT INTO order_items "
-        "(order_id, product_id, product_name, quantity, unit_price, "
-        " position, status, cost_at_sale, is_extra, is_gift) "
-        "VALUES (?, ?, ?, ?, ?, 0, 'delivered', ?, ?, ?)",
-        (order_id, product_id, product_name, qty, unit_price,
-         cost_at_sale, is_extra, is_gift),
-    )
-    return int(cur.lastrowid)
 
 
 def _cogs_completeness_check(report):
