@@ -72,38 +72,46 @@ class _DeliveryWeekCalendarViewState
           child: RefreshIndicator(
             onRefresh: widget.onRefresh,
             child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: _gridWidth(context),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  child: Stack(
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          WeekHourLabelColumn(theme: theme),
-                          ...days.map((d) {
-                            final dayKey = _formatDayKey(d);
-                            return Expanded(
-                              child: WeekDayColumn(
-                                date: d,
-                                dayKey: dayKey,
-                                isToday: dayKey == todayKey,
-                                ordersBySlot: _ordersForDay(grouped, dayKey),
-                                theme: theme,
-                              ),
-                            );
-                          }),
-                        ],
+              scrollDirection: Axis.vertical,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  WeekHourLabelColumn(theme: theme),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: _gridWidth(context),
+                        child: Stack(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ...days.map((d) {
+                                  final dayKey = _formatDayKey(d);
+                                  return Expanded(
+                                    child: WeekDayColumn(
+                                      date: d,
+                                      dayKey: dayKey,
+                                      isToday: dayKey == todayKey,
+                                      ordersBySlot:
+                                          _ordersForDay(grouped, dayKey),
+                                      theme: theme,
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                            CurrentTimeLine(
+                              visible: showTimeLine,
+                              topOffset: timeLineOffset ?? 0,
+                            ),
+                          ],
+                        ),
                       ),
-                      CurrentTimeLine(
-                        visible: showTimeLine,
-                        topOffset: timeLineOffset ?? 0,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -130,11 +138,13 @@ class _DeliveryWeekCalendarViewState
       '-${d.day.toString().padLeft(2, '0')}';
 
   /// Wide enough to fit 7 columns at >=130px each on small screens, otherwise
-  /// uses the full screen width (NFR4 — smooth horizontal scrolling at 60fps).
+  /// uses the remaining screen width (after the pinned time column) so the
+  /// day columns fill the visible scroll area (FR4/NFR1).
   double _gridWidth(BuildContext context) {
     final screen = MediaQuery.sizeOf(context).width;
+    final available = screen - WeekHourLabelColumn.width;
     const minCol = 130.0;
-    final computed = screen / 7;
-    return computed < minCol ? minCol * 7 : screen;
+    final computed = available / 7;
+    return computed < minCol ? minCol * 7 : available;
   }
 }

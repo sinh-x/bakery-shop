@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/features/orders/widgets/delivery_week_calendar_components.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_week_calendar_view.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -187,5 +188,61 @@ void main() {
 
     expect(find.text(OrdersLabels.deliveryWeekUnscheduled), findsOneWidget);
     expect(find.text('KH 3'), findsOneWidget);
+  });
+
+  testWidgets(
+      'AC5: the hour label column stays pinned (outside the horizontal '
+      'scroll) while day columns scroll horizontally', (tester) async {
+    // Use a narrow surface so the 7 day columns (>=130px each = 910px)
+    // overflow the available width and require horizontal scrolling.
+    await tester.binding.setSurfaceSize(Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(const Size(800, 600)));
+
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: DeliveryWeekCalendarView(
+              orders: const [],
+              onRefresh: () async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Find the horizontal SingleChildScrollView that contains the day
+    // columns.
+    final horizontalScrollFinder = find.ancestor(
+      of: find.byType(WeekDayColumn).first,
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+      ),
+    );
+
+    final hourColumnFinder = find.byType(WeekHourLabelColumn);
+    final hourColumnBox = tester.getRect(hourColumnFinder);
+    final firstHourLabel = tester.getRect(find.text('6:00').first);
+    final firstDayColumn =
+        tester.getRect(find.byType(WeekDayColumn).first);
+
+    // Drag the horizontal scroll content to the left (scroll forward).
+    await tester.drag(horizontalScrollFinder, const Offset(-300, 0));
+    await tester.pumpAndSettle();
+
+    // The hour label column x position is unchanged (pinned).
+    expect(tester.getRect(hourColumnFinder).left, hourColumnBox.left);
+    // The first hour label x is unchanged (pinned with its column).
+    expect(tester.getRect(find.text('6:00').first).left, firstHourLabel.left);
+    // A day column x has shifted (scrolled horizontally).
+    expect(
+      tester.getRect(find.byType(WeekDayColumn).first).left,
+      isNot(firstDayColumn.left),
+    );
   });
 }
