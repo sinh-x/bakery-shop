@@ -10,6 +10,7 @@ import 'widgets/google_maps_modal.dart';
 import 'widgets/order_detail/order_detail_body.dart';
 import 'widgets/order_detail/order_receipt_type_selector.dart';
 import '../../data/models/order.dart';
+import 'providers/delivery_claim_handler.dart';
 import 'providers/delivery_claim_providers.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
@@ -133,38 +134,19 @@ class OrderDetailScreen extends ConsumerWidget {
     );
   }
 
-  /// Handles the "Nhận giao" / "Trả đơn" context menu selection: invokes the
-  /// claim/unclaim API via [OrderClaimNotifier], then shows a success
-  /// snackbar ("Đã nhận giao" / "Đã trả đơn") or an error snackbar on
-  /// failure (FR1/FR2/AC1/AC2/AC3).
+  /// Handles the "Nhận giao" / "Trả đơn" context menu selection: delegates to
+  /// the shared [handleDeliveryClaimAction] helper so the context menu uses
+  /// the same claim/unclaim code path as [DeliveryClaimActions] and
+  /// [DeliveryClaimInlineActions] (DG-311 Phase 4 / FR5 / AC7).
   Future<void> _handleClaimMenuSelection(
     BuildContext context,
     WidgetRef ref,
     String value,
-  ) async {
-    final notifier = ref.read(orderClaimProvider.notifier);
-    notifier.setOrderRef(orderRef);
-    final isClaim = value == 'claim';
-    if (isClaim) {
-      await notifier.claim();
-    } else {
-      await notifier.unclaim();
-    }
-    final claimState = ref.read(orderClaimProvider);
-    if (claimState.hasError) {
-      showTopSnackBar(
+  ) =>
+      handleDeliveryClaimAction(
         context,
-        isClaim
-            ? OrdersLabels.deliveryClaimFailed
-            : OrdersLabels.deliveryUnclaimFailed,
+        ref,
+        orderRef,
+        isClaim: value == 'claim',
       );
-      return;
-    }
-    showTopSnackBar(
-      context,
-      isClaim
-          ? OrdersLabels.deliveryClaimSuccess
-          : OrdersLabels.deliveryUnclaimSuccess,
-    );
-  }
 }

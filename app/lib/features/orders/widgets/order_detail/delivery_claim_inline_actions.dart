@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/order.dart';
 import '../../../../shared/labels/orders.dart';
 import '../../../../shared/utils/order_helpers.dart';
+import '../../providers/delivery_claim_handler.dart';
 import '../../providers/delivery_claim_providers.dart';
 
 /// Inline "Nhận giao" / "Trả đơn" button row for delivery orders shown inside
@@ -60,7 +61,14 @@ class DeliveryClaimInlineActions extends ConsumerWidget {
           children: [
             if (canClaim)
               FilledButton.tonalIcon(
-                onPressed: isClaiming ? null : () => _claim(ref, context),
+                onPressed: isClaiming
+                    ? null
+                    : () => handleDeliveryClaimAction(
+                          context,
+                          ref,
+                          order.orderRef,
+                          isClaim: true,
+                        ),
                 icon: isClaiming
                     ? const SizedBox(
                         width: 14,
@@ -78,7 +86,14 @@ class DeliveryClaimInlineActions extends ConsumerWidget {
               )
             else
               OutlinedButton.icon(
-                onPressed: isClaiming ? null : () => _unclaim(ref, context),
+                onPressed: isClaiming
+                    ? null
+                    : () => handleDeliveryClaimAction(
+                          context,
+                          ref,
+                          order.orderRef,
+                          isClaim: false,
+                        ),
                 icon: isClaiming
                     ? const SizedBox(
                         width: 14,
@@ -103,34 +118,6 @@ class DeliveryClaimInlineActions extends ConsumerWidget {
           ],
         );
       },
-    );
-  }
-
-  Future<void> _claim(WidgetRef ref, BuildContext context) async {
-    final notifier = ref.read(orderClaimProvider.notifier);
-    notifier.setOrderRef(order.orderRef);
-    await notifier.claim();
-    if (!context.mounted) return;
-    final state = ref.read(orderClaimProvider);
-    showTopSnackBar(
-      context,
-      state.hasError
-          ? OrdersLabels.deliveryClaimFailed
-          : OrdersLabels.deliveryClaimSuccess,
-    );
-  }
-
-  Future<void> _unclaim(WidgetRef ref, BuildContext context) async {
-    final notifier = ref.read(orderClaimProvider.notifier);
-    notifier.setOrderRef(order.orderRef);
-    await notifier.unclaim();
-    if (!context.mounted) return;
-    final state = ref.read(orderClaimProvider);
-    showTopSnackBar(
-      context,
-      state.hasError
-          ? OrdersLabels.deliveryUnclaimFailed
-          : OrdersLabels.deliveryUnclaimSuccess,
     );
   }
 }

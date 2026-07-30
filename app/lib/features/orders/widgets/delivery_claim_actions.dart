@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/order.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import '../../orders/providers/delivery_claim_handler.dart';
 import '../../orders/providers/delivery_claim_providers.dart';
 
 /// Claim/unclaim button + assigned-staff name display for delivery order
@@ -56,40 +57,24 @@ class DeliveryClaimActions extends ConsumerWidget {
                 isClaiming: claimAsync.isLoading,
                 canClaim: canClaim,
                 canUnclaim: canUnclaim,
-                onClaim: () => _claim(ref, context),
-                onUnclaim: () => _unclaim(ref, context),
+                onClaim: () => handleDeliveryClaimAction(
+                  context,
+                  ref,
+                  order.orderRef,
+                  isClaim: true,
+                ),
+                onUnclaim: () => handleDeliveryClaimAction(
+                  context,
+                  ref,
+                  order.orderRef,
+                  isClaim: false,
+                ),
               ),
             ],
           ],
         );
       },
     );
-  }
-
-  Future<void> _claim(WidgetRef ref, BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final notifier = ref.read(orderClaimProvider.notifier);
-    notifier.setOrderRef(order.orderRef);
-    await notifier.claim();
-    final state = ref.read(orderClaimProvider);
-    if (state.hasError) {
-      messenger.showSnackBar(const SnackBar(content: Text(OrdersLabels.deliveryClaimFailed)));
-      return;
-    }
-    showTopSnackBar(context, OrdersLabels.deliveryClaimSuccess);
-  }
-
-  Future<void> _unclaim(WidgetRef ref, BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final notifier = ref.read(orderClaimProvider.notifier);
-    notifier.setOrderRef(order.orderRef);
-    await notifier.unclaim();
-    final state = ref.read(orderClaimProvider);
-    if (state.hasError) {
-      messenger.showSnackBar(const SnackBar(content: Text(OrdersLabels.deliveryUnclaimFailed)));
-      return;
-    }
-    showTopSnackBar(context, OrdersLabels.deliveryUnclaimSuccess);
   }
 }
 
