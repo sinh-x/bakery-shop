@@ -77,15 +77,8 @@ def run_journal_sync(
         return "failed"
     return "ok"
 
-# Backwards-compatible alias kept so any external import of the legacy name
-# continues to resolve to the centralized constant in ``baker.db.schema``.
-_REVENUE_UPDATE_TOLERANCE = REVENUE_UPDATE_TOLERANCE
-
 def sync_status_to_warning(status: str) -> str:
     return "ok" if status == "ok" else "journal_sync_failed"
-
-# Auto-truncation limit for journal_sync_failure_log (NFR4, DG-226).
-_JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS = 10000
 
 def _log_journal_sync_failure(
     conn,

@@ -63,10 +63,10 @@ def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
 
 class OrderItemIn(BaseModel):
     productId: str = ""
-    productName: str
+    productName: str = Field(max_length=200)
     quantity: int = 1
     unitPrice: float = 0.0
-    notes: str = ""
+    notes: str = Field(default="", max_length=2000)
     isBirthday: bool = False
     age: Optional[int] = None
     isExtra: bool = False
@@ -125,19 +125,19 @@ def _validate_google_maps_url(value: Optional[str]) -> Optional[str]:
 
 
 class OrderCreate(BaseModel):
-    customerName: str
-    customerPhone: str = ""
-    deliveryPhone: str = ""
+    customerName: str = Field(max_length=200)
+    customerPhone: str = Field(default="", max_length=20)
+    deliveryPhone: str = Field(default="", max_length=20)
     customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: str = "pickup"
-    deliveryAddress: str = ""
-    notes: str = ""
-    source: str = ""
+    deliveryAddress: str = Field(default="", max_length=1000)
+    notes: str = Field(default="", max_length=10000)
+    source: str = Field(default="", max_length=100)
     deposit: Optional[DepositIn] = None
-    createdBy: str = ""
+    createdBy: str = Field(default="", max_length=100)
     shippingFee: float = 0.0
     status: Optional[str] = None
     paymentMethod: Optional[str] = None
@@ -156,19 +156,19 @@ class OrderCreate(BaseModel):
 
 
 class OrderEdit(BaseModel):
-    customerName: Optional[str] = None
-    customerPhone: Optional[str] = None
-    deliveryPhone: Optional[str] = None
+    customerName: Optional[str] = Field(default=None, max_length=200)
+    customerPhone: Optional[str] = Field(default=None, max_length=20)
+    deliveryPhone: Optional[str] = Field(default=None, max_length=20)
     customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: Optional[str] = None
-    deliveryAddress: Optional[str] = None
-    notes: Optional[str] = None
-    source: Optional[str] = None
+    deliveryAddress: Optional[str] = Field(default=None, max_length=1000)
+    notes: Optional[str] = Field(default=None, max_length=10000)
+    source: Optional[str] = Field(default=None, max_length=100)
     shippingFee: Optional[float] = None
-    changedBy: str = ""
+    changedBy: str = Field(default="", max_length=100)
     workTicketPrintedAt: Optional[str] = None
     publicCodeDateChangeDecision: Optional[str] = None
     # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.

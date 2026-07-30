@@ -96,22 +96,22 @@ class ShellScaffold extends ConsumerWidget {
           const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
-            label: VN.tabDashboard,
+            label: SharedLabels.tabDashboard,
           ),
           NavigationDestination(
             icon: ordersIcon(icon: Icons.receipt_long_outlined),
             selectedIcon: ordersIcon(icon: Icons.receipt_long),
-            label: VN.tabOrders,
+            label: SharedLabels.tabOrders,
           ),
           const NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
-            label: VN.tabProducts,
+            label: SharedLabels.tabProducts,
           ),
           const NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
-            label: VN.tabKnowledgeBase,
+            label: SharedLabels.tabKnowledgeBase,
           ),
           const NavigationDestination(
             icon: Icon(Icons.storefront_outlined),

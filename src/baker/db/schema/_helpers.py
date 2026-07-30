@@ -12,14 +12,16 @@ def _normalize_accessory_name(name: str) -> str:
 
 def _guard_add_column(conn, table: str, column: str, col_def: str):
     """Add a column only if it doesn't already exist (idempotent forward-only migration)."""
-    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
+    if table not in ALLOWED_TABLES:
+        raise ValueError(f"table {table!r} not in ALLOWED_TABLES")
     existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
 
 def _guard_drop_column(conn, table: str, column: str):
     """Drop a column only if it still exists (idempotent forward-only migration)."""
-    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
+    if table not in ALLOWED_TABLES:
+        raise ValueError(f"table {table!r} not in ALLOWED_TABLES")
     existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if column in existing:
         conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")

@@ -12,7 +12,7 @@ import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'catalog_tag_chips.dart';
 import 'catalog_tag_edit_sheet.dart';
 

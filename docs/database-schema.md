@@ -2,7 +2,7 @@
 
 > Date: 2026-07-29
 > Ticket: DG-308 (Phase 5 — Documentation)
-> Source of truth: `src/baker/db/schema.py` (88 incremental migrations)
+> Source of truth: `src/baker/db/schema/` (88 incremental migrations)
 > SQLite runtime requirement: ≥ 3.35.0 (v80 uses `ALTER TABLE ... DROP COLUMN`).
 
 This is the standalone reference for the bakery-shop database schema. It

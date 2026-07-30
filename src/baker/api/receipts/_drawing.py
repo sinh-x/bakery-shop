@@ -13,6 +13,12 @@ MARGIN = 28
 
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 
+# Table column x-positions shared by customer_receipt and items_table
+# renderers (DG-308 CQ-3: de-duplicated from both renderer modules).
+COL_SL = MARGIN + 320   # SL column
+COL_GIA = MARGIN + 380  # Giá column
+COL_TT = RECEIPT_WIDTH - MARGIN  # Thành tiền (right-aligned)
+
 THUMBNAIL_SIZE = 128
 
 LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
@@ -518,6 +524,9 @@ __all__ = [
     'RECEIPT_MAX_HEIGHT',
     'MARGIN',
     'CONTENT_WIDTH',
+    'COL_SL',
+    'COL_GIA',
+    'COL_TT',
     'THUMBNAIL_SIZE',
     'LINE_GAP',
     '_SZ_FOOTER',

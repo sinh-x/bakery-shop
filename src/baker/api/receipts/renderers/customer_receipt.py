@@ -54,9 +54,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     y = _sep(draw, y)
 
     # Table header
-    col_sl = MARGIN + 320  # SL column
-    col_gia = MARGIN + 380  # Giá column
-    col_tt = RECEIPT_WIDTH - MARGIN  # Thành tiền (right-aligned)
+    col_sl = COL_SL
+    col_gia = COL_GIA
+    col_tt = COL_TT
 
     draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
     draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))

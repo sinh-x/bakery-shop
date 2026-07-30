@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/event.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _kTypeIcons = <String, IconData>{
   'note': Icons.edit_note,

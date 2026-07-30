@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/checklist.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ChecklistHistoryScreen extends ConsumerStatefulWidget {
   const ChecklistHistoryScreen({super.key});

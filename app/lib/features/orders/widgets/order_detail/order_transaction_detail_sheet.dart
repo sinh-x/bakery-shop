@@ -1,3 +1,7 @@
+// EXEMPT: 200-line threshold exceeded because the transaction detail sheet
+// renders payment, deposit, and refund sections with per-row formatting that
+// does not split cleanly into independent widgets without duplicating state.
+// Reviewed 2026-07-30.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

@@ -9,9 +9,9 @@ def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
     """Render items table for shop/delivery receipts. Returns y after table."""
     enum_labels = _enum_attribute_labels(conn)
     # Table header
-    col_sl = MARGIN + 320
-    col_gia = MARGIN + 380
-    col_tt = RECEIPT_WIDTH - MARGIN
+    col_sl = COL_SL
+    col_gia = COL_GIA
+    col_tt = COL_TT
 
     draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
     draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))

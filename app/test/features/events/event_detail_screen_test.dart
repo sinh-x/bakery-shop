@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/events/event_detail_screen.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';

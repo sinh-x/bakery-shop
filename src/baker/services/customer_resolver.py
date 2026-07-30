@@ -18,9 +18,12 @@ Resolution chain (matches DG-205 Phase 3 / DG-227 / DG-252):
 """
 
 import sqlite3
+import logging
 from typing import Optional
 
 from baker.db.schema import _strip_diacritics
+
+logger = logging.getLogger("baker.server")
 
 # DG-252 Phase 1 (FR1/FR2/FR3) — the canonical shared walk-in customer name.
 # Reuses the v66 convention (``schema.py:_migrate_v66_repair_customer_links``)
@@ -61,6 +64,10 @@ def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str]
             (nphone,),
         ).fetchall()
     except sqlite3.OperationalError:
+        # OPS-2 (DG-308): log the operational error so silent customer_phones
+        # lookup failures (e.g. table missing pre-v58) are observable rather
+        # than misreported as "no phone match".
+        logger.warning("customer_phones lookup failed", exc_info=True)
         rows = []
     if rows:
         customer_ids = [r["customer_id"] for r in rows]

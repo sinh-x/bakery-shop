@@ -83,25 +83,30 @@ def _refund_entries_on_1200(conn, order_id=None):
     """
     from baker.models.payment_transaction import _invalidation_filter
 
-    invalidation = _invalidation_filter(conn)
+    # SEC-3 (DG-308): _invalidation_filter returns a static whitelist string
+    # ("AND invalidated_at IS NULL" or "") — never user input — but it was
+    # f-string-injected into the SQL. Use a boolean flag + parameterized
+    # placeholder instead so no string interpolation touches the SQL text.
+    include_invalidation = _invalidation_filter(conn) != ""
+    invalidation_clause = "AND invalidated_at IS NULL" if include_invalidation else ""
     sql = f"""
         SELECT je.id AS entry_id, je.source_id AS txn_id,
                pt.order_id AS order_id,
                je.locked_at AS locked_at,
                COALESCE((
-                   SELECT jl.credit
-                   FROM journal_lines jl
-                   JOIN accounts a ON a.id = jl.account_id
-                   WHERE jl.journal_entry_id = je.id AND a.code = ?
-                     AND jl.credit > 0
-                   ORDER BY jl.id LIMIT 1
-               ), 0) AS amount
+                    SELECT jl.credit
+                    FROM journal_lines jl
+                    JOIN accounts a ON a.id = jl.account_id
+                    WHERE jl.journal_entry_id = je.id AND a.code = ?
+                      AND jl.credit > 0
+                    ORDER BY jl.id LIMIT 1
+                ), 0) AS amount
         FROM journal_entries je
         JOIN payment_transactions pt ON pt.id = je.source_id
         WHERE je.source_type = 'payment_transaction'
           AND je.description NOT LIKE 'Reversal:%'
           AND pt.type = 'refund'
-          {invalidation}
+          {invalidation_clause}
           AND EXISTS (
               SELECT 1 FROM journal_lines jl
               JOIN accounts a ON a.id = jl.account_id

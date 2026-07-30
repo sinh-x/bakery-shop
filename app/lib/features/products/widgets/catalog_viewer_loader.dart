@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../providers/catalog_provider.dart';
-import '../../../shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import '../widgets/catalog_photo_viewer.dart';
 
 /// Loads a product's catalog photos and opens the viewer at the requested photo.

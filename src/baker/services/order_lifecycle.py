@@ -27,7 +27,11 @@ This split is preserved by exposing two entry points — see
 ``apply_pre_update_side_effects`` and ``apply_post_update_side_effects``.
 """
 
+import logging
+
 from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+
+logger = logging.getLogger("baker.server")
 
 
 def cascade_main_items_to_status(conn, order_id: int, target_status: str) -> None:
@@ -88,13 +92,29 @@ def apply_pre_update_side_effects(
     if to_status == "confirmed":
         from baker.services.order_stock import auto_decrement_stock
 
-        auto_decrement_stock(conn, order_id, order_ref)
+        # OPS-3 (DG-308): wrap stock mutation so failures are observable via
+        # logs rather than crashing the status transition. Stock errors do not
+        # block the order status change itself (NFR1 mirrors journal-sync).
+        try:
+            auto_decrement_stock(conn, order_id, order_ref)
+        except Exception:
+            logger.exception(
+                "auto_decrement_stock failed for order %s (%s)",
+                order_id, order_ref,
+            )
 
     if to_status == "cancelled":
         from baker.services.order_stock import restore_stock_for_order
         from baker.services.journal_sync import _sync_cancelled_order_journal
 
-        restore_stock_for_order(conn, order_id, order_ref)
+        # OPS-3 (DG-308): wrap stock restoration for the same reason as above.
+        try:
+            restore_stock_for_order(conn, order_id, order_ref)
+        except Exception:
+            logger.exception(
+                "restore_stock_for_order failed for order %s (%s)",
+                order_id, order_ref,
+            )
         sync_status = run_journal_sync(
             _sync_cancelled_order_journal,
             conn, order_id,

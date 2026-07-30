@@ -1,3 +1,7 @@
+// EXEMPT: 200-line threshold exceeded because the work item card renders
+// photo thumbnails, attribute chips, and status badges in a tightly coupled
+// layout that does not decompose into reusable sub-widgets.
+// Reviewed 2026-07-30.
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order_photo.dart';

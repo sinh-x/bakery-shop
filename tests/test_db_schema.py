@@ -4242,3 +4242,52 @@ def test_v88_idempotent_on_already_migrated_db():
         }
         assert "idx_orders_status_due_date" in indexes
         assert "idx_orders_customer_id_created_at" in indexes
+
+
+def test_schema_all_matches_imported_symbols():
+    """Verify ``baker.db.schema.__all__`` entries match the symbols actually
+    importable from the package.
+
+    DG-308 CQ-4 — the 173-entry manual ``__all__`` barrel is fragile: adding a
+    migration requires 3 manual edits (define, import, __all__). This test
+    catches drift between the ``__all__`` list and the package's actual public
+    surface so a missing entry is detected before release.
+    """
+    import baker.db.schema as schema_mod
+    import types as _types
+
+    declared = set(getattr(schema_mod, "__all__", []))
+    # Resolve the actual public symbols: everything importable from the package
+    # that is not a dunder, not a submodule, and not a pytest-internal attr.
+    actual = {
+        name
+        for name in dir(schema_mod)
+        if not name.startswith("__")
+        and not name.startswith("_pytest")
+        and getattr(schema_mod, name) is not None
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+    # Private (underscore-prefixed) helpers ARE part of the documented public
+    # surface (migrations import them), so they are included in __all__ but
+    # excluded from dir() filtering above only when they start with "_". Add
+    # back the underscore-prefixed names that are actually importable and are
+    # not submodules.
+    actual |= {
+        name
+        for name in declared
+        if name.startswith("_")
+        and hasattr(schema_mod, name)
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+
+    missing_from_all = actual - declared
+    extra_in_all = declared - actual
+
+    assert not missing_from_all, (
+        f"Symbols importable from baker.db.schema but missing from __all__: "
+        f"{sorted(missing_from_all)}"
+    )
+    assert not extra_in_all, (
+        f"Symbols declared in __all__ but not importable from baker.db.schema: "
+        f"{sorted(extra_in_all)}"
+    )

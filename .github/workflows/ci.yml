@@ -238,7 +238,9 @@ jobs:
         # Phase 4.4 (FR-CI-2) — enforce Flutter dependency freshness. Fails
         # the job when any direct dependency has a newer compatible version,
         # prompting maintainers to keep packages up to date.
-        run: flutter pub outdated --no-color
+        # OPS-1 (DG-308): scope to direct dependencies only (--no-dev-dependencies
+        # --no-transitive) so unrelated transitive/dev dep updates don't block PRs.
+        run: flutter pub outdated --no-color --no-dev-dependencies --no-transitive
         working-directory: app
 
       - name: Check code generation freshness

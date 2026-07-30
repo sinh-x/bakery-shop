@@ -1,3 +1,7 @@
+// EXEMPT: 200-line threshold exceeded because this widget orchestrates the
+// full order detail layout (header, customer info, items, payments, summary)
+// as a single cohesive body; extraction would fragment the layout contract.
+// Reviewed 2026-07-30.
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

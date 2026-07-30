@@ -6,7 +6,7 @@ import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
 import '../../providers/catalog_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
     if (kIsWeb) 'services/bulk_download_web.dart'
