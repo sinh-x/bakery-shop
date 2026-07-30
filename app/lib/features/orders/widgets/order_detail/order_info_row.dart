@@ -7,11 +7,16 @@ class OrderInfoRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.valueStyle,
   });
 
   final IconData icon;
   final String label;
   final String value;
+
+  /// Optional override for the value text style (e.g. italic for placeholder
+  /// values). When null, defaults to `theme.textTheme.bodyMedium`.
+  final TextStyle? valueStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +37,12 @@ class OrderInfoRow extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+          Expanded(
+            child: Text(
+              value,
+              style: valueStyle ?? theme.textTheme.bodyMedium,
+            ),
+          ),
         ],
       ),
     );
