@@ -71,7 +71,12 @@ class DeliveryClaimActions extends ConsumerWidget {
     final notifier = ref.read(orderClaimProvider.notifier);
     notifier.setOrderRef(order.orderRef);
     await notifier.claim();
-    _reportError(ref, messenger, OrdersLabels.deliveryClaimFailed);
+    final state = ref.read(orderClaimProvider);
+    if (state.hasError) {
+      messenger.showSnackBar(const SnackBar(content: Text(OrdersLabels.deliveryClaimFailed)));
+      return;
+    }
+    showTopSnackBar(context, OrdersLabels.deliveryClaimSuccess);
   }
 
   Future<void> _unclaim(WidgetRef ref, BuildContext context) async {
@@ -79,15 +84,12 @@ class DeliveryClaimActions extends ConsumerWidget {
     final notifier = ref.read(orderClaimProvider.notifier);
     notifier.setOrderRef(order.orderRef);
     await notifier.unclaim();
-    _reportError(ref, messenger, OrdersLabels.deliveryUnclaimFailed);
-  }
-
-  void _reportError(
-      WidgetRef ref, ScaffoldMessengerState messenger, String message) {
     final state = ref.read(orderClaimProvider);
     if (state.hasError) {
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.showSnackBar(const SnackBar(content: Text(OrdersLabels.deliveryUnclaimFailed)));
+      return;
     }
+    showTopSnackBar(context, OrdersLabels.deliveryUnclaimSuccess);
   }
 }
 

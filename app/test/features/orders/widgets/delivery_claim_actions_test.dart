@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/providers/delivery_claim_providers.dart';
@@ -11,6 +12,7 @@ import 'package:bakery_app/features/orders/widgets/delivery_claim_actions.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_order_card.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:dio/dio.dart';
 
 const _testRef = 'TEST-DELIVERY-1';
 
@@ -89,6 +91,86 @@ Future<Widget> _buildApp(
   );
 }
 
+/// Fake [OrderService] for snackbar tests — resolves claim/unclaim/detail/list
+/// without hitting the network. `failAssign`/`failUnclaim` simulate API errors.
+class _FakeClaimOrderService extends OrderService {
+  _FakeClaimOrderService(
+    this.base, {
+    this.failAssign = false,
+    this.failUnclaim = false,
+  }) : super(Dio(BaseOptions(baseUrl: 'http://test')));
+
+  final Order base;
+  final bool failAssign;
+  final bool failUnclaim;
+
+  @override
+  Future<Order> assignOrder(String ref) async {
+    if (failAssign) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/api/orders/$ref/assign'),
+      );
+    }
+    return base.copyWith(assignedStaffId: '7', assignedStaffName: 'Người Giao A');
+  }
+
+  @override
+  Future<Order> unassignOrder(String ref) async {
+    if (failUnclaim) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/api/orders/$ref/unassign'),
+      );
+    }
+    return base.copyWith(assignedStaffId: null, assignedStaffName: '');
+  }
+
+  @override
+  Future<Order> getOrder(String ref) async => base;
+
+  @override
+  Future<List<Order>> listOrders({
+    String? status,
+    String? dueDate,
+    String? dueDateFrom,
+    String? dueDateTo,
+    int limit = 50,
+    int offset = 0,
+    bool activeOnly = false,
+  }) async => [base];
+}
+
+Future<Widget> _buildSnackbarApp(
+  Order order,
+  CurrentStaff staff, {
+  bool failAssign = false,
+  bool failUnclaim = false,
+}) async {
+  SharedPreferences.setMockInitialValues(<String, Object>{});
+  final prefs = await SharedPreferences.getInstance();
+  final service = _FakeClaimOrderService(
+    order,
+    failAssign: failAssign,
+    failUnclaim: failUnclaim,
+  );
+  return ProviderScope(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      currentStaffProvider.overrideWith((ref) async => staff),
+      orderServiceProvider.overrideWithValue(service),
+      orderPhotosProvider(order.orderRef)
+          .overrideWith(_FakeOrderPhotosNotifier.new),
+    ],
+    child: MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 400,
+          child: DeliveryOrderCard(order: order, onTap: () {}),
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -107,13 +189,13 @@ void main() {
     expect(find.text(OrdersLabels.deliveryUnclaimButton), findsNothing);
   });
 
-  // AC9: non-delivery staff does not see the claim button.
-  testWidgets('AC9: non giao-hang staff does not see claim button',
+  // AC9: any linked staff sees the claim button.
+  testWidgets('AC9: any linked staff sees claim button',
       (tester) async {
     await tester.pumpWidget(await _buildApp(_deliveryOrder(), _nonDeliveryStaff()));
     await tester.pump();
 
-    expect(find.text(OrdersLabels.deliveryClaimButton), findsNothing);
+    expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
     expect(find.text(OrdersLabels.deliveryUnclaimButton), findsNothing);
   });
 
@@ -203,15 +285,57 @@ void main() {
           ),
         );
 
-    testWidgets('renders nothing for non-delivery staff', (tester) async {
+    testWidgets('renders claim button for any linked staff', (tester) async {
       await tester.pumpWidget(
         standalone(_deliveryOrder(), _nonDeliveryStaff()),
       );
       await tester.pump();
 
       expect(find.byType(DeliveryClaimActions), findsOneWidget);
-      expect(find.text(OrdersLabels.deliveryClaimButton), findsNothing);
-      expect(find.text(OrdersLabels.deliveryUnassigned), findsNothing);
+      expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
+      expect(find.text(OrdersLabels.deliveryUnassigned), findsOneWidget);
+    });
+  });
+
+  group('DeliveryClaimActions snackbar feedback (Phase 1 — AC6)', () {
+    testWidgets('claim success shows success snackbar', (tester) async {
+      await tester
+          .pumpWidget(await _buildSnackbarApp(_deliveryOrder(), _giaoHangStaff()));
+      await tester.pump();
+
+      await tester.tap(find.text(OrdersLabels.deliveryClaimButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text(OrdersLabels.deliveryClaimSuccess), findsOneWidget);
+    });
+
+    testWidgets('unclaim success shows success snackbar', (tester) async {
+      final order = _deliveryOrder(
+        assignedStaffId: '7',
+        assignedStaffName: 'Người Giao A',
+      );
+      await tester
+          .pumpWidget(await _buildSnackbarApp(order, _giaoHangStaff(staffId: 7)));
+      await tester.pump();
+
+      await tester.tap(find.text(OrdersLabels.deliveryUnclaimButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text(OrdersLabels.deliveryUnclaimSuccess), findsOneWidget);
+    });
+
+    testWidgets('claim failure shows error snackbar', (tester) async {
+      await tester.pumpWidget(await _buildSnackbarApp(
+        _deliveryOrder(),
+        _giaoHangStaff(),
+        failAssign: true,
+      ));
+      await tester.pump();
+
+      await tester.tap(find.text(OrdersLabels.deliveryClaimButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text(OrdersLabels.deliveryClaimFailed), findsOneWidget);
     });
   });
 }

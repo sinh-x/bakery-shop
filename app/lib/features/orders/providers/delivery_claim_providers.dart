@@ -4,6 +4,7 @@ import '../../../data/api/order_service.dart';
 import '../../../data/api/staff_service.dart';
 import '../../../data/models/order.dart';
 import '../../../features/auth/auth_provider.dart';
+import '../../../providers/order/order_detail_notifier.dart';
 import '../../../providers/order/order_list_providers.dart';
 import '../../../providers/staff_provider.dart';
 import '../../../providers/user_binding_provider.dart';
@@ -26,7 +27,7 @@ class CurrentStaff {
   final String role;
   final bool isAdmin;
 
-  bool get canClaim => isAdmin || role == 'giao-hang';
+  bool get canClaim => isAdmin || staffId != null;
   bool get canUnclaim => canClaim;
 
   String? get staffIdAsString => staffId?.toString();
@@ -60,8 +61,10 @@ final currentStaffProvider = FutureProvider<CurrentStaff>((ref) async {
 });
 
 /// Notifier that performs claim/unclaim on a single delivery order and
-/// refreshes the shared [orderListProvider] so all delivery cards update
-/// (FR5/FR6/AC6/AC8). One instance per `orderRef`.
+/// refreshes both the shared [orderListProvider] (so delivery cards update)
+/// and the family-scoped [orderDetailProvider] for the active order (so the
+/// order detail screen reflects the new assignment immediately —
+/// FR1/FR2/AC1/AC2). One instance per `orderRef`.
 class OrderClaimNotifier extends AsyncNotifier<Order?> {
   String _orderRef = '';
 
@@ -76,6 +79,10 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
     state = await AsyncValue.guard(() async {
       final updated = await service.assignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
+      // Refresh the order detail screen so the new assignment shows
+      // immediately (FR1/AC1). Matches the established pattern used by
+      // payment/work-item notifiers.
+      ref.read(orderDetailProvider(_orderRef).notifier).refresh();
       return updated;
     });
   }
@@ -86,6 +93,7 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
     state = await AsyncValue.guard(() async {
       final updated = await service.unassignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
+      ref.read(orderDetailProvider(_orderRef).notifier).refresh();
       return updated;
     });
   }

@@ -237,6 +237,8 @@ class OrdersLabels {
   static const deliveryUnassigned = 'Chưa nhận';
   static const deliveryClaimFailed = 'Không nhận được đơn hàng.';
   static const deliveryUnclaimFailed = 'Không trả được đơn hàng.';
+  static const deliveryClaimSuccess = 'Đã nhận giao';
+  static const deliveryUnclaimSuccess = 'Đã trả đơn';
 
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
