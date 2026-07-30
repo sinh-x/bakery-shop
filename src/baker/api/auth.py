@@ -547,7 +547,7 @@ def resolve_staff_record(request: Request) -> Optional[dict]:
     a dict ``{"staff_id": int, "name": str, "role": str}`` when a valid JWT user
     is linked to a staff member, or ``None`` when no JWT identity is present or
     no staff link exists (grace period). Used by the assign/unassign endpoints
-    to enforce the ``giao-hang`` role check and identify the claiming staff.
+    to identify the claiming staff (any linked staff member may claim).
     """
     auth_username = getattr(request.state, "auth_username", None)
     if not auth_username:

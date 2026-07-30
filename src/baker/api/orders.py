@@ -1116,8 +1116,8 @@ def update_payment(ref: str, body: PaymentUpdate, request: Request):
 # ---------------------------------------------------------------------------
 # Delivery staff claiming — assign / unassign (DG-310 Phase 3, FR5/FR6)
 #
-# ``POST /api/orders/{ref}/assign``    — a staff member with the ``giao-hang``
-#   role claims a non-terminal delivery order. Single-assignee is enforced
+# ``POST /api/orders/{ref}/assign``    — any linked staff member claims a
+#   non-terminal delivery order. Single-assignee is enforced
 #   via a check-and-set UPDATE (race-safe under SQLite's serializable writes):
 #   the UPDATE only matches rows where ``assigned_staff_id IS NULL``, so a
 #   concurrent claim by staff B sees 0 affected rows and is rejected (AC10).
