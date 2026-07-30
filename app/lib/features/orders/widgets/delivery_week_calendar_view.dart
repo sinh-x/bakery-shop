@@ -19,10 +19,15 @@ class DeliveryWeekCalendarView extends ConsumerStatefulWidget {
     super.key,
     required this.orders,
     required this.onRefresh,
+    this.initialWeekStart,
   });
 
   final List<Order> orders;
   final Future<void> Function() onRefresh;
+
+  /// Optional initial week-start (a Monday) to focus on first build
+  /// (FR3/AC3). When null, defaults to the week containing today.
+  final DateTime? initialWeekStart;
 
   @override
   ConsumerState<DeliveryWeekCalendarView> createState() =>
@@ -31,7 +36,8 @@ class DeliveryWeekCalendarView extends ConsumerStatefulWidget {
 
 class _DeliveryWeekCalendarViewState
     extends ConsumerState<DeliveryWeekCalendarView> {
-  late DateTime _weekStart = startOfWeek(DateTime.now());
+  late DateTime _weekStart =
+      widget.initialWeekStart ?? startOfWeek(DateTime.now());
 
   void _shift(int weeks) => setState(() {
         _weekStart = _weekStart.add(Duration(days: 7 * weeks));

@@ -21,8 +21,9 @@ class DeliveryContent extends ConsumerStatefulWidget {
 class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   bool _showToday = true;
 
-  /// View mode for the delivery tab: 'list' (default), 'week', or 'day'.
-  String _viewMode = 'list';
+  /// View mode for the delivery tab: 'day' (default), 'week', or 'list'.
+  /// Defaults to 'day' per FR1/AC1 so the day calendar is shown on open.
+  String _viewMode = 'day';
 
   Future<void> _onRefresh() async {
     await ref.read(orderListProvider.notifier).refresh();
@@ -57,6 +58,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
             filterDeliveryOrders(orders, todayOnly: false);
         final listOrders =
             filterDeliveryOrders(orders, todayOnly: _showToday);
+        // Auto-focus the calendars on the next upcoming non-terminal
+        // delivery order (FR2/FR3/AC2/AC3); fall back to today when none
+        // (AC4). Computed once per rebuild from the non-terminal set.
+        final nextDue = findNextDueDate(calendarOrders) ?? DateTime.now();
+        final nextDueWeekStart = startOfWeek(nextDue);
 
         return Column(
           children: [
@@ -87,7 +93,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
               ),
             ),
             Expanded(
-              child: _buildView(calendarOrders, listOrders),
+              child: _buildView(calendarOrders, listOrders, nextDue, nextDueWeekStart),
             ),
           ],
         );
@@ -95,17 +101,24 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
     );
   }
 
-  Widget _buildView(List<Order> calendarOrders, List<Order> listOrders) {
+  Widget _buildView(
+    List<Order> calendarOrders,
+    List<Order> listOrders,
+    DateTime nextDue,
+    DateTime nextDueWeekStart,
+  ) {
     switch (_viewMode) {
       case 'week':
         return DeliveryWeekCalendarView(
           orders: calendarOrders,
           onRefresh: _onRefresh,
+          initialWeekStart: nextDueWeekStart,
         );
       case 'day':
         return DeliveryDayCalendarView(
           orders: calendarOrders,
           onRefresh: _onRefresh,
+          initialDate: nextDue,
         );
       default:
         if (listOrders.isEmpty) {

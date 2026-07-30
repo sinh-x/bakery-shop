@@ -14,10 +14,15 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
     super.key,
     required this.orders,
     required this.onRefresh,
+    this.initialDate,
   });
 
   final List<Order> orders;
   final Future<void> Function() onRefresh;
+
+  /// Optional initial focus date (FR2/AC2). When null or today, the view
+  /// defaults to today — matching the pre-existing behavior.
+  final DateTime? initialDate;
 
   @override
   ConsumerState<DeliveryDayCalendarView> createState() =>
@@ -26,7 +31,7 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
 
 class _DeliveryDayCalendarViewState
     extends ConsumerState<DeliveryDayCalendarView> {
-  late DateTime _date = DateTime.now();
+  late DateTime _date = widget.initialDate ?? DateTime.now();
 
   void _shift(int days) => setState(() {
         _date = _date.add(Duration(days: days));
