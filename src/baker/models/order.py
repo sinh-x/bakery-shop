@@ -444,7 +444,13 @@ class Order:
         return True
 
     @staticmethod
-    def from_row(row, conn, *, amount_paid: Optional[float] = None) -> "Order":
+    def from_row(
+        row,
+        conn,
+        *,
+        amount_paid: Optional[float] = None,
+        assigned_staff_name: Optional[str] = None,
+    ) -> "Order":
         """Build an ``Order`` from a DB row.
 
         ``conn`` is required (v80+ dropped the stored ``amount_paid`` column
@@ -460,6 +466,16 @@ class Order:
         via ``amount_paid=`` to avoid a duplicate query (DG-274 review-auto
         c1 / CQ-1, CQ-2). The value is cached on the returned ``Order``
         instance as ``order.amount_paid``.
+
+        ``assigned_staff_name`` (keyword-only, optional) — a precomputed
+        display name for ``row["assigned_staff_id"]``. When ``None`` (default),
+        the name is resolved with a per-order ``SELECT name FROM staff`` query
+        (N+1). Callers that already JOINed staff into the row (e.g.
+        ``list_orders`` in ``api/orders.py`` via
+        ``LEFT JOIN staff ON staff.id = orders.assigned_staff_id``) should pass
+        it via ``assigned_staff_name=`` to skip the per-order query (DG-311
+        review-uat c1 / CQ-1). Pass an empty string for an unassigned order;
+        ``None`` means "no resolved name available, fall back to query".
         """
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
@@ -499,7 +515,15 @@ class Order:
         # Resolve the assigned staff display name via JOIN (DG-310 Phase 3).
         # The name is not stored on the orders row so it stays in sync with
         # staff.name changes. Only one lookup per order (NFR3).
-        if order.assigned_staff_id is not None:
+        # DG-311 review-uat c1 / CQ-1: when the caller already JOINed staff
+        # into the row and forwarded the resolved name via the
+        # ``assigned_staff_name`` keyword, skip the per-order SELECT to avoid
+        # an N+1 in list_orders. ``None`` means no resolved name was supplied;
+        # an empty string means the JOIN found no matching staff row (NULL FK
+        # or missing staff record).
+        if assigned_staff_name is not None:
+            order.assigned_staff_name = assigned_staff_name
+        elif order.assigned_staff_id is not None:
             staff_row = conn.execute(
                 "SELECT name FROM staff WHERE id = ?",
                 (order.assigned_staff_id,),

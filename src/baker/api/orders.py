@@ -365,8 +365,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -380,8 +380,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -394,7 +394,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
+                        AND orders.created_at >= ?
                     )
                 )"""
             )
@@ -407,7 +407,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at < ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -422,7 +422,9 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
@@ -432,37 +434,50 @@ def list_orders(
                 # the live-computed amount_paid (stored column was dropped in
                 # v80). The cached amount_paid is forwarded to from_row so we
                 # don't re-query total_paid_excl_outflows for the rows we keep.
+                # DG-311 review-uat c1 / CQ-1: staff name is JOINed once here
+                # and forwarded to from_row to avoid an N+1 per-order SELECT.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
             for r in rows:
                 # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
                 # delivered+paid filter as the active_only branch above.
+                # DG-311 review-uat c1 / CQ-1: staff name JOINed above.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         rows = conn.execute(
-            f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT orders.*, s.name AS assigned_staff_name "
+            f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+            f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
         return [
-            Order.from_row(r, conn).to_api_dict(threshold_minutes=threshold_minutes)
+            Order.from_row(
+                r,
+                conn,
+                assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
+            ).to_api_dict(threshold_minutes=threshold_minutes)
             for r in rows
         ]
 
