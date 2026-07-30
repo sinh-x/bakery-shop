@@ -344,6 +344,13 @@ class Order:
     google_maps_url: Optional[str] = None
     delivery_time_slot: Optional[str] = None
 
+    # DG-310 Phase 3 (FR5/FR6/FR7): delivery staff claiming. ``assigned_staff_id``
+    # is the persisted logical FK to ``staff.id`` (NULL = unassigned). The display
+    # name is resolved via JOIN in ``Order.from_row`` — it is never stored on the
+    # orders row, so it stays in sync if the staff name changes.
+    assigned_staff_id: Optional[str] = None
+    assigned_staff_name: str = ""
+
     amount_paid = 0.0
 
     @staticmethod
@@ -486,6 +493,18 @@ class Order:
             delivery_time_slot=row["delivery_time_slot"] if "delivery_time_slot" in row.keys() else None,
         )
         order.amount_paid = amount_paid
+        order.assigned_staff_id = (
+            row["assigned_staff_id"] if "assigned_staff_id" in row.keys() else None
+        )
+        # Resolve the assigned staff display name via JOIN (DG-310 Phase 3).
+        # The name is not stored on the orders row so it stays in sync with
+        # staff.name changes. Only one lookup per order (NFR3).
+        if order.assigned_staff_id is not None:
+            staff_row = conn.execute(
+                "SELECT name FROM staff WHERE id = ?",
+                (order.assigned_staff_id,),
+            ).fetchone()
+            order.assigned_staff_name = staff_row["name"] if staff_row else ""
         return order
 
     def compute_completeness(self) -> tuple[list[str], str]:
@@ -568,6 +587,8 @@ class Order:
             "longitude": self.longitude,
             "googleMapsUrl": self.google_maps_url,
             "deliveryTimeSlot": self.delivery_time_slot,
+            "assignedStaffId": self.assigned_staff_id,
+            "assignedStaffName": self.assigned_staff_name,
             "urgency": compute_urgency(
                 self.due_date,
                 self.due_time,

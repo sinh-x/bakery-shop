@@ -185,6 +185,7 @@ from .migrations.v084 import _migrate_v84_order_item_assigned_price  # noqa: F40
 from .migrations.v085 import _migrate_v85_add_account_1600  # noqa: F401
 from .migrations.v086 import _migrate_v86_expense_categories  # noqa: F401
 from .migrations.v087 import _migrate_v87_order_delivery_schedule_gps  # noqa: F401
+from .migrations.v089 import _migrate_v89_order_assigned_staff_id  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -347,6 +348,7 @@ __all__ = [
     '_migrate_v85_add_account_1600',
     '_migrate_v86_expense_categories',
     '_migrate_v87_order_delivery_schedule_gps',
+    '_migrate_v89_order_assigned_staff_id',
     '_migrate_v8_photos',
     '_normalize_accessory_name',
     '_normalize_phone',
