@@ -1143,7 +1143,7 @@ def assign_order(ref: str, request: Request):
     """Gán đơn hàng giao cho nhân viên đang đăng nhập (FR5, AC6, AC10).
 
     Resolves the acting staff from the JWT via ``resolve_staff_record``.
-    The staff must have the ``giao-hang`` role and the order must be
+    The staff must be a linked staff member and the order must be
     non-terminal and not already claimed. Single-assignee is enforced by the
     conditional UPDATE (``assigned_staff_id IS NULL``).
     """
@@ -1152,11 +1152,6 @@ def assign_order(ref: str, request: Request):
         raise HTTPException(
             status_code=403,
             detail="Không xác định được nhân viên từ phiên đăng nhập.",
-        )
-    if staff["role"] != "giao-hang":
-        raise HTTPException(
-            status_code=403,
-            detail="Chỉ nhân viên giao hàng mới được nhận đơn.",
         )
 
     with get_db() as conn:

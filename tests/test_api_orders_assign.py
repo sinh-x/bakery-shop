@@ -6,7 +6,7 @@ Covers FR5, FR6, AC6, AC8, AC10, NFR4:
   - AC8: assigned staff (or admin) unclaims → assignment cleared.
   - AC10: second staff claims an already-claimed order → 409 rejected
     (single-assignee).
-  - Role gating: non giao-hang staff → 403 on assign.
+  - Role gating: any linked staff member can claim (no giao-hang role gate).
   - Terminal-status gating: delivered/completed/cancelled → 422 on assign.
   - NFR4: existing orders have NULL assigned_staff_id (backward compatible).
 """
@@ -172,14 +172,14 @@ def test_assign_returns_assigned_staff_name_on_detail(auth_client):
 # ---------------------------------------------------------------------------
 
 
-def test_assign_rejects_non_giao_hang_staff(auth_client):
-    """FR5: staff without giao-hang role cannot claim (403)."""
+def test_assign_allows_any_linked_staff(auth_client):
+    """Any linked staff (not just giao-hang) can claim an order."""
     with get_db() as conn:
         token = _seed_staff_user(conn, "baker1", "Thợ Nướng", "tho-nuong")
 
     order = _create_order()
     resp = auth_client.post(f"/api/orders/{order['orderRef']}/assign", headers=_auth_headers(token))
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 def test_assign_rejects_when_no_staff_link(auth_client):
