@@ -66,7 +66,7 @@ Environment used for reproducible evidence:
 - Order create with `status=delivered` calls stock decrement:
   - `src/baker/api/orders.py` (`create_order` -> `_auto_decrement_stock`)
 - Chip validation and chip-specific FIFO consumption path:
-  - `src/baker/api/inventory_fifo.py`
+  - `src/baker/services/inventory_fifo.py`
   - `consume_fifo_items(...)` raises HTTP 422 detail `"Không đủ tồn kho"` when remaining quantity is insufficient.
 
 ## Root-Cause Hypothesis (Phase 2 input)

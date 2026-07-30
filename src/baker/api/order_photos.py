@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
+from baker.utils.db import row_to_dict as _row_to_dict
 from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
@@ -20,10 +21,6 @@ router = APIRouter(prefix="/api/orders", tags=["order-photos"])
 class OrderPhotoUpdate(BaseModel):
     tags: str | None = None
     position: int | None = None
-
-
-def _row_to_dict(row) -> dict:
-    return dict(row)
 
 
 def _get_order_or_404(conn, ref: str):

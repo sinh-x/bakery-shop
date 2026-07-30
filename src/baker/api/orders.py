@@ -1,7 +1,6 @@
 """Order management API routes."""
 
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -9,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
-from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
+from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.config import get_delivery_critical_threshold
 from baker.models.order import (
@@ -23,7 +22,13 @@ from baker.models.order import (
 )
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
-from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.services.customer_resolver import (
+    WALK_IN_SHARED_CUSTOMER_NAME,
+    _get_or_create_walk_in_customer_id,
+    _resolve_customer_id_by_phone,
+    _resolve_or_create_customer_id,
+)
+from baker.services.order_stock import auto_decrement_stock
 from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.utils.time import now_utc
 
@@ -56,158 +61,12 @@ def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
     return (amount_paid >= float(row["total_price"]), amount_paid)
 
 
-def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
-    """Resolve a customer_id from a phone number via the ``customer_phones`` table.
-
-    DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
-    ``customer_phones`` (not just the primary), so an order with a secondary
-    phone still links to the owning customer. When several customers share the
-    same phone, the earliest-order-wins rule (consistent with v57) picks the
-    customer whose earliest order has the smallest created_at/id.
-
-    Falls back to the legacy ``customers.phone`` column when ``customer_phones``
-    has no match (e.g. pre-v58 databases or customers created before Phase 1).
-
-    DG-227 Phase 1 (FR1). When phone lookup returns nothing, falls back to a
-    name-based lookup via ``customers.search_name`` (case-insensitive,
-    diacritic-insensitive). Returns the first match ordered by id ASC.
-    Returns ``None`` when no customer matches.
-    """
-    from baker.db.schema import _normalize_phone
-
-    nphone = _normalize_phone(phone or "")
-    if not nphone:
-        return None
-
-    # Primary path: match against customer_phones.phone (any row, normalized).
-    # SQLite stores phones as free text; we normalize for comparison, so the
-    # query pulls candidate rows and resolves the winner in Python to apply the
-    # earliest-order-wins tiebreak consistently with v57.
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
-            (nphone,),
-        ).fetchall()
-    except sqlite3.OperationalError:
-        rows = []
-    if rows:
-        customer_ids = [r["customer_id"] for r in rows]
-        if len(customer_ids) == 1:
-            return customer_ids[0]
-        # FR8: multiple customers share the phone — earliest-order-wins. Pick
-        # the customer whose earliest order has the minimum created_at, then id.
-        placeholders = ",".join("?" for _ in customer_ids)
-        winner = conn.execute(
-            f"SELECT customer_id, MIN(created_at) AS first_at "
-            f"FROM orders WHERE customer_id IN ({placeholders}) "
-            f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
-            customer_ids,
-        ).fetchone()
-        if winner is not None:
-            return winner["customer_id"]
-        # No orders yet for any candidate — fall back to the lowest customer_id
-        # for deterministic behavior.
-        return min(customer_ids)
-
-    # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
-    # M-1: normalize the stored column at query time so legacy rows that still
-    # contain separators (dashes/dots/spaces) match the normalized search value.
-    # This mirrors _normalize_phone (strip spaces, dots, dashes) in SQL.
-    legacy = conn.execute(
-        "SELECT id FROM customers "
-        "WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '.', ''), '-', '') = ? "
-        "ORDER BY id ASC LIMIT 1",
-        (nphone,),
-    ).fetchone()
-    if legacy:
-        return legacy["id"]
-
-    # Tertiary path: name-based fallback (DG-227 FR1).
-    # Strip diacritics for case-insensitive, diacritic-insensitive matching
-    # against the pre-computed ``customers.search_name`` column.
-    if customer_name and customer_name.strip():
-        normalized_name = _strip_diacritics(customer_name.strip())
-        name_match = conn.execute(
-            "SELECT id FROM customers WHERE search_name = ? ORDER BY id ASC LIMIT 1",
-            (normalized_name,),
-        ).fetchone()
-        return name_match["id"] if name_match else None
-
-    return None
-
-
-# DG-252 Phase 1 (FR1/FR2/FR3) — the canonical shared walk-in customer name.
-# Reuses the v66 convention (``schema.py:_migrate_v66_repair_customer_links``)
-# so there is exactly one shared "Khách lẻ" record for all identity-less orders.
-WALK_IN_SHARED_CUSTOMER_NAME = "Khách lẻ"
-
-
-def _get_or_create_walk_in_customer_id(conn) -> int:
-    """Return the id of the single shared "Khách lẻ" walk-in customer.
-
-    DG-252 Phase 1 (FR2). Matches the v66 semantics at
-    ``schema.py:_migrate_v66_repair_customer_links``: exactly one shared record
-    (LOWERCASE comparison on ``customers.name``), never one-per-order. Creates
-    the row if it does not yet exist so the first identity-less order
-    materialises it.
-    """
-    existing = conn.execute(
-        "SELECT id FROM customers WHERE LOWER(name) = ? ORDER BY id ASC LIMIT 1",
-        (WALK_IN_SHARED_CUSTOMER_NAME.lower(),),
-    ).fetchone()
-    if existing is not None:
-        return existing["id"]
-    from baker.models.customer import Customer
-
-    cust = Customer(name=WALK_IN_SHARED_CUSTOMER_NAME, phone="")
-    return cust.save(conn)
-
-
-def _resolve_or_create_customer_id(
-    conn, phone: Optional[str], customer_name: Optional[str]
-) -> int:
-    """Guarantee a non-NULL ``customer_id`` for an order (DG-252 Phase 1).
-
-    Resolution chain (matches FR1/FR2/AC1):
-      1. ``phone``→``name`` resolution via ``_resolve_customer_id_by_phone``
-         (existing phone-then-name lookup with earliest-order-wins tiebreak).
-      2. Auto-create a server-side customer when step 1 returns ``None`` AND
-         the order carries a name and/or a phone (FR1).
-      3. Otherwise (no name AND no phone) link to the shared "Khách lẻ"
-         walk-in record via ``_get_or_create_walk_in_customer_id`` (FR2).
-
-    Always returns a positive integer customer id.
-    """
-    resolved = _resolve_customer_id_by_phone(conn, phone, customer_name=customer_name)
-    if resolved is not None:
-        return resolved
-
-    has_name = bool(customer_name and customer_name.strip())
-    has_phone = bool(phone and phone.strip())
-    if has_name or has_phone:
-        from baker.models.customer import Customer
-
-        name = customer_name.strip() if has_name else "Khách"
-        # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the new
-        # customer is visible to `/duplicates` (which joins on customer_phones)
-        # and so a later merge preserves its phone. Without this row the
-        # phone-only lives in the legacy `customers.phone` column, which the
-        # dedup finder and merge copy loop never consult.
-        phones = (
-            [{"phone": phone, "isPrimary": True}] if has_phone else []
-        )
-        cust = Customer(name=name, phone=phone or "", phones=phones)
-        return cust.save(conn)
-
-    return _get_or_create_walk_in_customer_id(conn)
-
-
 class OrderItemIn(BaseModel):
     productId: str = ""
-    productName: str
+    productName: str = Field(max_length=200)
     quantity: int = 1
     unitPrice: float = 0.0
-    notes: str = ""
+    notes: str = Field(default="", max_length=2000)
     isBirthday: bool = False
     age: Optional[int] = None
     isExtra: bool = False
@@ -266,19 +125,19 @@ def _validate_google_maps_url(value: Optional[str]) -> Optional[str]:
 
 
 class OrderCreate(BaseModel):
-    customerName: str
-    customerPhone: str = ""
-    deliveryPhone: str = ""
+    customerName: str = Field(max_length=200)
+    customerPhone: str = Field(default="", max_length=20)
+    deliveryPhone: str = Field(default="", max_length=20)
     customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: str = "pickup"
-    deliveryAddress: str = ""
-    notes: str = ""
-    source: str = ""
+    deliveryAddress: str = Field(default="", max_length=1000)
+    notes: str = Field(default="", max_length=10000)
+    source: str = Field(default="", max_length=100)
     deposit: Optional[DepositIn] = None
-    createdBy: str = ""
+    createdBy: str = Field(default="", max_length=100)
     shippingFee: float = 0.0
     status: Optional[str] = None
     paymentMethod: Optional[str] = None
@@ -297,19 +156,19 @@ class OrderCreate(BaseModel):
 
 
 class OrderEdit(BaseModel):
-    customerName: Optional[str] = None
-    customerPhone: Optional[str] = None
-    deliveryPhone: Optional[str] = None
+    customerName: Optional[str] = Field(default=None, max_length=200)
+    customerPhone: Optional[str] = Field(default=None, max_length=20)
+    deliveryPhone: Optional[str] = Field(default=None, max_length=20)
     customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: Optional[str] = None
-    deliveryAddress: Optional[str] = None
-    notes: Optional[str] = None
-    source: Optional[str] = None
+    deliveryAddress: Optional[str] = Field(default=None, max_length=1000)
+    notes: Optional[str] = Field(default=None, max_length=10000)
+    source: Optional[str] = Field(default=None, max_length=100)
     shippingFee: Optional[float] = None
-    changedBy: str = ""
+    changedBy: str = Field(default="", max_length=100)
     workTicketPrintedAt: Optional[str] = None
     publicCodeDateChangeDecision: Optional[str] = None
     # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
@@ -1090,10 +949,13 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
-    # Shared journal-sync helpers used by multiple branches below (DG-269
-    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
-    # conditional branch.
-    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+    # DG-308 Phase 5 (FR-ARCH-3): status-machine side effects (stock, journal
+    # sync, item cascade, extras sync) are orchestrated by
+    # services.order_lifecycle. The handler keeps HTTP validation/rejection.
+    from baker.services.order_lifecycle import (
+        apply_post_update_side_effects,
+        apply_pre_update_side_effects,
+    )
 
     with get_db() as conn:
         row = conn.execute(
@@ -1132,24 +994,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                     rejection_detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order is confirmed
-        # (POS already handles this in create_order for status=delivered)
-        if body.status == "confirmed":
-            auto_decrement_stock(conn, row["id"], row["order_ref"])
-
-        accounting_sync_warning = None
-
-        if body.status == "cancelled":
-            restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal
-            sync_status = run_journal_sync(
-                _sync_cancelled_order_journal,
-                conn, row["id"],
-                log_label=f"cancelled order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
+        # Pre-update side effects (stock decrement/restore + cancellation
+        # journal sync) must run before Order.update_status.
+        prior_warning = apply_pre_update_side_effects(
+            conn, row["id"], row["order_ref"], body.status
+        )
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -1163,67 +1012,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
 
-        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
-        if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal
-            sync_status = run_journal_sync(
-                _sync_delivered_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"delivered order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # When transitioning TO completed, reconcile 2100 deposits into revenue
-        # and clear 1500 AR (DG-269 Phase 3).
-        if body.status == "completed" and row["status"] != "completed":
-            from baker.services.journal_sync import _sync_completed_order_journal
-            sync_status = run_journal_sync(
-                _sync_completed_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"completed order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
-        if body.status == "confirmed":
-            conn.execute(
-                "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
-                (row["id"],),
-            )
-
-        # Auto-sync main items (non-extra, non-gift) on terminal order transitions (DG-280 Phase 1).
-        # Skip cancelled items so they remain cancelled (AC5) and skip items already at the target
-        # status to avoid redundant updates (AC4). WorkItemStatus has no 'completed' value, so a
-        # completed order maps main items to 'delivered' (FR2).
-        if body.status == "delivered":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "completed":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "cancelled":
-            conn.execute(
-                "UPDATE order_items SET status = 'cancelled' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled'",
-                (row["id"],),
-            )
-
-        # Auto-sync extras/gifts to match the new order status (F4, F5)
-        from baker.api.work_items import sync_extras_to_order_status
-        sync_extras_to_order_status(conn, row["id"], body.status)
+        # Post-update side effects (delivered/completed journal sync, item
+        # cascade, extras sync) run after the status row is updated.
+        accounting_sync_warning = apply_post_update_side_effects(
+            conn, row["id"], row["order_ref"], row["status"], body.status, prior_warning
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

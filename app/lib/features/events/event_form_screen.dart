@@ -9,7 +9,7 @@ import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _EventType {
   const _EventType(this.value, this.label, this.icon);

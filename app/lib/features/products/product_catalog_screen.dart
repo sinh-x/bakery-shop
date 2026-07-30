@@ -10,7 +10,7 @@ import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/product_card.dart';
 
 class ProductCatalogScreen extends ConsumerStatefulWidget {

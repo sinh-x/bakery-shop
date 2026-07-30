@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/checklist_template.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/checklist.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ChecklistConfigScreen extends ConsumerStatefulWidget {
   const ChecklistConfigScreen({super.key});

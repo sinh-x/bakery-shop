@@ -5,7 +5,7 @@ import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_catalog_screen.dart';
 import 'package:bakery_app/features/products/widgets/product_card.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

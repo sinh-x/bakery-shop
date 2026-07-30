@@ -15,7 +15,7 @@ flow rather than isolated unit tests.
 """
 
 from baker.db.connection import get_db
-from baker.api.inventory_fifo import create_lot_with_items
+from baker.services.inventory_fifo import create_lot_with_items
 
 
 def _ensure_trung_bay(product_id: int) -> None:

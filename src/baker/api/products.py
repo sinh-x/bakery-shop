@@ -9,13 +9,8 @@ from pydantic import BaseModel
 import baker.config
 from baker.api.auth import RequireRole, record_audit_log
 from baker.code_gen import generate_code, get_category_prefix
+from baker.utils.db import escape_like as _escape_like, row_to_dict as _row_to_dict
 from baker.utils.time import InvalidEffectiveFrom, format_effective_from
-
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from baker.db.connection import get_db
 from baker.api.photos import read_image_upload, save_photo
 
@@ -40,11 +35,6 @@ class ProductUpdate(BaseModel):
     recipe_notes: str | None = None
     active: int | None = None
     product_code: str | None = None
-
-
-def _row_to_dict(row) -> dict:
-    """Convert a sqlite3.Row to a dict."""
-    return dict(row)
 
 
 def _product_price_chips(conn, product_id: int) -> list[dict]:

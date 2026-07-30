@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from baker.api.auth import resolve_actor
-from baker.api.inventory_fifo import (
+from baker.services.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
     create_lot_with_items,
@@ -557,7 +557,7 @@ def _process_surplus_inflow(
         # block the reconciliation submit (NFR1).
         #
         # Inline import (not module-level) is intentional: journal_sync
-        # imports from baker.api.inventory_fifo, which is already a module-level
+        # imports from baker.db.schema, which is already a module-level
         # dependency of this file. Keeping journal_sync inline at call-site
         # preserves the same circular-dependency avoidance pattern used in
         # order_stock.py and limits the accounting coupling to the operation

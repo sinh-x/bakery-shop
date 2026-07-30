@@ -8,13 +8,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
-
 from baker.db.connection import get_db
+from baker.utils.db import escape_like as _escape_like
 
 console = Console()
 

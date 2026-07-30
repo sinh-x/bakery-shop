@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Editable shipping fee stepper section (+/− buttons with 5000đ increments)
 /// for door/bus delivery orders. Extracted from [OrderDeliverySection] to keep

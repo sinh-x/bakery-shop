@@ -4,11 +4,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from pydantic import BaseModel, field_validator, model_validator
 
 from baker.api.auth import RequireRole, record_audit_log
@@ -17,6 +12,7 @@ from baker.db.schema import (
     _recompute_customer_year_summary,
     _strip_diacritics,
 )
+from baker.utils.db import escape_like as _escape_like
 from baker.models.customer import (
     Customer,
     _load_customer_phones_for_many,

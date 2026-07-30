@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Renders the trưng bày markup amount line (`unitPrice − assignedPrice`) when
 /// the item carries a positive markup.

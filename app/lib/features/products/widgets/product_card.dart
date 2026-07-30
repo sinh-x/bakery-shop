@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/models/product.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 class ProductCard extends StatelessWidget {

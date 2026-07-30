@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3495,7 +3495,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
         _assert_users_role_check_constraint(conn)
 
 
@@ -3561,7 +3561,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3684,7 +3684,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3758,7 +3758,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3785,7 +3785,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 87
+        assert _migrated_version(conn) == 88
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4164,3 +4164,130 @@ def test_v87_persists_new_fields_on_door_delivery_order():
         assert row["google_maps_url"] == "https://maps.google.com/?q=10.762622,106.660172"
         assert row["delivery_time_slot"] == "8:00"
         assert row["delivery_type"] == "door"
+
+
+# ---------------------------------------------------------------------------
+# v88 — composite indexes on orders(status, due_date) and orders(customer_id, created_at)
+# (DG-308 Phase 4.4, FR-DB-2)
+# ---------------------------------------------------------------------------
+
+
+def test_v88_registered_in_migration_chain():
+    """v88 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 88 in MIGRATIONS
+    assert (
+        MIGRATIONS[88]["description"]
+        == "Add composite indexes on orders(status, due_date) and orders(customer_id, created_at) for common query patterns (DG-308 Phase 4.4)"
+    )
+    # v88 is a pure-SQL migration (no callable).
+    assert MIGRATIONS[88]["sql"]
+    assert "callable" not in MIGRATIONS[88]
+
+
+def test_v88_creates_composite_indexes_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has both composite indexes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 88
+
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes
+        assert "idx_orders_customer_id_created_at" in indexes
+
+
+def test_v88_creates_composite_indexes_on_existing_db():
+    """An existing DB migrated up to v87 gets the indexes when v88 runs."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        assert _migrated_version(conn) == 87
+
+        indexes_before = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" not in indexes_before
+        assert "idx_orders_customer_id_created_at" not in indexes_before
+
+        _migrate_to_version(conn, 88)
+        assert _migrated_version(conn) == 88
+
+        indexes_after = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes_after
+        assert "idx_orders_customer_id_created_at" in indexes_after
+
+
+def test_v88_idempotent_on_already_migrated_db():
+    """Re-running v88 on a DB that already has the indexes is a no-op."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 88)
+        # Re-running the SQL (CREATE INDEX IF NOT EXISTS) must not raise.
+        conn.executescript(MIGRATIONS[88]["sql"])
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes
+        assert "idx_orders_customer_id_created_at" in indexes
+
+
+def test_schema_all_matches_imported_symbols():
+    """Verify ``baker.db.schema.__all__`` entries match the symbols actually
+    importable from the package.
+
+    DG-308 CQ-4 — the 173-entry manual ``__all__`` barrel is fragile: adding a
+    migration requires 3 manual edits (define, import, __all__). This test
+    catches drift between the ``__all__`` list and the package's actual public
+    surface so a missing entry is detected before release.
+    """
+    import baker.db.schema as schema_mod
+    import types as _types
+
+    declared = set(getattr(schema_mod, "__all__", []))
+    # Resolve the actual public symbols: everything importable from the package
+    # that is not a dunder, not a submodule, and not a pytest-internal attr.
+    actual = {
+        name
+        for name in dir(schema_mod)
+        if not name.startswith("__")
+        and not name.startswith("_pytest")
+        and getattr(schema_mod, name) is not None
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+    # Private (underscore-prefixed) helpers ARE part of the documented public
+    # surface (migrations import them), so they are included in __all__ but
+    # excluded from dir() filtering above only when they start with "_". Add
+    # back the underscore-prefixed names that are actually importable and are
+    # not submodules.
+    actual |= {
+        name
+        for name in declared
+        if name.startswith("_")
+        and hasattr(schema_mod, name)
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+
+    missing_from_all = actual - declared
+    extra_in_all = declared - actual
+
+    assert not missing_from_all, (
+        f"Symbols importable from baker.db.schema but missing from __all__: "
+        f"{sorted(missing_from_all)}"
+    )
+    assert not extra_in_all, (
+        f"Symbols declared in __all__ but not importable from baker.db.schema: "
+        f"{sorted(extra_in_all)}"
+    )

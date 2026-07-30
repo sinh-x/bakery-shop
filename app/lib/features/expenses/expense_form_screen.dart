@@ -5,7 +5,7 @@ import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
