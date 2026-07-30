@@ -230,6 +230,14 @@ class OrdersLabels {
   static const deliveryDayPrevTooltip = 'Ngày trước';
   static const deliveryDayNextTooltip = 'Ngày sau';
 
+  // Delivery staff claiming UI (DG-310 Phase 4) — FR5/FR6/FR7.
+  static const deliveryClaimButton = 'Nhận giao';
+  static const deliveryUnclaimButton = 'Trả đơn';
+  static const deliveryClaimedBy = 'Đã nhận';
+  static const deliveryUnassigned = 'Chưa nhận';
+  static const deliveryClaimFailed = 'Không nhận được đơn hàng.';
+  static const deliveryUnclaimFailed = 'Không trả được đơn hàng.';
+
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
     final weekday = deliveryWeekdayHeaders[d.weekday - 1];

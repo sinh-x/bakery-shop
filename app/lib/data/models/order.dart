@@ -43,6 +43,8 @@ sealed class Order with _$Order {
     double? longitude,
     String? googleMapsUrl,
     String? deliveryTimeSlot,
+    @JsonKey(name: 'assignedStaffId') @Default(null) String? assignedStaffId,
+    @JsonKey(name: 'assignedStaffName') @Default('') String assignedStaffName,
     @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
     @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
@@ -59,4 +61,9 @@ extension OrderDisplay on Order {
     final staffName = workTicketPrintedStaffName.trim();
     return staffName.isNotEmpty ? staffName : (workTicketPrintedBy ?? '').trim();
   }
+
+  bool get isAssigned => assignedStaffId != null && assignedStaffId!.isNotEmpty;
+
+  bool isClaimedBy(String? staffId) =>
+      isAssigned && staffId != null && assignedStaffId == staffId;
 }
