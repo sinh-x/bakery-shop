@@ -110,6 +110,13 @@ class OrderService {
     double? longitude,
     String? googleMapsUrl,
     String? deliveryTimeSlot,
+    // DG-304 Phase 5: admin staff assignment on any order. Sent explicitly
+    // (incl. null to unassign) so the backend persists via the `field_map`
+    // and logs the change in `order_history` (FR7/FR8/FR9/AC5). Mirrors the
+    // `customerTouched` pattern: when the admin touched the assignment
+    // dropdown, send `assignedStaffId` including null to unassign.
+    String? assignedStaffId,
+    bool assignedStaffTouched = false,
   }) async {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
@@ -139,6 +146,10 @@ class OrderService {
     body['longitude'] = longitude;
     body['googleMapsUrl'] = googleMapsUrl;
     body['deliveryTimeSlot'] = deliveryTimeSlot;
+    // DG-304 Phase 5: only include when the admin touched the assignment so
+    // a non-admin save (without the dropdown) never clears it inadvertently.
+    // When touched, send the value including null to unassign (FR6).
+    if (assignedStaffTouched) body['assignedStaffId'] = assignedStaffId;
 
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
@@ -248,6 +259,21 @@ class OrderService {
   /// staff or an admin may unclaim; enforced server-side.
   Future<Order> unassignOrder(String ref) async {
     final response = await _dio.post('/api/orders/$ref/unassign');
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// DG-304 Phase 5: admin sets or clears the delivery staff assignment on
+  /// any order (FR9/AC5). PATCHes only `assignedStaffId` (incl. null to
+  /// unassign — FR6) via the `field_map` path so other fields are not
+  /// clobbered and the change is logged in `order_history` (FR7).
+  Future<Order> setAssignedStaff(
+    String ref, {
+    required String? assignedStaffId,
+    String changedBy = '',
+  }) async {
+    final body = <String, dynamic>{'assignedStaffId': assignedStaffId};
+    if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
+    final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 

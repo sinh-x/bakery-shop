@@ -250,6 +250,13 @@ class OrdersLabels {
   static String workloadStaffCount(String staffName, int count) =>
       '$staffName: $count đơn';
 
+  // Staff assignment dropdown (DG-304 Phase 5) — FR8/FR9/FR10/AC5/AC6.
+  static const assignStaffLabel = 'Nhân viên giao hàng';
+  static const assignStaffUnassign = 'Chưa gán';
+  static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
+  static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
+  static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
+
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
     final weekday = deliveryWeekdayHeaders[d.weekday - 1];
