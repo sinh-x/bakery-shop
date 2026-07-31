@@ -4,7 +4,7 @@ codes + mapping updates.
 Verifies:
 - The v86 migration creates the ``expense_categories`` table with the
   expected schema (id, name, account_code, parent_id, created_at).
-- 8 parent categories + 7 subcategories are seeded (idempotent on re-run).
+- 8 parent categories + 8 subcategories are seeded (idempotent on re-run).
 - Subcategory account codes 5110–5140, 5210–5230 exist in the chart of
   accounts (accounts table).
 - ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE`` contains every subcategory key with
@@ -36,6 +36,7 @@ EXPECTED_SUBCATEGORY_ACCOUNT_CODES = {
     "Kem": "5120",
     "Bột": "5130",
     "Phụ gia khác": "5140",
+    "Trái cây": "5150",
     "Hộp & đế": "5210",
     "Phụ kiện": "5220",
     "Bọc nilon": "5230",
@@ -83,15 +84,15 @@ def test_expense_categories_table_schema():
 
 
 def test_expense_categories_seed_count():
-    """Seed data: 8 parents + 7 subcategories = 15 rows."""
+    """Seed data: 8 parents + 8 subcategories = 16 rows."""
     with get_db() as conn:
         ensure_schema(conn)
         rows = _expense_category_rows(conn)
-    assert len(rows) == 15
+    assert len(rows) == 16
     parents = [r for r in rows if r["parent_id"] is None]
     subcategories = [r for r in rows if r["parent_id"] is not None]
     assert len(parents) == 8
-    assert len(subcategories) == 7
+    assert len(subcategories) == 8
 
 
 def test_expense_categories_seed_contains_parent_names():
@@ -133,7 +134,7 @@ def test_expense_categories_subcategory_parent_links():
     # Nguyên liệu subcategories
     nguyen_lieu_id = name_to_row["Nguyên liệu"]["id"]
     bao_bi_id = name_to_row["Bao bì"]["id"]
-    for sub in ["Trứng", "Kem", "Bột", "Phụ gia khác"]:
+    for sub in ["Trứng", "Kem", "Bột", "Phụ gia khác", "Trái cây"]:
         assert name_to_row[sub]["parent_id"] == nguyen_lieu_id, sub
     for sub in ["Hộp & đế", "Phụ kiện", "Bọc nilon"]:
         assert name_to_row[sub]["parent_id"] == bao_bi_id, sub
@@ -149,16 +150,16 @@ def test_expense_categories_seed_is_idempotent():
         _migrate_v86_expense_categories(conn)
         rows_after = _expense_category_rows(conn)
     # Same row count and same (name, parent_id) set — no duplicates.
-    assert len(rows_before) == len(rows_after) == 15
+    assert len(rows_before) == len(rows_after) == 16
     assert {r["name"] for r in rows_before} == {r["name"] for r in rows_after}
 
 
 def test_seed_expense_categories_constant_matches_expected():
-    """The SEED_EXPENSE_CATEGORIES constant declares 8 parents + 7 subcategories."""
+    """The SEED_EXPENSE_CATEGORIES constant declares 8 parents + 8 subcategories."""
     parents = [row for row in SEED_EXPENSE_CATEGORIES if row[2] is None]
     subcategories = [row for row in SEED_EXPENSE_CATEGORIES if row[2] is not None]
     assert len(parents) == 8
-    assert len(subcategories) == 7
+    assert len(subcategories) == 8
 
 
 def test_chart_of_accounts_has_subcategory_codes():
@@ -175,7 +176,7 @@ def test_chart_of_accounts_subcategory_parents():
     with get_db() as conn:
         ensure_schema(conn)
         # 5110-5140 parent is 5100; 5210-5230 parent is 5200.
-        for code in ["5110", "5120", "5130", "5140"]:
+        for code in ["5110", "5120", "5130", "5140", "5150"]:
             row = conn.execute(
                 """SELECT a.code AS pcode FROM accounts a
                    JOIN accounts c ON c.parent_id = a.id

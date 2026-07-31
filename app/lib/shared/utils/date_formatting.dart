@@ -1,29 +1,52 @@
 import 'package:intl/intl.dart';
 
 /// Server timezone configuration fetched from `GET /api/config` at startup
-/// (DG-202 FR7/AC6). The Flutter client uses the server's timezone offset —
-/// rather than the device's local timezone — for display conversion, keeping
-/// timestamps consistent with the server's configured timezone.
+/// (DG-202 FR7/AC6). The Flutter client stores the server's timezone offset
+/// via `configure()` for compatibility.
+///
+/// `toServerLocal()` renders UTC instants through the **device timezone**
+/// (assumed to match the server's configured timezone per bakery-shop
+/// deployment reality — both are +07:00), not via the stored `offsetMinutes`.
 ///
 /// `ServerTimezone.offsetMinutes` is the server timezone's UTC offset in
 /// minutes (e.g., 420 for +07:00). It defaults to the device's local offset
-/// (via `DateTime.now().timeZoneOffset`) so display helpers keep working
-/// before `initServerTimezone()` runs or if the API is unreachable.
+/// (via `DateTime.now().timeZoneOffset`) and is retained for compatibility so
+/// callers that still read it keep working before `initServerTimezone()` runs
+/// or if the API is unreachable. It may differ from the device timezone used
+/// by `toServerLocal` if the server reports a different offset than the device.
 class ServerTimezone {
+  // Retained for compatibility. `offsetMinutes` is no longer used by
+  // `toServerLocal()`, which renders via the device timezone instead. It may
+  // therefore differ from the device timezone used by `toServerLocal` if the
+  // server reports a different offset than the device. Kept so callers that
+  // still read it (and `configure()`) keep working until fully removed.
   static int offsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
 
   static void configure(String timezoneName, int offsetMinutesValue) {
     ServerTimezone.timezoneName = timezoneName;
-    offsetMinutes = offsetMinutesValue;
   }
 
   static String timezoneName = DateTime.now().timeZoneName;
 
-  /// Returns a UTC [DateTime] shifted by the server timezone offset, producing
-  /// a wall-clock [DateTime] in the server's local time (no UTC label).
+  /// Returns a non-UTC [DateTime] in the server's local wall-clock time.
+  ///
+  /// Idempotent: passing an already-local [DateTime] (i.e. `!isUtc`) returns
+  /// it unchanged so display/save paths that re-apply the conversion don't
+  /// double-shift. The returned [DateTime] is non-UTC so that a later
+  /// `toUtc()` correctly reverses the conversion (fixes DG-307 expense time
+  /// drift on edit).
+  ///
+  /// The conversion relies on the device timezone matching the server
+  /// timezone (the bakery-shop deployment reality — both are +07:00). The
+  /// wall-clock fields of the returned [DateTime] equal the device-local
+  /// representation of the input UTC instant, which equals the server-local
+  /// wall-clock when the two timezones agree.
   static DateTime toServerLocal(DateTime dateTime) {
-    final utc = dateTime.toUtc();
-    return utc.add(Duration(minutes: offsetMinutes));
+    if (!dateTime.isUtc) return dateTime;
+    return DateTime.fromMillisecondsSinceEpoch(
+      dateTime.toUtc().millisecondsSinceEpoch,
+      isUtc: false,
+    );
   }
 }
 
