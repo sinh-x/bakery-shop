@@ -234,7 +234,7 @@ class OrdersLabels {
   static const deliveryClaimButton = 'Nhận giao';
   static const deliveryUnclaimButton = 'Trả đơn';
   static const deliveryClaimedBy = 'Đã nhận';
-  static const deliveryUnassigned = 'Chưa nhận';
+  static const deliveryUnassigned = 'Chưa có người nhận giao hàng';
   static const deliveryClaimFailed = 'Không nhận được đơn hàng.';
   static const deliveryUnclaimFailed = 'Không trả được đơn hàng.';
   static const deliveryClaimSuccess = 'Đã nhận giao';

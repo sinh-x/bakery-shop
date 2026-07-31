@@ -318,6 +318,16 @@ class _MiniOrderCard extends StatelessWidget {
                             color: theme.colorScheme.tertiary,
                             fontStyle: FontStyle.italic,
                           ),
+                        )
+                      else
+                        Text(
+                          OrdersLabels.deliveryUnassigned,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                     ],
                   ),
