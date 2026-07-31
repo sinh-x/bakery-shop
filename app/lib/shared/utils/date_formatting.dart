@@ -19,11 +19,25 @@ class ServerTimezone {
 
   static String timezoneName = DateTime.now().timeZoneName;
 
-  /// Returns a UTC [DateTime] shifted by the server timezone offset, producing
-  /// a wall-clock [DateTime] in the server's local time (no UTC label).
+  /// Returns a non-UTC [DateTime] in the server's local wall-clock time.
+  ///
+  /// Idempotent: passing an already-local [DateTime] (i.e. `!isUtc`) returns
+  /// it unchanged so display/save paths that re-apply the conversion don't
+  /// double-shift. The returned [DateTime] is non-UTC so that a later
+  /// `toUtc()` correctly reverses the conversion (fixes DG-307 expense time
+  /// drift on edit).
+  ///
+  /// The conversion relies on the device timezone matching the server
+  /// timezone (the bakery-shop deployment reality — both are +07:00). The
+  /// wall-clock fields of the returned [DateTime] equal the device-local
+  /// representation of the input UTC instant, which equals the server-local
+  /// wall-clock when the two timezones agree.
   static DateTime toServerLocal(DateTime dateTime) {
-    final utc = dateTime.toUtc();
-    return utc.add(Duration(minutes: offsetMinutes));
+    if (!dateTime.isUtc) return dateTime;
+    return DateTime.fromMillisecondsSinceEpoch(
+      dateTime.toUtc().millisecondsSinceEpoch,
+      isUtc: false,
+    );
   }
 }
 
