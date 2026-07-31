@@ -24,7 +24,6 @@ class ServerTimezone {
 
   static void configure(String timezoneName, int offsetMinutesValue) {
     ServerTimezone.timezoneName = timezoneName;
-    offsetMinutes = offsetMinutesValue;
   }
 
   static String timezoneName = DateTime.now().timeZoneName;
