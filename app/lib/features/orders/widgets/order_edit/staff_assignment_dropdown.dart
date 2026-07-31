@@ -76,7 +76,7 @@ class StaffAssignmentDropdown extends ConsumerWidget {
         ),
     ];
     return DropdownButtonFormField<String?>(
-      value: assignedStaffId,
+      initialValue: assignedStaffId,
       decoration: const InputDecoration(
         labelText: OrdersLabels.assignStaffLabel,
         border: OutlineInputBorder(),
