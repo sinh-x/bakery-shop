@@ -25,6 +25,87 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import COGS_CODE, ORDER_REVENUE_CODE
+from baker.labels.report_labels import (
+    ACCOUNT_TYPE_LABELS,
+    COGS_STATUS_LABELS,
+    CASHFLOW_TITLE,
+    INCOME_STATEMENT_DUE_DATE_TITLE,
+    INCOME_STATEMENT_TITLE,
+    TRIAL_BALANCE_TITLE,
+    BALANCE_SHEET_TITLE,
+    GENERAL_LEDGER_TITLE,
+    ACCOUNT_LEDGER_TITLE,
+    EXPENSE_BY_CATEGORY_TITLE,
+    COGS_AUDIT_TITLE,
+    ORDER_STATUS_TITLE,
+    LBL_CODE,
+    LBL_ACCOUNT,
+    LBL_TYPE,
+    LBL_DEBIT,
+    LBL_CREDIT,
+    LBL_TOTALS,
+    LBL_REVENUE,
+    LBL_COGS_5900,
+    LBL_GROSS_PROFIT,
+    LBL_MARKUP_TRUNG_BAY,
+    LBL_OPERATING_EXPENSES,
+    LBL_NET_INCOME,
+    LBL_ASSETS,
+    LBL_LIABILITIES,
+    LBL_EQUITY,
+    LBL_TOTAL_ASSETS,
+    LBL_TOTAL_LIABILITIES_EQUITY,
+    LBL_CATEGORY,
+    LBL_TOTAL,
+    LBL_TOTAL_UPPER,
+    LBL_UNCATEGORIZED,
+    LBL_ORDER,
+    LBL_ORDER_REF,
+    LBL_RATIO,
+    LBL_STATUS,
+    LBL_DELIVERY_TYPE,
+    LBL_COUNT,
+    LBL_VALUE,
+    LBL_SUBTOTAL,
+    LBL_GRAND_TOTAL,
+    LBL_ORDERS,
+    LBL_DR,
+    LBL_CR,
+    LBL_PERIOD,
+    LBL_SOURCE,
+    LBL_LOCKED,
+    LBL_NONE,
+    LBL_NO_ACTIVITY,
+    LBL_SUBTOTAL_UPPER,
+    LBL_OPENING_BALANCE,
+    LBL_CLOSING_BALANCE,
+    LBL_NET_CASH_FLOW,
+    LBL_TOTAL_INFLOWS,
+    LBL_TOTAL_OUTFLOWS,
+    LBL_NET_OPERATING_CASHFLOW,
+    LBL_NET_INVESTING_CASHFLOW,
+    LBL_NET_FINANCING_CASHFLOW,
+    LBL_OPERATING_ACTIVITIES,
+    LBL_CASH_FROM_CUSTOMERS,
+    LBL_CASH_PAID_SUPPLIERS,
+    LBL_INVESTING_ACTIVITIES,
+    LBL_FINANCING_ACTIVITIES,
+    LBL_PER_ACCOUNT_BREAKDOWN,
+    LBL_INFLOWS,
+    LBL_OUTFLOWS,
+    LBL_NET,
+    LBL_OPENING,
+    LBL_CLOSING,
+    LBL_RECONCILIATION_DETAIL,
+    ORDER_STATUS_LABELS,
+    MSG_NO_JOURNAL_ENTRIES,
+    MSG_NO_JOURNAL_LINES_ACCOUNT,
+    MSG_NO_EXPENSE_ENTRIES,
+    MSG_NO_ORDERS,
+    MSG_ALL_TIME,
+    LBL_RECONCILE_OK,
+    LBL_RECONCILE_MISMATCH,
+)
 from baker.models.order import OrderStatus
 from baker.utils.time import utc_to_local
 
@@ -75,17 +156,34 @@ def _balance_for_type(acc_type: str, debit: float, credit: float) -> float:
     return credit - debit
 
 
+def _fmt_date(date_str: Optional[str]) -> str:
+    """Convert a ``YYYY-MM-DD`` (or ``YYYY-MM-DDTHH:MM:SS``) value to ``DD/MM/YYYY``.
+
+    Returns the input unchanged when it is empty or does not match the
+    expected shape — used by ``_echo_header`` for the period display so
+    dates follow Vietnamese convention (FR6).
+    """
+    if not date_str:
+        return ""
+    core = date_str[:10] if len(date_str) >= 10 else date_str
+    try:
+        dt = datetime.strptime(core, "%Y-%m-%d")
+    except ValueError:
+        return date_str
+    return dt.strftime("%d/%m/%Y")
+
+
 def _echo_header(title: str, since: Optional[str], until: Optional[str]) -> None:
     click.echo(title)
     click.echo("=" * len(title))
-    period = "All time"
+    period = MSG_ALL_TIME
     if since and until:
-        period = f"{since} → {until}"
+        period = f"{_fmt_date(since)} → {_fmt_date(until)}"
     elif since:
-        period = f"since {since}"
+        period = f"từ {_fmt_date(since)}"
     elif until:
-        period = f"until {until}"
-    click.echo(f"Period: {period}")
+        period = f"đến {_fmt_date(until)}"
+    click.echo(f"{LBL_PERIOD} {period}")
     click.echo("")
 
 
@@ -109,7 +207,7 @@ def trial_balance_cmd(since, until):
     """All active accounts with debit/credit/balance totals for a date range."""
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Trial Balance", since, until)
+    _echo_header(TRIAL_BALANCE_TITLE, since, until)
 
     params: list = []
     where_clauses = []
@@ -141,24 +239,27 @@ def trial_balance_cmd(since, until):
         ).fetchall()
 
     if not rows:
-        click.echo("(no journal entries in range)")
+        click.echo(MSG_NO_JOURNAL_ENTRIES)
         return
 
     total_debit = 0.0
     total_credit = 0.0
-    click.echo(f"{'Code':<8}{'Account':<40}{'Type':<10}{'Debit':>14}{'Credit':>14}")
-    click.echo("-" * 86)
+    click.echo(
+        f"{LBL_CODE:<8}{LBL_ACCOUNT:<40}{LBL_TYPE:<14}{LBL_DEBIT:>14}{LBL_CREDIT:>14}"
+    )
+    click.echo("-" * 90)
     for r in rows:
         debit = float(r["total_debit"])
         credit = float(r["total_credit"])
         total_debit += debit
         total_credit += credit
+        type_label = ACCOUNT_TYPE_LABELS.get(r["type"], r["type"])
         click.echo(
-            f"{r['code']:<8}{r['name'][:39]:<40}{r['type']:<10}"
+            f"{r['code']:<8}{r['name'][:39]:<40}{type_label:<14}"
             f"{debit:>14,.2f}{credit:>14,.2f}"
         )
-    click.echo("-" * 86)
-    click.echo(f"{'TOTALS':<58}{total_debit:>14,.2f}{total_credit:>14,.2f}")
+    click.echo("-" * 90)
+    click.echo(f"{LBL_TOTALS:<62}{total_debit:>14,.2f}{total_credit:>14,.2f}")
 
 
 @report_cmd.command("income-statement")
@@ -176,9 +277,9 @@ def income_statement_cmd(since, until, date_basis):
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
     if date_basis == "due-date":
-        _echo_header("Income Statement (due-date basis)", since, until)
+        _echo_header(INCOME_STATEMENT_DUE_DATE_TITLE, since, until)
     else:
-        _echo_header("Income Statement", since, until)
+        _echo_header(INCOME_STATEMENT_TITLE, since, until)
 
     if date_basis == "due-date":
         _income_statement_due_date(since_b, until_b)
@@ -390,22 +491,22 @@ def _echo_income_statement_body(
     the period — an informational line, not part of the net income calculation
     (DG-296 Phase 5, FR7). It is shown only when non-zero.
     """
-    click.echo(f"{'Revenue':<40}{revenue:>20,.2f}")
+    click.echo(f"{LBL_REVENUE:<40}{revenue:>20,.2f}")
     cogs_ratio = (cogs_amount / revenue * 100.0) if revenue > 0 else 0.0
     click.echo(
-        f"{'Cost of Goods Sold (5900)':<40}{cogs_amount:>20,.2f}"
+        f"{LBL_COGS_5900:<40}{cogs_amount:>20,.2f}"
         f"  ({cogs_ratio:.1f}%)"
     )
-    click.echo(f"{'Gross Profit':<40}{(revenue - cogs_amount):>20,.2f}")
+    click.echo(f"{LBL_GROSS_PROFIT:<40}{(revenue - cogs_amount):>20,.2f}")
     if markup > 0:
         click.echo(
-            f"{'Markup (trung bay)':<40}{markup:>20,.2f}"
+            f"{LBL_MARKUP_TRUNG_BAY:<40}{markup:>20,.2f}"
         )
     click.echo("")
-    click.echo(f"{'Operating Expenses':<40}{operating_expenses:>20,.2f}")
+    click.echo(f"{LBL_OPERATING_EXPENSES:<40}{operating_expenses:>20,.2f}")
     click.echo("")
     net_income = revenue - cogs_amount - operating_expenses
-    click.echo(f"{'Net Income':<40}{net_income:>20,.2f}")
+    click.echo(f"{LBL_NET_INCOME:<40}{net_income:>20,.2f}")
 
 
 @report_cmd.command("balance-sheet")
@@ -413,7 +514,7 @@ def _echo_income_statement_body(
 def balance_sheet_cmd(until):
     """Assets, Liabilities, Equity snapshot as of the end date."""
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Balance Sheet", None, until)
+    _echo_header(BALANCE_SHEET_TITLE, None, until)
 
     with get_db() as conn:
         params: list = []
@@ -441,7 +542,7 @@ def balance_sheet_cmd(until):
             params,
         ).fetchall()
 
-    def section(title: str, acc_type: str) -> float:
+    def section(title: str, acc_type: str, total_label: str) -> float:
         click.echo(title)
         click.echo("-" * len(title))
         section_total = 0.0
@@ -453,16 +554,18 @@ def balance_sheet_cmd(until):
                 continue
             section_total += bal
             click.echo(f"  {r['code']:<8}{r['name'][:39]:<40}{bal:>14,.2f}")
-        click.echo(f"  {'Total ' + title:<48}{section_total:>14,.2f}")
+        click.echo(f"  {total_label:<48}{section_total:>14,.2f}")
         click.echo("")
         return section_total
 
-    total_assets = section("Assets", "asset")
-    total_liabilities = section("Liabilities", "liability")
-    total_equity = section("Equity", "equity")
+    total_assets = section(LBL_ASSETS, "asset", LBL_TOTAL_ASSETS)
+    total_liabilities = section(
+        LBL_LIABILITIES, "liability", f"{LBL_TOTAL} {LBL_LIABILITIES}",
+    )
+    total_equity = section(LBL_EQUITY, "equity", f"{LBL_TOTAL} {LBL_EQUITY}")
     click.echo("=" * 62)
-    click.echo(f"{'Total Assets':<48}{total_assets:>14,.2f}")
-    click.echo(f"{'Total Liabilities + Equity':<48}"
+    click.echo(f"{LBL_TOTAL_ASSETS:<48}{total_assets:>14,.2f}")
+    click.echo(f"{LBL_TOTAL_LIABILITIES_EQUITY:<48}"
                f"{(total_liabilities + total_equity):>14,.2f}")
 
 
@@ -473,7 +576,7 @@ def general_ledger_cmd(since, until):
     """All journal entries in a date range, human-readable with lines."""
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("General Ledger", since, until)
+    _echo_header(GENERAL_LEDGER_TITLE, since, until)
 
     with get_db() as conn:
         params: list = []
@@ -502,14 +605,14 @@ def general_ledger_cmd(since, until):
         ).fetchall()
 
         if not entries:
-            click.echo("(no journal entries in range)")
+            click.echo(MSG_NO_JOURNAL_ENTRIES)
             return
 
         for je in entries:
             click.echo(
                 f"#{je['id']}  {utc_to_local(je['transaction_date'])}  {je['description']}  "
-                f"[source={je['source_type']}:{je['source_id']}]"
-                + ("  (LOCKED)" if je["locked_at"] else "")
+                f"[{LBL_SOURCE}{je['source_type']}:{je['source_id']}]"
+                + (f"  ({LBL_LOCKED})" if je["locked_at"] else "")
             )
             lines = conn.execute(
                 """
@@ -526,9 +629,9 @@ def general_ledger_cmd(since, until):
                 debit = float(jl["debit"])
                 credit = float(jl["credit"])
                 if debit:
-                    click.echo(f"    DR  {jl['code']:<8}{jl['name'][:30]:<32}{debit:>14,.2f}  {jl['description']}")
+                    click.echo(f"    {LBL_DR}  {jl['code']:<8}{jl['name'][:30]:<32}{debit:>14,.2f}  {jl['description']}")
                 else:
-                    click.echo(f"    CR  {jl['code']:<8}{jl['name'][:30]:<32}{credit:>14,.2f}  {jl['description']}")
+                    click.echo(f"    {LBL_CR}  {jl['code']:<8}{jl['name'][:30]:<32}{credit:>14,.2f}  {jl['description']}")
             click.echo("")
 
 
@@ -549,7 +652,7 @@ def account_ledger_cmd(account_code, since, until):
         if account is None:
             raise click.UsageError(f"Account code '{code}' not found in chart of accounts.")
 
-        _echo_header(f"Account Ledger — {account['code']} {account['name']}", since, until)
+        _echo_header(f"{ACCOUNT_LEDGER_TITLE} — {account['code']} {account['name']}", since, until)
 
         params: list = [account["id"]]
         where_clauses = ["jl.account_id = ?"]
@@ -578,7 +681,7 @@ def account_ledger_cmd(account_code, since, until):
         ).fetchall()
 
         if not rows:
-            click.echo("(no journal lines for this account in range)")
+            click.echo(MSG_NO_JOURNAL_LINES_ACCOUNT)
             return
 
         running = 0.0
@@ -590,12 +693,12 @@ def account_ledger_cmd(account_code, since, until):
             else:
                 running += credit - debit
             if debit:
-                movement = f"DR {debit:>12,.2f}"
+                movement = f"{LBL_DR} {debit:>12,.2f}"
             else:
-                movement = f"CR {credit:>12,.2f}"
+                movement = f"{LBL_CR} {credit:>12,.2f}"
             click.echo(
                 f"{utc_to_local(r['transaction_date'])}  #{r['entry_id']:<6}{movement}  "
-                f"balance={running:>14,.2f}  {r['line_description']}"
+                f"số dư={running:>14,.2f}  {r['line_description']}"
             )
 
 
@@ -615,7 +718,7 @@ def expense_by_category_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Expense by Category", since, until)
+    _echo_header(EXPENSE_BY_CATEGORY_TITLE, since, until)
 
     with get_db() as conn:
         params: list = []
@@ -645,7 +748,7 @@ def expense_by_category_cmd(since, until):
         ).fetchall()
 
         if not rows:
-            click.echo("(no expense journal entries in range)")
+            click.echo(MSG_NO_EXPENSE_ENTRIES)
             return
 
         # Map subcategory name -> parent category name (DG-302 Phase 1).
@@ -717,7 +820,7 @@ def expense_by_category_cmd(since, until):
             else:
                 uncategorized += float(r["debit"])
 
-        click.echo(f"{'Category':<32}{'Total':>20}")
+        click.echo(f"{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
         click.echo("-" * 52)
         grand_total = 0.0
         for category in sorted(totals):
@@ -739,9 +842,9 @@ def expense_by_category_cmd(since, until):
                         click.echo(f"  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
         if uncategorized:
             grand_total += uncategorized
-            click.echo(f"{'(uncategorized)':<32}{uncategorized:>20,.2f}")
+            click.echo(f"{LBL_UNCATEGORIZED:<32}{uncategorized:>20,.2f}")
         click.echo("-" * 52)
-        click.echo(f"{'TOTAL':<32}{grand_total:>20,.2f}")
+        click.echo(f"{LBL_TOTAL_UPPER:<32}{grand_total:>20,.2f}")
 
 
 @report_cmd.command("cogs-audit")
@@ -764,7 +867,7 @@ def cogs_audit_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("COGS Audit", since, until)
+    _echo_header(COGS_AUDIT_TITLE, since, until)
 
     # Single-pass query joining orders → order_items → journal entries. We
     # gather, per order:
@@ -828,15 +931,15 @@ def cogs_audit_cmd(since, until):
         ).fetchall()
 
     if not rows:
-        click.echo("(no delivered/completed orders in range)")
+        click.echo(MSG_NO_ORDERS)
         return
 
     # Header
     click.echo(
-        f"{'Order':<10}{'Order Ref':<18}{'Revenue':>16}{'COGS':>16}"
-        f"{'Ratio':>10}{'Status':>14}"
+        f"{LBL_ORDER:<10}{LBL_ORDER_REF:<18}{'Doanh thu':>16}{'Giá vốn':>16}"
+        f"{LBL_RATIO:>10}{LBL_STATUS:>16}"
     )
-    click.echo("-" * 84)
+    click.echo("-" * 86)
 
     totals = {status: 0 for status in COGS_STATUSES}
     total_revenue = 0.0
@@ -862,20 +965,23 @@ def cogs_audit_cmd(since, until):
         total_revenue += revenue
         total_cogs += cogs
 
+        status_label = COGS_STATUS_LABELS.get(status, status)
         click.echo(
             f"{r['order_id']:<10}{r['order_ref'][:17]:<18}"
-            f"{revenue:>16,.2f}{cogs:>16,.2f}{ratio*100:>9.1f}%{status:>14}"
+            f"{revenue:>16,.2f}{cogs:>16,.2f}{ratio*100:>9.1f}%{status_label:>16}"
         )
 
-    click.echo("-" * 84)
+    click.echo("-" * 86)
     overall_ratio = (total_cogs / total_revenue) if total_revenue > 0 else 0.0
     click.echo(
-        f"{'TOTAL':<28}{total_revenue:>16,.2f}{total_cogs:>16,.2f}"
+        f"{LBL_TOTAL_UPPER:<28}{total_revenue:>16,.2f}{total_cogs:>16,.2f}"
         f"{overall_ratio*100:>9.1f}%"
     )
     click.echo("")
-    summary_parts = [f"{status}={totals[status]}" for status in COGS_STATUSES]
-    click.echo(f"Orders: {len(rows)}  Status: {', '.join(summary_parts)}")
+    summary_parts = [
+        f"{COGS_STATUS_LABELS[status]}={totals[status]}" for status in COGS_STATUSES
+    ]
+    click.echo(f"{LBL_ORDERS} {len(rows)}  {LBL_STATUS}: {', '.join(summary_parts)}")
 
 
 # Order lifecycle statuses in canonical display order (FR2/FR6). All 7
@@ -911,7 +1017,7 @@ def order_status_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Order Status Report", since, until)
+    _echo_header(ORDER_STATUS_TITLE, since, until)
 
     params: list = []
     where_clauses: list = []
@@ -949,9 +1055,9 @@ def order_status_cmd(since, until):
         by_status[status][dtype] = (count, value)
 
     click.echo(
-        f"{'Status':<14}{'Delivery Type':<20}{'Count':>10}{'Value':>20}"
+        f"{LBL_STATUS:<16}{LBL_DELIVERY_TYPE:<22}{LBL_COUNT:>10}{LBL_VALUE:>20}"
     )
-    click.echo("-" * 64)
+    click.echo("-" * 68)
 
     grand_count = 0
     grand_value = 0.0
@@ -959,24 +1065,25 @@ def order_status_cmd(since, until):
         status_count = 0
         status_value = 0.0
         sub = by_status.get(status, {})
+        status_label = ORDER_STATUS_LABELS.get(status, status)
         # Sort delivery types with empty-string (NULL) first for stable output.
         for dtype in sorted(sub, key=lambda d: (d == "", d)):
             count, value = sub[dtype]
             status_count += count
             status_value += value
-            display_dt = dtype if dtype else "(none)"
+            display_dt = dtype if dtype else LBL_NONE
             click.echo(
-                f"{status:<14}{display_dt[:19]:<20}{count:>10,}{value:>20,.2f}"
+                f"{status_label:<16}{display_dt[:21]:<22}{count:>10,}{value:>20,.2f}"
             )
         if not sub:
-            click.echo(f"{status:<14}{'(none)':<20}{0:>10,}{0.0:>20,.2f}")
-        click.echo(f"{'  subtotal':<14}{'':<20}{status_count:>10,}{status_value:>20,.2f}")
-        click.echo("-" * 64)
+            click.echo(f"{status_label:<16}{LBL_NONE:<22}{0:>10,}{0.0:>20,.2f}")
+        click.echo(f"  {LBL_SUBTOTAL:<14}{'':<22}{status_count:>10,}{status_value:>20,.2f}")
+        click.echo("-" * 68)
         grand_count += status_count
         grand_value += status_value
 
     click.echo(
-        f"{'GRAND TOTAL':<34}{grand_count:>10,}{grand_value:>20,.2f}"
+        f"{LBL_GRAND_TOTAL:<38}{grand_count:>10,}{grand_value:>20,.2f}"
     )
 
 
@@ -1221,7 +1328,7 @@ def _echo_cashflow_subsection(
     click.echo(f"{indent}{title}")
     click.echo(f"{indent}{'-' * len(title)}")
     if not per_account:
-        click.echo(f"{indent}(no activity)")
+        click.echo(f"{indent}{LBL_NO_ACTIVITY}")
     else:
         for code in sorted(per_account):
             mov = per_account[code]
@@ -1231,7 +1338,7 @@ def _echo_cashflow_subsection(
                 f"{mov['outflow']:>20,.2f}{net:>20,.2f}"
             )
     click.echo(
-        f"{indent}  {'Subtotal':<8}{total_inflow:>20,.2f}"
+        f"{indent}  {LBL_SUBTOTAL_UPPER:<8}{total_inflow:>20,.2f}"
         f"{total_outflow:>20,.2f}{(total_inflow - total_outflow):>20,.2f}"
     )
     click.echo("")
@@ -1274,7 +1381,7 @@ def cashflow_cmd(since, until):
             f"--since ({since}) must not be later than --until ({until}).",
             param_hint="Use a date range where --since is on or before --until.",
         )
-    _echo_header("Cashflow Statement (Direct Method)", since, until)
+    _echo_header(CASHFLOW_TITLE, since, until)
 
     with get_db() as conn:
         # Opening balance: cumulative cash-account balances before --since.
@@ -1335,24 +1442,24 @@ def cashflow_cmd(since, until):
             per_account_activity[code]["outflow"] += mov["outflow"]
 
     # ---- Print sections ----
-    click.echo("Operating Activities")
-    click.echo("=====================")
+    click.echo(LBL_OPERATING_ACTIVITIES)
+    click.echo("=" * len(LBL_OPERATING_ACTIVITIES))
     _echo_cashflow_subsection(
-        "Cash from customers", cust_per, cust_in, cust_out, indent="  ",
+        LBL_CASH_FROM_CUSTOMERS, cust_per, cust_in, cust_out, indent="  ",
     )
     _echo_cashflow_subsection(
-        "Cash paid to suppliers/employees", sup_per, sup_in, sup_out, indent="  ",
+        LBL_CASH_PAID_SUPPLIERS, sup_per, sup_in, sup_out, indent="  ",
     )
     click.echo(
-        f"  {'Net operating cashflow':<24}{oper_in:>20,.2f}"
+        f"  {LBL_NET_OPERATING_CASHFLOW:<28}{oper_in:>20,.2f}"
         f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"
     )
     click.echo("")
 
-    click.echo("Investing Activities")
-    click.echo("===================")
+    click.echo(LBL_INVESTING_ACTIVITIES)
+    click.echo("=" * len(LBL_INVESTING_ACTIVITIES))
     if not investing_per:
-        click.echo("  (no activity)")
+        click.echo(f"  {LBL_NO_ACTIVITY}")
     else:
         for code in sorted(investing_per):
             mov = investing_per[code]
@@ -1362,15 +1469,15 @@ def cashflow_cmd(since, until):
                 f"{net:>20,.2f}"
             )
     click.echo(
-        f"  {'Net investing cashflow':<24}{investing_in:>20,.2f}"
+        f"  {LBL_NET_INVESTING_CASHFLOW:<28}{investing_in:>20,.2f}"
         f"{investing_out:>20,.2f}{(investing_in - investing_out):>20,.2f}"
     )
     click.echo("")
 
-    click.echo("Financing Activities")
-    click.echo("====================")
+    click.echo(LBL_FINANCING_ACTIVITIES)
+    click.echo("=" * len(LBL_FINANCING_ACTIVITIES))
     if not fin_per:
-        click.echo("  (no activity)")
+        click.echo(f"  {LBL_NO_ACTIVITY}")
     else:
         for code in sorted(fin_per):
             mov = fin_per[code]
@@ -1380,24 +1487,24 @@ def cashflow_cmd(since, until):
                 f"{net:>20,.2f}"
             )
     click.echo(
-        f"  {'Net financing cashflow':<24}{fin_in:>20,.2f}{fin_out:>20,.2f}"
-        f"{(fin_in - fin_out):>20,.2f}"
+        f"  {LBL_NET_FINANCING_CASHFLOW:<28}{fin_in:>20,.2f}"
+        f"{fin_out:>20,.2f}{(fin_in - fin_out):>20,.2f}"
     )
     click.echo("")
 
     # ---- Reconciliation ----
-    click.echo("=" * 84)
-    click.echo(f"{'Total inflows':<40}{total_inflow:>20,.2f}")
-    click.echo(f"{'Total outflows':<40}{total_outflow:>20,.2f}")
-    click.echo(f"{'Net cash flow':<40}{net_cash_flow:>20,.2f}")
+    click.echo("=" * 88)
+    click.echo(f"{LBL_TOTAL_INFLOWS:<48}{total_inflow:>20,.2f}")
+    click.echo(f"{LBL_TOTAL_OUTFLOWS:<48}{total_outflow:>20,.2f}")
+    click.echo(f"{LBL_NET_CASH_FLOW:<48}{net_cash_flow:>20,.2f}")
     click.echo("")
-    click.echo(f"{'Opening cash balance':<40}{opening_total:>20,.2f}")
-    click.echo(f"{'Closing cash balance':<40}{closing_total:>20,.2f}")
+    click.echo(f"{LBL_OPENING_BALANCE:<48}{opening_total:>20,.2f}")
+    click.echo(f"{LBL_CLOSING_BALANCE:<48}{closing_total:>20,.2f}")
     expected_change = closing_total - opening_total
     imbalance = abs(net_cash_flow - expected_change)
-    status = "OK" if imbalance <= CASHFLOW_RECONCILIATION_TOLERANCE else "MISMATCH"
+    status = LBL_RECONCILE_OK if imbalance <= CASHFLOW_RECONCILIATION_TOLERANCE else LBL_RECONCILE_MISMATCH
     click.echo(
-        f"{'Reconciliation (closing - opening)':<40}{expected_change:>20,.2f}"
+        f"{LBL_RECONCILIATION_DETAIL:<48}{expected_change:>20,.2f}"
         f"  [{status}]"
     )
     click.echo("")
@@ -1406,13 +1513,13 @@ def cashflow_cmd(since, until):
     # Standalone table showing each cash account's inflows, outflows, net
     # change, opening balance, and closing balance for the period. Aggregates
     # across operating, investing, and financing activity.
-    click.echo("Per-Account Breakdown")
-    click.echo("=====================")
+    click.echo(LBL_PER_ACCOUNT_BREAKDOWN)
+    click.echo("=" * len(LBL_PER_ACCOUNT_BREAKDOWN))
     click.echo(
-        f"{'Code':<8}{'Account':<40}{'Inflows':>18}{'Outflows':>18}"
-        f"{'Net':>18}{'Opening':>18}{'Closing':>18}"
+        f"{LBL_CODE:<8}{LBL_ACCOUNT:<32}{LBL_INFLOWS:>14}{LBL_OUTFLOWS:>14}"
+        f"{LBL_NET:>14}{LBL_OPENING:>14}{LBL_CLOSING:>14}"
     )
-    click.echo("-" * 120)
+    click.echo("-" * 110)
     total_in = 0.0
     total_out = 0.0
     total_opening = 0.0
@@ -1430,12 +1537,12 @@ def cashflow_cmd(since, until):
         total_opening += opening
         total_closing += closing
         click.echo(
-            f"{code:<8}{name[:39]:<40}{inflow:>18,.2f}{outflow:>18,.2f}"
-            f"{net:>18,.2f}{opening:>18,.2f}{closing:>18,.2f}"
+            f"{code:<8}{name[:31]:<32}{inflow:>14,.2f}{outflow:>14,.2f}"
+            f"{net:>14,.2f}{opening:>14,.2f}{closing:>14,.2f}"
         )
-    click.echo("-" * 120)
+    click.echo("-" * 110)
     click.echo(
-        f"{'TOTAL':<48}{total_in:>18,.2f}{total_out:>18,.2f}"
-        f"{(total_in - total_out):>18,.2f}{total_opening:>18,.2f}"
-        f"{total_closing:>18,.2f}"
+        f"{LBL_TOTAL_UPPER:<40}{total_in:>14,.2f}{total_out:>14,.2f}"
+        f"{(total_in - total_out):>14,.2f}{total_opening:>14,.2f}"
+        f"{total_closing:>14,.2f}"
     )
