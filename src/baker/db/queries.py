@@ -48,13 +48,24 @@ def month_range():
     return start.strftime("%Y-%m-%dT00:00:00Z"), end.strftime("%Y-%m-%dT23:59:59Z")
 
 
-def fetch_staff(conn, *, active_only=True):
-    """Fetch staff members."""
+def fetch_staff(conn, *, active_only=True, role=None):
+    """Fetch staff members.
+
+    When ``role`` is provided, only staff whose ``role`` column matches the
+    given value are returned (parameterized query — NFR4 for DG-304 Phase 1).
+    The ``active_only`` filter still applies when ``role`` is set.
+    """
+    clauses = []
+    params: tuple = ()
     if active_only:
-        return conn.execute(
-            "SELECT * FROM staff WHERE active = 1 ORDER BY name"
-        ).fetchall()
-    return conn.execute("SELECT * FROM staff ORDER BY name").fetchall()
+        clauses.append("active = 1")
+    if role is not None:
+        clauses.append("role = ?")
+        params = params + (role,)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    return conn.execute(
+        f"SELECT * FROM staff{where} ORDER BY name", params
+    ).fetchall()
 
 
 def find_staff_by_name(conn, name):

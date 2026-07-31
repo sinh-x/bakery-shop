@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../data/api/staff_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
+import '../../../providers/staff_provider.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -11,8 +13,20 @@ import 'delivery_day_calendar_view.dart';
 import 'delivery_order_card.dart';
 import 'delivery_week_calendar_view.dart';
 
+/// Delivery tab content: status-grouped delivery order list with day/week
+/// calendar views, today/all filter, and (DG-304 Phase 4) a staff filter
+/// dropdown + per-staff workload summary.
+///
+/// The staff filter is session-only — it resets to "All" when the user
+/// navigates away from the delivery tab (AC7). Pass the host [TabController]
+/// via [tabController] so this widget can listen for tab switches; when null
+/// (e.g. in tests) no reset-on-leave behavior is wired.
 class DeliveryContent extends ConsumerStatefulWidget {
-  const DeliveryContent({super.key});
+  const DeliveryContent({super.key, this.tabController});
+
+  /// Optional host tab controller used to reset the staff filter to "All"
+  /// when the user navigates away from the delivery tab (AC7).
+  final TabController? tabController;
 
   @override
   ConsumerState<DeliveryContent> createState() => _DeliveryContentState();
@@ -25,13 +39,87 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   /// Defaults to 'day' per FR1/AC1 so the day calendar is shown on open.
   String _viewMode = 'day';
 
+  /// Selected delivery-staff filter id (FR2/FR3). `null` = "All" (FR4).
+  /// Session-only: reset to `null` on tab leave (AC7).
+  String? _selectedStaffId;
+
+  TabController? _observedTabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _attachTabController(widget.tabController);
+  }
+
+  @override
+  void didUpdateWidget(covariant DeliveryContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tabController != widget.tabController) {
+      _attachTabController(widget.tabController);
+    }
+  }
+
+  @override
+  void dispose() {
+    _detachTabController();
+    super.dispose();
+  }
+
+  void _attachTabController(TabController? controller) {
+    _detachTabController();
+    _observedTabController = controller;
+    controller?.addListener(_handleTabChange);
+  }
+
+  void _detachTabController() {
+    _observedTabController?.removeListener(_handleTabChange);
+    _observedTabController = null;
+  }
+
+  /// Resets the staff filter to "All" (null) whenever the delivery tab is
+  /// not the active tab (AC7). The delivery tab is index 2 in
+  /// `OrderListScreen`'s 3-tab controller. The `setState` is a no-op when
+  /// the filter is already null, so it is safe to call on every tab
+  /// notification. The host `OrderListScreen` also rebuilds on tab changes,
+  /// so `_maybeResetStaffFilterOnTabLeave` (called from `build`) catches
+  /// any transition the listener misses.
+  void _handleTabChange() {
+    final controller = _observedTabController;
+    if (controller == null) return;
+    if (controller.index != 2 && _selectedStaffId != null) {
+      setState(() => _selectedStaffId = null);
+    }
+  }
+
+  /// Defense-in-depth: also reset during `build` when the host rebuilds us
+  /// while off the delivery tab (covers `TabController` notify quirks).
+  void _maybeResetStaffFilterOnTabLeave() {
+    final controller = _observedTabController;
+    if (controller == null) return;
+    if (controller.index != 2 && _selectedStaffId != null) {
+      _selectedStaffId = null;
+    }
+  }
+
   Future<void> _onRefresh() async {
     await ref.read(orderListProvider.notifier).refresh();
   }
 
+  /// Delivery-role staff filtered client-side from the cached
+  /// `staffListProvider` (FR2/NFR1/NFR2 — no extra API call on toggle).
+  List<StaffMember> _deliveryStaff(List<StaffMember> all) {
+    return all.where((s) => s.role == 'giao-hang' && s.active).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    _maybeResetStaffFilterOnTabLeave();
     final ordersAsync = ref.watch(orderListProvider);
+    final staffAsync = ref.watch(staffListProvider);
+    final deliveryStaff = staffAsync.maybeWhen(
+      data: _deliveryStaff,
+      orElse: () => const <StaffMember>[],
+    );
 
     return ordersAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -53,11 +141,16 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         // The week/day grid has its own "Hôm nay" navigation (FR5/AC2/AC3),
         // so it always receives all non-terminal delivery orders regardless
         // of the Today/All filter. The Today/All filter only applies to the
-        // list view.
-        final calendarOrders =
-            filterDeliveryOrders(orders, todayOnly: false);
-        final listOrders =
-            filterDeliveryOrders(orders, todayOnly: _showToday);
+        // list view. The staff filter (FR3) applies to both calendar and
+        // list views.
+        final calendarOrders = filterDeliveryOrdersByStaff(
+          filterDeliveryOrders(orders, todayOnly: false),
+          staffId: _selectedStaffId,
+        );
+        final listOrders = filterDeliveryOrdersByStaff(
+          filterDeliveryOrders(orders, todayOnly: _showToday),
+          staffId: _selectedStaffId,
+        );
         // Auto-focus the calendars on the next upcoming non-terminal
         // delivery order (FR2/FR3/AC2/AC3); fall back to today when none
         // (AC4). Computed once per rebuild from the non-terminal set.
@@ -82,7 +175,14 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
                       selected: !_showToday,
                       onSelected: (v) => setState(() => _showToday = !v),
                     ),
+                    const SizedBox(width: 8),
                   ],
+                  _StaffFilterDropdown(
+                    deliveryStaff: deliveryStaff,
+                    selectedStaffId: _selectedStaffId,
+                    onChanged: (id) =>
+                        setState(() => _selectedStaffId = id),
+                  ),
                   const Spacer(),
                   _ViewModeToggle(
                     viewMode: _viewMode,
@@ -91,6 +191,10 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
                   ),
                 ],
               ),
+            ),
+            _WorkloadSummary(
+              deliveryStaff: deliveryStaff,
+              todayOrders: filterDeliveryOrders(orders, todayOnly: true),
             ),
             Expanded(
               child: _buildView(calendarOrders, listOrders, nextDue, nextDueWeekStart),
@@ -207,6 +311,122 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
             onTap: () => ctx.push('/orders/${order.orderRef}'),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Staff filter dropdown populated from delivery-role staff (FR2/FR4).
+/// "All" is always the first option and the default selection (FR4).
+/// No extra API call on toggle (NFR1/NFR2) — uses already-loaded staff.
+class _StaffFilterDropdown extends StatelessWidget {
+  const _StaffFilterDropdown({
+    required this.deliveryStaff,
+    required this.selectedStaffId,
+    required this.onChanged,
+  });
+
+  final List<StaffMember> deliveryStaff;
+  final String? selectedStaffId;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    // Ensure the current selection is still in the list (e.g. after a
+    // refresh); otherwise fall back to "All".
+    final value = (selectedStaffId == null ||
+            deliveryStaff.any((s) => s.id.toString() == selectedStaffId))
+        ? selectedStaffId
+        : null;
+
+    return DropdownButton<String?>(
+      value: value,
+      hint: const Text(OrdersLabels.staffFilterLabel),
+      items: [
+        const DropdownMenuItem<String?>(
+          value: null,
+          child: Text(OrdersLabels.staffFilterAll),
+        ),
+        ...deliveryStaff.map(
+          (s) => DropdownMenuItem<String?>(
+            value: s.id.toString(),
+            child: Text(s.name),
+          ),
+        ),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+/// Per-staff workload summary (FR5/AC3): shows each delivery-role staff
+/// member's count of today's non-terminal delivery orders, plus an
+/// "unassigned" bucket. Collapsed to a single line when there are no
+/// delivery-role staff.
+class _WorkloadSummary extends StatelessWidget {
+  const _WorkloadSummary({
+    required this.deliveryStaff,
+    required this.todayOrders,
+  });
+
+  final List<StaffMember> deliveryStaff;
+  final List<Order> todayOrders;
+
+  @override
+  Widget build(BuildContext context) {
+    if (deliveryStaff.isEmpty) return const SizedBox.shrink();
+
+    final summary = computeWorkloadSummary(todayOrders, deliveryStaff);
+    final theme = Theme.of(context);
+
+    final chips = <Widget>[];
+    for (final entry in summary.entries) {
+      chips.add(
+        Chip(
+          label: Text(
+            OrdersLabels.workloadStaffCount(entry.staff.name, entry.count),
+            style: theme.textTheme.bodySmall,
+          ),
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+        ),
+      );
+    }
+    chips.add(
+      Chip(
+        label: Text(
+          '${OrdersLabels.workloadUnassigned}: ${summary.unassignedCount}',
+          style: theme.textTheme.bodySmall,
+        ),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+      ),
+    );
+
+    final allZero = summary.entries.every((e) => e.count == 0) &&
+        summary.unassignedCount == 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              allZero
+                  ? OrdersLabels.workloadSummaryEmpty
+                  : OrdersLabels.workloadSummaryTitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            if (!allZero) ...chips,
+          ],
+        ),
       ),
     );
   }

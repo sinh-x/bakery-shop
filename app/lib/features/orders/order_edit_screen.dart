@@ -69,6 +69,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   bool _customerTouched = false;
   int _currentStage = 1;
 
+  // DG-304 Phase 5: admin staff assignment state for the delivery stage
+  // dropdown (FR8/AC5). `_assignedStaffTouched` gates whether the value is
+  // sent on save (incl. null to unassign — FR6), mirroring `customerTouched`.
+  String? _assignedStaffId;
+  bool _assignedStaffTouched = false;
+
   /// FR2/FR3: the delivery phone syncs with the customer phone until the user
   /// manually makes them differ; once diverged it stays independent for the
   /// rest of the edit session.
@@ -165,6 +171,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _longitudeCtrl.text =
         order.longitude != null ? order.longitude.toString() : '';
     _existingGoogleMapsUrl = order.googleMapsUrl;
+    // DG-304 Phase 5: prefill the staff assignment from the existing order so
+    // the dropdown shows the current assignee (FR8/AC5).
+    _assignedStaffId = order.assignedStaffId;
     _initializing = false;
   }
 
@@ -291,6 +300,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryTimeSlot: _dueTime != null
                 ? deriveTimeSlot(_formatTime(_dueTime!))
                 : null,
+            // DG-304 Phase 5: admin staff assignment (FR8/AC5). Only sent when
+            // the admin touched the dropdown; null clears the assignment.
+            assignedStaffId: _assignedStaffId,
+            assignedStaffTouched: _assignedStaffTouched,
           );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
@@ -350,6 +363,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         _selectedCustomer = null;
         _customerTouched = true;
       }
+    });
+  }
+
+  /// DG-304 Phase 5: admin selects a delivery staff member (or clears to
+  /// unassign) in the wizard delivery stage dropdown (FR8/FR6/AC5).
+  void _onAssignedStaffChanged(String? staffId) {
+    setState(() {
+      _assignedStaffId = staffId;
+      _assignedStaffTouched = true;
     });
   }
 
@@ -445,6 +467,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onContinue: () => _goToStage(4),
                         latitudeCtrl: _latitudeCtrl,
                         longitudeCtrl: _longitudeCtrl,
+                        // DG-304 Phase 5: staff assignment dropdown state.
+                        assignedStaffId: _assignedStaffId,
+                        onAssignedStaffChanged: _onAssignedStaffChanged,
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/order_draft.dart';
 import '../../../../shared/utils/date_formatting.dart';
+import '../../../../shared/utils/order_helpers.dart';
 import '../hour_picker.dart';
 import '../order_delivery_section.dart';
 import '../order_wizard.dart';
 import '../stage_summary_card.dart';
+import 'staff_assignment_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Stage 3 of the order edit wizard — delivery.
@@ -39,6 +41,9 @@ class EditStage3Delivery extends ConsumerWidget {
     required this.onContinue,
     this.latitudeCtrl,
     this.longitudeCtrl,
+    // DG-304 Phase 5: staff assignment dropdown state (FR8/AC5/AC6).
+    this.assignedStaffId,
+    this.onAssignedStaffChanged,
   });
 
   final String deliveryType;
@@ -68,53 +73,71 @@ class EditStage3Delivery extends ConsumerWidget {
   // the order detail screen.
   final TextEditingController? latitudeCtrl;
   final TextEditingController? longitudeCtrl;
+  // DG-304 Phase 5: staff assignment dropdown state (FR8/AC5/AC6). The
+  // current `assignedStaffId` (null when unassigned) and change callback.
+  final String? assignedStaffId;
+  final ValueChanged<String?>? onAssignedStaffChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final showStaffAssignment =
+        onAssignedStaffChanged != null && isDeliveryType(deliveryType);
     return Column(
       children: [
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: OrderDeliverySection(
-              mode: OrderDeliverySectionMode.editable,
-              useResponsiveLayout: true,
-              deliveryType: deliveryType,
-              shippingFee: shippingFee,
-              addressCtrl: addressCtrl,
-              phoneCtrl: deliveryPhoneCtrl,
-              notesCtrl: notesCtrl,
-              shippingBusDefault: shippingBusDefault,
-              shippingDoorDefault: shippingDoorDefault,
-              onDeliveryTypeChanged: (type) {
-                // FR7: prefill delivery phone from customer phone for bus/door
-                // when the delivery phone is empty; never overwrite a
-                // user-entered value.
-                if (type == 'bus' || type == 'door') {
-                  if (deliveryPhoneCtrl.text.trim().isEmpty &&
-                      customerPhone.trim().isNotEmpty) {
-                    deliveryPhoneCtrl.text = customerPhone.trim();
-                  }
-                }
-                onDeliveryTypeChanged(type);
-              },
-              onShippingFeeChanged: onShippingFeeChanged,
-              dueDate: dueDate,
-              dueTime: dueTime,
-              dueDateTimeSlot: _buildEditDueDateTime(context),
-              latitudeCtrl: latitudeCtrl,
-              longitudeCtrl: longitudeCtrl,
-              summaryCardSlots: [
-                ProductSummaryCard(items: summaryItems),
-                CustomerSummaryCard(
-                  wizardData: wizardSnapshot,
-                  source: wizardSnapshot.source,
-                ),
-                DeliverySummaryCard(
-                  wizardData: wizardSnapshot,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                OrderDeliverySection(
+                  mode: OrderDeliverySectionMode.editable,
+                  useResponsiveLayout: true,
+                  deliveryType: deliveryType,
+                  shippingFee: shippingFee,
+                  addressCtrl: addressCtrl,
+                  phoneCtrl: deliveryPhoneCtrl,
+                  notesCtrl: notesCtrl,
+                  shippingBusDefault: shippingBusDefault,
+                  shippingDoorDefault: shippingDoorDefault,
+                  onDeliveryTypeChanged: (type) {
+                    // FR7: prefill delivery phone from customer phone for bus/door
+                    // when the delivery phone is empty; never overwrite a
+                    // user-entered value.
+                    if (type == 'bus' || type == 'door') {
+                      if (deliveryPhoneCtrl.text.trim().isEmpty &&
+                          customerPhone.trim().isNotEmpty) {
+                        deliveryPhoneCtrl.text = customerPhone.trim();
+                      }
+                    }
+                    onDeliveryTypeChanged(type);
+                  },
+                  onShippingFeeChanged: onShippingFeeChanged,
                   dueDate: dueDate,
                   dueTime: dueTime,
+                  dueDateTimeSlot: _buildEditDueDateTime(context),
+                  latitudeCtrl: latitudeCtrl,
+                  longitudeCtrl: longitudeCtrl,
+                  summaryCardSlots: [
+                    ProductSummaryCard(items: summaryItems),
+                    CustomerSummaryCard(
+                      wizardData: wizardSnapshot,
+                      source: wizardSnapshot.source,
+                    ),
+                    DeliverySummaryCard(
+                      wizardData: wizardSnapshot,
+                      dueDate: dueDate,
+                      dueTime: dueTime,
+                    ),
+                  ],
                 ),
+                if (showStaffAssignment) ...[
+                  const SizedBox(height: 16),
+                  StaffAssignmentDropdown(
+                    assignedStaffId: assignedStaffId,
+                    onChanged: onAssignedStaffChanged,
+                  ),
+                ],
               ],
             ),
           ),

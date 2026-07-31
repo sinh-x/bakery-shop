@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_content.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
+import 'package:bakery_app/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 Order _order({
@@ -18,6 +20,7 @@ Order _order({
   String? dueTime,
   double totalPrice = 100000,
   String customerName = 'Test',
+  String? assignedStaffId,
 }) {
   return Order(
     id: id.toString(),
@@ -30,6 +33,7 @@ Order _order({
     totalPrice: totalPrice,
     dueDate: dueDate,
     dueTime: dueTime,
+    assignedStaffId: assignedStaffId,
     createdAt: DateTime(2026, 7, 1),
     updatedAt: DateTime(2026, 7, 1),
   );
@@ -54,7 +58,19 @@ class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
   String build() => url;
 }
 
-Widget buildTestWidget(List<Order> orders) {
+class _FakeStaffListNotifier extends StaffListNotifier {
+  final List<StaffMember> staff;
+  _FakeStaffListNotifier(this.staff);
+
+  @override
+  Future<List<StaffMember>> build() async => staff;
+}
+
+Widget buildTestWidget(
+  List<Order> orders, {
+  List<StaffMember>? staff,
+  TabController? tabController,
+}) {
   return ProviderScope(
     overrides: [
       orderListProvider.overrideWith(
@@ -63,10 +79,12 @@ Widget buildTestWidget(List<Order> orders) {
       apiBaseUrlProvider.overrideWith(
         () => _FakeApiBaseUrlNotifier('http://test.local'),
       ),
+      if (staff != null)
+        staffListProvider.overrideWith(() => _FakeStaffListNotifier(staff)),
     ],
-    child: const MaterialApp(
+    child: MaterialApp(
       home: Scaffold(
-        body: DeliveryContent(),
+        body: DeliveryContent(tabController: tabController),
       ),
     ),
   );
@@ -375,6 +393,180 @@ void main() {
         ),
       );
       expect(todayButton.onPressed, isNotNull);
+    });
+
+    // ── DG-304 Phase 4: staff filter + workload summary ──────────────
+
+    final deliveryStaff = [
+      StaffMember(id: 10, name: 'An', role: 'giao-hang', active: true),
+      StaffMember(id: 20, name: 'Binh', role: 'giao-hang', active: true),
+      // Non-delivery role staff should be excluded from the dropdown.
+      StaffMember(id: 30, name: 'Ca', role: 'thu-ngan', active: true),
+      // Inactive delivery staff should be excluded (FR10/NFR2).
+      StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
+    ];
+
+    final todayOrders = [
+      _order(
+        id: 1,
+        ref: 'ORD-AN',
+        status: 'new',
+        deliveryType: 'bus',
+        dueDate: '2026-07-19',
+        assignedStaffId: '10',
+      ),
+      _order(
+        id: 2,
+        ref: 'ORD-BINH',
+        status: 'ready',
+        deliveryType: 'door',
+        dueDate: '2026-07-19',
+        assignedStaffId: '20',
+      ),
+      _order(
+        id: 3,
+        ref: 'ORD-UNASSIGNED',
+        status: 'new',
+        deliveryType: 'bus',
+        dueDate: '2026-07-19',
+      ),
+    ];
+
+    testWidgets('FR2/FR4: staff filter dropdown includes All + delivery '
+        'staff only (excludes other roles + inactive)', (tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: deliveryStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // Open the staff filter dropdown.
+      await tester.tap(find.text(OrdersLabels.staffFilterAll));
+      await tester.pumpAndSettle();
+
+      // "All" appears as both the selected hint and a menu item; the
+      // delivery staff appear as menu items only.
+      expect(find.text('An'), findsOneWidget);
+      expect(find.text('Binh'), findsOneWidget);
+      // Non-delivery role and inactive staff are excluded.
+      expect(find.text('Ca'), findsNothing);
+      expect(find.text('Dung'), findsNothing);
+    });
+
+    testWidgets('AC1/FR3: selecting a staff shows only their orders',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: deliveryStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      await _switchToList(tester);
+
+      // Initially all three orders are visible.
+      expect(find.text('ORD-AN'), findsOneWidget);
+      expect(find.text('ORD-BINH'), findsOneWidget);
+      expect(find.text('ORD-UNASSIGNED'), findsOneWidget);
+
+      // Open the staff filter dropdown and select "An".
+      await tester.tap(find.text(OrdersLabels.staffFilterAll));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('An').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('ORD-AN'), findsOneWidget);
+      expect(find.text('ORD-BINH'), findsNothing);
+      expect(find.text('ORD-UNASSIGNED'), findsNothing);
+    });
+
+    testWidgets('AC2: "All" option shows all delivery orders regardless of '
+        'assignment', (tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: deliveryStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      await _switchToList(tester);
+
+      // Filter to one staff, then back to "All".
+      await tester.tap(find.text(OrdersLabels.staffFilterAll));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('An').last);
+      await tester.pumpAndSettle();
+      expect(find.text('ORD-BINH'), findsNothing);
+
+      await tester.tap(find.text('An'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(OrdersLabels.staffFilterAll));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ORD-AN'), findsOneWidget);
+      expect(find.text('ORD-BINH'), findsOneWidget);
+      expect(find.text('ORD-UNASSIGNED'), findsOneWidget);
+    });
+
+    testWidgets('AC3/FR5: workload summary shows per-staff counts for today',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: deliveryStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // The workload summary renders in the default day calendar view too.
+      expect(find.text(OrdersLabels.workloadSummaryTitle), findsOneWidget);
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('An', 1)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Binh', 1)),
+        findsOneWidget,
+      );
+      expect(
+        find.text('${OrdersLabels.workloadUnassigned}: 1'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('AC7: staff filter resets to "All" on tab leave',
+        (tester) async {
+      final tabController = TabController(length: 3, vsync: tester);
+      // Start on the delivery tab (index 2) so the staff filter persists
+      // until the user navigates away (AC7).
+      tabController.index = 2;
+      addTearDown(tabController.dispose);
+
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: deliveryStaff,
+        tabController: tabController,
+      ));
+      await tester.pumpAndSettle();
+
+      await _switchToList(tester);
+
+      // Select "An" — only their orders show.
+      await tester.tap(find.text(OrdersLabels.staffFilterAll));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('An').last);
+      await tester.pumpAndSettle();
+      expect(find.text('ORD-BINH'), findsNothing);
+
+      // Navigate away from the delivery tab (index 2 → 0) and pump a frame
+      // so the build-time reset guard fires.
+      tabController.index = 0;
+      await tester.pumpAndSettle();
+
+      // Navigate back to the delivery tab.
+      tabController.index = 2;
+      await tester.pumpAndSettle();
+
+      // The filter has reset to "All" — all three orders visible again.
+      expect(find.text('ORD-AN'), findsOneWidget);
+      expect(find.text('ORD-BINH'), findsOneWidget);
+      expect(find.text('ORD-UNASSIGNED'), findsOneWidget);
     });
   });
 }
