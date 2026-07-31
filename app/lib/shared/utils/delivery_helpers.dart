@@ -1,5 +1,6 @@
 import 'package:bakery_app/shared/labels/orders.dart';
 
+import '../../data/api/staff_service.dart';
 import '../../data/models/order.dart';
 import 'date_formatting.dart';
 import 'order_helpers.dart';
@@ -199,4 +200,63 @@ DateTime? findNextDueDate(List<Order> orders) {
     }
   }
   return best;
+}
+
+/// Filters [orders] by the given [staffId], returning only those whose
+/// `assignedStaffId` matches (FR3). When [staffId] is null or empty, all
+/// orders are returned unchanged (the "All" option — FR4/NFR1).
+///
+/// This is a pure client-side predicate over already-loaded orders: it makes
+/// no additional API call (NFR1). It does not re-apply the delivery-type or
+/// status filters — callers should pass the output of [filterDeliveryOrders]
+/// (or another already-filtered list) so the staff filter composes cleanly
+/// after the existing today/status filters.
+List<Order> filterDeliveryOrdersByStaff(List<Order> orders, {String? staffId}) {
+  if (staffId == null || staffId.isEmpty) return List<Order>.from(orders);
+  return orders
+      .where((o) => o.assignedStaffId == staffId)
+      .toList();
+}
+
+/// A single staff member's workload count for today's non-terminal delivery
+/// orders (FR5). Used by [computeWorkloadSummary] to build the per-staff list.
+class WorkloadEntry {
+  final StaffMember staff;
+  final int count;
+
+  WorkloadEntry({required this.staff, required this.count});
+}
+
+/// Computes a per-staff count of today's non-terminal delivery orders for the
+/// given delivery-role staff list (FR5/NFR3). [orders] should already be
+/// filtered to today's non-terminal delivery orders (the output of
+/// `filterDeliveryOrders(orders, todayOnly: true)`), so this function does a
+/// single O(n) pass over [orders] and an O(m) build of the per-staff counter
+/// (where m = number of delivery-role staff) — overall O(n + m) (NFR3).
+///
+/// Orders whose `assignedStaffId` is null/empty/unknown are counted under the
+/// "unassigned" bucket (returned via [unassignedCount]); only staff present in
+/// [deliveryStaff] appear as [WorkloadEntry] results. The returned list is
+/// ordered to match [deliveryStaff] input order (typically the dropdown order).
+({List<WorkloadEntry> entries, int unassignedCount}) computeWorkloadSummary(
+  List<Order> orders,
+  List<StaffMember> deliveryStaff,
+) {
+  final counts = <String, int>{
+    for (final s in deliveryStaff) s.id.toString(): 0,
+  };
+  var unassigned = 0;
+  for (final o in orders) {
+    final id = o.assignedStaffId;
+    if (id == null || id.isEmpty || !counts.containsKey(id)) {
+      unassigned++;
+      continue;
+    }
+    counts[id] = counts[id]! + 1;
+  }
+  final entries = <WorkloadEntry>[];
+  for (final s in deliveryStaff) {
+    entries.add(WorkloadEntry(staff: s, count: counts[s.id.toString()]!));
+  }
+  return (entries: entries, unassignedCount: unassigned);
 }

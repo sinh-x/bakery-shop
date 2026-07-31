@@ -241,6 +241,15 @@ class OrdersLabels {
   static const deliveryClaimSuccess = 'Đã nhận giao';
   static const deliveryUnclaimSuccess = 'Đã trả đơn';
 
+  // Delivery staff filter + workload summary (DG-304 Phase 3) — FR2/FR3/FR5.
+  static const staffFilterAll = 'Tất cả nhân viên';
+  static const staffFilterLabel = 'Lọc theo nhân viên';
+  static const workloadSummaryTitle = 'Khối lượng công việc hôm nay';
+  static const workloadSummaryEmpty = 'Không có đơn giao đang xử lý';
+  static const workloadUnassigned = 'Chưa gán';
+  static String workloadStaffCount(String staffName, int count) =>
+      '$staffName: $count đơn';
+
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
     final weekday = deliveryWeekdayHeaders[d.weekday - 1];

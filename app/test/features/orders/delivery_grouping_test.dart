@@ -1,3 +1,4 @@
+import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/delivery_helpers.dart';
@@ -13,6 +14,7 @@ Order _order({
   String deliveryType = 'bus',
   String? dueDate,
   String? dueTime,
+  String? assignedStaffId,
 }) {
   return Order(
     id: id.toString(),
@@ -24,10 +26,14 @@ Order _order({
     totalPrice: 0,
     dueDate: dueDate,
     dueTime: dueTime,
+    assignedStaffId: assignedStaffId,
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
   );
 }
+
+StaffMember _staff({required int id, String role = 'giao-hang'}) =>
+    StaffMember(id: id, name: 'Staff $id', role: role, active: true);
 
 void main() {
   final yesterday = _formatDate(
@@ -601,6 +607,134 @@ void main() {
       expect(days.first, DateTime(2026, 7, 27)); // Monday
       expect(days.last, DateTime(2026, 8, 2)); // Sunday
       expect(days.map((d) => d.weekday), [1, 2, 3, 4, 5, 6, 7]);
+    });
+  });
+
+  group('filterDeliveryOrdersByStaff', () {
+    final today = _formatDate(DateTime.now());
+    final orders = [
+      _order(id: 1, ref: 'A', status: 'new', dueDate: today, assignedStaffId: '10'),
+      _order(id: 2, ref: 'B', status: 'new', dueDate: today, assignedStaffId: '20'),
+      _order(id: 3, ref: 'C', status: 'new', dueDate: today, assignedStaffId: '10'),
+      _order(id: 4, ref: 'D', status: 'new', dueDate: today, assignedStaffId: null),
+      _order(id: 5, ref: 'E', status: 'new', dueDate: today, assignedStaffId: ''),
+    ];
+
+    test('null staffId returns all orders (the "All" option, FR4/NFR1)', () {
+      final filtered = filterDeliveryOrdersByStaff(orders, staffId: null);
+      expect(filtered.length, 5);
+    });
+
+    test('empty staffId returns all orders', () {
+      final filtered = filterDeliveryOrdersByStaff(orders, staffId: '');
+      expect(filtered.length, 5);
+    });
+
+    test('non-null staffId returns only matching orders (FR3)', () {
+      final filtered = filterDeliveryOrdersByStaff(orders, staffId: '10');
+      expect(filtered.length, 2);
+      expect(filtered.every((o) => o.assignedStaffId == '10'), isTrue);
+    });
+
+    test('staffId with no assignments returns empty list', () {
+      final filtered = filterDeliveryOrdersByStaff(orders, staffId: '99');
+      expect(filtered, isEmpty);
+    });
+
+    test('does not re-apply delivery-type or status filters (composes after filterDeliveryOrders)', () {
+      final mixed = [
+        _order(id: 1, ref: 'PICK', status: 'new', deliveryType: 'pickup', assignedStaffId: '10'),
+        _order(id: 2, ref: 'DONE', status: 'completed', assignedStaffId: '10'),
+        _order(id: 3, ref: 'DEL', status: 'new', deliveryType: 'bus', assignedStaffId: '10'),
+      ];
+      final filtered = filterDeliveryOrdersByStaff(mixed, staffId: '10');
+      expect(filtered.length, 3);
+    });
+  });
+
+  group('computeWorkloadSummary', () {
+    final today = _formatDate(DateTime.now());
+    final staff = [
+      _staff(id: 10),
+      _staff(id: 20),
+      _staff(id: 30),
+    ];
+
+    test('counts per-staff for today non-terminal delivery orders (FR5)', () {
+      final orders = [
+        _order(id: 1, ref: 'A', status: 'new', dueDate: today, assignedStaffId: '10'),
+        _order(id: 2, ref: 'B', status: 'new', dueDate: today, assignedStaffId: '10'),
+        _order(id: 3, ref: 'C', status: 'new', dueDate: today, assignedStaffId: '20'),
+        _order(id: 4, ref: 'D', status: 'ready', dueDate: today, assignedStaffId: '20'),
+      ];
+      final result = computeWorkloadSummary(orders, staff);
+
+      expect(result.entries.length, 3);
+      expect(result.entries[0].staff.id, 10);
+      expect(result.entries[0].count, 2);
+      expect(result.entries[1].staff.id, 20);
+      expect(result.entries[1].count, 2);
+      expect(result.entries[2].staff.id, 30);
+      expect(result.entries[2].count, 0);
+      expect(result.unassignedCount, 0);
+    });
+
+    test('unassigned orders counted separately (null/empty/unknown staffId)', () {
+      final orders = [
+        _order(id: 1, ref: 'A', status: 'new', dueDate: today, assignedStaffId: null),
+        _order(id: 2, ref: 'B', status: 'new', dueDate: today, assignedStaffId: ''),
+        _order(id: 3, ref: 'C', status: 'new', dueDate: today, assignedStaffId: '999'),
+      ];
+      final result = computeWorkloadSummary(orders, staff);
+
+      expect(result.entries[0].count, 0);
+      expect(result.entries[1].count, 0);
+      expect(result.entries[2].count, 0);
+      expect(result.unassignedCount, 3);
+    });
+
+    test('mixed assigned + unassigned', () {
+      final orders = [
+        _order(id: 1, ref: 'A', status: 'new', dueDate: today, assignedStaffId: '10'),
+        _order(id: 2, ref: 'B', status: 'new', dueDate: today, assignedStaffId: null),
+        _order(id: 3, ref: 'C', status: 'new', dueDate: today, assignedStaffId: '20'),
+        _order(id: 4, ref: 'D', status: 'new', dueDate: today, assignedStaffId: '999'),
+      ];
+      final result = computeWorkloadSummary(orders, staff);
+
+      expect(result.entries[0].count, 1); // staff 10
+      expect(result.entries[1].count, 1); // staff 20
+      expect(result.entries[2].count, 0); // staff 30
+      expect(result.unassignedCount, 2);
+    });
+
+    test('empty orders list produces all-zero counts', () {
+      final result = computeWorkloadSummary([], staff);
+      expect(result.entries.length, 3);
+      expect(result.entries.every((e) => e.count == 0), isTrue);
+      expect(result.unassignedCount, 0);
+    });
+
+    test('entries ordered to match input deliveryStaff order', () {
+      final orders = [
+        _order(id: 1, ref: 'A', status: 'new', dueDate: today, assignedStaffId: '30'),
+      ];
+      final result = computeWorkloadSummary(orders, staff);
+
+      expect(result.entries.map((e) => e.staff.id).toList(), [10, 20, 30]);
+      expect(result.entries[2].count, 1);
+    });
+
+    test('O(n) single pass — does not re-filter orders', () {
+      // Pass non-delivery / terminal-status orders: they are still counted
+      // because computeWorkloadSummary trusts its input is pre-filtered.
+      final orders = [
+        _order(id: 1, ref: 'PICK', status: 'new', deliveryType: 'pickup', assignedStaffId: '10'),
+        _order(id: 2, ref: 'DONE', status: 'completed', assignedStaffId: '10'),
+      ];
+      final result = computeWorkloadSummary(orders, staff);
+
+      expect(result.entries[0].count, 2);
     });
   });
 }
