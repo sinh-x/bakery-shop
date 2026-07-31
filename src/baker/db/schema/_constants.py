@@ -773,6 +773,7 @@ SEED_EXPENSE_CATEGORIES = [
     ("Kem", "5120", "Nguyên liệu"),
     ("Bột", "5130", "Nguyên liệu"),
     ("Phụ gia khác", "5140", "Nguyên liệu"),
+    ("Trái cây", "5150", "Nguyên liệu"),
     # Subcategories of Bao bì
     ("Hộp & đế", "5210", "Bao bì"),
     ("Phụ kiện", "5220", "Bao bì"),
@@ -830,6 +831,7 @@ SEED_CHART_OF_ACCOUNTS = [
     ("5120", "Kem (Cream)", "expense", "5100"),
     ("5130", "Bột (Flour)", "expense", "5100"),
     ("5140", "Phụ gia khác (Other Additives)", "expense", "5100"),
+    ("5150", "Trái cây (Fruits)", "expense", "5100"),
     # DG-302 Phase 1: Packaging subcategory accounts (sub-accounts of 5200).
     ("5210", "Hộp & đế (Boxes & Bases)", "expense", "5200"),
     ("5220", "Phụ kiện (Accessories)", "expense", "5200"),
@@ -858,6 +860,7 @@ EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
     "Kem": "5120",
     "Bột": "5130",
     "Phụ gia khác": "5140",
+    "Trái cây": "5150",
     # DG-302 subcategories — Bao bì (5210–5230)
     "Hộp & đế": "5210",
     "Phụ kiện": "5220",
@@ -872,6 +875,7 @@ INVENTORY_PURCHASE_CATEGORIES = {
     "Kem",
     "Bột",
     "Phụ gia khác",
+    "Trái cây",
     # Subcategories of Bao bì
     "Hộp & đế",
     "Phụ kiện",

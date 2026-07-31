@@ -40,6 +40,7 @@ const expenseSubcategoriesByParent = <String, List<String>>{
     VN.expenseSubcategoryCream,
     VN.expenseSubcategoryFlour,
     VN.expenseSubcategoryOtherAdditives,
+    VN.expenseSubcategoryFruits,
   ],
   VN.expenseCategoryPackaging: [
     VN.expenseSubcategoryBoxAndBase,
@@ -81,6 +82,7 @@ List<ExpenseCategory> _fallbackTree() {
     VN.expenseSubcategoryCream: '5120',
     VN.expenseSubcategoryFlour: '5130',
     VN.expenseSubcategoryOtherAdditives: '5140',
+    VN.expenseSubcategoryFruits: '5150',
     VN.expenseSubcategoryBoxAndBase: '5210',
     VN.expenseSubcategoryAccessories: '5220',
     VN.expenseSubcategoryWrap: '5230',

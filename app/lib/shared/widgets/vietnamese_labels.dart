@@ -651,6 +651,7 @@ class VN {
   static const expenseSubcategoryCream = 'Kem';
   static const expenseSubcategoryFlour = 'Bột';
   static const expenseSubcategoryOtherAdditives = 'Phụ gia khác';
+  static const expenseSubcategoryFruits = 'Trái cây';
   static const expenseSubcategoryBoxAndBase = 'Hộp & đế';
   static const expenseSubcategoryAccessories = 'Phụ kiện';
   static const expenseSubcategoryWrap = 'Bọc nilon';
