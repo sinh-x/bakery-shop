@@ -46,6 +46,7 @@ from baker.labels.report_labels import (
     LBL_TOTALS,
     LBL_REVENUE,
     LBL_COGS_5900,
+    LBL_COGS_SHORT,
     LBL_GROSS_PROFIT,
     LBL_MARKUP_TRUNG_BAY,
     LBL_OPERATING_EXPENSES,
@@ -73,6 +74,7 @@ from baker.labels.report_labels import (
     LBL_CR,
     LBL_PERIOD,
     LBL_SOURCE,
+    LBL_BALANCE,
     LBL_LOCKED,
     LBL_NONE,
     LBL_NO_ACTIVITY,
@@ -698,7 +700,7 @@ def account_ledger_cmd(account_code, since, until):
                 movement = f"{LBL_CR} {credit:>12,.2f}"
             click.echo(
                 f"{utc_to_local(r['transaction_date'])}  #{r['entry_id']:<6}{movement}  "
-                f"số dư={running:>14,.2f}  {r['line_description']}"
+                f"{LBL_BALANCE}={running:>14,.2f}  {r['line_description']}"
             )
 
 
@@ -936,7 +938,7 @@ def cogs_audit_cmd(since, until):
 
     # Header
     click.echo(
-        f"{LBL_ORDER:<10}{LBL_ORDER_REF:<18}{'Doanh thu':>16}{'Giá vốn':>16}"
+        f"{LBL_ORDER:<10}{LBL_ORDER_REF:<18}{LBL_REVENUE:>16}{LBL_COGS_SHORT:>16}"
         f"{LBL_RATIO:>10}{LBL_STATUS:>16}"
     )
     click.echo("-" * 86)
