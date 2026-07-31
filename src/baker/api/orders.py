@@ -15,6 +15,7 @@ from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
     OrderItem,
+    OrderStatus,
     delivery_type_to_public_suffix,
     generate_public_order_code_candidate,
     is_backward_transition,
@@ -29,7 +30,7 @@ from baker.services.customer_resolver import (
     _resolve_or_create_customer_id,
 )
 from baker.services.order_stock import auto_decrement_stock
-from baker.api.auth import resolve_actor, resolve_staff_name
+from baker.api.auth import resolve_actor, resolve_staff_name, resolve_staff_record
 from baker.utils.time import now_utc
 
 
@@ -364,8 +365,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -379,8 +380,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -393,7 +394,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
+                        AND orders.created_at >= ?
                     )
                 )"""
             )
@@ -406,7 +407,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at < ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -421,7 +422,9 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
@@ -431,37 +434,50 @@ def list_orders(
                 # the live-computed amount_paid (stored column was dropped in
                 # v80). The cached amount_paid is forwarded to from_row so we
                 # don't re-query total_paid_excl_outflows for the rows we keep.
+                # DG-311 review-uat c1 / CQ-1: staff name is JOINed once here
+                # and forwarded to from_row to avoid an N+1 per-order SELECT.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
             for r in rows:
                 # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
                 # delivered+paid filter as the active_only branch above.
+                # DG-311 review-uat c1 / CQ-1: staff name JOINed above.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         rows = conn.execute(
-            f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT orders.*, s.name AS assigned_staff_name "
+            f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+            f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
         return [
-            Order.from_row(r, conn).to_api_dict(threshold_minutes=threshold_minutes)
+            Order.from_row(
+                r,
+                conn,
+                assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
+            ).to_api_dict(threshold_minutes=threshold_minutes)
             for r in rows
         ]
 
@@ -1092,6 +1108,150 @@ def update_payment(ref: str, body: PaymentUpdate, request: Request):
                 conn, row["id"], "payment", "amount",
                 old_value="", new_value=str(body.amountPaid), changed_by=resolve_actor(request, body.changedBy),
             )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+
+
+# ---------------------------------------------------------------------------
+# Delivery staff claiming — assign / unassign (DG-310 Phase 3, FR5/FR6)
+#
+# ``POST /api/orders/{ref}/assign``    — any linked staff member claims a
+#   non-terminal delivery order. Single-assignee is enforced
+#   via a check-and-set UPDATE (race-safe under SQLite's serializable writes):
+#   the UPDATE only matches rows where ``assigned_staff_id IS NULL``, so a
+#   concurrent claim by staff B sees 0 affected rows and is rejected (AC10).
+# ``POST /api/orders/{ref}/unassign``  — the assigned staff (or an admin)
+#   releases the claim by setting ``assigned_staff_id`` back to NULL (FR6).
+#
+# Both endpoints return the updated order via ``_order_detail`` so the
+# response carries ``assignedStaffName`` for the client (FR7, AC6/AC8). The
+# order lifecycle service is untouched — status transitions are unchanged.
+# ---------------------------------------------------------------------------
+
+# Terminal statuses: a delivery order cannot be claimed once it has reached a
+# final state (delivered / completed / cancelled).
+_TERMINAL_STATUSES = {
+    OrderStatus.DELIVERED.value,
+    OrderStatus.COMPLETED.value,
+    OrderStatus.CANCELLED.value,
+}
+
+
+@router.post("/{ref}/assign")
+def assign_order(ref: str, request: Request):
+    """Gán đơn hàng giao cho nhân viên đang đăng nhập (FR5, AC6, AC10).
+
+    Resolves the acting staff from the JWT via ``resolve_staff_record``.
+    The staff must be a linked staff member and the order must be
+    non-terminal and not already claimed. Single-assignee is enforced by the
+    conditional UPDATE (``assigned_staff_id IS NULL``).
+    """
+    staff = resolve_staff_record(request)
+    if staff is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Không xác định được nhân viên từ phiên đăng nhập.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["status"] in _TERMINAL_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể nhận đơn đã hoàn thành hoặc đã hủy.",
+            )
+
+        if row["assigned_staff_id"] is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Đơn hàng đã được nhân viên khác nhận.",
+            )
+
+        # Race-safe check-and-set: only update rows that are still unclaimed.
+        # Under SQLite's serializable write isolation a concurrent assign sees
+        # 0 affected rows here and is rejected below (AC10, NFR3 < 500ms).
+        cursor = conn.execute(
+            "UPDATE orders SET assigned_staff_id = ?, updated_at = ? "
+            "WHERE id = ? AND assigned_staff_id IS NULL",
+            (str(staff["staff_id"]), now_utc(), row["id"]),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Đơn hàng đã được nhân viên khác nhận.",
+            )
+
+        _log_order_history(
+            conn,
+            row["id"],
+            "assign",
+            "assigned_staff_id",
+            old_value="",
+            new_value=str(staff["staff_id"]),
+            changed_by=resolve_actor(request, staff["name"]),
+        )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+
+
+@router.post("/{ref}/unassign")
+def unassign_order(ref: str, request: Request):
+    """Hủy gán đơn hàng giao (FR6, AC8).
+
+    Releases the claim on a delivery order. Only the assigned staff or an
+    admin may unclaim. Sets ``assigned_staff_id`` back to NULL.
+    """
+    staff = resolve_staff_record(request)
+    if staff is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Không xác định được nhân viên từ phiên đăng nhập.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["assigned_staff_id"] is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Đơn hàng chưa được gán cho ai.",
+            )
+
+        # Only the assigned staff or an admin may unclaim (FR6).
+        is_admin = getattr(request.state, "auth_role", None) == "admin"
+        if not is_admin and str(staff["staff_id"]) != str(row["assigned_staff_id"]):
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ nhân viên đã nhận đơn hoặc quản lý mới được hủy gán.",
+            )
+
+        conn.execute(
+            "UPDATE orders SET assigned_staff_id = NULL, updated_at = ? WHERE id = ?",
+            (now_utc(), row["id"]),
+        )
+
+        _log_order_history(
+            conn,
+            row["id"],
+            "unassign",
+            "assigned_staff_id",
+            old_value=str(row["assigned_staff_id"]),
+            new_value="",
+            changed_by=resolve_actor(request, staff["name"]),
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

@@ -172,3 +172,31 @@ DateTime startOfWeek(DateTime date) {
 List<DateTime> daysOfWeek(DateTime weekStart) {
   return List.generate(7, (i) => weekStart.add(Duration(days: i)));
 }
+
+/// Finds the date of the next upcoming non-terminal delivery order — the
+/// order whose `dueDate` is closest to the current time (past or future)
+/// among non-terminal delivery orders (FR2/FR3/AC2/AC3). Returns `null`
+/// when there are no qualifying orders, in which case callers should fall
+/// back to `DateTime.now()` (AC4).
+///
+/// Orders without a `dueDate` (or with an unparseable one) are excluded from
+/// the "closest" comparison; they do not influence the result. The returned
+/// [DateTime] is date-only (time-of-day stripped) since it feeds calendar
+/// day/week navigation.
+DateTime? findNextDueDate(List<Order> orders) {
+  final now = DateTime.now();
+  DateTime? best;
+  Duration? bestDelta;
+  for (final o in orders) {
+    if (!isDeliveryType(o.deliveryType)) continue;
+    if (!activeOrderStatuses.contains(o.status)) continue;
+    final due = parseApiDate(o.dueDate);
+    if (due == null) continue;
+    final delta = due.difference(now).abs();
+    if (bestDelta == null || delta < bestDelta) {
+      best = DateTime(due.year, due.month, due.day);
+      bestDelta = delta;
+    }
+  }
+  return best;
+}

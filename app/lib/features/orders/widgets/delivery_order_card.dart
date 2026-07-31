@@ -9,6 +9,7 @@ import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/launch_external_url.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
+import 'delivery_claim_actions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class DeliveryOrderCard extends ConsumerWidget {
@@ -244,6 +245,8 @@ class DeliveryOrderCard extends ConsumerWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 4),
+              DeliveryClaimActions(order: order),
             ],
           ),
         ),

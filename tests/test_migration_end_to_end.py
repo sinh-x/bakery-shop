@@ -155,6 +155,7 @@ def test_end_to_end_migration_v0_to_current_max_on_fresh_db():
         }
         assert 87 in applied, "v87 (delivery GPS) not in applied migrations"
         assert 88 in applied, "v88 (composite indexes) not in applied migrations"
+        assert 89 in applied, "v89 (assigned_staff_id) not in applied migrations"
         assert len(applied) == current_max, (
             f"expected {current_max} applied version rows, got {len(applied)}"
         )

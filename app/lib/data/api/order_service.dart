@@ -237,6 +237,20 @@ class OrderService {
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Claims a delivery order for the currently logged-in staff (FR5/AC6).
+  /// Server enforces non-terminal status and single-assignee (any linked staff member may claim).
+  Future<Order> assignOrder(String ref) async {
+    final response = await _dio.post('/api/orders/$ref/assign');
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Releases a previously claimed delivery order (FR6/AC8). Only the assigned
+  /// staff or an admin may unclaim; enforced server-side.
+  Future<Order> unassignOrder(String ref) async {
+    final response = await _dio.post('/api/orders/$ref/unassign');
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Fetches all active (non-terminal) orders for the dashboard view.
   Future<List<Order>> listActiveOrders({int limit = 200}) async {
     final response = await _dio.get(

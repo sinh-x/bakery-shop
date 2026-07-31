@@ -539,6 +539,37 @@ def resolve_staff_name(request: Request) -> str:
     return ""
 
 
+def resolve_staff_record(request: Request) -> Optional[dict]:
+    """Resolve the acting staff record (id, name, role) from the JWT user.
+
+    DG-310 Phase 3 (FR5/FR6): looks up ``users.staff_id → staff(id, name, role)``
+    via the authenticated username in ``request.state.auth_username``. Returns
+    a dict ``{"staff_id": int, "name": str, "role": str}`` when a valid JWT user
+    is linked to a staff member, or ``None`` when no JWT identity is present or
+    no staff link exists (grace period). Used by the assign/unassign endpoints
+    to identify the claiming staff (any linked staff member may claim).
+    """
+    auth_username = getattr(request.state, "auth_username", None)
+    if not auth_username:
+        return None
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT st.id AS staff_id, st.name AS name, st.role AS role "
+            "FROM users u "
+            "LEFT JOIN staff st ON st.id = u.staff_id "
+            "WHERE u.username = ? AND u.active = 1",
+            (auth_username,),
+        ).fetchone()
+        if row and row["staff_id"] is not None:
+            return {
+                "staff_id": int(row["staff_id"]),
+                "name": row["name"] or "",
+                "role": row["role"] or "",
+            }
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Audit log recording (DG-029 Phase 3, FR22)
 #

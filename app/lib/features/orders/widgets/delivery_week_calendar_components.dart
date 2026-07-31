@@ -67,14 +67,19 @@ class WeekCalendarNav extends StatelessWidget {
 }
 
 /// Fixed-width leftmost column with hour-row labels ("6:00" … "21:00").
+/// Pinned outside the horizontal scroll area (FR4/AC5) so it remains visible
+/// during horizontal scroll.
 class WeekHourLabelColumn extends StatelessWidget {
   const WeekHourLabelColumn({super.key, required this.theme});
   final ThemeData theme;
 
+  /// Fixed width of the pinned time label column.
+  static const double width = 52;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 52,
+      width: width,
       child: Column(
         children: [
           const SizedBox(height: WeekDayColumn.headerHeight),
@@ -302,6 +307,26 @@ class _MiniOrderCard extends StatelessWidget {
                           maxLines: 1,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.outline,
+                          ),
+                        ),
+                      if (order.isAssigned)
+                        Text(
+                          '${OrdersLabels.deliveryStaffLabel}: ${order.assignedStaffName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.tertiary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        )
+                      else
+                        Text(
+                          OrdersLabels.deliveryUnassigned,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                     ],

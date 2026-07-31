@@ -69,6 +69,7 @@ from .migrations.v084 import _migrate_v84_order_item_assigned_price
 from .migrations.v085 import _migrate_v85_add_account_1600
 from .migrations.v086 import _migrate_v86_expense_categories
 from .migrations.v087 import _migrate_v87_order_delivery_schedule_gps
+from .migrations.v089 import _migrate_v89_order_assigned_staff_id
 
 MIGRATIONS = {
     1: {
@@ -498,6 +499,11 @@ MIGRATIONS = {
             "CREATE INDEX IF NOT EXISTS idx_orders_customer_id_created_at "
             "ON orders(customer_id, created_at);"
         ),
+    },
+    89: {
+        "description": "Add assigned_staff_id nullable column to orders for delivery staff claiming (DG-310 Phase 3)",
+        "sql": "",
+        "callable": _migrate_v89_order_assigned_staff_id,
     },
 }
 

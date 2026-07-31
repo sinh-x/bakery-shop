@@ -328,6 +328,7 @@ class VN {
 
   // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
+  static const deliveryAssignee = 'Nhân viên giao hàng';
   static const sourceTaiTiem = 'Tại Tiệm';
   static const walkInCustomer = 'Khách Vãng Lai';
   static const dueTime = 'Giờ giao';
