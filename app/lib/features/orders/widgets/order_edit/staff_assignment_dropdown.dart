@@ -55,6 +55,9 @@ class StaffAssignmentDropdown extends ConsumerWidget {
     // active delivery list (e.g. deactivated — FR10 keeps existing
     // assignments), synthesize an item so the current value still renders
     // rather than appearing blank.
+    final staffIds = staffList.map((s) => s.id.toString()).toSet();
+    final hasAssignedItem =
+        assignedStaffId == null || staffIds.contains(assignedStaffId);
     final items = <DropdownMenuItem<String?>>[
       const DropdownMenuItem<String?>(
         value: null,
@@ -66,9 +69,14 @@ class StaffAssignmentDropdown extends ConsumerWidget {
           child: Text(s.name),
         ),
       ),
+      if (!hasAssignedItem)
+        DropdownMenuItem<String?>(
+          value: assignedStaffId,
+          child: Text(OrdersLabels.assignStaffInactive(assignedStaffId!)),
+        ),
     ];
     return DropdownButtonFormField<String?>(
-      initialValue: assignedStaffId,
+      value: assignedStaffId,
       decoration: const InputDecoration(
         labelText: OrdersLabels.assignStaffLabel,
         border: OutlineInputBorder(),

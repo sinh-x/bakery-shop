@@ -256,6 +256,7 @@ class OrdersLabels {
   static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
   static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
   static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
+  static String assignStaffInactive(String staffId) => 'NV #$staffId (đã ngưng)';
 
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
