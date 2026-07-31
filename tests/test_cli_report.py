@@ -255,7 +255,7 @@ def test_trial_balance_known_totals():
         _seed_known_dataset(conn)
     result = _invoke(["report", "trial-balance", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Trial Balance" in result.output
+    assert "Bảng cân đối thử" in result.output
     # Cash (1100) debit = 200000, credit = 10000 → debit column 200000, credit column 10000
     assert "1100" in result.output
     assert "200,000.00" in result.output
@@ -270,7 +270,7 @@ def test_trial_balance_empty_db():
     result = _invoke(["report", "trial-balance", "--since", "2026-01-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
     # Empty range message OR zero totals; accounts still listed with zero balances.
-    assert "Trial Balance" in result.output
+    assert "Bảng cân đối thử" in result.output
 
 
 def test_trial_balance_date_filter_excludes_out_of_range():
@@ -281,7 +281,7 @@ def test_trial_balance_date_filter_excludes_out_of_range():
     result = _invoke(["report", "trial-balance", "--since", "2026-07-01", "--until", "2026-07-31"])
     assert result.exit_code == 0, result.output
     # No journal entries fall in July → empty-range message.
-    assert "no journal entries in range" in result.output
+    assert "(không có bút toán trong khoảng)" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -295,16 +295,16 @@ def test_income_statement_known_totals():
         _seed_known_dataset(conn)
     result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Income Statement" in result.output
-    assert "Revenue" in result.output
+    assert "Báo cáo kết quả hoạt động kinh doanh" in result.output
+    assert "Doanh thu" in result.output
     assert "200,000.00" in result.output
-    assert "Cost of Goods Sold" in result.output
+    assert "Giá vốn hàng bán (5900)" in result.output
     assert "80,000.00" in result.output
-    assert "Gross Profit" in result.output
+    assert "Lợi nhuận gộp" in result.output
     assert "120,000.00" in result.output
-    assert "Operating Expenses" in result.output
+    assert "Chi phí hoạt động" in result.output
     assert "10,000.00" in result.output
-    assert "Net Income" in result.output
+    assert "Lợi nhuận thuần" in result.output
     assert "110,000.00" in result.output
 
 
@@ -313,7 +313,7 @@ def test_income_statement_empty_db():
         ensure_schema(conn)
     result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Net Income" in result.output
+    assert "Lợi nhuận thuần" in result.output
     assert "0.00" in result.output
 
 
@@ -325,7 +325,7 @@ def test_income_statement_shows_cogs_ratio_alongside_amount():
     result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
     # The COGS line must show the amount AND a parenthesized percentage.
-    assert "Cost of Goods Sold (5900)" in result.output
+    assert "Giá vốn hàng bán (5900)" in result.output
     assert "80,000.00" in result.output
     # Revenue 200000, COGS 80000 → 40.0%
     assert "(40.0%)" in result.output
@@ -351,7 +351,7 @@ def test_income_statement_cogs_ratio_zero_revenue_no_division_error():
         )
     result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Cost of Goods Sold (5900)" in result.output
+    assert "Giá vốn hàng bán (5900)" in result.output
     assert "(0.0%)" in result.output
 
 
@@ -501,7 +501,7 @@ def test_income_statement_date_basis_due_date_different_bucketing():
     assert "350,000.00" in dd_result.output  # revenue 200000+150000
     assert "130,000.00" in dd_result.output  # COGS 80000+50000
     assert "220,000.00" in dd_result.output  # net income
-    assert "(due-date basis)" in dd_result.output
+    assert "(theo ngày đến hạn)" in dd_result.output
 
 
 def test_income_statement_date_basis_due_date_operating_expenses_on_transaction_date():
@@ -621,7 +621,7 @@ def test_income_statement_shows_markup_line_when_markup_present():
     result = _invoke(["report", "income-statement",
                       "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Markup (trung bay)" in result.output
+    assert "Chênh lệch giá (trưng bày)" in result.output
     # Only the 250000/200000 item contributes → 50000
     assert "50,000.00" in result.output
 
@@ -634,7 +634,7 @@ def test_income_statement_omits_markup_line_when_no_markup():
     result = _invoke(["report", "income-statement",
                       "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Markup (trung bay)" not in result.output
+    assert "Chênh lệch giá (trưng bày)" not in result.output
 
 
 def test_income_statement_markup_respects_date_filter():
@@ -646,7 +646,7 @@ def test_income_statement_markup_respects_date_filter():
     result = _invoke(["report", "income-statement",
                       "--since", "2026-07-01", "--until", "2026-07-31"])
     assert result.exit_code == 0, result.output
-    assert "Markup (trung bay)" not in result.output
+    assert "Chênh lệch giá (trưng bày)" not in result.output
 
 
 def test_income_statement_markup_due_date_basis():
@@ -658,7 +658,7 @@ def test_income_statement_markup_due_date_basis():
                       "--date-basis", "due-date",
                       "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Markup (trung bay)" in result.output
+    assert "Chênh lệch giá (trưng bày)" in result.output
     assert "50,000.00" in result.output
 
 
@@ -673,10 +673,10 @@ def test_balance_sheet_known_totals():
         _seed_known_dataset(conn)
     result = _invoke(["report", "balance-sheet", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Balance Sheet" in result.output
-    assert "Assets" in result.output
-    assert "Liabilities" in result.output
-    assert "Equity" in result.output
+    assert "Bảng cân đối kế toán" in result.output
+    assert "Tài sản" in result.output
+    assert "Nợ phải trả" in result.output
+    assert "Vốn chủ sở hữu" in result.output
     # Cash 1100 balance = 200000 - 10000 = 190000 (debit - credit)
     assert "190,000.00" in result.output
     # Inventory 1300 balance = 0 - 80000 = -80000
@@ -690,8 +690,8 @@ def test_balance_sheet_empty_db():
         ensure_schema(conn)
     result = _invoke(["report", "balance-sheet", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Balance Sheet" in result.output
-    assert "Total Assets" in result.output
+    assert "Bảng cân đối kế toán" in result.output
+    assert "Tổng tài sản" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -705,13 +705,13 @@ def test_general_ledger_known_entries():
         _seed_known_dataset(conn)
     result = _invoke(["report", "general-ledger", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "General Ledger" in result.output
+    assert "Sổ cái" in result.output
     assert "Sale order #1" in result.output
     assert "COGS for order #1" in result.output
     assert "Expense: Vận chuyển" in result.output
     # Lines: DR / CR markers
-    assert "DR" in result.output
-    assert "CR" in result.output
+    assert "Nợ" in result.output
+    assert "Có" in result.output
     # Account codes appear in line output
     assert "1100" in result.output
     assert "4100" in result.output
@@ -723,7 +723,7 @@ def test_general_ledger_empty_db():
         ensure_schema(conn)
     result = _invoke(["report", "general-ledger", "--since", "2026-06-01", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "no journal entries in range" in result.output
+    assert "(không có bút toán trong khoảng)" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -753,7 +753,7 @@ def test_account_ledger_known_history():
         "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Account Ledger" in result.output
+    assert "Sổ chi tiết tài khoản" in result.output
     assert "1100" in result.output
     assert "Tiền mặt" in result.output
     # Cash received 200000 (DR) then paid out 10000 (CR) → running balances
@@ -771,7 +771,7 @@ def test_account_ledger_empty_for_unused_account():
         "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "no journal lines for this account" in result.output
+    assert "(không có dòng sổ cái cho tài khoản này trong khoảng)" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -787,10 +787,10 @@ def test_expense_by_category_known_totals():
         "report", "expense-by-category", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Expense by Category" in result.output
+    assert "Chi phí theo danh mục" in result.output
     assert "Vận chuyển" in result.output
     assert "10,000.00" in result.output
-    assert "TOTAL" in result.output
+    assert "TỔNG" in result.output
 
 
 def test_expense_by_category_empty_db():
@@ -800,7 +800,7 @@ def test_expense_by_category_empty_db():
         "report", "expense-by-category", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "no expense journal entries in range" in result.output
+    assert "(không có bút toán chi phí trong khoảng)" in result.output
 
 
 def test_expense_by_category_subcategory_breakdown():
@@ -859,7 +859,7 @@ def test_expense_by_category_subcategory_breakdown():
         "report", "expense-by-category", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Expense by Category" in result.output
+    assert "Chi phí theo danh mục" in result.output
     # Parent totals
     assert "Nguyên liệu" in result.output
     assert "Vận chuyển" in result.output
@@ -920,19 +920,19 @@ def test_cogs_audit_flags_all_statuses():
         "report", "cogs-audit", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "COGS Audit" in result.output
+    assert "Kiểm tra giá vốn" in result.output
     # Header columns
-    assert "Revenue" in result.output
-    assert "COGS" in result.output
-    assert "Ratio" in result.output
-    assert "Status" in result.output
+    assert "Doanh thu" in result.output
+    assert "Giá vốn" in result.output
+    assert "Tỷ lệ" in result.output
+    assert "Trạng thái" in result.output
     # One order per status flag
-    assert "missing" in result.output
-    assert "zero-cost" in result.output
-    assert "low" in result.output
-    assert "ok" in result.output
+    assert "thiếu" in result.output
+    assert "giá vốn 0" in result.output
+    assert "thấp" in result.output
+    assert "đạt" in result.output
     # Summary line lists all four statuses with counts
-    assert "ok=1, missing=1, zero-cost=1, low=1" in result.output
+    assert "đạt=1, thiếu=1, giá vốn 0=1, thấp=1" in result.output
     # Total line: revenue 950000, cogs 115000, ratio 12.1%
     assert "950,000.00" in result.output
     assert "115,000.00" in result.output
@@ -968,7 +968,7 @@ def test_cogs_audit_excludes_non_delivered_orders():
     assert result.exit_code == 0, result.output
     # The pending order's id must not appear in any data row.
     assert "ORD-99" not in result.output
-    assert "ok=1, missing=1, zero-cost=1, low=1" in result.output
+    assert "đạt=1, thiếu=1, giá vốn 0=1, thấp=1" in result.output
 
 
 def test_cogs_audit_date_filter():
@@ -981,7 +981,7 @@ def test_cogs_audit_date_filter():
         "report", "cogs-audit", "--since", "2026-07-01", "--until", "2026-07-31",
     ])
     assert result.exit_code == 0, result.output
-    assert "no delivered/completed orders in range" in result.output
+    assert "(không có đơn hàng đã giao/hoàn thành trong khoảng)" in result.output
 
 
 def test_cogs_audit_empty_db():
@@ -989,7 +989,7 @@ def test_cogs_audit_empty_db():
         ensure_schema(conn)
     result = _invoke(["report", "cogs-audit", "--since", "2026-06-01"])
     assert result.exit_code == 0, result.output
-    assert "no delivered/completed orders in range" in result.output
+    assert "(không có đơn hàng đã giao/hoàn thành trong khoảng)" in result.output
 
 
 def test_cogs_audit_registered_in_report_group():
@@ -1049,8 +1049,8 @@ def test_cogs_audit_flags_sold_extra_with_zero_cost_at_sale():
     assert result.exit_code == 0, result.output
     # ORD-10 should be flagged zero-cost because the sold extra has cost_at_sale=0
     assert "ORD-10" in result.output
-    assert "zero-cost" in result.output
-    assert "ok=0, missing=0, zero-cost=1, low=0" in result.output
+    assert "giá vốn 0" in result.output
+    assert "đạt=0, thiếu=0, giá vốn 0=1, thấp=0" in result.output
 
 
 def test_cogs_audit_excludes_gift_items_from_zero_cost_detection():
@@ -1096,7 +1096,7 @@ def test_cogs_audit_excludes_gift_items_from_zero_cost_detection():
     assert result.exit_code == 0, result.output
     assert "ORD-11" in result.output
     # Gift item with cost_at_sale=0 must NOT trigger zero-cost (excluded by is_gift=0)
-    assert "ok=1, missing=0, zero-cost=0, low=0" in result.output
+    assert "đạt=1, thiếu=0, giá vốn 0=0, thấp=0" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -1262,12 +1262,12 @@ def test_order_status_exits_zero_with_header():
         _seed_order_status_dataset(conn)
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
-    assert "Order Status Report" in result.output
+    assert "Báo cáo trạng thái đơn hàng" in result.output
     # Header columns are recognizable.
-    assert "Status" in result.output
-    assert "Delivery Type" in result.output
-    assert "Count" in result.output
-    assert "Value" in result.output
+    assert "Trạng thái" in result.output
+    assert "Loại giao hàng" in result.output
+    assert "Số lượng" in result.output
+    assert "Giá trị" in result.output
 
 
 def test_order_status_groups_by_status_with_count_and_value():
@@ -1278,7 +1278,7 @@ def test_order_status_groups_by_status_with_count_and_value():
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
     # delivered group: orders #5 (250000) + #8 (120000) = 2 orders, 370000.
-    assert "delivered" in result.output
+    assert "đã giao" in result.output
     # completed group: 1 order, 400000.
     assert "400,000.00" in result.output
     # cancelled group: 1 order, 50000.
@@ -1293,8 +1293,8 @@ def test_order_status_subgroups_by_delivery_type():
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
     # delivered status has pickup (1, 250000), delivery (0), bus (0),
-    # and NULL delivery_type (1, 120000 → shown as "(none)").
-    assert "(none)" in result.output
+    # and NULL delivery_type (1, 120000 → shown as "(trống)").
+    assert "(trống)" in result.output
     assert "120,000.00" in result.output
     assert "250,000.00" in result.output
     # confirmed status only has delivery → 200000.
@@ -1314,7 +1314,7 @@ def test_order_status_date_filter_excludes_out_of_range():
     ])
     assert result.exit_code == 0, result.output
     # Grand total must be zero (no orders in range) but statuses still listed.
-    assert "GRAND TOTAL" in result.output
+    assert "TỔNG CỘNG" in result.output
     # No individual seed value should appear as a positive data row.
     assert "400,000.00" not in result.output
     assert "300,000.00" not in result.output
@@ -1343,7 +1343,7 @@ def test_order_status_grand_total_row():
         "report", "order-status", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "GRAND TOTAL" in result.output
+    assert "TỔNG CỘNG" in result.output
     # All 9 seed orders fall in June.
     # Total value = 100000+200000+150000+300000+250000+400000+50000+120000+80000
     #             = 1,650,000
@@ -1359,8 +1359,8 @@ def test_order_status_all_seven_statuses_appear_even_when_zero():
         _insert_order(conn, order_id=2, status="delivered", total_price=200000)
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
-    for status in ("new", "confirmed", "in_progress", "ready",
-                    "delivered", "completed", "cancelled"):
+    for status in ("mới", "đã xác nhận", "đang thực hiện", "sẵn sàng",
+                    "đã giao", "hoàn thành", "đã hủy"):
         assert status in result.output
 
 
@@ -1372,7 +1372,7 @@ def test_order_status_zero_count_status_shows_zero_value():
         _insert_order(conn, order_id=1, status="new", total_price=100000)
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
-    assert "completed" in result.output
+    assert "hoàn thành" in result.output
     # The completed group's subtotal row must show 0 count and 0.00 value.
     # We confirm by checking that "0.00" appears (subtotal value formatting).
     assert "0.00" in result.output
@@ -1386,7 +1386,7 @@ def test_order_status_cancelled_orders_appear():
                       delivery_type="pickup", total_price=75000)
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
-    assert "cancelled" in result.output
+    assert "đã hủy" in result.output
     assert "75,000.00" in result.output
 
 
@@ -1396,10 +1396,10 @@ def test_order_status_empty_db():
         ensure_schema(conn)
     result = _invoke(["report", "order-status"])
     assert result.exit_code == 0, result.output
-    assert "Order Status Report" in result.output
-    assert "GRAND TOTAL" in result.output
-    for status in ("new", "confirmed", "in_progress", "ready",
-                    "delivered", "completed", "cancelled"):
+    assert "Báo cáo trạng thái đơn hàng" in result.output
+    assert "TỔNG CỘNG" in result.output
+    for status in ("mới", "đã xác nhận", "đang thực hiện", "sẵn sàng",
+                    "đã giao", "hoàn thành", "đã hủy"):
         assert status in result.output
 
 
@@ -1541,8 +1541,8 @@ def test_cashflow_exits_zero_and_prints_header():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Cashflow Statement (Direct Method)" in result.output
-    assert "Period: 2026-06-01 → 2026-06-30" in result.output
+    assert "Báo cáo lưu chuyển tiền tệ (Phương pháp trực tiếp)" in result.output
+    assert "Kỳ: 01/06/2026 → 30/06/2026" in result.output
 
 
 def test_cashflow_operating_subsections_present():
@@ -1554,10 +1554,10 @@ def test_cashflow_operating_subsections_present():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Operating Activities" in result.output
-    assert "Cash from customers" in result.output
-    assert "Cash paid to suppliers/employees" in result.output
-    assert "Net operating cashflow" in result.output
+    assert "Hoạt động kinh doanh" in result.output
+    assert "Tiền từ khách hàng" in result.output
+    assert "Tiền trả cho nhà cung cấp/nhân viên" in result.output
+    assert "Dòng tiền thuần từ hoạt động kinh doanh" in result.output
     # Customer inflow 200000 on 1100; refund outflow 50000 on 1210.
     assert "200,000.00" in result.output
     assert "50,000.00" in result.output
@@ -1574,8 +1574,8 @@ def test_cashflow_financing_section_shows_capital_and_draw():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Financing Activities" in result.output
-    assert "Net financing cashflow" in result.output
+    assert "Hoạt động tài chính" in result.output
+    assert "Dòng tiền thuần từ hoạt động tài chính" in result.output
     # Owner capital contribution 500000 on 1220.
     assert "500,000.00" in result.output
     # Owner draw 100000 on 1100 (already asserted elsewhere, but ensure present).
@@ -1591,8 +1591,8 @@ def test_cashflow_investing_section_shows_fixed_asset_flow():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Investing Activities" in result.output
-    assert "Net investing cashflow" in result.output
+    assert "Hoạt động đầu tư" in result.output
+    assert "Dòng tiền thuần từ hoạt động đầu tư" in result.output
     # Fixed-asset purchase: 300000 outflow on 1290.
     assert "300,000.00" in result.output
 
@@ -1608,15 +1608,15 @@ def test_cashflow_date_filter_excludes_out_of_range():
     ])
     assert result.exit_code == 0, result.output
     # No activity in any section.
-    assert result.output.count("(no activity)") >= 3
+    assert result.output.count("(không có hoạt động)") >= 3
     # Reconciliation should still be OK (0 net cash flow = 0 change).
-    assert "[OK]" in result.output
+    assert "[ĐẠT]" in result.output
     # Period activity totals are zero.
-    assert "Net cash flow                                           0.00" in result.output
+    assert "Dòng tiền thuần                                                 0.00" in result.output
     # Opening and closing balances are equal (no period movement) — both
     # include all pre-July entries (the May sale + all June activity).
-    assert "Opening cash balance                              340,000.00" in result.output
-    assert "Closing cash balance                              340,000.00" in result.output
+    assert "Số dư đầu kỳ                                              340,000.00" in result.output
+    assert "Số dư cuối kỳ                                             340,000.00" in result.output
 
 
 def test_cashflow_reconciliation_ok():
@@ -1628,8 +1628,8 @@ def test_cashflow_reconciliation_ok():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Reconciliation (closing - opening)" in result.output
-    assert "[OK]" in result.output
+    assert "Đối chiếu (cuối kỳ - đầu kỳ)" in result.output
+    assert "[ĐẠT]" in result.output
     # Net cash flow = 240000 (see _seed_cashflow_dataset docstring).
     assert "240,000.00" in result.output
 
@@ -1642,9 +1642,9 @@ def test_cashflow_empty_db():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Cashflow Statement (Direct Method)" in result.output
-    assert result.output.count("(no activity)") >= 3
-    assert "[OK]" in result.output
+    assert "Báo cáo lưu chuyển tiền tệ (Phương pháp trực tiếp)" in result.output
+    assert result.output.count("(không có hoạt động)") >= 3
+    assert "[ĐẠT]" in result.output
 
 
 def test_cashflow_account_1600_seeded():
@@ -1690,7 +1690,7 @@ def test_cashflow_per_account_breakdown_section_present():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Per-Account Breakdown" in result.output
+    assert "Phân tích theo tài khoản" in result.output
     # Every cash account code appears in the breakdown.
     for code in ("1100", "1200", "1210", "1220", "1290"):
         assert code in result.output
@@ -1714,7 +1714,7 @@ def test_cashflow_per_account_breakdown_values():
     #   1290: outflow 300000 (investing) => inflows 0, outflows 300000, net -300000
     #   1200: no activity
     # Locate the Per-Account Breakdown block and verify the per-account rows.
-    breakdown_idx = output.index("Per-Account Breakdown")
+    breakdown_idx = output.index("Phân tích theo tài khoản")
     breakdown = output[breakdown_idx:]
     # 1100 row: inflows 200000, outflows 110000, net 90000.
     assert "1100" in breakdown
@@ -1740,7 +1740,7 @@ def test_cashflow_per_account_breakdown_totals_row():
     assert result.exit_code == 0, result.output
     # The TOTAL row net change (700000 - 460000 = 240000) equals the net cash
     # flow asserted by test_cashflow_reconciliation_ok.
-    assert "TOTAL" in result.output
+    assert "TỔNG" in result.output
     # Net change 240000 appears in the breakdown totals.
     assert "240,000.00" in result.output
     # Opening total 100000 and closing total 340000.
@@ -1768,8 +1768,8 @@ def test_cashflow_opening_closing_balance_correct():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Opening cash balance" in result.output
-    assert "Closing cash balance" in result.output
+    assert "Số dư đầu kỳ" in result.output
+    assert "Số dư cuối kỳ" in result.output
     # Opening 100000 (pre-period sale on 1100); closing 340000.
     assert "100,000.00" in result.output
     assert "340,000.00" in result.output
@@ -1785,8 +1785,8 @@ def test_cashflow_reconciliation_closing_equals_opening_plus_net():
     ])
     assert result.exit_code == 0, result.output
     # closing - opening = 240000 = net cash flow → reconciliation OK.
-    assert "Reconciliation (closing - opening)" in result.output
-    assert "[OK]" in result.output
+    assert "Đối chiếu (cuối kỳ - đầu kỳ)" in result.output
+    assert "[ĐẠT]" in result.output
     assert "240,000.00" in result.output
 
 
@@ -1798,12 +1798,12 @@ def test_cashflow_per_account_breakdown_empty_db():
         "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
     ])
     assert result.exit_code == 0, result.output
-    assert "Per-Account Breakdown" in result.output
+    assert "Phân tích theo tài khoản" in result.output
     # All five cash account codes appear even with no activity.
     for code in ("1100", "1200", "1210", "1220", "1290"):
         assert code in result.output
     # TOTAL row is present.
-    assert "TOTAL" in result.output
+    assert "TỔNG" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -1826,12 +1826,12 @@ def test_cashflow_missing_since_and_until_all_time():
         _seed_cashflow_dataset(conn)
     result = _invoke(["report", "cashflow"])
     assert result.exit_code == 0, result.output
-    assert "Period: All time" in result.output
-    assert "Opening cash balance" in result.output
-    assert "Closing cash balance" in result.output
+    assert "Kỳ: Tất cả" in result.output
+    assert "Số dư đầu kỳ" in result.output
+    assert "Số dư cuối kỳ" in result.output
     # Opening is 0 (all-time starts at the beginning); closing reflects
     # every cash entry ever recorded.
-    assert "Reconciliation (closing - opening)" in result.output
+    assert "Đối chiếu (cuối kỳ - đầu kỳ)" in result.output
 
 
 def test_cashflow_missing_until_only():
@@ -1841,8 +1841,8 @@ def test_cashflow_missing_until_only():
         _seed_cashflow_dataset(conn)
     result = _invoke(["report", "cashflow", "--since", "2026-06-01"])
     assert result.exit_code == 0, result.output
-    assert "Period: since 2026-06-01" in result.output
-    assert "[OK]" in result.output
+    assert "Kỳ: từ 01/06/2026" in result.output
+    assert "[ĐẠT]" in result.output
 
 
 def test_cashflow_missing_since_only():
@@ -1858,8 +1858,8 @@ def test_cashflow_missing_since_only():
         _seed_cashflow_dataset(conn)
     result = _invoke(["report", "cashflow", "--until", "2026-06-30"])
     assert result.exit_code == 0, result.output
-    assert "Period: until 2026-06-30" in result.output
-    assert "Reconciliation (closing - opening)" in result.output
+    assert "Kỳ: đến 30/06/2026" in result.output
+    assert "Đối chiếu (cuối kỳ - đầu kỳ)" in result.output
 
 
 def test_cashflow_rejects_invalid_until_date():
@@ -1889,7 +1889,7 @@ def test_cashflow_same_day_range_allowed():
         "report", "cashflow", "--since", "2026-06-15", "--until", "2026-06-15",
     ])
     assert result.exit_code == 0, result.output
-    assert "[OK]" in result.output
+    assert "[ĐẠT]" in result.output
 
 
 def test_cashflow_no_cash_activity_but_other_entries_exist():
@@ -1915,14 +1915,14 @@ def test_cashflow_no_cash_activity_but_other_entries_exist():
     ])
     assert result.exit_code == 0, result.output
     # No cash account activity in any section.
-    assert result.output.count("(no activity)") >= 3
+    assert result.output.count("(không có hoạt động)") >= 3
     # Net cash flow is zero (no cash movement).
-    assert "Net cash flow" in result.output
+    assert "Dòng tiền thuần" in result.output
     assert "0.00" in result.output
     # Opening == closing (both 0 — no cash movement ever).
-    assert "Opening cash balance" in result.output
-    assert "Closing cash balance" in result.output
-    assert "[OK]" in result.output
+    assert "Số dư đầu kỳ" in result.output
+    assert "Số dư cuối kỳ" in result.output
+    assert "[ĐẠT]" in result.output
 
 
 def test_cashflow_empty_range_shows_zeroes_and_no_activity():
@@ -1939,12 +1939,12 @@ def test_cashflow_empty_range_shows_zeroes_and_no_activity():
         "report", "cashflow", "--since", "2026-01-01", "--until", "2026-01-31",
     ])
     assert result.exit_code == 0, result.output
-    assert result.output.count("(no activity)") >= 3
-    assert "Net cash flow" in result.output
+    assert result.output.count("(không có hoạt động)") >= 3
+    assert "Dòng tiền thuần" in result.output
     # Opening balance is 0 (no entries before 2026-01-01).
-    assert "Opening cash balance" in result.output
-    assert "Closing cash balance" in result.output
-    assert "[OK]" in result.output
+    assert "Số dư đầu kỳ" in result.output
+    assert "Số dư cuối kỳ" in result.output
+    assert "[ĐẠT]" in result.output
 
 
 def test_cashflow_output_is_plain_text_no_ansi():
