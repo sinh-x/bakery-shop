@@ -238,7 +238,7 @@ class OrderService {
   }
 
   /// Claims a delivery order for the currently logged-in staff (FR5/AC6).
-  /// Server enforces `giao-hang` role, non-terminal status, and single-assignee.
+  /// Server enforces non-terminal status and single-assignee (any linked staff member may claim).
   Future<Order> assignOrder(String ref) async {
     final response = await _dio.post('/api/orders/$ref/assign');
     return Order.fromJson(response.data as Map<String, dynamic>);

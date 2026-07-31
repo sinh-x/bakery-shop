@@ -10,8 +10,8 @@ import '../../orders/providers/delivery_claim_providers.dart';
 /// Claim/unclaim button + assigned-staff name display for delivery order
 /// cards (DG-310 Phase 4 / FR5/FR6/FR7/AC6/AC7/AC8/AC9).
 ///
-/// Role-gating (AC9): the claim button only renders when the current staff
-/// has the `giao-hang` role (or is an admin). Single-assignee (AC10) is
+/// Role-gating (AC9): the claim button renders when the current staff
+/// is any linked staff member (or is an admin). Single-assignee (AC10) is
 /// enforced server-side; the button is hidden when the order is already
 /// claimed by someone else.
 class DeliveryClaimActions extends ConsumerWidget {
