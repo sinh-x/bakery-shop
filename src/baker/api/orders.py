@@ -177,6 +177,10 @@ class OrderEdit(BaseModel):
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     googleMapsUrl: Optional[str] = None
     deliveryTimeSlot: Optional[str] = None
+    # DG-304 Phase 2 (FR6/FR7): admin assignment via PATCH /api/orders/{ref}.
+    # Nullable — clearing the field unassigns the order. The column is TEXT
+    # (v089), so the value is stored as the staff id string.
+    assignedStaffId: Optional[str] = None
 
     @field_validator("googleMapsUrl", mode="before")
     @classmethod
@@ -733,6 +737,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             "longitude": "longitude",
             "googleMapsUrl": "google_maps_url",
             "deliveryTimeSlot": "delivery_time_slot",
+            "assignedStaffId": "assigned_staff_id",
         }
 
         new_due_date = data.get("dueDate", row["due_date"])

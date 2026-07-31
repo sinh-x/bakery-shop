@@ -300,3 +300,85 @@ def test_unassign_404_unknown_order(auth_client):
         token = _seed_staff_user(conn, "shipper10", "Người Giao J", "giao-hang")
     resp = auth_client.post("/api/orders/ORD-9999/unassign", headers=_auth_headers(token))
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DG-304 Phase 2 — PATCH /api/orders/{ref} with assignedStaffId (FR6/FR7/AC5)
+# ---------------------------------------------------------------------------
+
+
+def test_patch_order_sets_assigned_staff_id_via_field_map(auth_client):
+    """FR6/FR7/AC5: PATCH with assignedStaffId persists the column and logs
+    the change in order_history. Uses the existing field_map path, so the
+    audit-trail entry mirrors every other field edit."""
+    with get_db() as conn:
+        admin_token = _seed_staff_user(
+            conn, "admin_assign", "Quản Lý Gán", "quan-ly", user_role="admin"
+        )
+        shipper = conn.execute(
+            "INSERT INTO staff (name, role) VALUES (?, ?)",
+            ("Người Giao Patch", "giao-hang"),
+        )
+        conn.commit()
+        staff_id = int(
+            conn.execute(
+                "SELECT id FROM staff WHERE name = ?", ("Người Giao Patch",)
+            ).fetchone()["id"]
+        )
+
+    order = _create_order()
+    resp = auth_client.patch(
+        f"/api/orders/{order['orderRef']}",
+        json={"assignedStaffId": str(staff_id), "changedBy": "admin_assign"},
+        headers=_auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["assignedStaffId"] == str(staff_id)
+    assert data["assignedStaffName"] == "Người Giao Patch"
+
+    # Column persisted and order_history audit entry recorded.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT assigned_staff_id FROM orders WHERE id = ?",
+            (int(order["id"]),),
+        ).fetchone()
+        assert row["assigned_staff_id"] == str(staff_id)
+        hist = conn.execute(
+            "SELECT field_name, old_value, new_value FROM order_history "
+            "WHERE order_id = ? AND field_name = ? ORDER BY id DESC LIMIT 1",
+            (int(order["id"]), "assigned_staff_id"),
+        ).fetchone()
+        assert hist is not None
+        assert hist["new_value"] == str(staff_id)
+
+
+def test_patch_order_clears_assigned_staff_id_via_field_map(auth_client):
+    """FR6: PATCH with assignedStaffId=null unassigns the order (nullable
+    — clearing the field unassigns)."""
+    with get_db() as conn:
+        admin_token = _seed_staff_user(
+            conn, "admin_clear", "Quản Lý Xóa", "quan-ly", user_role="admin"
+        )
+        shipper_token = _seed_staff_user(
+            conn, "shipper_clear", "Người Giao CLR", "giao-hang"
+        )
+
+    order = _create_order()
+    auth_client.post(
+        f"/api/orders/{order['orderRef']}/assign", headers=_auth_headers(shipper_token)
+    )
+    resp = auth_client.patch(
+        f"/api/orders/{order['orderRef']}",
+        json={"assignedStaffId": None, "changedBy": "admin_clear"},
+        headers=_auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["assignedStaffId"] is None
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT assigned_staff_id FROM orders WHERE id = ?",
+            (int(order["id"]),),
+        ).fetchone()
+        assert row["assigned_staff_id"] is None
