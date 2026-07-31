@@ -311,7 +311,7 @@ class _MiniOrderCard extends StatelessWidget {
                         ),
                       if (order.isAssigned)
                         Text(
-                          order.assignedStaffName,
+                          '${OrdersLabels.deliveryStaffLabel}: ${order.assignedStaffName}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
