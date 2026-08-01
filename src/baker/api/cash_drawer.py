@@ -677,6 +677,11 @@ def close_drawer(body: CloseDrawerRequest):
                         amount=discrepancy,
                     )
                 else:
+                    logger.warning(
+                        "close_drawer surplus proposal: drawer=%s expected=%s "
+                        "counted=%s surplus=%s",
+                        drawer.id, expected, body.countedAmount, discrepancy,
+                    )
                     raise HTTPException(
                         status_code=409,
                         detail={
@@ -759,6 +764,11 @@ def close_drawer(body: CloseDrawerRequest):
                         amount=amt,
                     )
                 else:
+                    logger.warning(
+                        "close_drawer shortage proposal: drawer=%s expected=%s "
+                        "counted=%s shortage=%s",
+                        drawer.id, expected, body.countedAmount, amt,
+                    )
                     raise HTTPException(
                         status_code=409,
                         detail={

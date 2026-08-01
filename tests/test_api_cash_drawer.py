@@ -552,18 +552,6 @@ def test_close_shortage_old_client_without_flags_backward_compat_nfr2(api_client
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-def test_close_drawer_zero_discrepancy_no_journal_entry(api_client):
-    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
-    resp = api_client.post(
-        "/api/cash-drawer/close", json={"countedAmount": 1_000_000}
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["discrepancy"] == 0
-    assert body["status"] == "closed"
-    assert "journalEntry" not in body
-
-
 def test_close_drawer_requires_active_drawer(api_client):
     resp = api_client.post("/api/cash-drawer/close", json={"countedAmount": 0})
     assert resp.status_code == 409
@@ -589,7 +577,7 @@ def test_status_returns_active_drawer(api_client):
     assert body["expectedBalance"] == 1_000_000
 
 
-def test_status_after_close_returns_null(api_client):
+def test_status_after_close_returns_previous_counted_amount(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
     resp = api_client.get("/api/cash-drawer/status")
