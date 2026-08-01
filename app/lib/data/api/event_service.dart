@@ -130,6 +130,14 @@ class EventService {
         .toList();
   }
 
+  Future<List<EventPhoto>> getEventPhotos(int eventId) async {
+    final response = await _dio.get('/api/events/$eventId/photos');
+    final list = response.data as List;
+    return list
+        .map((json) => EventPhoto.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<EventPhoto> uploadEventPhoto(
     int eventId,
     File file, {
