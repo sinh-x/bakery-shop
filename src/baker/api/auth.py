@@ -51,6 +51,7 @@ class LoginResponse(BaseModel):
     token: str
     username: str
     role: str
+    force_password_change: bool = False
 
 
 class PasswordChangeRequest(BaseModel):
@@ -202,8 +203,8 @@ def login(body: LoginRequest, request: Request):
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash, role, active, locked_until, staff_id "
-            "FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, role, active, locked_until, staff_id, "
+            "force_password_change FROM users WHERE username = ?",
             (body.username,),
         ).fetchone()
 
@@ -277,6 +278,7 @@ def login(body: LoginRequest, request: Request):
             token=token,
             username=row["username"],
             role=row["role"],
+            force_password_change=bool(row["force_password_change"]),
         )
 
 

@@ -830,3 +830,103 @@ def test_password_change_does_not_revoke_other_users_sessions(auth_client):
         ).fetchone()
         assert row is not None
         assert row["revoked_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# DG-319 Phase 3 — Login response force_password_change field (FR8 / AC7)
+#
+# When a user logs in, the login response includes force_password_change: true
+# when the flag is set on the user row (via admin `baker user set-password
+# --force-change`). The client uses this to route to /change-password.
+# ---------------------------------------------------------------------------
+
+
+def test_login_returns_force_password_change_false_by_default(api_client):
+    """FR8: default users have force_password_change=false in the response."""
+    with get_db() as conn:
+        _create_test_user(conn, "normaluser", "pass123")
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "normaluser", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is False
+
+
+def test_login_returns_force_password_change_true_when_flag_set(api_client):
+    """FR8/AC7: when force_password_change=1 on the user, the login response
+    reports force_password_change: true."""
+    with get_db() as conn:
+        _create_test_user(conn, "forceduser", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'forceduser'"
+        )
+        conn.commit()
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "forceduser", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+
+def test_login_force_password_change_persists_until_cleared(api_client):
+    """FR8: the flag remains true on subsequent logins until cleared (FR10 is
+    a separate phase — login here only reports, does not clear)."""
+    with get_db() as conn:
+        _create_test_user(conn, "stickyflag", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'stickyflag'"
+        )
+        conn.commit()
+
+    # First login — flag is true.
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "stickyflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+    # Second login — flag is still true (login does not clear it).
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "stickyflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+
+def test_login_force_password_change_reflects_clearing(api_client):
+    """FR8: after the flag is cleared (e.g. via password change), the login
+    response reports force_password_change: false."""
+    with get_db() as conn:
+        _create_test_user(conn, "clearflag", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'clearflag'"
+        )
+        conn.commit()
+
+    # While flag is set — response is true.
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "clearflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+    # Clear the flag (simulates a successful forced change in a later phase).
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET force_password_change = 0 WHERE username = 'clearflag'"
+        )
+        conn.commit()
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "clearflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is False
