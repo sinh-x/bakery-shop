@@ -49,6 +49,12 @@ class KnowledgeBaseScreen extends ConsumerWidget {
         subtitle: VN.knowledgeBaseDocsSubtitle,
         route: '/knowledge',
       ),
+      _HubTile(
+        icon: Icons.point_of_sale,
+        title: VN.cashDrawerTitle,
+        subtitle: VN.knowledgeBaseCashDrawerSubtitle,
+        route: '/cash-drawer',
+      ),
     ];
 
     // ignore: prefer_const_constructors

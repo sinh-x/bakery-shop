@@ -595,6 +595,7 @@ class VN {
   static const knowledgeBaseChecklistSubtitle = 'Công việc mở / đóng tiệm';
   static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
   static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
+  static const knowledgeBaseCashDrawerSubtitle = 'Quỹ tiền mặt hàng ngày & chênh lệch';
   static const pinnedSection = '📌 Đã ghim';
   static const pinSuccess = 'Đã ghim';
   static const unpinSuccess = 'Đã bỏ ghim';

@@ -11,6 +11,7 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/knowledge_base/knowledge_base_screen.dart';
 import '../../features/events/event_list_screen.dart';
+import '../../features/cash_drawer/cash_drawer_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/knowledge/knowledge_list_screen.dart';
 import '../../features/pos/pos_screen.dart';
@@ -99,6 +100,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/checklist',
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: ChecklistScreen()),
+          ),
+          GoRoute(
+            path: '/cash-drawer',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: CashDrawerScreen()),
           ),
           GoRoute(
             path: '/knowledge',
