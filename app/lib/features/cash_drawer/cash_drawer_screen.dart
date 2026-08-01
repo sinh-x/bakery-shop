@@ -141,16 +141,28 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         carryOverAmount: e.amount,
       );
       if (decision == null || !context.mounted) return;
+      // CQ-4: `carryOverConfirmed` confirms the owner is aware of the
+      // pending carry-over — it must be `true` for both accept and decline
+      // decisions. Sending `false` causes the backend to treat the request
+      // as unconfirmed and re-emit a 409, re-looping the proposal dialog.
       await ref.read(_mutationInProgressProvider.notifier).run(
             context,
             () => ref.read(cashDrawerServiceProvider).openDrawer(
                   openingBalance: result.amount,
                   note: result.note,
-                  carryOverConfirmed: decision == CarryOverDecision.accept,
+                  carryOverConfirmed: true,
                 ),
             VN.cashDrawerOpenSuccess,
             ref,
           );
+    } catch (e) {
+      // CQ-5: surface non-carry-over errors (409 already-active, network
+      // failures, etc.) via the snackbar instead of letting them escape
+      // the error UI silently.
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${VN.apiError}: $e')),
+      );
     }
   }
 

@@ -270,8 +270,8 @@ void main() {
   });
 
   testWidgets(
-      'FR9 carry-over: declining re-opens with carryOverConfirmed: false',
-      (tester) async {
+      'FR9 carry-over: declining re-opens with carryOverConfirmed: true '
+      '(CQ-4: flag confirms awareness, not acceptance)', (tester) async {
     final interceptor = _CarryOverInterceptor();
     final container = ProviderContainer(
       overrides: [
@@ -299,7 +299,10 @@ void main() {
     await tester.tap(find.text(VN.cashDrawerCarryOverDecline));
     await tester.pumpAndSettle();
 
-    expect(interceptor.openCalls.last['carryOverConfirmed'], false);
+    // CQ-4: even on decline, `carryOverConfirmed` must be `true` — the flag
+    // confirms awareness of the carry-over proposal, not acceptance. Sending
+    // `false` would cause the backend to re-emit a 409 and re-loop the dialog.
+    expect(interceptor.openCalls.last['carryOverConfirmed'], true);
     expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
   });
 
@@ -380,6 +383,34 @@ class _CarryOverInterceptor extends Interceptor {
       openCalls.add(body);
       if (!_proposalSent) {
         _proposalSent = true;
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            response: Response(
+              requestOptions: options,
+              statusCode: 409,
+              data: {
+                'detail': {
+                  'message':
+                      'Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
+                  'carryOverProposal': {
+                    'amount': 1550000,
+                    'fromDrawerId': '7',
+                    'fromOpenedAt': '2026-07-28T08:00:00Z',
+                    'fromExpectedBalance': 1550000,
+                  },
+                },
+              },
+            ),
+          ),
+        );
+        return;
+      }
+      // CQ-4: a retry after the carry-over proposal must send
+      // `carryOverConfirmed: true`. Sending `false` means the owner has not
+      // acknowledged the carry-over, so the backend re-emits a 409 to
+      // re-loop the proposal dialog. This guard enforces the CQ-4 fix.
+      if (body['carryOverConfirmed'] != true) {
         handler.reject(
           DioException(
             requestOptions: options,
