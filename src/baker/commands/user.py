@@ -184,7 +184,13 @@ def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
     is_flag=True,
     help="Suppress plaintext password output (for CI/scripted use).",
 )
-def user_set_password(username: str, use_random: bool, quiet: bool):
+@click.option(
+    "--force-change",
+    "force_change",
+    is_flag=True,
+    help="Set force_password_change=1 so the user must change it on next login (FR7).",
+)
+def user_set_password(username: str, use_random: bool, quiet: bool, force_change: bool):
     """Set a new password for an existing user (FR8).
 
     By default prompts for a new password interactively with hidden input
@@ -195,6 +201,11 @@ def user_set_password(username: str, use_random: bool, quiet: bool):
     Pass ``--random`` to generate a random password instead of prompting;
     the generated password is printed to stdout unless ``--quiet`` is also
     passed (MJ-2, for CI/scripted use).
+
+    Pass ``--force-change`` to set ``force_password_change = 1`` on the user
+    row so the user is required to change their password on next login
+    (FR7, DG-319 Phase 2). The flag is cleared by the self-service password
+    change endpoint (FR10).
     """
     username = _normalize_username(username)
     with get_db() as conn:
@@ -218,11 +229,23 @@ def user_set_password(username: str, use_random: bool, quiet: bool):
                 confirmation_prompt=True,
             )
         hashed = _hash(password)
-        conn.execute(
-            "UPDATE users SET password_hash = ? WHERE username = ?",
-            (hashed, username),
-        )
-        console.print(f"  [green]Updated[/green] password for '{username}'.")
+        if force_change:
+            conn.execute(
+                "UPDATE users SET password_hash = ?, force_password_change = 1 "
+                "WHERE username = ?",
+                (hashed, username),
+            )
+            console.print(f"  [green]Updated[/green] password for '{username}'.")
+            console.print(
+                "  [yellow]force_password_change=1[/yellow] "
+                "(user must change password on next login)."
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE username = ?",
+                (hashed, username),
+            )
+            console.print(f"  [green]Updated[/green] password for '{username}'.")
         if generated and not quiet:
             console.print(f"  [bold]New password:[/bold] {password}")
             console.print("[dim]Distribute this password to the user.[/dim]")
