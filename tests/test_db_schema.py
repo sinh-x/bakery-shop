@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3495,7 +3495,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
         _assert_users_role_check_constraint(conn)
 
 
@@ -3561,7 +3561,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3684,7 +3684,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3758,7 +3758,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3785,7 +3785,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4188,7 +4188,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
         indexes = {
             r["name"]
@@ -4268,7 +4268,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4378,7 +4378,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 91
+        assert _migrated_version(conn) == 92
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4419,8 +4419,217 @@ def test_v91_cash_drawer_id_fk_references_cash_drawer():
                 (table,),
             ).fetchone()["sql"]
             assert "cash_drawer_id INTEGER DEFAULT NULL REFERENCES cash_drawer(id)" in sql, (
-                f"{table}.cash_drawer_id must reference cash_drawer(id)"
+                 f"{table}.cash_drawer_id must reference cash_drawer(id)"
             )
+
+
+# ---------------------------------------------------------------------------
+# v92 — cash drawer sub-accounts 1101/1102 + 1100→1101 balance transfer
+# (DG-330 Phase 2, FR9/AC2/NFR1/NFR2)
+# ---------------------------------------------------------------------------
+
+
+def test_v92_registered_in_migration_chain():
+    """v92 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 92 in MIGRATIONS
+    assert (
+        MIGRATIONS[92]["description"]
+        == "Insert cash drawer sub-accounts 1101/1102 and transfer existing 1100 balance to 1101 (DG-330 Phase 2)"
+    )
+    assert MIGRATIONS[92]["callable"].__name__ == "_migrate_v92_cash_drawer_sub_accounts"
+
+
+def test_v92_inserts_1101_and_1102_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has accounts 1101 and 1102 as
+    sub-accounts of 1100 (FR1/FR2/AC1).
+
+    On a fresh DB the 1100 balance is zero, so no balance-transfer journal
+    entry is created (NFR1 — fresh DB is a no-op for the transfer branch).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 92
+
+        for code, name, acc_type, parent_code in (
+            ("1101", "Tiền mặt tại quầy", "asset", "1100"),
+            ("1102", "Tiền mặt chủ sở hữu", "asset", "1100"),
+        ):
+            row = conn.execute(
+                "SELECT a.name, a.type, p.code AS parent_code "
+                "FROM accounts a LEFT JOIN accounts p ON p.id = a.parent_id "
+                "WHERE a.code = ?",
+                (code,),
+            ).fetchone()
+            assert row is not None, f"account {code} must exist"
+            assert row["name"] == name
+            assert row["type"] == acc_type
+            assert row["parent_code"] == parent_code
+
+        # Fresh DB: no migration_balance_transfer entry should exist.
+        transfer = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()
+        assert transfer is None
+
+
+def test_v92_transfers_1100_balance_to_1101_on_existing_db():
+    """An existing DB with a non-zero 1100 balance gets a balanced journal
+    entry moving that balance to 1101 (FR9/AC2/NFR2).
+
+    Pre-populate 1100 with a positive balance by inserting a journal entry
+    (DR 1100, CR 3100) before v92 runs. After v92, 1101 should hold the
+    transferred amount and 1100 should be zero.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        # Seed chart of accounts already includes 1101/1102 after Phase 1
+        # constants update (they are in SEED_CHART_OF_ACCOUNTS), but on a DB
+        # migrated only up to v91 the seed has already run via earlier
+        # migrations. Ensure they exist for the transfer target.
+        from baker.db.schema import _seed_chart_of_accounts, _account_id_by_code
+
+        _seed_chart_of_accounts(conn)
+
+        cash_on_hand_id = _account_id_by_code(conn, "1100")
+        equity_id = _account_id_by_code(conn, "3100")
+        amount = 2_500_000.0
+        # Create a starting balance entry: DR 1100, CR 3100.
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "Seed: opening cash on hand",
+                "test_seed",
+                1,
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+        entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, cash_on_hand_id, amount, 0.0, "cash"),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, equity_id, 0.0, amount, "equity"),
+        )
+        conn.commit()
+
+        # Confirm 1100 balance before v92.
+        pre = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1100'
+            """
+        ).fetchone()["bal"]
+        assert pre == amount
+
+        # Run v92.
+        _migrate_to_version(conn, 92)
+        assert _migrated_version(conn) == 92
+
+        # 1101 should now hold `amount`, 1100 should be zero.
+        bal_1101 = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1101'
+            """
+        ).fetchone()["bal"]
+        bal_1100 = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1100'
+            """
+        ).fetchone()["bal"]
+        assert bal_1101 == amount
+        assert bal_1100 == 0.0
+
+        # The transfer entry must be recorded with source_type=migration_balance_transfer.
+        transfer = conn.execute(
+            "SELECT description FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()
+        assert transfer is not None
+        assert "v092" in transfer["description"]
+
+
+def test_v92_idempotent_on_already_migrated_db():
+    """Re-running v92 on a DB that already ran it is a no-op (NFR1).
+
+    The balance-transfer guard (source_type='migration_balance_transfer',
+    source_id=92) prevents duplicate transfer entries; the account INSERTs
+    use INSERT OR IGNORE.
+    """
+    from baker.db.schema import _migrate_v92_cash_drawer_sub_accounts
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Capture the journal_entries count after the first run.
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        # Re-running the callable must not raise and must not add a duplicate.
+        _migrate_v92_cash_drawer_sub_accounts(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        assert count_after_first == count_after_second
+        assert _migrated_version(conn) == 92
+
+
+def test_v92_balance_transfer_entry_is_balanced():
+    """The v092 balance-transfer journal entry has equal debit/credit totals
+    (NFR2 — _insert_journal_entry enforces this; this test guards against
+    accidental regression by computing the totals directly).
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        from baker.db.schema import _seed_chart_of_accounts, _account_id_by_code
+
+        _seed_chart_of_accounts(conn)
+        cash_on_hand_id = _account_id_by_code(conn, "1100")
+        equity_id = _account_id_by_code(conn, "3100")
+        amount = 1_800_000.0
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Seed: opening cash", "test_seed", 2, "2026-02-01T00:00:00Z"),
+        )
+        eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, cash_on_hand_id, amount, 0.0, "cash"),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, equity_id, 0.0, amount, "equity"),
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 92)
+
+        # Find the transfer entry and verify debit == credit.
+        transfer_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        totals = conn.execute(
+            "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+            "FROM journal_lines WHERE journal_entry_id = ?",
+            (transfer_id,),
+        ).fetchone()
+        assert abs(totals["d"] - totals["c"]) < 0.005
+        assert totals["d"] == amount
 
 
 def test_schema_all_matches_imported_symbols():
