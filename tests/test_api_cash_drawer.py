@@ -349,7 +349,13 @@ def test_status_after_close_returns_null(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
     resp = api_client.get("/api/cash-drawer/status")
-    assert resp.json() is None
+    # DG-331 FR9: when no active drawer but a closed drawer exists, status
+    # returns previousCloseCountedAmount (counted_amount of most recent closed
+    # drawer) instead of null, for display in the open dialog.
+    body = resp.json()
+    assert body is not None
+    assert body.get("activeDrawer") is None
+    assert body["previousCloseCountedAmount"] == 1_000_000
 
 
 def test_expected_balance_formula_ac6(api_client):
@@ -383,8 +389,11 @@ def test_history_returns_paginated_list(api_client):
     # First drawer
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
-    # Second drawer
-    api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    # Second drawer — 1101 balance from first open requires transfer confirmation
+    api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "transferConfirmed": True,
+    })
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 500_000})
 
     resp = api_client.get("/api/cash-drawer/history")
@@ -398,7 +407,18 @@ def test_history_returns_paginated_list(api_client):
 
 def test_history_supports_pagination(api_client):
     for i in range(3):
-        api_client.post("/api/cash-drawer/open", json={"openingBalance": 100_000 * (i + 1)})
+        opening = 100_000 * (i + 1)
+        # First open (100k): no prior 1101 balance → no gate
+        # Second open (200k): > 1101 balance (100k) → excess gate → stockRecon+unidSale
+        # Third open (300k): < 1101 balance after second open (100k+200k+100k=400k) → transfer gate
+        payload: dict = {"openingBalance": opening}
+        # DG-330: when opening > reference 1101 balance, confirm stock recon
+        if i == 1:
+            payload["stockReconciliationConfirmed"] = True
+            payload["unidentifiedSaleConfirmed"] = True
+        elif i == 2:
+            payload["transferConfirmed"] = True
+        api_client.post("/api/cash-drawer/open", json=payload)
         api_client.post("/api/cash-drawer/close", json={"countedAmount": 100_000 * (i + 1)})
 
     resp = api_client.get("/api/cash-drawer/history?limit=2&offset=0")

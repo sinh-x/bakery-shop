@@ -200,6 +200,14 @@ class CashDrawer:
         return 0
 
     @staticmethod
+    def get_most_recent_closed(conn) -> "CashDrawer | None":
+        row = conn.execute(
+            "SELECT * FROM cash_drawer WHERE status = 'closed' "
+            "ORDER BY closed_at DESC LIMIT 1"
+        ).fetchone()
+        return CashDrawer.from_row(row) if row else None
+
+    @staticmethod
     def get_stale_open_before(conn, *, before_iso: str) -> list["CashDrawer"]:
         """FR8 helper: list open drawers whose ``opened_at`` is strictly before
         the given ISO-8601 timestamp (typically the start of the current local
