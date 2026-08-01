@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../data/api/event_service.dart';
 import '../../../providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'quick_log_photo_picker.dart';
 
 class _EventType {
   const _EventType(this.value, this.label, this.icon);
@@ -51,8 +56,10 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   String _selectedType = 'note';
   final _selectedTags = <String>{};
   final _customTags = <String>[];
+  final _selectedPhotos = <XFile>[];
   bool _showCustomTagField = false;
   bool _saving = false;
+  bool _uploading = false;
 
   @override
   void dispose() {
@@ -69,12 +76,22 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     setState(() => _saving = true);
     try {
       final loggedBy = ref.read(loggedByProvider);
-      await ref.read(eventsProvider.notifier).logEvent(
+      final createdEvent = await ref.read(eventsProvider.notifier).logEvent(
             summary: summary,
             type: _selectedType,
             tags: _selectedTags.toList(),
             loggedBy: loggedBy,
           );
+      if (_selectedPhotos.isNotEmpty && mounted) {
+        setState(() => _uploading = true);
+        final service = ref.read(eventServiceProvider);
+        for (final xfile in _selectedPhotos) {
+          await service.uploadEventPhoto(
+            createdEvent.id,
+            File(xfile.path),
+          );
+        }
+      }
       if (mounted) {
         showTopSnackBar(context, VN.eventLogged);
         _reset();
@@ -84,7 +101,12 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _uploading = false;
+        });
+      }
     }
   }
 
@@ -95,6 +117,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
       _selectedTags.clear();
       _customTags.clear();
       _showCustomTagField = false;
+      _selectedPhotos.clear();
     });
     _summaryFocus.requestFocus();
   }
@@ -247,6 +270,18 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         ),
         const SizedBox(height: 12),
 
+        // Photo picker — compact; uploads after event creation (NFR1)
+        QuickLogPhotoPicker(
+          selectedPhotos: _selectedPhotos,
+          uploading: _uploading,
+          onSelectionChanged: (files) => setState(() {
+            _selectedPhotos
+              ..clear()
+              ..addAll(files);
+          }),
+        ),
+        const SizedBox(height: 12),
+
         // Logged-by row
         Row(
           children: [
@@ -275,7 +310,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: _saving
+          child: (_saving || _uploading)
               ? const SizedBox(
                   width: 20,
                   height: 20,
