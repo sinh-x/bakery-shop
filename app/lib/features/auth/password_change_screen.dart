@@ -13,8 +13,10 @@ import 'widgets/password_change_form.dart';
 /// `/login` for a fresh login with the new password.
 ///
 /// For the forced-change flow (admin `--force-change`), [ForceChangeScreen]
-/// wraps the same [PasswordChangeForm] but clears the local
-/// `force_password_change` flag and redirects to `/orders` on success.
+/// wraps the same [PasswordChangeForm] but shows the forced-change title and
+/// an explanatory message banner, then redirects to `/login` on success
+/// (`changePassword()` clears local state to `unauthenticated`; after re-login
+/// the guard routes to `/orders`).
 class PasswordChangeScreen extends ConsumerWidget {
   const PasswordChangeScreen({super.key});
 

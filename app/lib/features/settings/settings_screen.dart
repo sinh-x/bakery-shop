@@ -195,6 +195,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               if (auth.isAuthenticated) ...[
                 StaffBindingSection(auth: auth, manualNameCtrl: _manualNameCtrl),
                 const SizedBox(height: 16),
+                // Self-service password change (DG-319 Phase 5 / FR5 / AC5).
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text(AuthLabels.changePasswordTitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/change-password'),
+                ),
+                const SizedBox(height: 16),
                 // Logout (DG-319 Phase 6 / FR6 / AC6).
                 ListTile(
                   leading: const Icon(Icons.logout, color: Colors.red),

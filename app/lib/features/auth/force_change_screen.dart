@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../shared/labels/auth.dart';
-import 'auth_provider.dart';
 import 'widgets/password_change_form.dart';
 
 /// Forced password change screen (DG-319 Phase 5 / FR9 / FR10 / AC7 / AC8).
@@ -14,10 +13,11 @@ import 'widgets/password_change_form.dart';
 ///
 /// Unlike [PasswordChangeScreen] (self-service), this screen:
 ///   - shows the forced-change title and an explanatory message banner, and
-///   - on success clears the local `force_password_change` flag and redirects
-///     to `/login` for a fresh login (the backend revoked all sessions on the
-///     change). After re-login the login response no longer carries the flag
-///     (the backend cleared it, FR10), so the router routes to `/orders`.
+///   - on success redirects to `/login` for a fresh login. The backend revoked
+///     all sessions on the change and `changePassword()` cleared local state to
+///     `unauthenticated`, so the router guard routes to `/login`. After re-login
+///     the login response no longer carries the flag (the backend cleared it,
+///     FR10), so the router routes to `/orders`.
 class ForceChangeScreen extends ConsumerWidget {
   const ForceChangeScreen({super.key});
 
@@ -61,10 +61,9 @@ class ForceChangeScreen extends ConsumerWidget {
                   PasswordChangeForm(
                     title: AuthLabels.forcePasswordChangeTitle,
                     onSuccess: () {
-                      // FR10: clear the local flag (backend already cleared it).
-                      ref.read(authProvider.notifier).clearForcePasswordChange();
-                      // Backend revoked all sessions; go to /login for a fresh
-                      // login. After re-login the guard routes to /orders.
+                      // changePassword() already cleared local state to
+                      // `unauthenticated` (backend revoked all sessions), so the
+                      // router guard redirects to /login for a fresh login.
                       context.go('/login');
                     },
                   ),
