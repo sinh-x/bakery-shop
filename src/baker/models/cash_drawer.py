@@ -136,6 +136,22 @@ class CashDrawer:
         )
         self.owner_out += int(amount)
 
+    def add_cash_sale(self, conn, amount: int) -> None:
+        """FR5: accumulate a cash payment into the drawer's cash_sales total."""
+        conn.execute(
+            "UPDATE cash_drawer SET cash_sales = cash_sales + ? WHERE id = ?",
+            (int(amount), self.id),
+        )
+        self.cash_sales += int(amount)
+
+    def add_cash_expense(self, conn, amount: int) -> None:
+        """FR6: accumulate a cash expense into the drawer's cash_expenses total."""
+        conn.execute(
+            "UPDATE cash_drawer SET cash_expenses = cash_expenses + ? WHERE id = ?",
+            (int(amount), self.id),
+        )
+        self.cash_expenses += int(amount)
+
     def close(self, conn, *, counted_amount: int, closed_at: Optional[str] = None) -> int:
         """FR7: set counted_amount, compute discrepancy, mark closed.
 
