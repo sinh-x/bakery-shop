@@ -1282,7 +1282,7 @@ def test_v44_backfill_payments():
         ).fetchall()
         assert len(entries) == 3
 
-        # deposit cash: debit 1100, credit 2100
+        # deposit cash: debit 1101, credit 2100
         dep_entry = next(e for e in entries if e["source_id"] == pt_cash)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id=?",
@@ -1296,7 +1296,7 @@ def test_v44_backfill_payments():
         credit_acc = conn.execute(
             "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
         ).fetchone()["code"]
-        assert debit_acc == "1100"
+        assert debit_acc == "1101"
         assert credit_acc == "2100"
         assert float(debit_line["debit"]) == 200000
 
@@ -1312,7 +1312,7 @@ def test_v44_backfill_payments():
         ).fetchone()["code"]
         assert debit_acc == "1200"
 
-        # refund: debit 2100, credit 1100 (reversed)
+        # refund: debit 2100, credit 1101 (reversed)
         rf_entry = next(e for e in entries if e["source_id"] == pt_refund)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id=?",
@@ -1327,7 +1327,7 @@ def test_v44_backfill_payments():
             "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
         ).fetchone()["code"]
         assert debit_acc == "2100"
-        assert credit_acc == "1100"
+        assert credit_acc == "1101"
 
         _assert_double_entry_integrity(conn)
 

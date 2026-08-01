@@ -295,9 +295,10 @@ def test_cash_with_payment_source_routes_to_bank_sub_account(api_client):
         assert "1100" not in lines
 
 
-def test_cash_without_payment_source_routes_to_1100(api_client):
+def test_cash_without_payment_source_routes_to_1101(api_client):
     """FR5: cash/card transactions without payment_source keep their existing
-    behavior (1100). Only transfers get the un-allocated fallback."""
+    behavior but now route to 1101 (Cash in Drawer) per DG-330 Phase 1.
+    Only transfers get the un-allocated fallback."""
     order = _create_order(api_client)
     ref = order["orderRef"]
     txn = _create_txn(
@@ -306,7 +307,7 @@ def test_cash_without_payment_source_routes_to_1100(api_client):
     txn_id = int(txn["id"])
     with get_db() as conn:
         lines = _journal_line_amounts(conn, txn_id)
-        assert lines["1100"]["debit"] == 50000.0
+        assert lines["1101"]["debit"] == 50000.0
         assert "1290" not in lines
 
 

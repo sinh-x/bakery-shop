@@ -275,16 +275,12 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
 /// shared by the cash-in and cash-out dialogs (DG-330 Phase 8).
 class _CashDrawerSelector {
   _CashDrawerSelector._({
-    required _SelectorMode mode,
-    required List<StaffMember> staff,
-    required List<({String value, String label})> options,
-    required String headerLabel,
-    required String selectedValue,
-  })  : _mode = mode,
-        _staff = staff,
-        _options = options,
-        _headerLabel = headerLabel,
-        _selectedValue = selectedValue;
+    required this._mode,
+    required this._staff,
+    required this._options,
+    required this._headerLabel,
+    required this._selectedValue,
+  });
 
   factory _CashDrawerSelector.cashIn(List<StaffMember> staff) =>
       _CashDrawerSelector._(
@@ -350,7 +346,7 @@ class _CashDrawerSelector {
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<String>(
-          value: _selectedValue,
+          initialValue: _selectedValue,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             isDense: true,
@@ -370,7 +366,7 @@ class _CashDrawerSelector {
         if (_needsStaffPicker()) ...[
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _selectedStaffName,
+            initialValue: _selectedStaffName,
             decoration: const InputDecoration(
               labelText: VN.cashDrawerStaffPickerLabel,
               border: OutlineInputBorder(),

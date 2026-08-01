@@ -327,7 +327,7 @@ def test_expense_non_expense_type_no_journal(api_client):
 
 def test_payment_deposit_creates_journal_entry(api_client):
     """AC2: payment_transaction type='deposit', amount=200000, method='cash' →
-    debit 1100, credit 2100."""
+    debit 1101, credit 2100."""
     order = _create_order(api_client)
     ref = order["orderRef"]
     txn = _create_txn(api_client, ref, amount=200000, type="deposit", method="cash")
@@ -341,7 +341,7 @@ def test_payment_deposit_creates_journal_entry(api_client):
         assert debit_line.debit == 200000.0
         assert credit_line.credit == 200000.0
         asset_acc = Account.get_by_id(conn, debit_line.account_id)
-        assert asset_acc.code == "1100"  # Cash on Hand
+        assert asset_acc.code == "1101"  # Cash in Drawer (sub-account of 1100)
         deposits_acc = Account.get_by_id(conn, credit_line.account_id)
         assert deposits_acc.code == "2100"  # Customer Deposits
 
@@ -382,7 +382,7 @@ def test_payment_refund_reverses_direction(api_client):
         deposits_acc = Account.get_by_id(conn, deposits_debit.account_id)
         asset_acc = Account.get_by_id(conn, asset_credit.account_id)
         assert deposits_acc.code == "2100"
-        assert asset_acc.code == "1100"
+        assert asset_acc.code == "1101"
 
 
 def test_payment_update_in_place_when_unlocked(api_client):
@@ -930,7 +930,7 @@ def test_journal_lock_skips_already_locked(api_client):
 
 
 def test_owner_capital_creates_journal_entry(api_client):
-    """FR12: owner capital in → debit Cash, credit Owner's Equity (3100)."""
+    """FR12: owner capital in → debit Cash in Drawer (1101), credit Owner's Equity (3100)."""
     resp = api_client.post("/api/accounts/owner-capital", json={"amount": 5000000, "method": "cash", "note": "vốn đầu"})
     assert resp.status_code == 201
     body = resp.json()
@@ -939,7 +939,7 @@ def test_owner_capital_creates_journal_entry(api_client):
         lines = _lines_for_entry(conn, int(body["id"]))
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
-        assert Account.get_by_id(conn, debit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, debit_line.account_id).code == "1101"
         assert Account.get_by_id(conn, credit_line.account_id).code == "3100"
         assert debit_line.debit == 5000000.0
 
@@ -955,7 +955,7 @@ def test_owner_capital_transfer_hits_bank_account(api_client):
 
 
 def test_owner_draw_creates_journal_entry(api_client):
-    """FR12: owner draw → debit Owner's Equity (3100), credit Cash."""
+    """FR12: owner draw → debit Owner's Equity (3100), credit Cash in Drawer (1101)."""
     resp = api_client.post("/api/accounts/owner-draw", json={"amount": 200000, "method": "cash"})
     assert resp.status_code == 201
     with get_db() as conn:
@@ -963,7 +963,7 @@ def test_owner_draw_creates_journal_entry(api_client):
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
         assert Account.get_by_id(conn, debit_line.account_id).code == "3100"
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1101"
         assert credit_line.credit == 200000.0
 
 
@@ -982,7 +982,7 @@ def test_staff_reimburse_creates_journal_entry(api_client):
         assert staff_acc.type == "liability"
         assert staff_acc.parent_id == _account_id(conn, "2300")
         assert staff_acc.name == "Lan"
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1101"
         assert debit_line.debit == 100000.0
 
 
