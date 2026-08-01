@@ -46,7 +46,8 @@ class _ExpenseHistoryPhotoStripState
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('ExpenseHistoryPhotoStrip._loadPhotos failed: $e');
       if (mounted) setState(() => _loading = false);
     }
   }

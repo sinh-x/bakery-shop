@@ -49,7 +49,7 @@ class EventDetailPhotoSection extends ConsumerWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Text(
-          VN.noOrderPhotos,
+          VN.noEventPhotos,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.outline,
           ),

@@ -81,7 +81,7 @@ class _EventFormPhotoSectionState extends State<EventFormPhotoSection> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              VN.noOrderPhotos,
+              VN.noEventPhotos,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),

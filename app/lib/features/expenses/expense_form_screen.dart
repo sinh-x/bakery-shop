@@ -87,7 +87,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
       if (mounted) setState(() => _existingPhotos.addAll(photos));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('_loadExistingPhotos failed: $e');
       // Non-fatal: edit form still works without existing photo display.
     }
   }
@@ -282,8 +283,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _uploadPhotos(int eventId) async {
     setState(() => _uploading = true);
     final service = ref.read(eventServiceProvider);
-    for (final xfile in _selectedPhotos) {
-      await service.uploadEventPhoto(eventId, File(xfile.path));
+    try {
+      for (final xfile in _selectedPhotos) {
+        await service.uploadEventPhoto(eventId, File(xfile.path));
+      }
+    } catch (uploadErr) {
+      debugPrint('uploadEventPhoto (expense) failed: $uploadErr');
+      if (mounted) {
+        showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      }
     }
   }
 

@@ -99,7 +99,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
       if (mounted) setState(() => _existingPhotos.addAll(photos));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('_loadExistingPhotos failed: $e');
       // Non-fatal: edit form still works without existing photo display.
     }
   }
@@ -132,11 +133,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         if (hasNewPhotos && mounted) {
           setState(() => _uploading = true);
           final service = ref.read(eventServiceProvider);
-          for (final xfile in _selectedPhotos) {
-            await service.uploadEventPhoto(
-              widget.event!.id,
-              File(xfile.path),
-            );
+          try {
+            for (final xfile in _selectedPhotos) {
+              await service.uploadEventPhoto(
+                widget.event!.id,
+                File(xfile.path),
+              );
+            }
+          } catch (uploadErr) {
+            debugPrint('uploadEventPhoto (edit) failed: $uploadErr');
+            if (mounted) {
+              showTopSnackBar(context, VN.eventPhotosUploadFailed);
+            }
           }
         }
         if (mounted) {
@@ -157,11 +165,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         if (hasNewPhotos && mounted) {
           setState(() => _uploading = true);
           final service = ref.read(eventServiceProvider);
-          for (final xfile in _selectedPhotos) {
-            await service.uploadEventPhoto(
-              createdEvent.id,
-              File(xfile.path),
-            );
+          try {
+            for (final xfile in _selectedPhotos) {
+              await service.uploadEventPhoto(
+                createdEvent.id,
+                File(xfile.path),
+              );
+            }
+          } catch (uploadErr) {
+            debugPrint('uploadEventPhoto (create) failed: $uploadErr');
+            if (mounted) {
+              showTopSnackBar(context, VN.eventPhotosUploadFailed);
+            }
           }
         }
 

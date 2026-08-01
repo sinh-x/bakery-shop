@@ -154,6 +154,8 @@ class VN {
   static const orderLabel = 'Đơn hàng';
   static const eventPhotos = 'Ảnh đính kèm';
   static const addEventPhoto = 'Thêm ảnh';
+  static const noEventPhotos = 'Chưa có ảnh';
+  static const eventPhotosUploadFailed = 'Đã lưu sự kiện nhưng không tải được ảnh';
 
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';

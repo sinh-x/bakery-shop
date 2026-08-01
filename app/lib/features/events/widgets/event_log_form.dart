@@ -85,11 +85,18 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
       if (_selectedPhotos.isNotEmpty && mounted) {
         setState(() => _uploading = true);
         final service = ref.read(eventServiceProvider);
-        for (final xfile in _selectedPhotos) {
-          await service.uploadEventPhoto(
-            createdEvent.id,
-            File(xfile.path),
-          );
+        try {
+          for (final xfile in _selectedPhotos) {
+            await service.uploadEventPhoto(
+              createdEvent.id,
+              File(xfile.path),
+            );
+          }
+        } catch (uploadErr) {
+          debugPrint('uploadEventPhoto (quick-log) failed: $uploadErr');
+          if (mounted) {
+            showTopSnackBar(context, VN.eventPhotosUploadFailed);
+          }
         }
       }
       if (mounted) {

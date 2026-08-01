@@ -39,7 +39,8 @@ class _EventCardPhotoCountState extends ConsumerState<EventCardPhotoCount> {
           _loaded = true;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('EventCardPhotoCount._loadCount failed: $e');
       if (mounted) setState(() => _loaded = true);
     }
   }
