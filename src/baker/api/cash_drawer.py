@@ -1,4 +1,4 @@
-"""Cash drawer API routes (DG-324 Phase 2 / Phase 6; DG-330 Phase 3).
+"""Cash drawer API routes (DG-324 Phase 2 / Phase 6; DG-330 Phase 3 / Phase 5).
 
 Endpoints:
     POST /api/cash-drawer/open   — open a daily drawer (FR1, FR9 carry-over)
@@ -22,7 +22,14 @@ sources (owner cash 1102 / employee 23XX / equity 3100) and cash-out accepts
 two destinations (owner cash 1102 / employee advance 23XX). All entries remain
 balanced (NFR2), enforced by ``_insert_journal_entry``.
 
-Traceability: FR1, FR2, FR3, FR3a, FR4, FR7, FR8, FR9, FR10, NFR1, NFR2, NFR4.
+DG-330 Phase 5 (FR10/AC17): when opening a new day with carry-over confirmed
+and the opening balance is less than the previous drawer's expected balance,
+the difference auto-transfers from 1101 (Cash in Drawer) to 1102 (Owner's
+Cash) via a balanced journal entry (DR 1102, CR 1101). This keeps 1101 in
+sync with the drawer's expected balance (NFR4) — the excess cash physically
+left the drawer and is now held by the owner personally.
+
+Traceability: FR1, FR2, FR3, FR3a, FR4, FR7, FR8, FR9, FR10, FR10a, NFR1, NFR2, NFR4.
 """
 
 import logging
@@ -276,10 +283,36 @@ def open_drawer(body: OpenDrawerRequest):
             credit_account_id=accounts["equity"],
             amount=body.openingBalance,
         )
+        # DG-330 Phase 5 / FR10 / AC17: auto-transfer excess to 1102 on open-day.
+        # When opening with carry-over confirmed and the opening balance is
+        # less than the previous drawer's expected balance, the difference
+        # moved out of the drawer to the owner's personal cash. Record a
+        # balanced journal entry (DR 1102, CR 1101) so 1101 stays in sync with
+        # the new drawer's expected balance (NFR4). No transfer when the
+        # opening balance is >= the previous expected balance.
+        auto_transfer = None
+        if carry_over_from is not None:
+            previous_expected = int(carry_over_from["fromExpectedBalance"])
+            opening = int(body.openingBalance)
+            if opening < previous_expected:
+                excess = previous_expected - opening
+                transfer_desc = (
+                    f"Chuyển tiền thừa từ quỹ sang tiền mặt chủ sở hữu: {excess}"
+                )
+                auto_transfer = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_auto_transfer",
+                    description=transfer_desc,
+                    debit_account_id=accounts["owner_cash"],
+                    credit_account_id=accounts["cash_drawer"],
+                    amount=excess,
+                )
         result = drawer.to_api_dict()
         result["journalEntry"] = journal
         if carry_over_from is not None:
             result["carryOver"] = carry_over_from
+        if auto_transfer is not None:
+            result["autoTransfer"] = auto_transfer
         return result
 
 

@@ -340,6 +340,141 @@ def test_open_with_carry_over_confirmed_auto_closes_and_opens(api_client):
         assert stale.discrepancy == 0
 
 
+# ---------------------------------------------------------------------------
+# FR10 / AC17 — auto-transfer excess to 1102 on open-day (DG-330 Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def _account_id(conn, code: str) -> int:
+    return int(
+        conn.execute("SELECT id FROM accounts WHERE code = ?", (code,)).fetchone()[0]
+    )
+
+
+def _auto_transfer_lines(conn):
+    """Return journal lines for the cash_drawer_auto_transfer source type."""
+    return conn.execute(
+        "SELECT jl.* FROM journal_lines jl "
+        "JOIN journal_entries je ON je.id = jl.journal_entry_id "
+        "WHERE je.source_type = 'cash_drawer_auto_transfer' ORDER BY jl.id",
+    ).fetchall()
+
+
+def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_client):
+    """AC17: opening with carry-over confirmed and opening balance < previous
+    expected balance creates a balanced journal entry DR 1102, CR 1101 for the
+    difference (excess cash transferred to owner's cash)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        _set_balance_columns(
+            conn,
+            drawer.id,
+            cash_sales=500_000,
+            owner_in=200_000,
+            owner_out=100_000,
+            cash_expenses=50_000,
+        )
+        _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
+    # Previous expected balance = 1,550,000. Open today with 1,000,000 (< 1,550,000).
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_000_000, "carryOverConfirmed": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["openingBalance"] == 1_000_000
+    # AC17: an auto-transfer journal entry is created.
+    assert "autoTransfer" in body, "expected autoTransfer block in response"
+    transfer = body["autoTransfer"]
+    assert transfer["sourceType"] == "cash_drawer_auto_transfer"
+    lines = transfer["lines"]
+    assert len(lines) == 2
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    excess = 1_550_000 - 1_000_000
+    assert float(debit_line["debit"]) == float(excess)
+    assert float(credit_line["credit"]) == float(excess)
+    with get_db() as conn:
+        # DR 1102 (Owner's Cash), CR 1101 (Cash in Drawer).
+        assert _account_id(conn, "1102") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+    # The transfer entry is balanced (NFR2).
+    with get_db() as conn:
+        rows = _auto_transfer_lines(conn)
+        debit_sum = sum(float(r["debit"]) for r in rows)
+        credit_sum = sum(float(r["credit"]) for r in rows)
+        assert debit_sum == credit_sum
+
+
+def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
+    """FR10: when opening balance == previous expected balance, no
+    auto-transfer is created (no excess to move)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        _set_balance_columns(
+            conn,
+            drawer.id,
+            cash_sales=500_000,
+            owner_in=200_000,
+            owner_out=100_000,
+            cash_expenses=50_000,
+        )
+        _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
+    # Previous expected = 1,550,000. Open with exactly that amount.
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_550_000, "carryOverConfirmed": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert "autoTransfer" not in body, "no auto-transfer when opening >= expected"
+    with get_db() as conn:
+        assert _auto_transfer_lines(conn) == []
+
+
+def test_open_with_carry_over_and_higher_balance_no_auto_transfer(api_client):
+    """FR10: when opening balance > previous expected balance, no
+    auto-transfer is created (the owner added cash, no excess to move)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        _set_balance_columns(
+            conn,
+            drawer.id,
+            cash_sales=500_000,
+            owner_in=200_000,
+            owner_out=100_000,
+            cash_expenses=50_000,
+        )
+        _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
+    # Previous expected = 1,550,000. Open with more than that (2,000,000).
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 2_000_000, "carryOverConfirmed": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert "autoTransfer" not in body
+    with get_db() as conn:
+        assert _auto_transfer_lines(conn) == []
+
+
+def test_open_without_carry_over_no_auto_transfer(api_client):
+    """FR10: auto-transfer only fires when carry-over is confirmed (previous
+    stale drawer exists). A fresh open with no stale drawer never transfers."""
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_000_000, "carryOverConfirmed": True},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert "autoTransfer" not in body
+    with get_db() as conn:
+        assert _auto_transfer_lines(conn) == []
+
+
 def test_open_without_stale_drawer_does_not_propose_carry_over(api_client):
     """FR9: when there is no stale (previous-day) drawer, opening proceeds
     normally with no carry-over proposal, even if carryOverConfirmed=True."""
