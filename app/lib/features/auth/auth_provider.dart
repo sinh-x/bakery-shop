@@ -13,24 +13,31 @@ class AuthState {
     this.username,
     this.role,
     this.status = AuthStatus.unknown,
+    this.forcePasswordChange = false,
   });
 
   const AuthState.unauthenticated()
       : token = null,
         username = null,
         role = null,
-        status = AuthStatus.unauthenticated;
+        status = AuthStatus.unauthenticated,
+        forcePasswordChange = false;
 
   AuthState.authenticated({
     required this.token,
     required this.username,
     required this.role,
+    this.forcePasswordChange = false,
   }) : status = AuthStatus.authenticated;
 
   final String? token;
   final String? username;
   final String? role;
   final AuthStatus status;
+
+  /// FR8: when true, the router guard redirects to `/change-password` before
+  /// the user can access the app shell.
+  final bool forcePasswordChange;
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
   bool get isAdmin => role == 'admin';
@@ -96,6 +103,45 @@ class AuthNotifier extends Notifier<AuthState> {
       token: result.token,
       username: result.username,
       role: result.role,
+      forcePasswordChange: result.forcePasswordChange,
+    );
+  }
+
+  /// Self-service password change (DG-319 Phase 4 / FR1).
+  ///
+  /// Calls [AuthService.changePassword] with the current and new passwords. On
+  /// success the backend revokes all existing sessions (including this one),
+  /// so the notifier clears local state and transitions to `unauthenticated`;
+  /// the router guard then redirects to `/login` for a fresh login with the
+  /// new password. Throws [DioException] on failure so the caller can surface
+  /// the error.
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final service = ref.read(authServiceProvider);
+    await service.changePassword(
+      oldPassword: oldPassword,
+      newPassword: newPassword,
+      confirmPassword: confirmPassword,
+    );
+    // Backend revoked all sessions (including this one). Clear local state so
+    // the router guard redirects to /login for a fresh login.
+    await _storage().clear();
+    state = const AuthState.unauthenticated();
+  }
+
+  /// Clears a forced-password-change flag from local auth state after the user
+  /// has completed a forced change (DG-319 Phase 4 / FR10). Called by the
+  /// forced-change screen on a successful change that re-logs the user in.
+  void clearForcePasswordChange() {
+    if (!state.forcePasswordChange) return;
+    state = AuthState.authenticated(
+      token: state.token,
+      username: state.username,
+      role: state.role,
+      forcePasswordChange: false,
     );
   }
 
