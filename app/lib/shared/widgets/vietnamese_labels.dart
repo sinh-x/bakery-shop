@@ -691,7 +691,8 @@ class VN {
 
   // Payment sources
   static const expensePaymentSourceLabel = 'Nguồn tiền chi';
-  static const paymentSourceShopCash = 'Shop tiền mặt';
+  static const paymentSourceDrawerCash = 'Tiền mặt tại quầy';
+  static const paymentSourceOwnerCash = 'Tiền mặt chủ sở hữu';
   static const paymentSourcePhuongVCB = 'TK Phượng VCB';
   static const paymentSourceAnVCB = 'TK Ân VCB';
   static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
@@ -1041,6 +1042,18 @@ class VN {
       'Bạn có muốn mang sang hôm nay không?';
   static const cashDrawerCarryOverAccept = 'Mang sang';
   static const cashDrawerCarryOverDecline = 'Không mang sang';
+
+  /// Cash-in source / cash-out destination dropdown labels (DG-330 Phase 8).
+  static const cashDrawerSourceLabel = 'Nguồn tiền vào';
+  static const cashDrawerDestinationLabel = 'Đích tiền ra';
+  static const cashDrawerSourceOwner = 'Tiền mặt chủ sở hữu';
+  static const cashDrawerSourceEmployee = 'Nhân viên';
+  static const cashDrawerSourceEquity = 'Vốn chủ sở hữu';
+  static const cashDrawerDestinationOwner = 'Tiền mặt chủ sở hữu';
+  static const cashDrawerDestinationEmployee = 'Nhân viên ứng trước';
+  static const cashDrawerStaffPickerLabel = 'Chọn nhân viên';
+  static const cashDrawerStaffPickerHint = 'Chọn nhân viên';
+  static const cashDrawerStaffRequired = 'Vui lòng chọn nhân viên';
 
   /// Cash-drawer journal source types (extend the accounting source-type
   /// vocabulary) — used by the journal filter and drawer movement history.

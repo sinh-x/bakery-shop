@@ -41,7 +41,7 @@ class CarryOverProposalException implements Exception {
       'CarryOverProposalException(amount: $amount, fromDrawerId: $fromDrawerId)';
 }
 
-/// Client for the cash-drawer backend API (DG-324 Phase 4).
+/// Client for the cash-drawer backend API (DG-324 Phase 2/6).
 ///
 /// Wraps the six endpoints exposed by `src/baker/api/cash_drawer.py`:
 ///
@@ -117,26 +117,49 @@ class CashDrawerService {
     );
   }
 
-  /// FR2: owner puts cash into the active drawer.
+  /// FR2/FR3a: owner puts cash into the active drawer.
+  ///
+  /// `source` selects the credit side (DG-330 Phase 3):
+  ///   - `owner`   → CR 1102 (Owner's Cash)
+  ///   - `employee`→ CR 23XX (staff advance; `staffName` required)
+  ///   - `equity`  → CR 3100 (owner capital injection) — default, backward compat
   Future<CashDrawer> cashIn({
     required int amount,
     String note = '',
+    String source = 'equity',
+    String? staffName,
   }) async {
     final response = await _dio.post(
       '/api/cash-drawer/cash-in',
-      data: {'amount': amount, 'note': note},
+      data: {
+        'amount': amount,
+        'note': note,
+        'source': source,
+        if (staffName != null && staffName.isNotEmpty) 'staffName': staffName,
+      },
     );
     return CashDrawer.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// FR3: owner takes cash out of the active drawer.
+  /// FR3/FR4: owner takes cash out of the active drawer.
+  ///
+  /// `destination` selects the debit side (DG-330 Phase 3):
+  ///   - `owner`   → DR 1102 (Owner's Cash) — default, backward compat
+  ///   - `employee`→ DR 23XX (employee advance; `staffName` required)
   Future<CashDrawer> cashOut({
     required int amount,
     String note = '',
+    String destination = 'owner',
+    String? staffName,
   }) async {
     final response = await _dio.post(
       '/api/cash-drawer/cash-out',
-      data: {'amount': amount, 'note': note},
+      data: {
+        'amount': amount,
+        'note': note,
+        'destination': destination,
+        if (staffName != null && staffName.isNotEmpty) 'staffName': staffName,
+      },
     );
     return CashDrawer.fromJson(response.data as Map<String, dynamic>);
   }

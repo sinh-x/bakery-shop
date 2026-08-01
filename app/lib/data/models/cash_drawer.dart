@@ -1,4 +1,4 @@
-/// Cash drawer model (DG-324 Phase 4).
+/// Cash drawer model (DG-324 Phase 2/6).
 ///
 /// Mirrors the JSON returned by the cash-drawer backend API
 /// (see `src/baker/api/cash_drawer.py` and `CashDrawer.to_api_dict`):

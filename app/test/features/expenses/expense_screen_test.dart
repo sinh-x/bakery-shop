@@ -73,7 +73,7 @@ BakeryEvent _expenseEvent({
   required String staff,
   String vendor = '',
   String note = '',
-  String paymentSource = 'Shop tiền mặt',
+  String paymentSource = VN.paymentSourceDrawerCash,
   String paidByName = '',
   String loggedBy = '',
   bool reimbursed = false,
@@ -686,7 +686,7 @@ void main() {
         amount: 120000,
         category: VN.expenseCategoryIngredient,
         paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourceShopCash,
+        paymentSource: VN.paymentSourceDrawerCash,
         staff: 'Lan',
         reimbursed: false,
       );
@@ -779,7 +779,7 @@ void main() {
       (widget) =>
           widget is FilterChip &&
           widget.label is Text &&
-          (widget.label as Text).data == VN.paymentSourceShopCash,
+          (widget.label as Text).data == VN.paymentSourceDrawerCash,
     );
     await tester.dragUntilVisible(
       paymentSourceChips,
@@ -792,6 +792,9 @@ void main() {
   testWidgets('selecting payment source chip reloads with filter', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     String? capturedPaymentSource;
     final events = [
       _expenseEvent(
@@ -849,6 +852,9 @@ void main() {
   });
 
   testWidgets('clear filters resets payment source chip', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final events = [
       _expenseEvent(
         id: 1,
@@ -921,7 +927,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
-    expect(find.text(VN.paymentSourceShopCash), findsOneWidget);
+    expect(find.text(VN.paymentSourceDrawerCash), findsOneWidget);
   });
 
   testWidgets('history card shows logged_by and paid_by roles', (
@@ -940,7 +946,7 @@ void main() {
         'amount_vnd': 120000,
         'category': VN.expenseCategoryIngredient,
         'payment_method': VN.methodCash,
-        'payment_source': VN.paymentSourceShopCash,
+        'payment_source': VN.paymentSourceDrawerCash,
         'vendor': '',
         'note': '',
         'staff_name': 'Lan',

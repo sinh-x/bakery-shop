@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/cash_drawer_service.dart';
+import '../../data/api/staff_service.dart';
 import '../../data/models/cash_drawer.dart';
 import '../../providers/cash_drawer_provider.dart';
+import '../../providers/staff_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
@@ -177,26 +179,34 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleCashIn(BuildContext context) async {
-    final result = await showCashInDialog(context);
+    final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
+    final result = await showCashInDialog(context, staff: staff);
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .cashIn(amount: result.amount, note: result.note),
+          () => ref.read(cashDrawerServiceProvider).cashIn(
+                amount: result.amount,
+                note: result.note,
+                source: result.source ?? 'equity',
+                staffName: result.staffName,
+              ),
           VN.cashDrawerCashInSuccess,
           ref,
         );
   }
 
   Future<void> _handleCashOut(BuildContext context) async {
-    final result = await showCashOutDialog(context);
+    final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
+    final result = await showCashOutDialog(context, staff: staff);
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .cashOut(amount: result.amount, note: result.note),
+          () => ref.read(cashDrawerServiceProvider).cashOut(
+                amount: result.amount,
+                note: result.note,
+                destination: result.destination ?? 'owner',
+                staffName: result.staffName,
+              ),
           VN.cashDrawerCashOutSuccess,
           ref,
         );

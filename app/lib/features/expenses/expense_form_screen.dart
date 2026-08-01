@@ -44,7 +44,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   String? _category;
   String? _subcategory;
   String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceShopCash;
+  String _paymentSource = VN.paymentSourceDrawerCash;
   String? _staffName;
   String? _paidByName;
   late DateTime _eventDateTime;
