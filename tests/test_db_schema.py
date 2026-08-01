@@ -960,7 +960,7 @@ def _seed_expense_event(
     *,
     amount_vnd=50000,
     category="Nguyên liệu",
-    payment_source="Shop tiền mặt",
+    payment_source="Tiền mặt tại quầy",
     paid_by_name="",
     summary="Test expense",
     subcategory=None,
@@ -1086,7 +1086,7 @@ def test_v44_backfill_expenses():
             conn,
             amount_vnd=50000,
             category="Nguyên liệu",
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
             summary="Expense cash",
         )
         event_id_bank = _seed_expense_event(
@@ -1106,7 +1106,9 @@ def test_v44_backfill_expenses():
         ).fetchall()
         assert len(entries) == 2
 
-        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory purchase), credit 1100 (Cash)
+        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory
+        # purchase), credit 1101 (Cash in Drawer — DG-330 Phase 4.4 routes
+        # "Tiền mặt tại quầy" to 1101, not the legacy 1100)
         cash_entry = next(e for e in entries if e["source_id"] == event_id)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
@@ -1125,7 +1127,7 @@ def test_v44_backfill_expenses():
             "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
         ).fetchone()["code"]
         assert debit_acc == "1300"
-        assert credit_acc == "1100"
+        assert credit_acc == "1101"
 
         # Bank expense: credit 1210 (Phượng VCB sub-account) per DG-285 FR1/FR2
         bank_entry = next(e for e in entries if e["source_id"] == event_id_bank)

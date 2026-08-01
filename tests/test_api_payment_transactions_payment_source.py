@@ -333,9 +333,15 @@ def test_unknown_payment_source_treated_as_unallocated(api_client):
 
 def test_expense_payment_source_mapping_unchanged():
     """Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE maps VCB labels to
-    their bank sub-accounts (1210/1220) per DG-285 FR1/FR2."""
+    their bank sub-accounts (1210/1220) per DG-285 FR1/FR2.
+
+    DG-330 Phase 1 split the legacy "Shop tiền mặt" (1100) into two sources:
+    "Tiền mặt tại quầy" (1101, drawer cash) and "Tiền mặt chủ sở hữu" (1102,
+    owner cash). The VCB and staff-advance mappings are unchanged.
+    """
     assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE == {
-        "Shop tiền mặt": "1100",
+        "Tiền mặt tại quầy": "1101",
+        "Tiền mặt chủ sở hữu": "1102",
         "TK Phượng VCB": "1210",
         "TK Ân VCB": "1220",
         "Nhân viên ứng trước": "2300",

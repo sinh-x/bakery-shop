@@ -40,7 +40,7 @@ def _lines_for_entry(conn, entry_id: int):
 
 
 def _create_expense(client, *, category, subcategory=None, amount=100000,
-                   payment_source="Shop tiền mặt", summary="Test expense"):
+                   payment_source="Tiền mặt tại quầy", summary="Test expense"):
     data = {
         "amount_vnd": amount,
         "category": category,
@@ -160,7 +160,7 @@ def test_expense_no_subcategory_legacy_debits_inventory(api_client):
 
 def test_expense_subcategory_credit_unchanged(api_client):
     """The subcategory change only affects the debit side; the credit still
-    hits the mapped payment_source account (1100 for Shop tiền mặt)."""
+    hits the mapped payment_source account (1101 for Tiền mặt tại quầy)."""
     payload = _create_expense(
         api_client, category="Nguyên liệu", subcategory="Trứng",
         amount=50000, summary="Mua trứng",
@@ -171,7 +171,7 @@ def test_expense_subcategory_credit_unchanged(api_client):
         lines = _lines_for_entry(conn, entries[0].id)
         credit_line = next(l for l in lines if l.credit > 0)
         credit_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert credit_acc.code == "1100"
+        assert credit_acc.code == "1101"
 
 
 # ---------------------------------------------------------------------------
