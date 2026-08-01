@@ -263,6 +263,8 @@ def test_cash_out_requires_active_drawer(api_client):
 
 
 def test_close_drawer_with_shortage_records_discrepancy(api_client):
+    """NFR2 backward compat: old client sends only countedAmount (no new
+    flags) → legacy shortage behavior DR 3100 (equity) / CR 1101."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
     api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
@@ -276,7 +278,7 @@ def test_close_drawer_with_shortage_records_discrepancy(api_client):
     assert body["countedAmount"] == 1_090_000
     assert body["discrepancy"] == -10_000
     assert body["closedAt"] is not None
-    # AC6: shortage → debit 3100, credit 1101
+    # Legacy shortage → debit 3100, credit 1101
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_close_adjust"
     lines = je["lines"]
@@ -290,6 +292,8 @@ def test_close_drawer_with_shortage_records_discrepancy(api_client):
 
 
 def test_close_drawer_with_surplus_records_discrepancy(api_client):
+    """NFR2 backward compat: old client sends only countedAmount (no new
+    flags) → legacy surplus behavior DR 1101 / CR 3100 (equity)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     # expected = 1,000,000; counted = 1,010,000 → +10,000
     resp = api_client.post(
@@ -298,7 +302,7 @@ def test_close_drawer_with_surplus_records_discrepancy(api_client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["discrepancy"] == 10_000
-    # AC6: surplus → debit 1101, credit 3100
+    # Legacy surplus → debit 1101, credit 3100
     je = body["journalEntry"]
     lines = je["lines"]
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -306,6 +310,246 @@ def test_close_drawer_with_surplus_records_discrepancy(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1101") == int(debit_line["accountId"])
         assert _account_id(conn, "3100") == int(credit_line["accountId"])
+
+
+# ---------------------------------------------------------------------------
+# DG-331 Phase 2 — Close drawer confirmation gates (FR2-FR8, AC1-AC7, NFR2)
+# ---------------------------------------------------------------------------
+
+
+def _open_with_expected(api_client, *, opening: int, expected: int) -> None:
+    """Open a drawer and adjust its expected balance to the target by
+    setting cash_sales directly on the DB row (bypasses auto-link)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
+    if expected != opening:
+        with get_db() as conn:
+            drawer = CashDrawer.get_active(conn)
+            assert drawer is not None
+            conn.execute(
+                "UPDATE cash_drawer SET cash_sales = ? WHERE id = ?",
+                (expected - opening, drawer.id),
+            )
+
+
+def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
+    """AC1: close with surplus and surplusSource set but surplusConfirmed
+    false → 409 with surplusProposal {expectedBalance, countedAmount, surplus}.
+    """
+    # expected = 2,000,000; counted = 3,000,000 → surplus = 1,000,000
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={"countedAmount": 3_000_000, "surplusSource": "owner_cash"},
+    )
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "surplusProposal" in detail
+    proposal = detail["surplusProposal"]
+    assert proposal["expectedBalance"] == 2_000_000
+    assert proposal["countedAmount"] == 3_000_000
+    assert proposal["surplus"] == 1_000_000
+
+
+def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
+    """AC2: close surplus with surplusConfirmed + surplusSource=owner_cash
+    → DR 1101 (Cash in Drawer) / CR 1102 (Owner's Cash); discrepancy stored."""
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 3_000_000,
+            "surplusConfirmed": True,
+            "surplusSource": "owner_cash",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "closed"
+    assert body["discrepancy"] == 1_000_000
+    je = body["journalEntry"]
+    assert je["sourceType"] == "cash_drawer_close_adjust"
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 1_000_000.0
+    assert float(credit_line["credit"]) == 1_000_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
+
+def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
+    """AC3: close surplus with surplusSource=unidentified_sale → compound
+    entry DR 1101/CR 4100 (revenue) + DR 5900/CR 1300 (50% COGS)."""
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 3_000_000,
+            "surplusConfirmed": True,
+            "surplusSource": "unidentified_sale",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == 1_000_000
+    # Compound entry returned under surplusJournalEntry key.
+    je = body["surplusJournalEntry"]
+    assert je["sourceType"] == "cash_drawer_close_adjust"
+    lines = je["lines"]
+    assert len(lines) == 4
+    # All four accounts (1101, 4100, 5900, 1300) must be present.
+    with get_db() as conn:
+        expected_accts = {
+            int(_account_id(conn, c)) for c in ("1101", "4100", "5900", "1300")
+        }
+    line_accts = {int(l["accountId"]) for l in lines}
+    assert line_accts == expected_accts
+    # Balanced entry (NFR1).
+    debit_sum = sum(float(l["debit"]) for l in lines)
+    credit_sum = sum(float(l["credit"]) for l in lines)
+    assert abs(debit_sum - credit_sum) < 0.005
+    # Revenue line credit = 1,000,000; COGS line debit = 500,000 (50%).
+    with get_db() as conn:
+        rev_id = _account_id(conn, "4100")
+        cogs_id = _account_id(conn, "5900")
+        cash_id = _account_id(conn, "1101")
+        inv_id = _account_id(conn, "1300")
+    rev_line = next(l for l in lines if int(l["accountId"]) == rev_id)
+    cogs_line = next(l for l in lines if int(l["accountId"]) == cogs_id)
+    cash_line = next(l for l in lines if int(l["accountId"]) == cash_id)
+    inv_line = next(l for l in lines if int(l["accountId"]) == inv_id)
+    assert float(cash_line["debit"]) == 1_000_000.0
+    assert float(rev_line["credit"]) == 1_000_000.0
+    assert float(cogs_line["debit"]) == 500_000.0
+    assert float(inv_line["credit"]) == 500_000.0
+
+
+def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
+    """AC4: close with shortage and shortageSource set but shortageConfirmed
+    false → 409 with shortageProposal {expectedBalance, countedAmount, shortage}.
+    """
+    # expected = 2,000,000; counted = 1,500,000 → shortage = 500,000
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={"countedAmount": 1_500_000, "shortageSource": "owner_withdraw"},
+    )
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "shortageProposal" in detail
+    proposal = detail["shortageProposal"]
+    assert proposal["expectedBalance"] == 2_000_000
+    assert proposal["countedAmount"] == 1_500_000
+    assert proposal["shortage"] == 500_000
+
+
+def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
+    """AC5: close shortage with shortageConfirmed + shortageSource=owner_withdraw
+    → DR 1102 (Owner's Cash) / CR 1101 (Cash in Drawer); discrepancy stored."""
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 1_500_000,
+            "shortageConfirmed": True,
+            "shortageSource": "owner_withdraw",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == -500_000
+    je = body["journalEntry"]
+    assert je["sourceType"] == "cash_drawer_close_adjust"
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 500_000.0
+    assert float(credit_line["credit"]) == 500_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1102") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
+    """AC6: close shortage with shortageConfirmed + shortageSource=equity_loss
+    → DR 3100 (Equity) / CR 1101 (Cash in Drawer); discrepancy stored."""
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 1_500_000,
+            "shortageConfirmed": True,
+            "shortageSource": "equity_loss",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == -500_000
+    je = body["journalEntry"]
+    assert je["sourceType"] == "cash_drawer_close_adjust"
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 500_000.0
+    assert float(credit_line["credit"]) == 500_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "3100") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
+    """AC7: zero discrepancy close → no journal entry, no confirmation flags
+    needed. Drawer closes normally."""
+    _open_with_expected(api_client, opening=2_000_000, expected=2_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 2_000_000}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == 0
+    assert body["status"] == "closed"
+    assert "journalEntry" not in body
+    assert "surplusJournalEntry" not in body
+    assert "shortageJournalEntry" not in body
+
+
+def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client):
+    """NFR2: old client sends close with only countedAmount (no surplusConfirmed
+    / surplusSource) → legacy behavior DR 1101 / CR 3100, status 200."""
+    _open_with_expected(api_client, opening=1_000_000, expected=1_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_100_000}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == 100_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "3100") == int(credit_line["accountId"])
+
+
+def test_close_shortage_old_client_without_flags_backward_compat_nfr2(api_client):
+    """NFR2: old client sends close with only countedAmount (no
+    shortageConfirmed / shortageSource) → legacy DR 3100 / CR 1101, 200."""
+    _open_with_expected(api_client, opening=1_000_000, expected=1_000_000)
+    resp = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 900_000}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == -100_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    with get_db() as conn:
+        assert _account_id(conn, "3100") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
 def test_close_drawer_zero_discrepancy_no_journal_entry(api_client):

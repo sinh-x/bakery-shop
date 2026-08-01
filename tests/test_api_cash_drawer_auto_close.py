@@ -89,7 +89,14 @@ def test_auto_close_on_status_read_closes_stale_drawer(api_client):
     # Trigger lazy auto-close via a status read.
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
-    assert resp.json() is None  # no active drawer remains
+    # DG-331 FR9: when no active drawer but a closed drawer exists, /status
+    # returns {activeDrawer: None, previousCloseCountedAmount: <counted>}
+    # instead of null. The stale drawer was auto-closed with counted_amount
+    # = expected_balance = 1,000,000 (discrepancy 0).
+    body = resp.json()
+    assert body is not None
+    assert body.get("activeDrawer") is None
+    assert body["previousCloseCountedAmount"] == 1_000_000
     with get_db() as conn:
         rows = conn.execute(
             "SELECT status, counted_amount, discrepancy FROM cash_drawer WHERE id = ?",
