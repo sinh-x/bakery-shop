@@ -145,12 +145,11 @@ class AuthNotifier extends Notifier<AuthState> {
   /// CQ-11: the flag is persisted in [TokenStorage] so it survives app
   /// restarts; clearing it here also clears the stored value so the user does
   /// not get re-prompted after the next restart.
-  void clearForcePasswordChange() {
+  Future<void> clearForcePasswordChange() async {
     if (!state.forcePasswordChange) return;
-    // Best-effort clear of the stored flag; the prefs in-memory cache updates
-    // synchronously, so the subsequent build() reads the cleared value.
+    // Clear the persisted flag so the user is not re-prompted after restart.
     final storage = _storage();
-    storage.clearForcePasswordChange();
+    await storage.clearForcePasswordChange();
     state = AuthState.authenticated(
       token: state.token,
       username: state.username,

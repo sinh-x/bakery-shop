@@ -309,7 +309,7 @@ void main() {
           );
       expect(container.read(authProvider).forcePasswordChange, isTrue);
 
-      container.read(authProvider.notifier).clearForcePasswordChange();
+      await container.read(authProvider.notifier).clearForcePasswordChange();
 
       expect(container.read(authProvider).forcePasswordChange, isFalse);
       expect(container.read(authProvider).isAuthenticated, isTrue);
@@ -374,7 +374,7 @@ void main() {
           );
       expect(prefs.getBool('auth_force_password_change'), isTrue);
 
-      container.read(authProvider.notifier).clearForcePasswordChange();
+      await container.read(authProvider.notifier).clearForcePasswordChange();
 
       // The stored flag is removed (cleared) so a restart does not re-prompt.
       expect(prefs.getBool('auth_force_password_change'), isNull);

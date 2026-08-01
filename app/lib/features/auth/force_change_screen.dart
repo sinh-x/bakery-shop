@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../shared/labels/auth.dart';
 import 'widgets/password_change_form.dart';
@@ -60,12 +59,10 @@ class ForceChangeScreen extends ConsumerWidget {
                   const SizedBox(height: 24),
                   PasswordChangeForm(
                     title: AuthLabels.forcePasswordChangeTitle,
-                    onSuccess: () {
-                      // changePassword() already cleared local state to
-                      // `unauthenticated` (backend revoked all sessions), so the
-                      // router guard redirects to /login for a fresh login.
-                      context.go('/login');
-                    },
+                    // changePassword() already cleared local state to
+                    // `unauthenticated` (backend revoked all sessions), so the
+                    // router guard redirects to /login for a fresh login.
+                    onSuccess: () {},
                   ),
                 ],
               ),
