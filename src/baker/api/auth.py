@@ -343,9 +343,11 @@ def change_password(body: PasswordChangeRequest, request: Request):
             )
 
         # FR1: update to the new hash (NFR2: bcrypt cost factor 12).
+        # FR10: clear force_password_change on a successful change so the user
+        # is not prompted again after a self-service or forced change.
         new_hash = _pwd_ctx.hash(body.new_password)
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?, force_password_change = 0 WHERE id = ?",
             (new_hash, int(row["id"])),
         )
 

@@ -832,8 +832,49 @@ def test_password_change_does_not_revoke_other_users_sessions(auth_client):
         assert row["revoked_at"] is None
 
 
-# ---------------------------------------------------------------------------
-# DG-319 Phase 3 — Login response force_password_change field (FR8 / AC7)
+def test_password_change_clears_force_password_change_flag(auth_client):
+    """FR10/AC8: a successful password change clears force_password_change.
+
+    Without this, a forced-change user would be re-prompted on every login
+    (infinite loop). The flag must be cleared atomically with the new hash.
+    """
+    token = _seed_user_and_get_token(
+        auth_client, username="forceclear", password="oldpass123"
+    )
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'forceclear'"
+        )
+        conn.commit()
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "oldpass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Flag must be cleared on the user row.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT force_password_change FROM users WHERE username = 'forceclear'"
+        ).fetchone()
+        assert row is not None
+        assert bool(row["force_password_change"]) is False
+
+    # Re-login with the new password should report force_password_change=false.
+    new_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "forceclear", "password": "newpass456"},
+    )
+    assert new_resp.status_code == 200
+    assert new_resp.json()["force_password_change"] is False
+
+
 #
 # When a user logs in, the login response includes force_password_change: true
 # when the flag is set on the user row (via admin `baker user set-password
