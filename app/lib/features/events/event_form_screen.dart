@@ -125,7 +125,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           context.pop();
         }
       } else {
-        await ref
+        final createdEvent = await ref
             .read(eventsProvider.notifier)
             .logEvent(
               summary: summary,
@@ -137,16 +137,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
 
         if (_selectedPhotos.isNotEmpty && mounted) {
           setState(() => _uploading = true);
-          final eventList = ref.read(eventsProvider).value ?? [];
-          if (eventList.isNotEmpty) {
-            final createdEvent = eventList.first;
-            final service = ref.read(eventServiceProvider);
-            for (final xfile in _selectedPhotos) {
-              await service.uploadEventPhoto(
-                createdEvent.id,
-                File(xfile.path),
-              );
-            }
+          final service = ref.read(eventServiceProvider);
+          for (final xfile in _selectedPhotos) {
+            await service.uploadEventPhoto(
+              createdEvent.id,
+              File(xfile.path),
+            );
           }
         }
 
