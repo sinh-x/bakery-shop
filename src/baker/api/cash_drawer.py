@@ -1,10 +1,10 @@
-"""Cash drawer API routes (DG-324 Phase 2 / Phase 6).
+"""Cash drawer API routes (DG-324 Phase 2 / Phase 6; DG-330 Phase 3).
 
 Endpoints:
     POST /api/cash-drawer/open   — open a daily drawer (FR1, FR9 carry-over)
     POST /api/cash-drawer/close  — close with counted amount + discrepancy (FR7)
-    POST /api/cash-drawer/cash-in  — owner puts cash in (FR2)
-    POST /api/cash-drawer/cash-out — owner takes cash out (FR3)
+    POST /api/cash-drawer/cash-in  — owner puts cash in (FR2/FR3a, three sources)
+    POST /api/cash-drawer/cash-out — owner takes cash out (FR3/FR4, two destinations)
     GET  /api/cash-drawer/status  — active drawer or null (FR4)
     GET  /api/cash-drawer/history — paginated past drawers (FR10)
 
@@ -15,23 +15,30 @@ When opening, if a previous-day drawer was just auto-closed, its expected
 balance is proposed as today's opening balance and the owner must confirm it
 (``carryOverConfirmed`` flag).
 
-All balance-affecting operations create balanced double-entry journal entries
-via the shared ``_create_manual_journal_entry`` factory (NFR3): cash → debit
-1100 / credit 3100 (equity), cash-out reverses the direction.
+DG-330 Phase 3: the cash side of every drawer journal entry now uses account
+1101 (Cash in Drawer) instead of the main 1100 cash account, so 1101's balance
+always equals the drawer's expected balance (NFR4). Cash-in accepts three
+sources (owner cash 1102 / employee 23XX / equity 3100) and cash-out accepts
+two destinations (owner cash 1102 / employee advance 23XX). All entries remain
+balanced (NFR2), enforced by ``_insert_journal_entry``.
 
-Traceability: FR1, FR2, FR3, FR4, FR7, FR8, FR9, FR10, NFR1, NFR3.
+Traceability: FR1, FR2, FR3, FR3a, FR4, FR7, FR8, FR9, FR10, NFR1, NFR2, NFR4.
 """
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from baker.config import TIMEZONE
 from baker.db.connection import get_db
-from baker.db.schema import _account_id_by_code, _insert_journal_entry
+from baker.db.schema import (
+    _account_id_by_code,
+    _ensure_staff_payable_sub_account,
+    _insert_journal_entry,
+)
 from baker.models.cash_drawer import CashDrawer
 from baker.models.journal_entry import JournalEntry, JournalLine
 from baker.utils.time import now_utc
@@ -40,7 +47,8 @@ logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/cash-drawer", tags=["cash-drawer"])
 
-CASH_ASSET_CODE = "1100"
+CASH_DRAWER_ASSET_CODE = "1101"  # Cash in Drawer (sub-account of 1100) — DG-330
+OWNER_CASH_CODE = "1102"  # Owner's Cash (sub-account of 1100) — DG-330
 EQUITY_CODE = "3100"
 
 
@@ -64,9 +72,48 @@ class CloseDrawerRequest(BaseModel):
     note: str = ""
 
 
-class CashMovementRequest(BaseModel):
+class CashInRequest(BaseModel):
+    """FR3a: cash-in supports three sources.
+
+    - ``owner`` (default): DR 1101 / CR 1102 — owner moves personal cash into the drawer.
+    - ``employee``: DR 1101 / CR 23XX — reduces the staff advance; ``staffName`` required.
+    - ``equity``: DR 1101 / CR 3100 — owner capital injection.
+    """
+
     amount: int = Field(..., gt=0, description="Số tiền (VND)")
     note: str = ""
+    source: Literal["owner", "employee", "equity"] = Field(
+        "equity",
+        description="Nguồn tiền: owner (Tiền mặt chủ sở hữu — 1102), "
+        "employee (Ứng trước nhân viên — 23XX, yêu cầu staffName), "
+        "equity (Vốn chủ sở hữu — 3100). Mặc định: equity (tương thích ngược).",
+    )
+    staffName: Optional[str] = Field(
+        None,
+        description="Tên nhân viên — bắt buộc khi source='employee'. "
+        "Sub-account 23XX được tạo lần đầu qua _ensure_staff_payable_sub_account.",
+    )
+
+
+class CashOutRequest(BaseModel):
+    """FR4: cash-out supports two destinations.
+
+    - ``owner`` (default): DR 1102 / CR 1101 — cash moves to the owner's personal cash.
+    - ``employee``: DR 23XX / CR 1101 — pay an employee advance; ``staffName`` required.
+    """
+
+    amount: int = Field(..., gt=0, description="Số tiền (VND)")
+    note: str = ""
+    destination: Literal["owner", "employee"] = Field(
+        "owner",
+        description="Đích đến: owner (Tiền mặt chủ sở hữu — 1102, mặc định), "
+        "employee (Ứng trước nhân viên — 23XX, yêu cầu staffName).",
+    )
+    staffName: Optional[str] = Field(
+        None,
+        description="Tên nhân viên — bắt buộc khi destination='employee'. "
+        "Sub-account 23XX được tạo lần đầu qua _ensure_staff_payable_sub_account.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +123,8 @@ class CashMovementRequest(BaseModel):
 
 def _cash_and_equity_accounts(conn) -> dict[str, int]:
     return {
-        "cash": _account_id_by_code(conn, CASH_ASSET_CODE),
+        "cash_drawer": _account_id_by_code(conn, CASH_DRAWER_ASSET_CODE),
+        "owner_cash": _account_id_by_code(conn, OWNER_CASH_CODE),
         "equity": _account_id_by_code(conn, EQUITY_CODE),
     }
 
@@ -166,8 +214,8 @@ def _auto_close_stale_drawers(conn) -> list[CashDrawer]:
 def open_drawer(body: OpenDrawerRequest):
     """FR1: open a daily cash drawer with a starting balance.
 
-    Creates a journal entry (debit 1100, credit 3100). Only one active drawer
-    may exist at a time (NFR2/single-active-drawer rule).
+    Creates a journal entry (debit 1101 Cash in Drawer, credit 3100 equity).
+    Only one active drawer may exist at a time (NFR2/single-active-drawer rule).
 
     FR9 carry-over: if a previous-day drawer is still open, the system
     proposes that drawer's expected balance as today's opening balance and
@@ -224,7 +272,7 @@ def open_drawer(body: OpenDrawerRequest):
             conn,
             source_type="cash_drawer_open",
             description=desc,
-            debit_account_id=accounts["cash"],
+            debit_account_id=accounts["cash_drawer"],
             credit_account_id=accounts["equity"],
             amount=body.openingBalance,
         )
@@ -236,12 +284,23 @@ def open_drawer(body: OpenDrawerRequest):
 
 
 @router.post("/cash-in", status_code=200)
-def cash_in(body: CashMovementRequest):
-    """FR2: owner puts cash into the active drawer.
+def cash_in(body: CashInRequest):
+    """FR2/FR3a: owner (or staff/equity) puts cash into the active drawer.
 
-    Creates a journal entry (debit 1100, credit 3100). FR8: stale previous-day
-    drawers are auto-closed lazily before this operation.
+    Journal entry depends on ``source`` (DG-330 Phase 3):
+    - ``owner``  → DR 1101 (Cash in Drawer) / CR 1102 (Owner's Cash)
+    - ``employee`` → DR 1101 / CR 23XX (staff sub-account; created on first use)
+    - ``equity`` → DR 1101 / CR 3100 (Owner's Equity / capital injection)
+
+    Defaults to ``equity`` for backward compatibility with pre-DG-330 clients
+    that POST only ``{amount, note}``. FR8: stale previous-day drawers are
+    auto-closed lazily before this operation.
     """
+    if body.source == "employee" and not body.staffName:
+        raise HTTPException(
+            status_code=422,
+            detail="source='employee' yêu cầu staffName (tên nhân viên).",
+        )
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
@@ -250,12 +309,19 @@ def cash_in(body: CashMovementRequest):
         desc = f"Cho thêm tiền vào quỹ: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
+        # Resolve the credit account based on the source.
+        if body.source == "owner":
+            credit_account_id = accounts["owner_cash"]
+        elif body.source == "employee":
+            credit_account_id = _ensure_staff_payable_sub_account(conn, body.staffName)
+        else:  # equity
+            credit_account_id = accounts["equity"]
         journal = _create_drawer_journal_entry(
             conn,
             source_type="cash_drawer_cash_in",
             description=desc,
-            debit_account_id=accounts["cash"],
-            credit_account_id=accounts["equity"],
+            debit_account_id=accounts["cash_drawer"],
+            credit_account_id=credit_account_id,
             amount=body.amount,
         )
         result = drawer.to_api_dict()
@@ -264,12 +330,22 @@ def cash_in(body: CashMovementRequest):
 
 
 @router.post("/cash-out", status_code=200)
-def cash_out(body: CashMovementRequest):
-    """FR3: owner takes cash out of the active drawer.
+def cash_out(body: CashOutRequest):
+    """FR3/FR4: owner takes cash out of the active drawer.
 
-    Creates a journal entry (debit 3100, credit 1100). FR8: stale previous-day
-    drawers are auto-closed lazily before this operation.
+    Journal entry depends on ``destination`` (DG-330 Phase 3):
+    - ``owner`` (default) → DR 1102 (Owner's Cash) / CR 1101 (Cash in Drawer)
+    - ``employee`` → DR 23XX (staff sub-account; created on first use) / CR 1101
+
+    Defaults to ``owner`` for backward compatibility with pre-DG-330 clients
+    that POST only ``{amount, note}``. FR8: stale previous-day drawers are
+    auto-closed lazily before this operation.
     """
+    if body.destination == "employee" and not body.staffName:
+        raise HTTPException(
+            status_code=422,
+            detail="destination='employee' yêu cầu staffName (tên nhân viên).",
+        )
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
@@ -278,12 +354,17 @@ def cash_out(body: CashMovementRequest):
         desc = f"Lấy tiền khỏi quỹ: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
+        # Resolve the debit account based on the destination.
+        if body.destination == "owner":
+            debit_account_id = accounts["owner_cash"]
+        else:  # employee
+            debit_account_id = _ensure_staff_payable_sub_account(conn, body.staffName)
         journal = _create_drawer_journal_entry(
             conn,
             source_type="cash_drawer_cash_out",
             description=desc,
-            debit_account_id=accounts["equity"],
-            credit_account_id=accounts["cash"],
+            debit_account_id=debit_account_id,
+            credit_account_id=accounts["cash_drawer"],
             amount=body.amount,
         )
         result = drawer.to_api_dict()
@@ -296,10 +377,13 @@ def close_drawer(body: CloseDrawerRequest):
     """FR7: close the active drawer with a physical cash count.
 
     Computes discrepancy = counted - expected. When the discrepancy is
-    non-zero, an adjustment journal entry is recorded (debit/credit 1100 vs
+    non-zero, an adjustment journal entry is recorded (debit/credit 1101 vs
     3100) so the books match the counted cash. A zero-discrepancy close
     produces no additional journal entry. FR8: stale previous-day drawers
     are auto-closed lazily before this operation.
+
+    DG-330 Phase 3: the cash side uses account 1101 (Cash in Drawer) so the
+    1101 balance equals the drawer expected balance at all times (NFR4).
     """
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
@@ -313,23 +397,23 @@ def close_drawer(body: CloseDrawerRequest):
         if discrepancy != 0:
             amt = abs(discrepancy)
             if discrepancy > 0:
-                # Surplus: more cash than books — debit 1100, credit 3100.
+                # Surplus: more cash than books — debit 1101, credit 3100.
                 journal = _create_drawer_journal_entry(
                     conn,
                     source_type="cash_drawer_close_adjust",
                     description=desc,
-                    debit_account_id=accounts["cash"],
+                    debit_account_id=accounts["cash_drawer"],
                     credit_account_id=accounts["equity"],
                     amount=amt,
                 )
             else:
-                # Shortage: less cash than books — debit 3100, credit 1100.
+                # Shortage: less cash than books — debit 3100, credit 1101.
                 journal = _create_drawer_journal_entry(
                     conn,
                     source_type="cash_drawer_close_adjust",
                     description=desc,
                     debit_account_id=accounts["equity"],
-                    credit_account_id=accounts["cash"],
+                    credit_account_id=accounts["cash_drawer"],
                     amount=amt,
                 )
         result = drawer.to_api_dict()
