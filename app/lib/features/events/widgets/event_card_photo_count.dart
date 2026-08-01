@@ -22,21 +22,37 @@ class EventCardPhotoCount extends ConsumerStatefulWidget {
 class _EventCardPhotoCountState extends ConsumerState<EventCardPhotoCount> {
   int _count = 0;
   bool _loaded = false;
+  int? _lastFetchedEventId;
 
   @override
   void initState() {
     super.initState();
-    _loadCount();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCount());
+  }
+
+  @override
+  void didUpdateWidget(covariant EventCardPhotoCount oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.eventId != widget.eventId) {
+      _loadCount();
+    }
   }
 
   Future<void> _loadCount() async {
+    final eventId = widget.eventId;
+    if (eventId <= 0) {
+      if (mounted) setState(() => _loaded = true);
+      return;
+    }
+    if (_lastFetchedEventId == eventId && _loaded) return;
     try {
       final service = ref.read(eventServiceProvider);
-      final photos = await service.getEventPhotos(widget.eventId);
+      final photos = await service.getEventPhotos(eventId);
       if (mounted) {
         setState(() {
           _count = photos.length;
           _loaded = true;
+          _lastFetchedEventId = eventId;
         });
       }
     } catch (e) {

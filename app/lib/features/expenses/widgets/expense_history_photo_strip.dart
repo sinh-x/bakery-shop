@@ -29,21 +29,37 @@ class _ExpenseHistoryPhotoStripState
     extends ConsumerState<ExpenseHistoryPhotoStrip> {
   List<EventPhoto> _photos = const [];
   bool _loading = true;
+  int? _lastFetchedEventId;
 
   @override
   void initState() {
     super.initState();
-    _loadPhotos();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPhotos());
+  }
+
+  @override
+  void didUpdateWidget(covariant ExpenseHistoryPhotoStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.eventId != widget.eventId) {
+      _loadPhotos();
+    }
   }
 
   Future<void> _loadPhotos() async {
+    final eventId = widget.eventId;
+    if (eventId <= 0) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    if (_lastFetchedEventId == eventId && _photos.isNotEmpty) return;
     try {
       final service = ref.read(eventServiceProvider);
-      final photos = await service.getEventPhotos(widget.eventId);
+      final photos = await service.getEventPhotos(eventId);
       if (mounted) {
         setState(() {
           _photos = photos;
           _loading = false;
+          _lastFetchedEventId = eventId;
         });
       }
     } catch (e) {

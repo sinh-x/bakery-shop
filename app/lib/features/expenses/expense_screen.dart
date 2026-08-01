@@ -255,6 +255,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
           else
             ..._history.map(
               (e) => ExpenseHistoryCard(
+                key: ValueKey(e.id),
                 event: e,
                 onEdit: _deleting ? null : () => _openEdit(e),
                 onDelete: _deleting ? null : () => _confirmDelete(e.id),
