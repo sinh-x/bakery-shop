@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
+import 'package:bakery_app/shared/labels/auth.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
@@ -191,8 +192,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              if (auth.isAuthenticated)
+              if (auth.isAuthenticated) ...[
                 StaffBindingSection(auth: auth, manualNameCtrl: _manualNameCtrl),
+                const SizedBox(height: 16),
+                // Logout (DG-319 Phase 6 / FR6 / AC6).
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text(AuthLabels.logout),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => ref.read(authProvider.notifier).logout(),
+                ),
+              ],
             ],
           ),
 
