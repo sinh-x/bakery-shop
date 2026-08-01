@@ -71,6 +71,7 @@ from .migrations.v086 import _migrate_v86_expense_categories
 from .migrations.v087 import _migrate_v87_order_delivery_schedule_gps
 from .migrations.v089 import _migrate_v89_order_assigned_staff_id
 from .migrations.v090 import _migrate_v90_force_password_change
+from .migrations.v091 import _migrate_v91_cash_drawer_schema
 
 MIGRATIONS = {
     1: {
@@ -510,6 +511,11 @@ MIGRATIONS = {
         "description": "Add force_password_change INTEGER NOT NULL DEFAULT 0 column to users table for self-service password change flow (DG-319 Phase 1)",
         "sql": "",
         "callable": _migrate_v90_force_password_change,
+    },
+    91: {
+        "description": "Create cash_drawer table + add cash_drawer_id nullable FK columns to payment_transactions and events (DG-324 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v91_cash_drawer_schema,
     },
 }
 

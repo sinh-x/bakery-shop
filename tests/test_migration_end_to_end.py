@@ -6,11 +6,11 @@ data row. This complements the per-version tests in ``test_db_schema.py``
 (which target individual migrations) by asserting the *combined* result of
 the entire chain.
 
-The plan specifies ``v0→v87``; the chain has since been extended to v88
-(composite indexes only). This test runs the full chain to the current max
-(v88, which includes v87's delivery-GPS columns) and asserts v87's surface
-explicitly, so it satisfies the FR-DB-1 requirement and stays accurate as
-the chain grows.
+The plan specifies ``v0→v87``; the chain has since been extended (v88
+composite indexes, v89 assigned_staff_id, v90 force_password_change, v91
+cash_drawer). This test runs the full chain to the current max and asserts
+v87's surface explicitly, so it satisfies the FR-DB-1 requirement and stays
+accurate as the chain grows.
 """
 
 import pytest
@@ -20,7 +20,7 @@ from baker.db.schema import MIGRATIONS, ensure_schema
 
 pytestmark = pytest.mark.critical
 
-# Every table created across all migrations (v1–v88). Sourced from the
+# Every table created across all migrations (v1–v91). Sourced from the
 # migration survey; kept in sync with ``docs/database-schema.md``.
 _EXPECTED_TABLES = {
     # v1
@@ -84,6 +84,8 @@ _EXPECTED_TABLES = {
     "order_item_blanks",
     # v86
     "expense_categories",
+    # v91
+    "cash_drawer",
 }
 
 # Key composite / unique indexes that must exist after the full chain.

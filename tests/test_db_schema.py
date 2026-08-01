@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3495,7 +3495,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
         _assert_users_role_check_constraint(conn)
 
 
@@ -3561,7 +3561,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3684,7 +3684,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3758,7 +3758,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3785,7 +3785,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4188,7 +4188,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 90
+        assert _migrated_version(conn) == 91
 
         indexes = {
             r["name"]
@@ -4242,6 +4242,185 @@ def test_v88_idempotent_on_already_migrated_db():
         }
         assert "idx_orders_status_due_date" in indexes
         assert "idx_orders_customer_id_created_at" in indexes
+
+
+# ---------------------------------------------------------------------------
+# v91 — cash_drawer table + cash_drawer_id FK on payment_transactions & events
+# (DG-324 Phase 1, FR1/FR5/FR6/NFR1/NFR4)
+# ---------------------------------------------------------------------------
+
+
+def test_v91_registered_in_migration_chain():
+    """v91 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 91 in MIGRATIONS
+    assert (
+        MIGRATIONS[91]["description"]
+        == "Create cash_drawer table + add cash_drawer_id nullable FK columns to payment_transactions and events (DG-324 Phase 1)"
+    )
+    assert MIGRATIONS[91]["callable"].__name__ == "_migrate_v91_cash_drawer_schema"
+
+
+def test_v91_creates_cash_drawer_table_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the cash_drawer table with all
+    required columns stored as INTEGER (VND) per NFR1.
+
+    FR1: status (open/closed), opening_balance, timestamps.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 91
+
+        cols = _schema_columns(conn, "cash_drawer")
+        expected = {
+            "id",
+            "opened_at",
+            "closed_at",
+            "status",
+            "opening_balance",
+            "cash_sales",
+            "owner_in",
+            "owner_out",
+            "cash_expenses",
+            "counted_amount",
+            "discrepancy",
+        }
+        assert expected <= set(cols), f"missing columns: {expected - set(cols)}"
+
+        # Balance-affecting fields are INTEGER (VND) per NFR1.
+        for col in (
+            "opening_balance",
+            "cash_sales",
+            "owner_in",
+            "owner_out",
+            "cash_expenses",
+        ):
+            assert cols[col]["type"] == "INTEGER", f"{col} must be INTEGER"
+            assert cols[col]["notnull"] == 1, f"{col} must be NOT NULL"
+            assert cols[col]["dflt_value"] == "0", f"{col} must default to 0"
+
+        # counted_amount / discrepancy are nullable (set only at close time).
+        assert cols["counted_amount"]["notnull"] == 0
+        assert cols["discrepancy"]["notnull"] == 0
+
+        # closed_at is nullable; opened_at is NOT NULL with a default.
+        assert cols["closed_at"]["notnull"] == 0
+        assert cols["opened_at"]["notnull"] == 1
+
+        # status defaults to 'open'.
+        assert cols["status"]["notnull"] == 1
+        assert cols["status"]["dflt_value"] == "'open'"
+
+        # Indexes support status / opened_at lookups (NFR2).
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='cash_drawer'"
+            ).fetchall()
+        }
+        assert "idx_cash_drawer_status" in indexes
+        assert "idx_cash_drawer_opened_at" in indexes
+
+
+def test_v91_adds_cash_drawer_id_on_existing_db():
+    """An existing DB migrated up to v90 gets the two FK columns when v91 runs.
+
+    FR5/FR6: nullable INTEGER FK columns on payment_transactions and events.
+    Existing rows keep NULL (no data migration) — backward compatible.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 90)
+        # Insert a legacy payment_transaction before v91 runs.
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status) "
+            "VALUES ('LEGACY-CD-1', 'Khách cũ', 'new')"
+        )
+        order_id = conn.execute(
+            "SELECT id FROM orders WHERE order_ref = 'LEGACY-CD-1'"
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method) "
+            "VALUES (?, 500000, 'deposit', 'cash')",
+            (order_id,),
+        )
+        conn.execute(
+            "INSERT INTO events (type, summary, data) VALUES ('note', 'legacy', '{}')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 91)
+        assert _migrated_version(conn) == 91
+
+        pt_cols = _schema_columns(conn, "payment_transactions")
+        assert "cash_drawer_id" in pt_cols
+        assert pt_cols["cash_drawer_id"]["type"] == "INTEGER"
+        assert pt_cols["cash_drawer_id"]["notnull"] == 0  # nullable
+
+        ev_cols = _schema_columns(conn, "events")
+        assert "cash_drawer_id" in ev_cols
+        assert ev_cols["cash_drawer_id"]["type"] == "INTEGER"
+        assert ev_cols["cash_drawer_id"]["notnull"] == 0  # nullable
+
+        # Legacy payment_transaction keeps NULL cash_drawer_id (FR5/AC4 compat).
+        pt_row = conn.execute(
+            "SELECT cash_drawer_id FROM payment_transactions WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        assert pt_row["cash_drawer_id"] is None
+
+
+def test_v91_idempotent_on_already_migrated_db():
+    """Re-running v91 on a DB that already has the table/columns is a no-op."""
+    from baker.db.schema import _migrate_v91_cash_drawer_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Re-running the callable must not raise (PRAGMA-guarded + IF NOT EXISTS).
+        _migrate_v91_cash_drawer_schema(conn)
+        cols = _schema_columns(conn, "cash_drawer")
+        assert "opening_balance" in cols
+        assert _migrated_version(conn) == 91
+
+
+def test_v91_cash_drawer_row_persists():
+    """A cash_drawer row can be inserted and read back with INTEGER balances."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opening_balance, status) VALUES (1000000, 'open')"
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT status, opening_balance, cash_sales, owner_in, owner_out, "
+            "cash_expenses, counted_amount, discrepancy "
+            "FROM cash_drawer WHERE id = 1"
+        ).fetchone()
+        assert row["status"] == "open"
+        assert row["opening_balance"] == 1000000
+        assert row["cash_sales"] == 0
+        assert row["owner_in"] == 0
+        assert row["owner_out"] == 0
+        assert row["cash_expenses"] == 0
+        assert row["counted_amount"] is None
+        assert row["discrepancy"] is None
+
+
+def test_v91_cash_drawer_id_fk_references_cash_drawer():
+    """The cash_drawer_id columns reference cash_drawer(id) (logical FK).
+
+    SQLite enforces FK only when PRAGMA foreign_keys=ON; this test confirms the
+    REFERENCES clause is present in the column definition so the relationship
+    is documented and enforced when the app enables foreign keys.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        for table in ("payment_transactions", "events"):
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()["sql"]
+            assert "cash_drawer_id INTEGER DEFAULT NULL REFERENCES cash_drawer(id)" in sql, (
+                f"{table}.cash_drawer_id must reference cash_drawer(id)"
+            )
 
 
 def test_schema_all_matches_imported_symbols():

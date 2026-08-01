@@ -58,6 +58,7 @@ from ._constants import (  # noqa: F401
     ACCOUNTING_SCHEMA,
     EXPENSE_CATEGORIES_SCHEMA,
     SEED_EXPENSE_CATEGORIES,
+    CASH_DRAWER_SCHEMA,
     SEED_CHART_OF_ACCOUNTS,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -186,6 +187,7 @@ from .migrations.v085 import _migrate_v85_add_account_1600  # noqa: F401
 from .migrations.v086 import _migrate_v86_expense_categories  # noqa: F401
 from .migrations.v087 import _migrate_v87_order_delivery_schedule_gps  # noqa: F401
 from .migrations.v089 import _migrate_v89_order_assigned_staff_id  # noqa: F401
+from .migrations.v091 import _migrate_v91_cash_drawer_schema  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -196,6 +198,7 @@ __all__ = [
     'AUDIT_LOG_SCHEMA',
     'BLANKS_SCHEMA',
     'BUS_SHIPPING_HELD_CODE',
+    'CASH_DRAWER_SCHEMA',
     'CATALOG_PHOTO_TAGS_SCHEMA',
     'CHECKLIST_SCHEMA',
     'COGS_CODE',
@@ -350,6 +353,7 @@ __all__ = [
     '_migrate_v87_order_delivery_schedule_gps',
     '_migrate_v89_order_assigned_staff_id',
     '_migrate_v8_photos',
+    '_migrate_v91_cash_drawer_schema',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

@@ -629,6 +629,7 @@ ALLOWED_TABLES = {
     "events",
     "journal_entries",
     "payment_transactions",
+    "cash_drawer",
 }
 
 PRODUCT_STOCK_SCHEMA = """
@@ -756,6 +757,25 @@ CREATE INDEX IF NOT EXISTS idx_expense_categories_parent ON expense_categories(p
 CREATE INDEX IF NOT EXISTS idx_expense_categories_account_code ON expense_categories(account_code);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_name_parent
     ON expense_categories(name, COALESCE(parent_id, -1));
+"""
+
+CASH_DRAWER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cash_drawer (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    opened_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    closed_at       TEXT,
+    status          TEXT NOT NULL DEFAULT 'open',
+    opening_balance INTEGER NOT NULL DEFAULT 0,
+    cash_sales      INTEGER NOT NULL DEFAULT 0,
+    owner_in        INTEGER NOT NULL DEFAULT 0,
+    owner_out       INTEGER NOT NULL DEFAULT 0,
+    cash_expenses   INTEGER NOT NULL DEFAULT 0,
+    counted_amount  INTEGER,
+    discrepancy     INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_opened_at ON cash_drawer(opened_at);
 """
 
 SEED_EXPENSE_CATEGORIES = [
@@ -1233,6 +1253,7 @@ __all__ = [
     'ACCOUNTING_SCHEMA',
     'EXPENSE_CATEGORIES_SCHEMA',
     'SEED_EXPENSE_CATEGORIES',
+    'CASH_DRAWER_SCHEMA',
     'SEED_CHART_OF_ACCOUNTS',
     'EXPENSE_CATEGORY_TO_ACCOUNT_CODE',
     'INVENTORY_PURCHASE_CATEGORIES',
