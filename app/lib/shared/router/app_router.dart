@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/auth_provider.dart';
+import '../../features/auth/force_change_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/password_change_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
@@ -33,14 +35,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/orders',
-    redirect: (context, state) =>
-        authRedirect(state, authState.status, authState.role),
+    redirect: (context, state) => authRedirect(
+        state, authState.status, authState.role,
+        forcePasswordChange: authState.forcePasswordChange),
     routes: [
       // Login — full-screen, outside the shell (FR14/AC8).
       GoRoute(
         path: '/login',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const LoginScreen(),
+      ),
+      // Password change — full-screen, outside the shell (DG-319 Phase 5 /
+      // FR5 / FR9). Shared by the self-service (Settings → /change-password)
+      // and forced-change (guard redirect when forcePasswordChange=true)
+      // flows. The host screen is selected by the [ForceChangeScreen] vs
+      // [PasswordChangeScreen] builder based on the auth state flag.
+      GoRoute(
+        path: '/change-password',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final force = ref.read(authProvider).forcePasswordChange;
+          return force
+              ? const ForceChangeScreen()
+              : const PasswordChangeScreen();
+        },
       ),
       // Admin access denied — shown when staff hit an admin-only route (FR16).
       GoRoute(

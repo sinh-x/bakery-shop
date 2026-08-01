@@ -51,6 +51,13 @@ class LoginResponse(BaseModel):
     token: str
     username: str
     role: str
+    force_password_change: bool = False
+
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +203,8 @@ def login(body: LoginRequest, request: Request):
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash, role, active, locked_until, staff_id "
-            "FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, role, active, locked_until, staff_id, "
+            "force_password_change FROM users WHERE username = ?",
             (body.username,),
         ).fetchone()
 
@@ -271,7 +278,83 @@ def login(body: LoginRequest, request: Request):
             token=token,
             username=row["username"],
             role=row["role"],
+            force_password_change=bool(row["force_password_change"]),
         )
+
+
+# ---------------------------------------------------------------------------
+# Password change endpoint (DG-319 Phase 1, FR1–FR4)
+#
+# PUT /api/auth/password — self-service password change for authenticated
+# users. Requires a valid JWT (enforced by AuthMiddleware). Verifies the
+# old password via bcrypt (reusing the login _pwd_ctx, NFR2 cost factor 12),
+# validates new == confirm (server-side defense-in-depth, FR4), updates the
+# hash, and revokes all existing sessions for the user so any other device
+# is logged out (security: all sessions revoked on password change).
+# ---------------------------------------------------------------------------
+
+@router.put("/password")
+def change_password(body: PasswordChangeRequest, request: Request):
+    """Change the authenticated user's password (FR1).
+
+    Requires a valid JWT (AuthMiddleware sets ``request.state.auth_username``).
+    Accepts ``{old_password, new_password, confirm_password}`` and:
+      - returns 422 when new_password != confirm_password (FR4),
+      - returns 401 when old_password is incorrect (FR2, same VN message
+        pattern as the login endpoint),
+      - on success: updates the password hash, revokes all sessions, and
+        returns 200 (FR1).
+
+    Session revocation (FR1/NFR1) is a single UPDATE + in-memory denylist
+    add via ``revoke_user_sessions``; the caller's current session is also
+    revoked, so the client must re-login with the new password.
+    """
+    # FR4: server-side validation as defense-in-depth (client also validates).
+    if body.new_password != body.confirm_password:
+        raise HTTPException(
+            status_code=422,
+            detail="Mật khẩu mới và xác nhận mật khẩu không khớp.",
+        )
+
+    username = getattr(request.state, "auth_username", None)
+    # FR3: no valid JWT → 401 (middleware-enforced, but guard defensively).
+    if not username:
+        raise HTTPException(
+            status_code=401,
+            detail="Tên đăng nhập hoặc mật khẩu không đúng.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, password_hash FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng.",
+            )
+
+        # FR2: verify old password via bcrypt (NFR2: cost factor 12).
+        if not _pwd_ctx.verify(body.old_password, row["password_hash"]):
+            raise HTTPException(
+                status_code=401,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng.",
+            )
+
+        # FR1: update to the new hash (NFR2: bcrypt cost factor 12).
+        # FR10: clear force_password_change on a successful change so the user
+        # is not prompted again after a self-service or forced change.
+        new_hash = _pwd_ctx.hash(body.new_password)
+        conn.execute(
+            "UPDATE users SET password_hash = ?, force_password_change = 0 WHERE id = ?",
+            (new_hash, int(row["id"])),
+        )
+
+        # FR1/NFR1: revoke all existing sessions for the user.
+        revoke_user_sessions(conn, username)
+
+    return {"detail": "Đổi mật khẩu thành công."}
 
 
 # ---------------------------------------------------------------------------

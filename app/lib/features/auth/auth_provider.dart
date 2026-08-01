@@ -13,24 +13,31 @@ class AuthState {
     this.username,
     this.role,
     this.status = AuthStatus.unknown,
+    this.forcePasswordChange = false,
   });
 
   const AuthState.unauthenticated()
       : token = null,
         username = null,
         role = null,
-        status = AuthStatus.unauthenticated;
+        status = AuthStatus.unauthenticated,
+        forcePasswordChange = false;
 
   AuthState.authenticated({
     required this.token,
     required this.username,
     required this.role,
+    this.forcePasswordChange = false,
   }) : status = AuthStatus.authenticated;
 
   final String? token;
   final String? username;
   final String? role;
   final AuthStatus status;
+
+  /// FR8: when true, the router guard redirects to `/change-password` before
+  /// the user can access the app shell.
+  final bool forcePasswordChange;
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
   bool get isAdmin => role == 'admin';
@@ -74,10 +81,15 @@ class AuthNotifier extends Notifier<AuthState> {
     // install upgraded in place).
     final username = storage.readUsername() ?? claims.subject;
     final role = storage.readRole() ?? claims.role;
+    // CQ-11: restore the forced-password-change flag from storage so a user
+    // whose force_password_change=1 cannot regain full app access by simply
+    // restarting the app.
+    final forcePasswordChange = storage.readForcePasswordChange();
     return AuthState.authenticated(
       token: token,
       username: username,
       role: role,
+      forcePasswordChange: forcePasswordChange,
     );
   }
 
@@ -91,11 +103,58 @@ class AuthNotifier extends Notifier<AuthState> {
       token: result.token,
       username: result.username,
       role: result.role,
+      forcePasswordChange: result.forcePasswordChange,
     );
     state = AuthState.authenticated(
       token: result.token,
       username: result.username,
       role: result.role,
+      forcePasswordChange: result.forcePasswordChange,
+    );
+  }
+
+  /// Self-service password change (DG-319 Phase 4 / FR1).
+  ///
+  /// Calls [AuthService.changePassword] with the current and new passwords. On
+  /// success the backend revokes all existing sessions (including this one),
+  /// so the notifier clears local state and transitions to `unauthenticated`;
+  /// the router guard then redirects to `/login` for a fresh login with the
+  /// new password. Throws [DioException] on failure so the caller can surface
+  /// the error.
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final service = ref.read(authServiceProvider);
+    await service.changePassword(
+      oldPassword: oldPassword,
+      newPassword: newPassword,
+      confirmPassword: confirmPassword,
+    );
+    // Backend revoked all sessions (including this one). Clear local state so
+    // the router guard redirects to /login for a fresh login.
+    await _storage().clear();
+    state = const AuthState.unauthenticated();
+  }
+
+  /// Clears a forced-password-change flag from local auth state after the user
+  /// has completed a forced change (DG-319 Phase 4 / FR10). Called by the
+  /// forced-change screen on a successful change that re-logs the user in.
+  ///
+  /// CQ-11: the flag is persisted in [TokenStorage] so it survives app
+  /// restarts; clearing it here also clears the stored value so the user does
+  /// not get re-prompted after the next restart.
+  Future<void> clearForcePasswordChange() async {
+    if (!state.forcePasswordChange) return;
+    // Clear the persisted flag so the user is not re-prompted after restart.
+    final storage = _storage();
+    await storage.clearForcePasswordChange();
+    state = AuthState.authenticated(
+      token: state.token,
+      username: state.username,
+      role: state.role,
+      forcePasswordChange: false,
     );
   }
 

@@ -1065,6 +1065,7 @@ CREATE TABLE IF NOT EXISTS users (
     active        INTEGER NOT NULL DEFAULT 1,
     locked_until  TEXT DEFAULT NULL,
     staff_id      INTEGER REFERENCES staff(id) ON DELETE SET NULL,
+    force_password_change INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
