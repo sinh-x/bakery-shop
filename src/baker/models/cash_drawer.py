@@ -171,3 +171,46 @@ class CashDrawer:
         self.counted_amount = int(counted_amount)
         self.discrepancy = discrepancy
         return discrepancy
+
+    def auto_close(self, conn, *, closed_at: Optional[str] = None) -> int:
+        """FR8: auto-close at midnight using expected_balance as the counted
+        amount, so the discrepancy is 0 (NFR1).
+
+        Unlike :meth:`close` (manual count, may record an adjustment journal
+        entry), auto-close trusts the books: ``counted_amount = expected_balance``
+        and ``discrepancy = 0``. No close-adjustment journal entry is created
+        because there is no discrepancy to absorb (NFR3).
+
+        Race-condition safety: the caller wraps this in a transaction with a
+        ``WHERE status = 'open'`` guard so concurrent writers cannot double-close.
+        Returns the discrepancy (always 0).
+        """
+        expected = self.expected_balance()
+        closed_ts = closed_at or now_utc()
+        conn.execute(
+            "UPDATE cash_drawer "
+            "SET status = 'closed', closed_at = ?, counted_amount = ?, discrepancy = 0 "
+            "WHERE id = ? AND status = 'open'",
+            (closed_ts, expected, self.id),
+        )
+        self.status = "closed"
+        self.closed_at = closed_ts
+        self.counted_amount = expected
+        self.discrepancy = 0
+        return 0
+
+    @staticmethod
+    def get_stale_open_before(conn, *, before_iso: str) -> list["CashDrawer"]:
+        """FR8 helper: list open drawers whose ``opened_at`` is strictly before
+        the given ISO-8601 timestamp (typically the start of the current local
+        day). Returns drawers ordered by ``opened_at`` ASC so the oldest
+        stale drawer is auto-closed first. Used by the lazy auto-close check
+        in the API layer.
+        """
+        rows = conn.execute(
+            "SELECT * FROM cash_drawer "
+            "WHERE status = 'open' AND opened_at < ? "
+            "ORDER BY opened_at ASC, id ASC",
+            (before_iso,),
+        ).fetchall()
+        return [CashDrawer.from_row(r) for r in rows]

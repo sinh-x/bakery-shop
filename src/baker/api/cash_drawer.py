@@ -1,12 +1,19 @@
-"""Cash drawer API routes (DG-324 Phase 2).
+"""Cash drawer API routes (DG-324 Phase 2 / Phase 6).
 
 Endpoints:
-    POST /api/cash-drawer/open   — open a daily drawer (FR1)
+    POST /api/cash-drawer/open   — open a daily drawer (FR1, FR9 carry-over)
     POST /api/cash-drawer/close  — close with counted amount + discrepancy (FR7)
     POST /api/cash-drawer/cash-in  — owner puts cash in (FR2)
     POST /api/cash-drawer/cash-out — owner takes cash out (FR3)
     GET  /api/cash-drawer/status  — active drawer or null (FR4)
     GET  /api/cash-drawer/history — paginated past drawers (FR10)
+
+Phase 6 (FR8/FR9): every drawer operation first runs a lazy auto-close check
+that closes any open drawer whose ``opened_at`` belongs to a previous local
+day, using ``expected_balance`` as the counted amount and ``discrepancy = 0``.
+When opening, if a previous-day drawer was just auto-closed, its expected
+balance is proposed as today's opening balance and the owner must confirm it
+(``carryOverConfirmed`` flag).
 
 All balance-affecting operations create balanced double-entry journal entries
 via the shared ``_create_manual_journal_entry`` factory (NFR3): cash → debit
@@ -16,11 +23,13 @@ Traceability: FR1, FR2, FR3, FR4, FR7, FR8, FR9, FR10, NFR1, NFR3.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from baker.config import TIMEZONE
 from baker.db.connection import get_db
 from baker.db.schema import PAYMENT_METHOD_TO_ASSET_CODE, _account_id_by_code, _insert_journal_entry
 from baker.models.cash_drawer import CashDrawer
@@ -43,6 +52,11 @@ EQUITY_CODE = "3100"
 class OpenDrawerRequest(BaseModel):
     openingBalance: int = Field(..., ge=0, description="Số dư đầu ngày (VND)")
     note: str = ""
+    carryOverConfirmed: bool = Field(
+        False,
+        description="Owner confirms the carried-over balance from the previous "
+        "unclosed day (FR9). Required when a carry-over proposal is returned.",
+    )
 
 
 class CloseDrawerRequest(BaseModel):
@@ -102,6 +116,48 @@ def _create_drawer_journal_entry(
 
 
 # ---------------------------------------------------------------------------
+# Lazy auto-close at midnight (FR8) + carry-over proposal (FR9)
+# ---------------------------------------------------------------------------
+
+
+def _start_of_today_local_iso() -> str:
+    """Return the UTC ISO-8601 timestamp of midnight at the start of the
+    current local day. Any open drawer whose ``opened_at`` is strictly before
+    this timestamp belongs to a previous local day and is stale (FR8).
+    """
+    now_local = datetime.now(TIMEZONE)
+    midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight_utc = midnight_local.astimezone(timezone.utc)
+    return midnight_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _auto_close_stale_drawers(conn) -> list[CashDrawer]:
+    """FR8 lazy auto-close: close every open drawer from a previous local day.
+
+    Uses ``expected_balance`` as the counted amount and ``discrepancy = 0``
+    (NFR1). No close-adjustment journal entry is created because there is no
+    discrepancy to absorb (NFR3). Race-condition safety: :meth:`auto_close`
+    guards the update with ``WHERE status = 'open'`` so concurrent writers
+    cannot double-close the same drawer. Returns the list of auto-closed
+    drawers (oldest first); idempotent — returns ``[]`` when none are stale.
+
+    The auto-close is committed in its own transaction (independent of the
+    caller's operation) so it persists even when the triggering operation
+    later fails — auto-close is housekeeping, not part of the caller's
+    atomic unit. This keeps a 409 from a cash-in/close (e.g. no active
+    drawer) from undoing the auto-close of a previous-day drawer.
+    """
+    stale = CashDrawer.get_stale_open_before(conn, before_iso=_start_of_today_local_iso())
+    closed: list[CashDrawer] = []
+    for drawer in stale:
+        drawer.auto_close(conn)
+        closed.append(drawer)
+    if closed:
+        conn.commit()
+    return closed
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -112,8 +168,46 @@ def open_drawer(body: OpenDrawerRequest):
 
     Creates a journal entry (debit 1100, credit 3100). Only one active drawer
     may exist at a time (NFR2/single-active-drawer rule).
+
+    FR9 carry-over: if a previous-day drawer is still open, the system
+    proposes that drawer's expected balance as today's opening balance and
+    requires the owner to confirm it (``carryOverConfirmed``). On confirmation
+    the stale drawer is auto-closed (FR8) and today's drawer is opened with
+    the requested amount.
     """
     with get_db() as conn:
+        # FR9: detect unclosed previous-day drawers before opening.
+        stale = CashDrawer.get_stale_open_before(
+            conn, before_iso=_start_of_today_local_iso()
+        )
+        carry_over_from = None
+        if stale:
+            latest = stale[-1]
+            proposed = latest.expected_balance()
+            if not body.carryOverConfirmed:
+                # Propose the carry-over and require owner confirmation.
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay."
+                        ),
+                        "carryOverProposal": {
+                            "amount": proposed,
+                            "fromDrawerId": str(latest.id),
+                            "fromOpenedAt": latest.opened_at,
+                            "fromExpectedBalance": proposed,
+                        },
+                    },
+                )
+            # Owner confirmed — auto-close every stale drawer (FR8), then open.
+            for drawer in stale:
+                drawer.auto_close(conn)
+            carry_over_from = {
+                "fromDrawerId": str(latest.id),
+                "fromExpectedBalance": proposed,
+            }
+
         active = CashDrawer.get_active(conn)
         if active is not None:
             raise HTTPException(
@@ -136,6 +230,8 @@ def open_drawer(body: OpenDrawerRequest):
         )
         result = drawer.to_api_dict()
         result["journalEntry"] = journal
+        if carry_over_from is not None:
+            result["carryOver"] = carry_over_from
         return result
 
 
@@ -143,9 +239,11 @@ def open_drawer(body: OpenDrawerRequest):
 def cash_in(body: CashMovementRequest):
     """FR2: owner puts cash into the active drawer.
 
-    Creates a journal entry (debit 1100, credit 3100).
+    Creates a journal entry (debit 1100, credit 3100). FR8: stale previous-day
+    drawers are auto-closed lazily before this operation.
     """
     with get_db() as conn:
+        _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
         drawer.add_owner_in(conn, body.amount)
@@ -169,9 +267,11 @@ def cash_in(body: CashMovementRequest):
 def cash_out(body: CashMovementRequest):
     """FR3: owner takes cash out of the active drawer.
 
-    Creates a journal entry (debit 3100, credit 1100).
+    Creates a journal entry (debit 3100, credit 1100). FR8: stale previous-day
+    drawers are auto-closed lazily before this operation.
     """
     with get_db() as conn:
+        _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
         drawer.add_owner_out(conn, body.amount)
@@ -198,9 +298,11 @@ def close_drawer(body: CloseDrawerRequest):
     Computes discrepancy = counted - expected. When the discrepancy is
     non-zero, an adjustment journal entry is recorded (debit/credit 1100 vs
     3100) so the books match the counted cash. A zero-discrepancy close
-    produces no additional journal entry.
+    produces no additional journal entry. FR8: stale previous-day drawers
+    are auto-closed lazily before this operation.
     """
     with get_db() as conn:
+        _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
         discrepancy = drawer.close(conn, counted_amount=body.countedAmount)
@@ -238,8 +340,12 @@ def close_drawer(body: CloseDrawerRequest):
 
 @router.get("/status")
 def drawer_status():
-    """FR4: return the active (open) drawer with expected balance, or null."""
+    """FR4: return the active (open) drawer with expected balance, or null.
+
+    FR8: stale previous-day drawers are auto-closed lazily before this read.
+    """
     with get_db() as conn:
+        _auto_close_stale_drawers(conn)
         drawer = CashDrawer.get_active(conn)
         return drawer.to_api_dict() if drawer else None
 
