@@ -689,3 +689,144 @@ def test_login_populates_session_staff_id(api_client):
         ).fetchone()
         assert session is not None
         assert session["staff_id"] == staff_id
+
+
+# ---------------------------------------------------------------------------
+# DG-319 Phase 1 — Password change endpoint (PUT /api/auth/password)
+#
+# AC1: valid JWT + correct old + matching new/confirm → 200, password
+#      updated, all sessions revoked, user can login with new password.
+# AC2: valid JWT + incorrect old password → 401 with VN error message.
+# AC5: no JWT (unauthenticated) → 401.
+# FR4: new_password != confirm_password → 422.
+# ---------------------------------------------------------------------------
+
+
+def test_password_change_success_updates_and_revokes_sessions(auth_client):
+    """AC1: valid JWT + correct old + matching new/confirm → 200, password
+    updated, sessions revoked, user can login with new password."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwchange", password="oldpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "oldpass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # The caller's session should have been revoked.
+    payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT revoked_at FROM sessions WHERE jti = ?",
+            (payload["jti"],),
+        ).fetchone()
+        assert row is not None
+        assert row["revoked_at"] is not None
+
+    # The old password no longer works; the new password does.
+    old_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "pwchange", "password": "oldpass123"},
+    )
+    assert old_resp.status_code == 401
+
+    new_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "pwchange", "password": "newpass456"},
+    )
+    assert new_resp.status_code == 200
+
+
+def test_password_change_wrong_old_password_returns_401(auth_client):
+    """AC2: valid JWT + incorrect old password → 401 with VN error message."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwwrongold", password="realpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "wrongoldpass",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 401
+    # VN error message pattern (same as login endpoint, FR2).
+    assert "mật khẩu" in resp.json()["detail"].lower()
+
+
+def test_password_change_no_jwt_returns_401(auth_client):
+    """AC5: no JWT (unauthenticated) → 401."""
+    # Seed a user so the 401 is from auth, not a missing-user 401.
+    with get_db() as conn:
+        _create_test_user(conn, "pwuser", "pass123")
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "pass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+    )
+    assert resp.status_code == 401
+
+
+def test_password_change_mismatch_confirm_returns_422(auth_client):
+    """FR4: new_password != confirm_password → 422 (server-side validation)."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwmismatch", password="realpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "realpass123",
+            "new_password": "newpass456",
+            "confirm_password": "different789",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+    assert "khớp" in resp.json()["detail"].lower()
+
+
+def test_password_change_does_not_revoke_other_users_sessions(auth_client):
+    """AC1 variant: revoking user A's sessions does not revoke user B's."""
+    token_a = _seed_user_and_get_token(
+        auth_client, username="usera", password="passA123"
+    )
+    token_b = _seed_user_and_get_token(
+        auth_client, username="userb", password="passB123"
+    )
+    payload_b = jwt.decode(token_b, JWT_SECRET, algorithms=["HS256"])
+
+    # User A changes their password.
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "passA123",
+            "new_password": "newA456",
+            "confirm_password": "newA456",
+        },
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # User B's session should still be active.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT revoked_at FROM sessions WHERE jti = ?",
+            (payload_b["jti"],),
+        ).fetchone()
+        assert row is not None
+        assert row["revoked_at"] is None
