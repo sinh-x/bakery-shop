@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from baker.config import TIMEZONE
 from baker.db.connection import get_db
-from baker.db.schema import PAYMENT_METHOD_TO_ASSET_CODE, _account_id_by_code, _insert_journal_entry
+from baker.db.schema import _account_id_by_code, _insert_journal_entry
 from baker.models.cash_drawer import CashDrawer
 from baker.models.journal_entry import JournalEntry, JournalLine
 from baker.utils.time import now_utc

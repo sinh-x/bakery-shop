@@ -4,6 +4,43 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/cash_drawer.dart';
 import 'api_client.dart';
 
+/// FR9 carry-over proposal returned by the backend when opening today's
+/// drawer while the previous day's drawer is still open. The backend raises
+/// HTTP 409 with a `detail` body of:
+///
+///   {
+///     "message": "Quỹ hôm trước chưa đóng ...",
+///     "carryOverProposal": {
+///       "amount": 1550000,
+///       "fromDrawerId": "7",
+///       "fromOpenedAt": "2026-07-28T08:00:00Z",
+///       "fromExpectedBalance": 1550000
+///     }
+///   }
+///
+/// Thrown as [CarryOverProposalException] by [CashDrawerService.openDrawer]
+/// so the caller can intercept it, prompt the owner, and re-call `openDrawer`
+/// with `carryOverConfirmed: true` (accept) or `false` (decline).
+class CarryOverProposalException implements Exception {
+  CarryOverProposalException({
+    required this.message,
+    required this.amount,
+    required this.fromDrawerId,
+    required this.fromOpenedAt,
+    required this.fromExpectedBalance,
+  });
+
+  final String message;
+  final int amount;
+  final String fromDrawerId;
+  final String fromOpenedAt;
+  final int fromExpectedBalance;
+
+  @override
+  String toString() =>
+      'CarryOverProposalException(amount: $amount, fromDrawerId: $fromDrawerId)';
+}
+
 /// Client for the cash-drawer backend API (DG-324 Phase 4).
 ///
 /// Wraps the six endpoints exposed by `src/baker/api/cash_drawer.py`:
@@ -24,18 +61,60 @@ class CashDrawerService {
   CashDrawerService(this._dio);
 
   /// FR1: open a daily cash drawer with a starting balance.
+  ///
+  /// FR9: when a previous-day drawer is still open and `carryOverConfirmed`
+  /// is `false` (the default), the backend responds with HTTP 409 carrying a
+  /// carry-over proposal. This method decodes that 409 and throws a
+  /// [CarryOverProposalException] instead of a generic [DioException], so the
+  /// caller can surface the proposal to the owner and re-call `openDrawer`
+  /// with `carryOverConfirmed: true` (accept) or `false` (decline). On a
+  /// successful open the returned [CashDrawer] is unchanged; the optional
+  /// `carryOver` block on the success body is not surfaced as a separate
+  /// field (the proposal was already confirmed by the caller).
   Future<CashDrawer> openDrawer({
     required int openingBalance,
     String note = '',
+    bool carryOverConfirmed = false,
   }) async {
-    final response = await _dio.post(
-      '/api/cash-drawer/open',
-      data: {
-        'openingBalance': openingBalance,
-        'note': note,
-      },
+    try {
+      final response = await _dio.post(
+        '/api/cash-drawer/open',
+        data: {
+          'openingBalance': openingBalance,
+          'note': note,
+          'carryOverConfirmed': carryOverConfirmed,
+        },
+      );
+      return CashDrawer.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      final proposal = _decodeCarryOverProposal(e);
+      if (proposal != null) throw proposal;
+      rethrow;
+    }
+  }
+
+  /// Decodes a 409 `detail` body into a [CarryOverProposalException], or
+  /// returns `null` when the error is not a carry-over proposal (so the
+  /// caller can `rethrow` the original [DioException]).
+  CarryOverProposalException? _decodeCarryOverProposal(DioException e) {
+    if (e.response?.statusCode != 409) return null;
+    final dynamic detail = e.response?.data?['detail'];
+    if (detail is! Map<String, dynamic>) return null;
+    final proposalJson = detail['carryOverProposal'];
+    if (proposalJson is! Map<String, dynamic>) return null;
+    final amount = (proposalJson['amount'] as num?)?.toInt();
+    final fromDrawerId = proposalJson['fromDrawerId']?.toString();
+    final fromOpenedAt = proposalJson['fromOpenedAt']?.toString();
+    final fromExpectedBalance =
+        (proposalJson['fromExpectedBalance'] as num?)?.toInt();
+    if (amount == null || fromDrawerId == null) return null;
+    return CarryOverProposalException(
+      message: (detail['message'] as String?) ?? '',
+      amount: amount,
+      fromDrawerId: fromDrawerId,
+      fromOpenedAt: fromOpenedAt ?? '',
+      fromExpectedBalance: fromExpectedBalance ?? amount,
     );
-    return CashDrawer.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// FR2: owner puts cash into the active drawer.

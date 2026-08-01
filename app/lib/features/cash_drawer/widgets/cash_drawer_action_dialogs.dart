@@ -14,6 +14,14 @@ class CashDrawerDialogResult {
   final String note;
 }
 
+/// FR9 carry-over confirmation outcome returned by
+/// [showCarryOverConfirmationDialog].
+///
+/// `null` means the user dismissed the dialog without a decision (treat as
+/// cancel). Otherwise the caller should re-invoke `openDrawer` with the
+/// matching `carryOverConfirmed` flag.
+enum CarryOverDecision { accept, decline }
+
 /// Shows the open-drawer dialog (FR1 / AC1).
 ///
 /// Collects a starting balance and optional note. Returns the entered
@@ -28,6 +36,62 @@ Future<CashDrawerDialogResult?> showOpenDrawerDialog(
       confirmLabel: VN.cashDrawerOpen,
       allowZero: false,
     );
+
+/// FR9: shows the carry-over proposal confirmation dialog when the backend
+/// reports that the previous day's drawer is still open.
+///
+/// Surfaces the proposed carry-over amount (VND, formatted) and asks the
+/// owner whether to carry it into today's opening balance. Returns:
+///   - [CarryOverDecision.accept] → re-call `openDrawer` with
+///     `carryOverConfirmed: true`.
+///   - [CarryOverDecision.decline] → re-call `openDrawer` with
+///     `carryOverConfirmed: false` (opens today without carrying over).
+///   - `null` → the user dismissed the dialog (cancel the whole open flow).
+Future<CarryOverDecision?> showCarryOverConfirmationDialog(
+  BuildContext context, {
+  required int carryOverAmount,
+}) async {
+  return showDialog<CarryOverDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerCarryOverTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(VN.cashDrawerCarryOverPrompt),
+          const SizedBox(height: 4),
+          Text(
+            formatVND(carryOverAmount.toDouble()),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerCarryOverQuestion),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () =>
+              Navigator.of(context).pop(CarryOverDecision.decline),
+          icon: const Icon(Icons.block),
+          label: const Text(VN.cashDrawerCarryOverDecline),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(CarryOverDecision.accept),
+          icon: const Icon(Icons.east),
+          label: const Text(VN.cashDrawerCarryOverAccept),
+        ),
+      ],
+    ),
+  );
+}
 
 /// Shows the cash-in dialog (FR2 / AC2).
 Future<CashDrawerDialogResult?> showCashInDialog(BuildContext context) =>
@@ -149,7 +213,5 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
     ),
   );
 
-  amountCtrl.dispose();
-  noteCtrl.dispose();
   return result;
 }

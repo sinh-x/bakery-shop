@@ -1033,6 +1033,15 @@ class VN {
   static const cashDrawerShortage = 'Thiếu';
   static const cashDrawerExact = 'Khớp';
 
+  /// FR9 carry-over proposal dialog labels.
+  static const cashDrawerCarryOverTitle = 'Mang số dư sang hôm nay';
+  static const cashDrawerCarryOverPrompt =
+      'Quỹ hôm qua chưa đóng. Số dư dự kiến';
+  static const cashDrawerCarryOverQuestion =
+      'Bạn có muốn mang sang hôm nay không?';
+  static const cashDrawerCarryOverAccept = 'Mang sang';
+  static const cashDrawerCarryOverDecline = 'Không mang sang';
+
   /// Cash-drawer journal source types (extend the accounting source-type
   /// vocabulary) — used by the journal filter and drawer movement history.
   static const accountingSourceTypeCashDrawerOpen = 'Mở quỹ tiền mặt';

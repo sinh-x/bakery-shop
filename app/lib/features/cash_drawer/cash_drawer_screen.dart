@@ -123,14 +123,45 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   Future<void> _handleOpen(BuildContext context) async {
     final result = await showOpenDrawerDialog(context);
     if (result == null || !context.mounted) return;
-    await ref.read(_mutationInProgressProvider.notifier).run(
-          context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .openDrawer(openingBalance: result.amount, note: result.note),
-          VN.cashDrawerOpenSuccess,
-          ref,
-        );
+    // FR9: the first open attempt may raise a carry-over proposal (HTTP 409)
+    // when the previous day's drawer is still open. We try the open outside
+    // the mutation notifier so we can intercept the proposal, surface it to
+    // the owner, and re-issue the request with `carryOverConfirmed`.
+    try {
+      await ref.read(cashDrawerServiceProvider).openDrawer(
+            openingBalance: result.amount,
+            note: result.note,
+          );
+      if (!context.mounted) return;
+      _onOpenSuccess(context);
+    } on CarryOverProposalException catch (e) {
+      if (!context.mounted) return;
+      final decision = await showCarryOverConfirmationDialog(
+        context,
+        carryOverAmount: e.amount,
+      );
+      if (decision == null || !context.mounted) return;
+      await ref.read(_mutationInProgressProvider.notifier).run(
+            context,
+            () => ref.read(cashDrawerServiceProvider).openDrawer(
+                  openingBalance: result.amount,
+                  note: result.note,
+                  carryOverConfirmed: decision == CarryOverDecision.accept,
+                ),
+            VN.cashDrawerOpenSuccess,
+            ref,
+          );
+    }
+  }
+
+  void _onOpenSuccess(BuildContext context) {
+    ref.invalidate(cashDrawerStatusProvider);
+    ref.invalidate(cashDrawerHistoryProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(VN.cashDrawerOpenSuccess)),
+      );
+    }
   }
 
   Future<void> _handleCashIn(BuildContext context) async {

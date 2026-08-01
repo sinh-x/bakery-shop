@@ -221,4 +221,210 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
   });
+
+  testWidgets(
+      'FR9 carry-over: open flow surfaces proposal dialog and retries with '
+      'carryOverConfirmed: true on accept (AC8)', (tester) async {
+    final interceptor = _CarryOverInterceptor();
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(interceptor),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // Tap "Mở quỹ" → amount dialog.
+    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.pumpAndSettle();
+    // Enter an opening balance and confirm (dialog's confirm button).
+    await tester.enterText(find.byType(TextFormField).first, '1550000');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The first open returned 409 → carry-over proposal dialog should appear.
+    expect(find.text(VN.cashDrawerCarryOverTitle), findsOneWidget);
+    expect(find.text(VN.cashDrawerCarryOverQuestion), findsOneWidget);
+    expect(find.textContaining('1.550.000'), findsOneWidget);
+    expect(find.text(VN.cashDrawerCarryOverAccept), findsOneWidget);
+
+    // Accept the carry-over.
+    await tester.tap(find.text(VN.cashDrawerCarryOverAccept));
+    await tester.pumpAndSettle();
+
+    // The second open call must carry carryOverConfirmed: true.
+    expect(interceptor.openCalls, [
+      {'openingBalance': 1550000, 'note': '', 'carryOverConfirmed': false},
+      {'openingBalance': 1550000, 'note': '', 'carryOverConfirmed': true},
+    ]);
+    // Success snackbar appears.
+    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+  });
+
+  testWidgets(
+      'FR9 carry-over: declining re-opens with carryOverConfirmed: false',
+      (tester) async {
+    final interceptor = _CarryOverInterceptor();
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(interceptor),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '1550000');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Decline the carry-over.
+    await tester.tap(find.text(VN.cashDrawerCarryOverDecline));
+    await tester.pumpAndSettle();
+
+    expect(interceptor.openCalls.last['carryOverConfirmed'], false);
+    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+  });
+
+  testWidgets(
+      'FR9 carry-over: cancelling the proposal dialog does not call open '
+      'a second time', (tester) async {
+    final interceptor = _CarryOverInterceptor();
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(interceptor),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '1550000');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.cashDrawerCarryOverTitle), findsOneWidget);
+    // Press the cancel TextButton (not accept/decline).
+    await tester.tap(find.text(VN.cancel));
+    await tester.pumpAndSettle();
+
+    // Only the first (409) open call occurred.
+    expect(interceptor.openCalls.length, 1);
+    // No success snackbar.
+    expect(find.text(VN.cashDrawerOpenSuccess), findsNothing);
+  });
+}
+
+/// Dio interceptor that serves status/history GETs and implements the FR9
+/// carry-over open flow: the first POST /open returns 409 with a
+/// `carryOverProposal`; subsequent POST /open calls return 201 with an open
+/// drawer. Captures every open request body in [openCalls].
+class _CarryOverInterceptor extends Interceptor {
+  _CarryOverInterceptor();
+
+  final List<Map<String, dynamic>> openCalls = [];
+  bool _proposalSent = false;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.path == '/api/cash-drawer/status' && options.method == 'GET') {
+      handler.resolve(
+        Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: null,
+        ),
+      );
+      return;
+    }
+    if (options.path == '/api/cash-drawer/history' && options.method == 'GET') {
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {'total': 0, 'limit': 50, 'offset': 0, 'items': const []},
+        ),
+      );
+      return;
+    }
+    if (options.path == '/api/cash-drawer/open' && options.method == 'POST') {
+      final body = options.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(options.data as Map)
+          : <String, dynamic>{};
+      openCalls.add(body);
+      if (!_proposalSent) {
+        _proposalSent = true;
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            response: Response(
+              requestOptions: options,
+              statusCode: 409,
+              data: {
+                'detail': {
+                  'message':
+                      'Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
+                  'carryOverProposal': {
+                    'amount': 1550000,
+                    'fromDrawerId': '7',
+                    'fromOpenedAt': '2026-07-28T08:00:00Z',
+                    'fromExpectedBalance': 1550000,
+                  },
+                },
+              },
+            ),
+          ),
+        );
+        return;
+      }
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 201,
+          data: {
+            'id': '8',
+            'openedAt': '2026-08-01T00:00:00Z',
+            'closedAt': null,
+            'status': 'open',
+            'openingBalance': body['openingBalance'] as int? ?? 1550000,
+            'cashSales': 0,
+            'ownerIn': 0,
+            'ownerOut': 0,
+            'cashExpenses': 0,
+            'countedAmount': null,
+            'discrepancy': null,
+            'expectedBalance': body['openingBalance'] as int? ?? 1550000,
+          },
+        ),
+      );
+      return;
+    }
+    handler.next(options);
+  }
 }

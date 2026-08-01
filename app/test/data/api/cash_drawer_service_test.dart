@@ -79,11 +79,114 @@ void main() {
       expect(interceptor.lastBody, {
         'openingBalance': 1000000,
         'note': 'mở ca sáng',
+        'carryOverConfirmed': false,
       });
       expect(drawer.id, '1');
       expect(drawer.openingBalance, 1000000);
       expect(drawer.journalEntry, isNotNull);
       expect(drawer.journalEntry!.sourceType, 'cash_drawer_open');
+    });
+
+    test('openDrawer sends carryOverConfirmed: true when requested',
+        () async {
+      final interceptor =
+          _RecordingInterceptor(_drawerJson(journalEntry: {
+        'id': '5',
+        'sourceType': 'cash_drawer_open',
+        'lines': <Map<String, dynamic>>[],
+      }));
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = CashDrawerService(dio);
+
+      await service.openDrawer(
+        openingBalance: 1550000,
+        note: 'mang sang',
+        carryOverConfirmed: true,
+      );
+
+      expect(interceptor.lastBody, {
+        'openingBalance': 1550000,
+        'note': 'mang sang',
+        'carryOverConfirmed': true,
+      });
+    });
+
+    test('openDrawer throws CarryOverProposalException on 409 proposal',
+        () async {
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  response: Response(
+                    requestOptions: options,
+                    statusCode: 409,
+                    data: {
+                      'detail': {
+                        'message':
+                            'Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
+                        'carryOverProposal': {
+                          'amount': 1550000,
+                          'fromDrawerId': '7',
+                          'fromOpenedAt': '2026-07-28T08:00:00Z',
+                          'fromExpectedBalance': 1550000,
+                        },
+                      },
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await expectLater(
+        service.openDrawer(openingBalance: 1550000),
+        throwsA(isA<CarryOverProposalException>()),
+      );
+      try {
+        await service.openDrawer(openingBalance: 1550000);
+        fail('expected CarryOverProposalException');
+      } on CarryOverProposalException catch (e) {
+        expect(e.amount, 1550000);
+        expect(e.fromDrawerId, '7');
+        expect(e.fromOpenedAt, '2026-07-28T08:00:00Z');
+        expect(e.fromExpectedBalance, 1550000);
+        expect(e.message, contains('chưa đóng'));
+      }
+    });
+
+    test('openDrawer rethrows non-carry-over DioExceptions unchanged',
+        () async {
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  response: Response(
+                    requestOptions: options,
+                    statusCode: 409,
+                    data: {
+                      'detail':
+                          'Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại.',
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await expectLater(
+        service.openDrawer(openingBalance: 1000000),
+        throwsA(isA<DioException>()),
+      );
     });
 
     test('cashIn POSTs to /cash-in with amount + note', () async {
