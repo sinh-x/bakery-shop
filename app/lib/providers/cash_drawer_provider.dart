@@ -54,6 +54,15 @@ final cashDrawerStatusProvider = FutureProvider<CashDrawer?>((ref) async {
   return service.getDrawerStatus();
 });
 
+/// DG-331 FR9: the `previousCloseCountedAmount` (counted_amount of the most
+/// recent closed drawer) returned by `GET /status` when no active drawer is
+/// open. Displayed in the open dialog as "Số dư sau khi đóng quỹ lần trước".
+/// `null` when an active drawer is open or no drawer history exists.
+final cashDrawerPreviousCloseProvider = FutureProvider<int?>((ref) async {
+  final service = ref.watch(cashDrawerServiceProvider);
+  return service.getPreviousCloseCountedAmount();
+});
+
 /// FR10: paginated cash-drawer history, filterable by date range. Uses
 /// `FutureProvider.family` so distinct filter arguments cache independently,
 /// matching the [journalEntriesProvider] pattern in `accounting_provider.dart`.

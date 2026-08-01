@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -63,15 +65,36 @@ class CashDrawerScreen extends ConsumerStatefulWidget {
 class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  // DG-331 FR11/AC11: polls the cash drawer status every 30 seconds while
+  // the screen is visible. Cancelled in [dispose] to avoid firing after the
+  // widget is gone.
+  Timer? _statusPollTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // DG-331 FR10/AC10: auto-refresh the cash drawer status on entering the
+    // screen so the "Tiền tại quầy" amount is current (not a stale cache).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(cashDrawerStatusProvider);
+      ref.invalidate(cashDrawerHistoryProvider);
+    });
+    // DG-331 FR11/AC11: poll every 30 seconds while the screen is visible.
+    _statusPollTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) {
+        if (!mounted) return;
+        ref.invalidate(cashDrawerStatusProvider);
+      },
+    );
   }
 
   @override
   void dispose() {
+    // DG-331 FR11/AC11: cancel the polling timer when the screen is removed.
+    _statusPollTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -123,44 +146,106 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleOpen(BuildContext context) async {
-    final result = await showOpenDrawerDialog(context);
+    // DG-331 FR9/AC8: surface the previous close counted amount ("Số dư sau
+    // khi đóng quỹ lần trước") in the open dialog as a reference. The 1101
+    // accounting reference balance is only revealed by the backend on a 409
+    // proposal (see TransferProposalException/ExcessProposalException below),
+    // so it is not passed here upfront.
+    final previousClose = ref.read(cashDrawerPreviousCloseProvider).value;
+    final result = await showOpenDrawerDialog(
+      context,
+      previousCloseCountedAmount: previousClose,
+    );
     if (result == null || !context.mounted) return;
-    // FR9: the first open attempt may raise a carry-over proposal (HTTP 409)
-    // when the previous day's drawer is still open. We try the open outside
-    // the mutation notifier so we can intercept the proposal, surface it to
-    // the owner, and re-issue the request with `carryOverConfirmed`.
-    try {
-      await ref.read(cashDrawerServiceProvider).openDrawer(
-            openingBalance: result.amount,
-            note: result.note,
+
+    bool carryOverConfirmed = false;
+    bool transferConfirmed = false;
+    bool stockReconciliationConfirmed = false;
+    bool unidentifiedSaleConfirmed = false;
+    bool ownerCapitalConfirmed = false;
+
+    while (true) {
+      try {
+        await ref.read(cashDrawerServiceProvider).openDrawer(
+              openingBalance: result.amount,
+              note: result.note,
+              carryOverConfirmed: carryOverConfirmed,
+              transferConfirmed: transferConfirmed,
+              stockReconciliationConfirmed: stockReconciliationConfirmed,
+              unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
+              ownerCapitalConfirmed: ownerCapitalConfirmed,
+            );
+        if (!context.mounted) return;
+        _onOpenSuccess(context);
+        return;
+      } on CarryOverProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCarryOverConfirmationDialog(
+          context,
+          carryOverAmount: e.amount,
+        );
+        if (decision == null || !context.mounted) return;
+        carryOverConfirmed = true;
+      } on TransferProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showTransferConfirmationDialog(
+          context,
+          referenceBalance: e.referenceBalance,
+          openingBalance: e.openingBalance,
+          excess: e.excess,
+        );
+        if (decision == null || !context.mounted) return;
+        transferConfirmed = true;
+        break;
+      } on ExcessProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showStockReconciliationDialog(
+          context,
+          referenceBalance: e.referenceBalance,
+          openingBalance: e.openingBalance,
+          excess: e.excess,
+        );
+        if (decision == null || !context.mounted) return;
+        if (decision == StockReconDecision.accept) {
+          stockReconciliationConfirmed = true;
+          final saleDecision = await showUnidentifiedSaleDialog(
+            context,
+            excess: e.excess,
           );
-      if (!context.mounted) return;
-      _onOpenSuccess(context);
-    } on CarryOverProposalException catch (e) {
-      if (!context.mounted) return;
-      final decision = await showCarryOverConfirmationDialog(
-        context,
-        carryOverAmount: e.amount,
-      );
-      if (decision == null || !context.mounted) return;
-      // CQ-4: `carryOverConfirmed` confirms the owner is aware of the
-      // pending carry-over — it must be `true` for both accept and decline
-      // decisions. Sending `false` causes the backend to treat the request
-      // as unconfirmed and re-emit a 409, re-looping the proposal dialog.
+          if (saleDecision == null || !context.mounted) return;
+          if (saleDecision == UnidentifiedSaleDecision.accept) {
+            unidentifiedSaleConfirmed = true;
+          }
+        } else if (decision == StockReconDecision.ownerCapital) {
+          ownerCapitalConfirmed = true;
+        }
+        break;
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+        return;
+      }
+    }
+    // Re-issue the final call with confirmation flags (outside the loop
+    // for transfer/excess — these don't loop like carry-over).
+    try {
       await ref.read(_mutationInProgressProvider.notifier).run(
             context,
             () => ref.read(cashDrawerServiceProvider).openDrawer(
                   openingBalance: result.amount,
                   note: result.note,
-                  carryOverConfirmed: true,
+                  carryOverConfirmed: carryOverConfirmed,
+                  transferConfirmed: transferConfirmed,
+                  stockReconciliationConfirmed: stockReconciliationConfirmed,
+                  unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
+                  ownerCapitalConfirmed: ownerCapitalConfirmed,
                 ),
             VN.cashDrawerOpenSuccess,
             ref,
           );
     } catch (e) {
-      // CQ-5: surface non-carry-over errors (409 already-active, network
-      // failures, etc.) via the snackbar instead of letting them escape
-      // the error UI silently.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${VN.apiError}: $e')),
@@ -220,14 +305,67 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       expectedBalance: drawer.expectedBalance,
     );
     if (result == null || !context.mounted) return;
-    await ref.read(_mutationInProgressProvider.notifier).run(
+
+    // DG-331 AC9: the first close attempt may raise a 409 surplus/shortage
+    // proposal. Loop so the owner can confirm the nature of the discrepancy
+    // and re-send the close with the matching confirmation flag + source.
+    // The loop runs at most twice: first call → 409 proposal, second call
+    // → confirmed close (or cancel). No carry-over style re-loop here — the
+    // close confirmation is a single round-trip per the plan.
+    bool surplusConfirmed = false;
+    String? surplusSource;
+    bool shortageConfirmed = false;
+    String? shortageSource;
+    while (true) {
+      try {
+        await ref.read(_mutationInProgressProvider.notifier).run(
+              context,
+              () => ref.read(cashDrawerServiceProvider).closeDrawer(
+                    countedAmount: result.amount,
+                    note: result.note,
+                    surplusConfirmed: surplusConfirmed,
+                    surplusSource: surplusSource,
+                    shortageConfirmed: shortageConfirmed,
+                    shortageSource: shortageSource,
+                  ),
+              VN.cashDrawerCloseSuccess,
+              ref,
+            );
+        return;
+      } on CloseSurplusProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCloseSurplusDialog(
           context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .closeDrawer(countedAmount: result.amount, note: result.note),
-          VN.cashDrawerCloseSuccess,
-          ref,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          surplus: e.surplus,
         );
+        if (decision == null || !context.mounted) return;
+        surplusConfirmed = true;
+        surplusSource = decision == CloseSurplusDecision.ownerCash
+            ? 'owner_cash'
+            : 'unidentified_sale';
+      } on CloseShortageProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCloseShortageDialog(
+          context,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          shortage: e.shortage,
+        );
+        if (decision == null || !context.mounted) return;
+        shortageConfirmed = true;
+        shortageSource = decision == CloseShortageDecision.ownerWithdraw
+            ? 'owner_withdraw'
+            : 'equity_loss';
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+        return;
+      }
+    }
   }
 }
 

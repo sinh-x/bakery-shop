@@ -80,6 +80,10 @@ void main() {
         'openingBalance': 1000000,
         'note': 'mở ca sáng',
         'carryOverConfirmed': false,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
       });
       expect(drawer.id, '1');
       expect(drawer.openingBalance, 1000000);
@@ -108,6 +112,10 @@ void main() {
         'openingBalance': 1550000,
         'note': 'mang sang',
         'carryOverConfirmed': true,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
       });
     });
 

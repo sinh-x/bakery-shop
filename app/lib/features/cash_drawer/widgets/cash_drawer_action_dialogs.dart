@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
@@ -45,17 +46,36 @@ enum CarryOverDecision { accept, decline }
 /// Shows the open-drawer dialog (FR1 / AC1).
 ///
 /// Collects a starting balance and optional note. Returns the entered
-/// amount or `null` when cancelled.
+/// amount or `null` when cancelled. When [referenceBalance] is provided
+/// (non-zero), it is displayed as the 1101 accounting reference. When
+/// [previousCloseCountedAmount] is provided (non-null), it is displayed as
+/// "Số dư sau khi đóng quỹ lần trước" (DG-331 FR9 / AC8).
 Future<CashDrawerDialogResult?> showOpenDrawerDialog(
-  BuildContext context,
-) =>
-    _showAmountDialog(
-      context: context,
-      title: VN.cashDrawerOpen,
-      amountLabel: VN.cashDrawerOpeningBalance,
-      confirmLabel: VN.cashDrawerOpen,
-      allowZero: false,
+  BuildContext context, {
+  int referenceBalance = 0,
+  int? previousCloseCountedAmount,
+}) {
+  final helpers = <String>[];
+  if (referenceBalance > 0) {
+    helpers.add(
+      '${VN.cashDrawerReferenceBalance}: ${formatVND(referenceBalance.toDouble())}',
     );
+  }
+  if (previousCloseCountedAmount != null) {
+    helpers.add(
+      '${VN.cashDrawerPreviousCloseBalance}: '
+      '${formatVND(previousCloseCountedAmount.toDouble())}',
+    );
+  }
+  return _showAmountDialog(
+    context: context,
+    title: VN.cashDrawerOpen,
+    amountLabel: VN.cashDrawerOpeningBalance,
+    confirmLabel: VN.cashDrawerOpen,
+    allowZero: false,
+    helper: helpers.isEmpty ? null : helpers.join('\n'),
+  );
+}
 
 /// FR9: shows the carry-over proposal confirmation dialog when the backend
 /// reports that the previous day's drawer is still open.
@@ -107,6 +127,290 @@ Future<CarryOverDecision?> showCarryOverConfirmationDialog(
               Navigator.of(context).pop(CarryOverDecision.accept),
           icon: const Icon(Icons.east),
           label: const Text(VN.cashDrawerCarryOverAccept),
+        ),
+      ],
+    ),
+  );
+}
+
+/// DG-330: shows the transfer confirmation dialog when the opening balance
+/// is lower than the 1101 reference balance. The excess MUST transfer to
+/// 1102 (owner's cash) — declining is not permitted because the drawer
+/// cannot open with an unexplained shortfall. Returns [TransferDecision.accept]
+/// or `null` (cancel → consult Kế toán).
+enum TransferDecision { accept }
+
+Future<TransferDecision?> showTransferConfirmationDialog(
+  BuildContext context, {
+  required int referenceBalance,
+  required int openingBalance,
+  required int excess,
+}) async {
+  return showDialog<TransferDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerTransferTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Số dư kế toán 1101: ${formatVND(referenceBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text('Số tiền mở quỹ: ${formatVND(openingBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text(
+            'Chênh lệch thiếu: ${formatVND(excess.toDouble())}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerTransferQuestion),
+          const SizedBox(height: 8),
+          Text(
+            VN.cashDrawerTransferDeclineBlocked,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(TransferDecision.accept),
+          icon: const Icon(Icons.east),
+          label: const Text(VN.cashDrawerTransferAccept),
+        ),
+      ],
+    ),
+  );
+}
+
+/// DG-330: shows the stock reconciliation confirmation dialog when the
+/// opening balance exceeds the 1101 reference.
+enum StockReconDecision { accept, decline, ownerCapital }
+
+Future<StockReconDecision?> showStockReconciliationDialog(
+  BuildContext context, {
+  required int referenceBalance,
+  required int openingBalance,
+  required int excess,
+}) async {
+  return showDialog<StockReconDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerStockReconTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Số dư kế toán 1101: ${formatVND(referenceBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text('Số tiền mở quỹ: ${formatVND(openingBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text(
+            'Chênh lệch thừa: ${formatVND(excess.toDouble())}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerStockReconQuestion),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () =>
+              Navigator.of(context).pop(StockReconDecision.ownerCapital),
+          icon: const Icon(Icons.account_balance_wallet),
+          label: const Text(VN.cashDrawerExcessOwnerCapital),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(StockReconDecision.accept),
+          icon: const Icon(Icons.check),
+          label: const Text(VN.cashDrawerStockReconAccept),
+        ),
+      ],
+    ),
+  );
+}
+
+/// DG-330: asks whether the excess should be recorded as an unidentified
+/// sale with 50% COGS markup.
+enum UnidentifiedSaleDecision { accept, decline }
+
+Future<UnidentifiedSaleDecision?> showUnidentifiedSaleDialog(
+  BuildContext context, {
+  required int excess,
+}) async {
+  return showDialog<UnidentifiedSaleDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerUnidentifiedSaleTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Chênh lệch: ${formatVND(excess.toDouble())}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerUnidentifiedSaleQuestion),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () =>
+              Navigator.of(context).pop(UnidentifiedSaleDecision.decline),
+          icon: const Icon(Icons.block),
+          label: const Text(VN.cashDrawerUnidentifiedSaleDecline),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(UnidentifiedSaleDecision.accept),
+          icon: const Icon(Icons.check),
+          label: const Text(VN.cashDrawerUnidentifiedSaleAccept),
+        ),
+      ],
+    ),
+  );
+}
+
+/// DG-331: decision returned by [showCloseSurplusDialog]. Maps to the
+/// `surplusSource` value sent back to the backend on the confirmed close.
+/// `null` means the user cancelled the confirmation (treat as abort close).
+enum CloseSurplusDecision { ownerCash, unidentifiedSale }
+
+/// DG-331 AC9: shows the close surplus confirmation dialog when the backend
+/// reports that the counted amount exceeds the expected balance. Asks the
+/// owner to choose the nature of the surplus:
+///   - [CloseSurplusDecision.ownerCash] → DR 1101/CR 1102 (owner put cash in)
+///   - [CloseSurplusDecision.unidentifiedSale] → DR 1101/CR 4100 +
+///     DR 5900/CR 1300 (50% COGS)
+/// Returns `null` when the user cancels (the close flow is aborted).
+Future<CloseSurplusDecision?> showCloseSurplusDialog(
+  BuildContext context, {
+  required int expectedBalance,
+  required int countedAmount,
+  required int surplus,
+}) async {
+  return showDialog<CloseSurplusDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerCloseSurplusTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Số dư dự kiến: ${formatVND(expectedBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text('Số tiền đếm được: ${formatVND(countedAmount.toDouble())}'),
+          const SizedBox(height: 4),
+          Text(
+            'Chênh lệch thừa: ${formatVND(surplus.toDouble())}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerCloseSurplusQuestion),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () =>
+              Navigator.of(context).pop(CloseSurplusDecision.unidentifiedSale),
+          icon: const Icon(Icons.receipt_long),
+          label: const Text(VN.cashDrawerCloseSurplusUnidentifiedSale),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(CloseSurplusDecision.ownerCash),
+          icon: const Icon(Icons.account_balance_wallet),
+          label: const Text(VN.cashDrawerCloseSurplusOwnerCash),
+        ),
+      ],
+    ),
+  );
+}
+
+/// DG-331: decision returned by [showCloseShortageDialog]. Maps to the
+/// `shortageSource` value sent back to the backend on the confirmed close.
+/// `null` means the user cancelled the confirmation (treat as abort close).
+enum CloseShortageDecision { ownerWithdraw, equityLoss }
+
+/// DG-331 AC9: shows the close shortage confirmation dialog when the backend
+/// reports that the counted amount is below the expected balance. Asks the
+/// owner to choose the nature of the shortage:
+///   - [CloseShortageDecision.ownerWithdraw] → DR 1102/CR 1101 (owner took
+///     cash)
+///   - [CloseShortageDecision.equityLoss] → DR 3100/CR 1101 (equity loss)
+/// Returns `null` when the user cancels (the close flow is aborted).
+Future<CloseShortageDecision?> showCloseShortageDialog(
+  BuildContext context, {
+  required int expectedBalance,
+  required int countedAmount,
+  required int shortage,
+}) async {
+  return showDialog<CloseShortageDecision>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text(VN.cashDrawerCloseShortageTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Số dư dự kiến: ${formatVND(expectedBalance.toDouble())}'),
+          const SizedBox(height: 4),
+          Text('Số tiền đếm được: ${formatVND(countedAmount.toDouble())}'),
+          const SizedBox(height: 4),
+          Text(
+            'Chênh lệch thiếu: ${formatVND(shortage.toDouble())}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          const Text(VN.cashDrawerCloseShortageQuestion),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: () =>
+              Navigator.of(context).pop(CloseShortageDecision.equityLoss),
+          icon: const Icon(Icons.trending_down),
+          label: const Text(VN.cashDrawerCloseShortageEquityLoss),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pop(CloseShortageDecision.ownerWithdraw),
+          icon: const Icon(Icons.account_balance_wallet),
+          label: const Text(VN.cashDrawerCloseShortageOwnerWithdraw),
         ),
       ],
     ),
@@ -205,12 +509,15 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: false,
                   ),
+                  inputFormatters: [
+                    _ThousandsSeparatorInputFormatter(),
+                  ],
                   decoration: InputDecoration(
                     labelText: amountLabel,
                     border: const OutlineInputBorder(),
                   ),
                   validator: (value) {
-                    final raw = value?.trim() ?? '';
+                    final raw = (value ?? '').replaceAll(',', '').trim();
                     final parsed = int.tryParse(raw);
                     if (parsed == null) return VN.cashDrawerAmountLabel;
                     if (!allowZero && parsed <= 0) {
@@ -249,7 +556,7 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
               if (formValid && selectorValid) {
                 Navigator.of(context).pop(
                   CashDrawerDialogResult(
-                    amount: int.parse(amountCtrl.text.trim()),
+                    amount: int.parse(amountCtrl.text.replaceAll(',', '').trim()),
                     note: noteCtrl.text.trim(),
                     source: selector?.sourceValue,
                     destination: selector?.destinationValue,
@@ -292,7 +599,7 @@ class _CashDrawerSelector {
           (value: 'equity', label: VN.cashDrawerSourceEquity),
         ],
         headerLabel: VN.cashDrawerSourceLabel,
-        selectedValue: 'equity',
+        selectedValue: 'owner',
       );
 
   factory _CashDrawerSelector.cashOut(List<StaffMember> staff) =>
@@ -400,3 +707,40 @@ class _CashDrawerSelector {
 }
 
 enum _SelectorMode { cashIn, cashOut }
+
+/// Formats numeric input with thousand-separator commas while typing.
+/// Only allows digits — the formatter inserts commas at thousand positions.
+class _ThousandsSeparatorInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    if (text.isEmpty) return newValue;
+
+    final digits = text.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.isEmpty) {
+      return newValue.copyWith(text: '', selection: const TextSelection.collapsed(offset: 0));
+    }
+
+    final formatted = _addCommas(digits);
+    final offset = formatted.length;
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+
+  String _addCommas(String digits) {
+    final buffer = StringBuffer();
+    final len = digits.length;
+    for (int i = 0; i < len; i++) {
+      if (i > 0 && (len - i) % 3 == 0) {
+        buffer.write(',');
+      }
+      buffer.write(digits[i]);
+    }
+    return buffer.toString();
+  }
+}

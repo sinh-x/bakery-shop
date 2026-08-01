@@ -260,10 +260,28 @@ void main() {
     await tester.tap(find.text(VN.cashDrawerCarryOverAccept));
     await tester.pumpAndSettle();
 
-    // The second open call must carry carryOverConfirmed: true.
+    // The second open call must carry carryOverConfirmed: true. The other
+    // confirmation flags default to false and are sent because the open
+    // dialog's confirmation loop re-issues the full open body.
     expect(interceptor.openCalls, [
-      {'openingBalance': 1550000, 'note': '', 'carryOverConfirmed': false},
-      {'openingBalance': 1550000, 'note': '', 'carryOverConfirmed': true},
+      {
+        'openingBalance': 1550000,
+        'note': '',
+        'carryOverConfirmed': false,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
+      },
+      {
+        'openingBalance': 1550000,
+        'note': '',
+        'carryOverConfirmed': true,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
+      },
     ]);
     // Success snackbar appears.
     expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
