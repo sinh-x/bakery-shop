@@ -9,6 +9,7 @@ from baker.api.auth import router as auth_router
 from baker.api.blanks import router as blanks_router
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import catalog_router as catalog_browse_router
+from baker.api.cash_drawer import router as cash_drawer_router
 from baker.api.catalog import router as catalog_router
 from baker.api.checklist import router as checklist_router
 from baker.api.categories import router as categories_router
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(photos_router)
     app.include_router(products_router)
     app.include_router(accounts_router)
+    app.include_router(cash_drawer_router)
     app.include_router(catalog_browse_router)
     app.include_router(catalog_router)
     app.include_router(categories_router)
