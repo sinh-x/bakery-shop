@@ -1692,7 +1692,7 @@ def test_cashflow_per_account_breakdown_section_present():
     assert result.exit_code == 0, result.output
     assert "Phân tích theo tài khoản" in result.output
     # Every cash account code appears in the breakdown.
-    for code in ("1100", "1200", "1210", "1220", "1290"):
+    for code in ("1100", "1101", "1102", "1200", "1210", "1220", "1290"):
         assert code in result.output
 
 
@@ -1799,8 +1799,8 @@ def test_cashflow_per_account_breakdown_empty_db():
     ])
     assert result.exit_code == 0, result.output
     assert "Phân tích theo tài khoản" in result.output
-    # All five cash account codes appear even with no activity.
-    for code in ("1100", "1200", "1210", "1220", "1290"):
+    # All cash account codes appear even with no activity.
+    for code in ("1100", "1101", "1102", "1200", "1210", "1220", "1290"):
         assert code in result.output
     # TOTAL row is present.
     assert "TỔNG" in result.output
