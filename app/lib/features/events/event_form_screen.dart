@@ -7,9 +7,13 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
+import '../../data/models/event_photo.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'widgets/event_form_photo_section.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+
+import '../../data/api/api_client.dart' show apiBaseUrlProvider;
 
 class _EventType {
   const _EventType(this.value, this.label, this.icon);
@@ -66,8 +70,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   bool _saving = false;
   bool _uploading = false;
 
-  final _picker = ImagePicker();
   final _selectedPhotos = <XFile>[];
+  final _existingPhotos = <EventPhoto>[];
 
   bool get _isEditing => widget.event != null;
   bool get _isOrderLinked => widget.orderId != null;
@@ -86,6 +90,17 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           _customTags.add(tag);
         }
       }
+      _loadExistingPhotos(e.id);
+    }
+  }
+
+  Future<void> _loadExistingPhotos(int eventId) async {
+    try {
+      final service = ref.read(eventServiceProvider);
+      final photos = await service.getEventPhotos(eventId);
+      if (mounted) setState(() => _existingPhotos.addAll(photos));
+    } catch (_) {
+      // Non-fatal: edit form still works without existing photo display.
     }
   }
 
@@ -96,13 +111,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     super.dispose();
   }
 
-  Future<void> _pickPhotos() async {
-    final files = await _picker.pickMultiImage(imageQuality: 85);
-    if (files.isNotEmpty) {
-      setState(() => _selectedPhotos.addAll(files));
-    }
-  }
-
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
@@ -110,6 +118,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     setState(() => _saving = true);
     try {
       final loggedBy = ref.read(loggedByProvider);
+      final hasNewPhotos = _selectedPhotos.isNotEmpty;
       if (_isEditing) {
         await ref
             .read(eventsProvider.notifier)
@@ -120,6 +129,16 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               tags: _selectedTags.toList(),
               loggedBy: loggedBy,
             );
+        if (hasNewPhotos && mounted) {
+          setState(() => _uploading = true);
+          final service = ref.read(eventServiceProvider);
+          for (final xfile in _selectedPhotos) {
+            await service.uploadEventPhoto(
+              widget.event!.id,
+              File(xfile.path),
+            );
+          }
+        }
         if (mounted) {
           showTopSnackBar(context, VN.eventUpdated);
           context.pop();
@@ -135,7 +154,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               orderId: widget.orderId,
             );
 
-        if (_selectedPhotos.isNotEmpty && mounted) {
+        if (hasNewPhotos && mounted) {
           setState(() => _uploading = true);
           final service = ref.read(eventServiceProvider);
           for (final xfile in _selectedPhotos) {
@@ -156,7 +175,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _uploading = false;
+        });
+      }
     }
   }
 
@@ -340,79 +364,16 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          if (!_isEditing) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                VN.eventPhotos,
-                style: theme.textTheme.titleSmall,
-              ),
-            ),
-            if (_selectedPhotos.isNotEmpty)
-              SizedBox(
-                height: 80,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _selectedPhotos.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            File(_selectedPhotos[index].path),
-                            width: 70,
-                            height: 70,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: -8,
-                          right: -8,
-                          child: GestureDetector(
-                            onTap: () => setState(() {
-                              _selectedPhotos.removeAt(index);
-                            }),
-                            child: const CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Colors.black54,
-                              child: Icon(Icons.close, size: 14, color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _uploading ? null : _pickPhotos,
-                  icon: const Icon(Icons.add_a_photo, size: 18),
-                  label: const Text(VN.addEventPhoto),
-                ),
-                if (_uploading) ...[
-                  const SizedBox(width: 12),
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    VN.uploadingPhotos,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
+          EventFormPhotoSection(
+            existingPhotos: _existingPhotos,
+            selectedPhotos: _selectedPhotos,
+            uploading: _uploading,
+            baseUrl: ref.read(apiBaseUrlProvider),
+            onSelectionChanged: (files) =>
+                setState(() => _selectedPhotos
+                  ..clear()
+                  ..addAll(files)),
+          ),
           Row(
             children: [
               const Icon(Icons.person_outline, size: 18),
