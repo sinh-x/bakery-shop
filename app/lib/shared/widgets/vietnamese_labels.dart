@@ -1000,6 +1000,45 @@ class VN {
   static const accountingSourceTypeShippingHold = 'Ship bus giữ hộ';
   static const accountingSourceTypeShippingRelease = 'Trả ship bus';
 
+  // Cash drawer (DG-324) — labels for the daily cash drawer feature.
+  // Kept alongside the accounting source-type labels because the drawer
+  // source types extend the journal source-type vocabulary below.
+  static const cashDrawerTitle = 'Quỹ tiền mặt';
+  static const cashDrawerOpen = 'Mở quỹ';
+  static const cashDrawerClose = 'Đóng quỹ';
+  static const cashDrawerCashIn = 'Cho tiền vào quỹ';
+  static const cashDrawerCashOut = 'Lấy tiền khỏi quỹ';
+  static const cashDrawerOpeningBalance = 'Số dư đầu ngày';
+  static const cashDrawerExpectedBalance = 'Số dư dự kiến';
+  static const cashDrawerCountedAmount = 'Số tiền đếm được';
+  static const cashDrawerDiscrepancy = 'Chênh lệch';
+  static const cashDrawerStatus = 'Trạng thái';
+  static const cashDrawerStatusOpen = 'Đang mở';
+  static const cashDrawerStatusClosed = 'Đã đóng';
+  static const cashDrawerCashSales = 'Tiền bán hàng';
+  static const cashDrawerOwnerIn = 'Chủ cho thêm';
+  static const cashDrawerOwnerOut = 'Chủ rút ra';
+  static const cashDrawerCashExpenses = 'Chi phí tiền mặt';
+  static const cashDrawerHistory = 'Lịch sử quỹ';
+  static const cashDrawerNoActive = 'Không có quỹ tiền mặt đang mở';
+  static const cashDrawerAlreadyOpen = 'Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại trước khi mở quỹ mới.';
+  static const cashDrawerAmountLabel = 'Số tiền (VND)';
+  static const cashDrawerNoteLabel = 'Ghi chú (tùy chọn)';
+  static const cashDrawerOpenSuccess = 'Đã mở quỹ tiền mặt';
+  static const cashDrawerCloseSuccess = 'Đã đóng quỹ tiền mặt';
+  static const cashDrawerCashInSuccess = 'Đã cho tiền vào quỹ';
+  static const cashDrawerCashOutSuccess = 'Đã lấy tiền khỏi quỹ';
+  static const cashDrawerSurplus = 'Thừa';
+  static const cashDrawerShortage = 'Thiếu';
+  static const cashDrawerExact = 'Khớp';
+
+  /// Cash-drawer journal source types (extend the accounting source-type
+  /// vocabulary) — used by the journal filter and drawer movement history.
+  static const accountingSourceTypeCashDrawerOpen = 'Mở quỹ tiền mặt';
+  static const accountingSourceTypeCashDrawerCashIn = 'Cho tiền vào quỹ';
+  static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quỹ';
+  static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quỹ — điều chỉnh chênh lệch';
+
   /// Map a journal entry ``sourceType`` to a Vietnamese label.
   ///
   /// Falls back to the raw ``sourceType`` when no mapping exists so unknown
@@ -1024,6 +1063,14 @@ class VN {
         return accountingOwnerDraw;
       case 'staff_reimburse':
         return accountingStaffReimburse;
+      case 'cash_drawer_open':
+        return accountingSourceTypeCashDrawerOpen;
+      case 'cash_drawer_cash_in':
+        return accountingSourceTypeCashDrawerCashIn;
+      case 'cash_drawer_cash_out':
+        return accountingSourceTypeCashDrawerCashOut;
+      case 'cash_drawer_close_adjust':
+        return accountingSourceTypeCashDrawerCloseAdjust;
       default:
         return sourceType;
     }
