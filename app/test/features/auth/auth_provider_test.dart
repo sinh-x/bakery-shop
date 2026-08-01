@@ -314,6 +314,101 @@ void main() {
       expect(container.read(authProvider).forcePasswordChange, isFalse);
       expect(container.read(authProvider).isAuthenticated, isTrue);
     });
+
+    test(
+        'CQ-11: forcePasswordChange is persisted to storage and restored on '
+        'restart (build())', () {
+      // Simulate a previous login that wrote forcePasswordChange=true to
+      // storage. On the next app start (build()), the flag must be restored
+      // so the router guard redirects to /change-password.
+      final token = buildJwt({
+        'sub': 'An',
+        'role': 'staff',
+        'exp': 9999999999,
+        'jti': 'jti-an',
+      });
+      prefs.setString('auth_token', token);
+      prefs.setString('auth_username', 'An');
+      prefs.setString('auth_role', 'staff');
+      prefs.setBool('auth_force_password_change', true);
+
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
+      );
+      addTearDown(container.dispose);
+      final state = container.read(authProvider);
+      expect(state.status, AuthStatus.authenticated);
+      expect(state.forcePasswordChange, isTrue,
+          reason: 'CQ-11: flag must be restored from storage on restart');
+    });
+
+    test(
+        'CQ-11: clearForcePasswordChange() clears the flag from storage so a '
+        'restart does not re-prompt', () async {
+      final token = buildJwt({
+        'sub': 'Sinh',
+        'role': 'admin',
+        'exp': 9999999999,
+        'jti': 'jti-1',
+      });
+      final dio = Dio()
+        ..interceptors.add(
+          _LoginOkInterceptor(
+            token: token,
+            forcePasswordChange: true,
+          ),
+        );
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          dioProvider.overrideWithValue(dio),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(authProvider.notifier).login(
+            username: 'Sinh',
+            password: 'secret',
+          );
+      expect(prefs.getBool('auth_force_password_change'), isTrue);
+
+      container.read(authProvider.notifier).clearForcePasswordChange();
+
+      // The stored flag is removed (cleared) so a restart does not re-prompt.
+      expect(prefs.getBool('auth_force_password_change'), isNull);
+    });
+
+    test('CQ-11: login() persists forcePasswordChange to storage', () async {
+      final token = buildJwt({
+        'sub': 'An',
+        'role': 'staff',
+        'exp': 9999999999,
+        'jti': 'jti-an',
+      });
+      final dio = Dio()
+        ..interceptors.add(
+          _LoginOkInterceptor(
+            token: token,
+            forcePasswordChange: true,
+          ),
+        );
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          dioProvider.overrideWithValue(dio),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(authProvider.notifier).login(
+            username: 'An',
+            password: 'secret',
+          );
+
+      expect(prefs.getBool('auth_force_password_change'), isTrue);
+    });
   });
 }
 

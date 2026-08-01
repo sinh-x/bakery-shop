@@ -282,11 +282,13 @@ def user_list(show_all: bool):
     """List all users with username, role, and active status (FR10).
 
     Also shows whether an account is currently locked (locked_until in the
-    future). Inactive users are omitted unless ``--all`` is passed.
+    future) and whether a forced password change is pending
+    (force_password_change=1, CQ-13). Inactive users are omitted unless
+    ``--all`` is passed.
     """
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT username, role, active, locked_until, created_at "
+            "SELECT username, role, active, locked_until, force_password_change, created_at "
             "FROM users "
             + ("" if show_all else "WHERE active = 1 ")
             + "ORDER BY username"
@@ -301,6 +303,7 @@ def user_list(show_all: bool):
     table.add_column("Role", width=8)
     table.add_column("Active", width=7)
     table.add_column("Locked", width=8)
+    table.add_column("Force Chg", width=10)
     table.add_column("Created", style="dim", width=20)
 
     now = datetime.now(timezone.utc)
@@ -316,8 +319,18 @@ def user_list(show_all: bool):
                     locked_str = "[dim]no[/dim]"
             except (ValueError, TypeError):
                 locked_str = "[dim]?[/dim]"
+        force_str = (
+            "[yellow]yes[/yellow]" if row["force_password_change"] else "[dim]no[/dim]"
+        )
         created = row["created_at"][:19] if row["created_at"] else ""
-        table.add_row(row["username"], row["role"], active_str, locked_str, created)
+        table.add_row(
+            row["username"],
+            row["role"],
+            active_str,
+            locked_str,
+            force_str,
+            created,
+        )
 
     console.print(table)
 

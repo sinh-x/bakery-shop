@@ -81,10 +81,15 @@ class AuthNotifier extends Notifier<AuthState> {
     // install upgraded in place).
     final username = storage.readUsername() ?? claims.subject;
     final role = storage.readRole() ?? claims.role;
+    // CQ-11: restore the forced-password-change flag from storage so a user
+    // whose force_password_change=1 cannot regain full app access by simply
+    // restarting the app.
+    final forcePasswordChange = storage.readForcePasswordChange();
     return AuthState.authenticated(
       token: token,
       username: username,
       role: role,
+      forcePasswordChange: forcePasswordChange,
     );
   }
 
@@ -98,6 +103,7 @@ class AuthNotifier extends Notifier<AuthState> {
       token: result.token,
       username: result.username,
       role: result.role,
+      forcePasswordChange: result.forcePasswordChange,
     );
     state = AuthState.authenticated(
       token: result.token,
@@ -135,8 +141,16 @@ class AuthNotifier extends Notifier<AuthState> {
   /// Clears a forced-password-change flag from local auth state after the user
   /// has completed a forced change (DG-319 Phase 4 / FR10). Called by the
   /// forced-change screen on a successful change that re-logs the user in.
+  ///
+  /// CQ-11: the flag is persisted in [TokenStorage] so it survives app
+  /// restarts; clearing it here also clears the stored value so the user does
+  /// not get re-prompted after the next restart.
   void clearForcePasswordChange() {
     if (!state.forcePasswordChange) return;
+    // Best-effort clear of the stored flag; the prefs in-memory cache updates
+    // synchronously, so the subsequent build() reads the cleared value.
+    final storage = _storage();
+    storage.clearForcePasswordChange();
     state = AuthState.authenticated(
       token: state.token,
       username: state.username,

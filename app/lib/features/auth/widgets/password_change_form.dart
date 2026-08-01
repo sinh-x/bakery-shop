@@ -157,6 +157,7 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
                       color: theme.colorScheme.onPrimary,
+                      semanticsLabel: AuthLabels.changingPassword,
                     ),
                   )
                 : const Text(AuthLabels.changePasswordButton),

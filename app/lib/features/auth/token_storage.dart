@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const kAuthTokenKey = 'auth_token';
 const kAuthUsernameKey = 'auth_username';
 const kAuthRoleKey = 'auth_role';
+const kAuthForcePasswordChangeKey = 'auth_force_password_change';
 
 /// Thin wrapper around [SharedPreferences] for reading/writing the JWT token
 /// and the cached identity (username + role) decoded from the JWT claims.
@@ -25,15 +26,22 @@ class TokenStorage {
   /// Returns the cached role (JWT `role` claim) or `null`.
   String? readRole() => _prefs.getString(kAuthRoleKey);
 
+  /// Returns whether the stored session requires a forced password change
+  /// (CQ-11). Defaults to `false` for older installs that do not yet have the
+  /// key written.
+  bool readForcePasswordChange() => _prefs.getBool(kAuthForcePasswordChangeKey) ?? false;
+
   /// Persists the token and the identity claims extracted from the JWT.
   Future<void> writeSession({
     required String token,
     required String username,
     required String role,
+    bool forcePasswordChange = false,
   }) async {
     await _prefs.setString(kAuthTokenKey, token);
     await _prefs.setString(kAuthUsernameKey, username);
     await _prefs.setString(kAuthRoleKey, role);
+    await _prefs.setBool(kAuthForcePasswordChangeKey, forcePasswordChange);
   }
 
   /// Clears all auth-related keys. Called on logout and on 401 responses.
@@ -41,5 +49,13 @@ class TokenStorage {
     await _prefs.remove(kAuthTokenKey);
     await _prefs.remove(kAuthUsernameKey);
     await _prefs.remove(kAuthRoleKey);
+    await _prefs.remove(kAuthForcePasswordChangeKey);
+  }
+
+  /// Clears only the force-password-change flag (CQ-11). Used by
+  /// [AuthNotifier.clearForcePasswordChange] after the user completes a
+  /// forced change, so the flag does not survive an app restart.
+  Future<void> clearForcePasswordChange() async {
+    await _prefs.remove(kAuthForcePasswordChangeKey);
   }
 }
