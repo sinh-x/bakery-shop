@@ -1,10 +1,12 @@
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,56 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/login_screen_test_helpers.dart';
+
+/// Dio interceptor that short-circuits all backend calls with empty/safe
+/// responses so the expense form and history card never make real network
+/// calls (which would leave pending timers in tests). Event photo GETs
+/// return an empty list (DG-326 Phase 3); other GETs return empty
+/// lists/objects so providers fall back to hardcoded defaults.
+class _EmptyPhotosInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.path.contains('/photos') && options.method == 'GET') {
+      handler.resolve(
+        Response<List<dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const <dynamic>[],
+        ),
+      );
+      return;
+    }
+    // Short-circuit any other GET so providers fall back to hardcoded
+    // defaults without leaving pending Dio timeout timers.
+    if (options.method == 'GET') {
+      handler.resolve(
+        Response<List<dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const <dynamic>[],
+        ),
+      );
+      return;
+    }
+    handler.next(options);
+  }
+}
+
+/// Builds a [ProviderContainer] with the overrides needed by the expense
+/// edit form (shared prefs + dio + event service with empty-photo stub).
+Future<ProviderContainer> _expenseFormContainer() async {
+  SharedPreferences.setMockInitialValues(<String, Object>{});
+  final prefs = await SharedPreferences.getInstance();
+  final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+    ..interceptors.add(_EmptyPhotosInterceptor());
+  return ProviderContainer(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      dioProvider.overrideWithValue(dio),
+      eventServiceProvider.overrideWithValue(EventService(dio)),
+    ],
+  );
+}
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -187,8 +239,13 @@ void main() {
       initialLocation: '/expenses',
     );
 
+    final container = await _expenseFormContainer();
+    addTearDown(container.dispose);
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -219,8 +276,11 @@ void main() {
         },
       );
 
+      final container = await _expenseFormContainer();
+      addTearDown(container.dispose);
       await tester.pumpWidget(
-        ProviderScope(
+        UncontrolledProviderScope(
+          container: container,
           child: MaterialApp(home: ExpenseFormScreen(event: legacyExpense)),
         ),
       );

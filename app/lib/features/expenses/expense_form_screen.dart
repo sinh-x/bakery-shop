@@ -1,6 +1,12 @@
+import 'dart:io';
+
+import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
+import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/data/models/event_photo.dart';
 import 'package:bakery_app/data/models/expense_category.dart';
+import 'package:bakery_app/features/events/widgets/event_form_photo_section.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
@@ -11,6 +17,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+
+// EXEMPT: 300-line screen threshold exceeded because photo upload lifecycle
+// (state, load-existing, post-submit upload) must live in the screen to keep
+// ExpenseFormCard under its widget limit. Pre-existing at 352 lines before
+// DG-326 Phase 3. Reviewed 2026-08-01.
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
   const ExpenseFormScreen({super.key, this.event});
@@ -27,6 +39,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   final _vendorCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   bool _loading = false;
+  bool _uploading = false;
   int? _editingId;
   String? _category;
   String? _subcategory;
@@ -35,6 +48,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   String? _staffName;
   String? _paidByName;
   late DateTime _eventDateTime;
+
+  /// Locally-picked photos awaiting upload after event create/update.
+  final _selectedPhotos = <XFile>[];
+
+  /// Photos already attached to the event being edited (edit mode only).
+  final _existingPhotos = <EventPhoto>[];
 
   bool get _editing => _editingId != null;
 
@@ -60,6 +79,17 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _noteCtrl.text = data.note;
     _staffName = data.loggedBy.isNotEmpty ? data.loggedBy : null;
     _paidByName = data.paidByName.isNotEmpty ? data.paidByName : null;
+    _loadExistingPhotos(event.id);
+  }
+
+  Future<void> _loadExistingPhotos(int eventId) async {
+    try {
+      final service = ref.read(eventServiceProvider);
+      final photos = await service.getEventPhotos(eventId);
+      if (mounted) setState(() => _existingPhotos.addAll(photos));
+    } catch (_) {
+      // Non-fatal: edit form still works without existing photo display.
+    }
   }
 
   @override
@@ -133,6 +163,18 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             onSave: _save,
             amountValidator: _validateAmount,
           ),
+          const SizedBox(height: 8),
+          EventFormPhotoSection(
+            existingPhotos: _existingPhotos,
+            selectedPhotos: _selectedPhotos,
+            uploading: _uploading,
+            baseUrl: ref.read(apiBaseUrlProvider),
+            onSelectionChanged: (files) => setState(() {
+              _selectedPhotos
+                ..clear()
+                ..addAll(files);
+            }),
+          ),
         ],
       ),
     );
@@ -185,6 +227,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
     setState(() => _loading = true);
     try {
+      final hasNewPhotos = _selectedPhotos.isNotEmpty;
       if (_editing) {
         await ref
             .read(eventsProvider.notifier)
@@ -195,9 +238,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(_editingId!);
+        }
         if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
-        await ref
+        final createdEvent = await ref
             .read(eventsProvider.notifier)
             .logEvent(
               summary: _summary(payload),
@@ -206,6 +252,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(createdEvent.id);
+        }
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
       if (mounted) context.pop(true);
@@ -218,8 +267,23 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _uploading = false;
+        });
       }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] with a progress indicator
+  /// (NFR1). Reuses the same `EventService.uploadEventPhoto()` pattern as
+  /// `event_form_screen.dart` — the `/api/events/{id}/photos` endpoint
+  /// works for expense events because expenses are event-typed records.
+  Future<void> _uploadPhotos(int eventId) async {
+    setState(() => _uploading = true);
+    final service = ref.read(eventServiceProvider);
+    for (final xfile in _selectedPhotos) {
+      await service.uploadEventPhoto(eventId, File(xfile.path));
     }
   }
 
