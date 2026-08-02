@@ -360,6 +360,34 @@ class VN {
   static const uploadingPhotos = 'Đang tải ảnh lên...';
   static const itemPrice = 'Đơn giá';
 
+  // ── Photo upload progress (shared UploadProgressIndicator) ──────────────
+  /// "X/N đã tải lên" — success-only count summary shown beneath per-photo
+  /// rows. DG-333 Phase 1.
+  static String uploadedPhotosCount(int done, int total) => '$done/$total đã tải lên';
+
+  /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
+  /// DG-333 Phase 1.
+  static String uploadedPhotosCountWithErrors(int done, int failed, int total) =>
+      '$done/$total đã tải lên ($failed lỗi)';
+
+  /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
+  /// localized status words returned by [photoUploadStatusLabel]. DG-333
+  /// Phase 1.
+  static String photoUploadStatus(int index, String statusLabel) =>
+      'Ảnh $index: $statusLabel';
+
+  /// Per-photo error line: "Ảnh N: Lỗi — `message`". DG-333 Phase 1.
+  static String photoUploadFailed(int index, String message) =>
+      'Ảnh $index: Lỗi — $message';
+
+  /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
+  static const photoUploadStatusLabels = <String, String>{
+    'pending': 'Đang chờ',
+    'uploading': 'Đang tải',
+    'success': 'Đã xong',
+    'error': 'Lỗi',
+  };
+
   // ── Markup (trưng bày) ──────────────────────────────────────────────────
   /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
   /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
