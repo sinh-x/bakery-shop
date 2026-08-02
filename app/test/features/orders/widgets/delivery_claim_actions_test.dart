@@ -5,12 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/providers/delivery_claim_providers.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_claim_actions.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_order_card.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
+import 'package:bakery_app/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 
@@ -21,6 +23,19 @@ class _FakeOrderPhotosNotifier extends OrderPhotosNotifier {
 
   @override
   Future<List<OrderPhoto>> build() async => const [];
+}
+
+/// Fake [StaffListNotifier] returning a fixed staff list so
+/// [DeliveryClaimActions] can resolve the assigned staff name without hitting
+/// the network (DG-329 Phase 2). The existing card tests pass the backend-
+/// provided `assignedStaffName`, so an empty list suffices — the helper
+/// returns the backend name as-is.
+class _FakeStaffListNotifier extends StaffListNotifier {
+  final List<StaffMember> staff;
+  _FakeStaffListNotifier(this.staff);
+
+  @override
+  Future<List<StaffMember>> build() async => staff;
 }
 
 Order _deliveryOrder({
@@ -68,8 +83,9 @@ CurrentStaff _adminStaff() => const CurrentStaff(
 
 Future<Widget> _buildApp(
   Order order,
-  CurrentStaff staff,
-) async {
+  CurrentStaff staff, {
+  List<StaffMember>? staffList,
+}) async {
   SharedPreferences.setMockInitialValues(<String, Object>{});
   final prefs = await SharedPreferences.getInstance();
 
@@ -77,6 +93,7 @@ Future<Widget> _buildApp(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       currentStaffProvider.overrideWith((ref) async => staff),
+      staffListProvider.overrideWith(() => _FakeStaffListNotifier(staffList ?? const [])),
       orderPhotosProvider(order.orderRef)
           .overrideWith(_FakeOrderPhotosNotifier.new),
     ],
@@ -144,6 +161,7 @@ Future<Widget> _buildSnackbarApp(
   CurrentStaff staff, {
   bool failAssign = false,
   bool failUnclaim = false,
+  List<StaffMember>? staffList,
 }) async {
   SharedPreferences.setMockInitialValues(<String, Object>{});
   final prefs = await SharedPreferences.getInstance();
@@ -156,6 +174,7 @@ Future<Widget> _buildSnackbarApp(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       currentStaffProvider.overrideWith((ref) async => staff),
+      staffListProvider.overrideWith(() => _FakeStaffListNotifier(staffList ?? const [])),
       orderServiceProvider.overrideWithValue(service),
       orderPhotosProvider(order.orderRef)
           .overrideWith(_FakeOrderPhotosNotifier.new),
@@ -276,8 +295,18 @@ void main() {
   });
 
   group('DeliveryClaimActions (standalone)', () {
-    Widget standalone(Order order, CurrentStaff staff) => ProviderScope(
-          overrides: [currentStaffProvider.overrideWith((ref) async => staff)],
+    Widget standalone(
+      Order order,
+      CurrentStaff staff, {
+      List<StaffMember>? staffList,
+    }) =>
+        ProviderScope(
+          overrides: [
+            currentStaffProvider.overrideWith((ref) async => staff),
+            staffListProvider.overrideWith(
+              () => _FakeStaffListNotifier(staffList ?? const []),
+            ),
+          ],
           child: MaterialApp(
             home: Scaffold(
               body: DeliveryClaimActions(order: order),
@@ -294,6 +323,35 @@ void main() {
       expect(find.byType(DeliveryClaimActions), findsOneWidget);
       expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
       expect(find.text(OrdersLabels.deliveryUnassigned), findsOneWidget);
+    });
+
+    // DG-329 Phase 2 / FR3 / AC2: assigned staff name displays the real name
+    // (not "NV #<id> (đã ngưng)").
+    testWidgets('AC2: displays the real assigned staff name', (tester) async {
+      final order = _deliveryOrder(
+        assignedStaffId: '7',
+        assignedStaffName: 'Người Giao A',
+      );
+      await tester.pumpWidget(standalone(order, _giaoHangStaff()));
+      await tester.pump();
+
+      expect(find.textContaining('Người Giao A'), findsOneWidget);
+    });
+
+    // DG-329 Phase 2 / FR3 / AC2: when the staff record is missing entirely
+    // (deleted), the "NV #<id>" fallback is shown — never the misleading
+    // "NV #<id> (đã ngưng)" combo.
+    testWidgets('AC2: missing staff record shows "NV #<id>" fallback',
+        (tester) async {
+      final order = _deliveryOrder(
+        assignedStaffId: '42',
+        assignedStaffName: '',
+      );
+      await tester.pumpWidget(standalone(order, _giaoHangStaff()));
+      await tester.pump();
+
+      expect(find.textContaining('NV #42'), findsOneWidget);
+      expect(find.textContaining('đã ngưng'), findsNothing);
     });
   });
 

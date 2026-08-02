@@ -20,6 +20,8 @@ Order _order({
   required String dueTime,
   String status = 'new',
   String deliveryType = 'door',
+  String? assignedStaffId,
+  String assignedStaffName = '',
 }) {
   return Order(
     id: id.toString(),
@@ -31,6 +33,8 @@ Order _order({
     totalPrice: 0,
     dueDate: dueDate,
     dueTime: dueTime,
+    assignedStaffId: assignedStaffId,
+    assignedStaffName: assignedStaffName,
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
   );
@@ -244,5 +248,60 @@ void main() {
       tester.getRect(find.byType(WeekDayColumn).first).left,
       isNot(firstDayColumn.left),
     );
+  });
+
+  // DG-329 Phase 2 / FR3 / AC2: the mini-card staff name resolves to the
+  // real name when provided by the backend (including deactivated staff).
+  testWidgets(
+      'AC2: mini card shows the real assigned staff name (deactivated staff)',
+      (tester) async {
+    final now = DateTime.now();
+    final thisWeekStart = now.subtract(Duration(days: now.weekday - 1));
+    final mondayKey = _dayKey(thisWeekStart);
+    final orders = [
+      _order(
+        id: 1,
+        ref: 'ORD-1',
+        dueDate: mondayKey,
+        dueTime: '14:30',
+        assignedStaffId: '7',
+        assignedStaffName: 'Người Giao A',
+      ),
+    ];
+
+    await tester.pumpWidget(await _buildTestApp(orders));
+    await tester.pump();
+
+    // The real name shows (NOT "NV #7 (đã ngưng)").
+    expect(find.textContaining('Người Giao A'), findsOneWidget);
+    expect(find.textContaining('NV #7'), findsNothing);
+    expect(find.textContaining('đã ngưng'), findsNothing);
+  });
+
+  // DG-329 Phase 2 / FR3 / AC2: when the staff record is missing entirely
+  // (deleted), the mini card falls back to "NV #<id>" — never the misleading
+  // "NV #<id> (đã ngưng)" combo.
+  testWidgets(
+      'AC2: mini card shows "NV #<id>" fallback for a deleted staff record',
+      (tester) async {
+    final now = DateTime.now();
+    final thisWeekStart = now.subtract(Duration(days: now.weekday - 1));
+    final mondayKey = _dayKey(thisWeekStart);
+    final orders = [
+      _order(
+        id: 2,
+        ref: 'ORD-2',
+        dueDate: mondayKey,
+        dueTime: '14:30',
+        assignedStaffId: '42',
+        assignedStaffName: '',
+      ),
+    ];
+
+    await tester.pumpWidget(await _buildTestApp(orders));
+    await tester.pump();
+
+    expect(find.textContaining('NV #42'), findsOneWidget);
+    expect(find.textContaining('NV #42 (đã ngưng)'), findsNothing);
   });
 }

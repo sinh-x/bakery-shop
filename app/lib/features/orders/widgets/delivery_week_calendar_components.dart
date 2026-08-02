@@ -262,6 +262,19 @@ class _MiniOrderCard extends StatelessWidget {
   const _MiniOrderCard({required this.order});
   final Order order;
 
+  /// Resolves the assigned staff display name for the mini-card (DG-329
+  /// Phase 2 / FR3 / AC2). The backend already JOINs the real staff name
+  /// (including deactivated staff whose `staff` row still exists), so the
+  /// common case returns [Order.assignedStaffName] directly. When the name
+  /// is empty (staff record deleted), falls back to "NV #`<id>`" using the
+  /// id — never the misleading "NV #`<id>` (đã ngưng)" combo.
+  String _assignedStaffDisplay(Order o) {
+    if (o.assignedStaffName.isNotEmpty) return o.assignedStaffName;
+    final id = o.assignedStaffId;
+    if (id != null && id.isNotEmpty) return OrdersLabels.assignStaffMissing(id);
+    return OrdersLabels.deliveryUnassigned;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -311,7 +324,7 @@ class _MiniOrderCard extends StatelessWidget {
                         ),
                       if (order.isAssigned)
                         Text(
-                          '${OrdersLabels.deliveryStaffLabel}: ${order.assignedStaffName}',
+                          '${OrdersLabels.deliveryStaffLabel}: ${_assignedStaffDisplay(order)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(

@@ -202,7 +202,57 @@ DateTime? findNextDueDate(List<Order> orders) {
   return best;
 }
 
-/// Filters [orders] by the given [staffId], returning only those whose
+/// Resolves the display name for an assigned staff member (DG-329 Phase 2 /
+/// FR3 / AC2).
+///
+/// Returns `null` when [assignedStaffId] is null/empty (the order is
+/// unassigned — callers should render the "Chưa có nhân viên giao hàng"
+/// label themselves).
+///
+/// Resolution order:
+/// 1. When [assignedStaffName] is non-empty (the backend already JOINed the
+///    real staff name, including deactivated staff whose `staff` row still
+///    exists), return it as-is.
+/// 2. Otherwise, look up [assignedStaffId] in [staffList]. If found, return
+///    that staff member's `name` (covers the rare case the backend returned
+///    an empty name but the client-side list still has the record).
+/// 3. When the staff record is missing entirely (deleted), return
+///    `OrdersLabels.assignStaffMissing(staffId)` ("NV #`<id>`") — NOT the
+///    misleading "NV #`<id>` (đã ngưng)" combo, since we cannot know whether
+///    a missing record was deactivated or removed.
+///
+/// Callers that need to distinguish deactivated staff (to append the
+/// "(đã ngưng)" suffix in the assignment dropdown) should use
+/// [isAssignedStaffInactive] separately.
+String? resolveAssignedStaffDisplayName({
+  required String? assignedStaffId,
+  required String assignedStaffName,
+  required List<StaffMember> staffList,
+}) {
+  if (assignedStaffId == null || assignedStaffId.isEmpty) return null;
+  if (assignedStaffName.isNotEmpty) return assignedStaffName;
+  final match = staffList
+      .where((s) => s.id.toString() == assignedStaffId)
+      .toList(growable: false);
+  if (match.isNotEmpty) return match.first.name;
+  return OrdersLabels.assignStaffMissing(assignedStaffId);
+}
+
+/// Whether the assigned staff member exists in [staffList] but is marked
+/// inactive (DG-329 Phase 2 / FR3 / AC2). Used by the assignment dropdown to
+/// decide whether to append the "(đã ngưng)" suffix. Returns `false` when
+/// the staff record is missing entirely (the dropdown then shows the
+/// "NV #`<id>`" fallback from [resolveAssignedStaffDisplayName]).
+bool isAssignedStaffInactive({
+  required String? assignedStaffId,
+  required List<StaffMember> staffList,
+}) {
+  if (assignedStaffId == null || assignedStaffId.isEmpty) return false;
+  return staffList.any(
+    (s) => s.id.toString() == assignedStaffId && !s.active,
+  );
+}
+
 /// `assignedStaffId` matches (FR3). When [staffId] is null or empty, all
 /// orders are returned unchanged (the "All" option — FR4/NFR1).
 ///

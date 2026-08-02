@@ -256,7 +256,16 @@ class OrdersLabels {
   static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
   static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
   static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
-  static String assignStaffInactive(String staffId) => 'NV #$staffId (đã ngưng)';
+  /// Display label for an inactive (deactivated) staff member in the
+  /// assignment dropdown. Shows the real name followed by the "(đã ngưng)"
+  /// suffix only when the staff record exists but is deactivated (DG-329
+  /// Phase 2 / FR3 / AC2).
+  static String assignStaffInactive(String staffName) => '$staffName (đã ngưng)';
+
+  /// Fallback label for an assigned staff member whose record is missing
+  /// entirely from the staff list (e.g. deleted). Shows "NV #`<id>`" without
+  /// the misleading "(đã ngưng)" suffix (DG-329 Phase 2 / FR3 / AC2).
+  static String assignStaffMissing(String staffId) => 'NV #$staffId';
 
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {
