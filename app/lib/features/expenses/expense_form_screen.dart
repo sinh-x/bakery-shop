@@ -10,7 +10,9 @@ import 'package:bakery_app/features/events/widgets/event_form_photo_section.dart
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
@@ -39,7 +41,6 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   final _vendorCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   bool _loading = false;
-  bool _uploading = false;
   int? _editingId;
   String? _category;
   String? _subcategory;
@@ -168,13 +169,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           EventFormPhotoSection(
             existingPhotos: _existingPhotos,
             selectedPhotos: _selectedPhotos,
-            uploading: _uploading,
             baseUrl: ref.read(apiBaseUrlProvider),
             onSelectionChanged: (files) => setState(() {
               _selectedPhotos
                 ..clear()
                 ..addAll(files);
             }),
+          ),
+          UploadProgressIndicator(
+            states: ref.watch(photoUploadNotifierProvider).states,
           ),
         ],
       ),
@@ -229,6 +232,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     setState(() => _loading = true);
     try {
       final hasNewPhotos = _selectedPhotos.isNotEmpty;
+      final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_editing) {
         await ref
             .read(eventsProvider.notifier)
@@ -240,7 +244,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               timestamp: _eventDateTime,
             );
         if (hasNewPhotos && mounted) {
-          await _uploadPhotos(_editingId!);
+          await _uploadPhotos(_editingId!, upload);
         }
         if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
@@ -254,7 +258,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               timestamp: _eventDateTime,
             );
         if (hasNewPhotos && mounted) {
-          await _uploadPhotos(createdEvent.id);
+          await _uploadPhotos(createdEvent.id, upload);
         }
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
@@ -268,30 +272,29 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _loading = false;
-          _uploading = false;
-        });
+        setState(() => _loading = false);
       }
     }
   }
 
-  /// Upload locally-picked photos to [eventId] with a progress indicator
-  /// (NFR1). Reuses the same `EventService.uploadEventPhoto()` pattern as
-  /// `event_form_screen.dart` — the `/api/events/{id}/photos` endpoint
-  /// works for expense events because expenses are event-typed records.
-  Future<void> _uploadPhotos(int eventId) async {
-    setState(() => _uploading = true);
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_save] before `context.pop(true)` so the screen does not dismiss until
+  /// every upload reaches a terminal state (FR3 — race condition fix).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(
+    int eventId,
+    PhotoUploadNotifier upload,
+  ) async {
     final service = ref.read(eventServiceProvider);
-    try {
-      for (final xfile in _selectedPhotos) {
-        await service.uploadEventPhoto(eventId, File(xfile.path));
-      }
-    } catch (uploadErr) {
-      debugPrint('uploadEventPhoto (expense) failed: $uploadErr');
-      if (mounted) {
-        showTopSnackBar(context, VN.eventPhotosUploadFailed);
-      }
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 
