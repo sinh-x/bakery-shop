@@ -61,9 +61,19 @@ class UploadProgressIndicator extends StatelessWidget {
     final done = states.where((s) => s.status == PhotoUploadStatus.success).length;
     final failed = states.where((s) => s.status == PhotoUploadStatus.error).length;
     final total = states.length;
-    final summary = failed > 0
-        ? VN.uploadedPhotosCountWithErrors(done, failed, total)
-        : VN.uploadedPhotosCount(done, total);
+    final isUploading = states.any((s) =>
+        s.status == PhotoUploadStatus.pending ||
+        s.status == PhotoUploadStatus.uploading);
+    // Terminal summary (AC6): once every photo reaches a final state, show
+    // a distinct "upload complete" summary so the user can confirm the
+    // result before the screen pops/resets. DG-333 Phase 6.
+    final summary = isUploading
+        ? (failed > 0
+            ? VN.uploadedPhotosCountWithErrors(done, failed, total)
+            : VN.uploadedPhotosCount(done, total))
+        : (failed > 0
+            ? VN.photoUploadCompleteWithErrors(done, failed, total)
+            : VN.photoUploadComplete(total));
 
     if (compact) {
       return Row(

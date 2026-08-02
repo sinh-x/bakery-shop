@@ -388,6 +388,17 @@ class VN {
     'error': 'Lỗi',
   };
 
+  /// "Đã tải lên xong — N/N ảnh" — terminal success summary shown when every
+  /// photo in the batch uploaded without errors (AC6). DG-333 Phase 6.
+  static String photoUploadComplete(int total) =>
+      'Đã tải lên xong — $total/$total ảnh';
+
+  /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
+  /// batch finished but some photos failed (AC6). DG-333 Phase 6.
+  static String photoUploadCompleteWithErrors(
+          int done, int failed, int total) =>
+      'Đã tải lên xong — $done/$total ảnh ($failed lỗi)';
+
   // ── Markup (trưng bày) ──────────────────────────────────────────────────
   /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
   /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
