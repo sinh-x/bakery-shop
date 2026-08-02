@@ -804,6 +804,12 @@ SEED_CHART_OF_ACCOUNTS = [
     # Assets
     ("1000", "Tài sản", "asset", None),
     ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
+    # DG-330 Phase 1: cash sub-accounts under 1100. 1101 is the cash physically
+    # in the POS drawer (used by all cash that touches the drawer — cash sales,
+    # cash expenses, drawer ops); 1102 is cash the owner holds personally.
+    # INSERT OR IGNORE seeding keeps this idempotent on re-migration.
+    ("1101", "Tiền mặt tại quầy", "asset", "1100"),
+    ("1102", "Tiền mặt chủ sở hữu", "asset", "1100"),
     ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
     # DG-244 Phase 4: distinct bank sub-accounts under 1200 for payment
     # transaction routing. The expense flow still maps both VCB labels to
@@ -903,14 +909,20 @@ INVENTORY_PURCHASE_CATEGORIES = {
 }
 
 EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
-    "Shop tiền mặt": "1100",
+    # DG-330 Phase 1: split "Shop tiền mặt" into drawer cash (1101) and owner
+    # cash (1102). Cash expenses paid from the drawer credit 1101; cash paid
+    # from the owner's personal holdings credit 1102.
+    "Tiền mặt tại quầy": "1101",
+    "Tiền mặt chủ sở hữu": "1102",
     "TK Phượng VCB": "1210",
     "TK Ân VCB": "1220",
     "Nhân viên ứng trước": "2300",
 }
 
 PAYMENT_METHOD_TO_ASSET_CODE = {
-    "cash": "1100",
+    # DG-330 Phase 1: cash now routes to 1101 (Tiền mặt tại quầy) so the cash
+    # physically in the POS drawer is tracked separately from main 1100.
+    "cash": "1101",
     "card": "1100",
     "transfer": "1200",
 }

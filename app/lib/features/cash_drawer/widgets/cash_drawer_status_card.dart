@@ -81,6 +81,17 @@ class CashDrawerStatusCard extends StatelessWidget {
                 ),
               ],
             ),
+            // Phase 4.1 F7: show the 1101 journal balance as an additional
+            // row below the expected balance. The journal balance may
+            // differ from the computed expected balance between a mutation
+            // and the next read; surfacing both supports reconciliation.
+            if (drawer.accountingBalance1101 > 0) ...[
+              const SizedBox(height: 4),
+              _BalanceRow(
+                label: VN.cashDrawerReferenceBalance,
+                value: drawer.accountingBalance1101,
+              ),
+            ],
           ],
         ),
       ),

@@ -691,7 +691,8 @@ class VN {
 
   // Payment sources
   static const expensePaymentSourceLabel = 'Nguồn tiền chi';
-  static const paymentSourceShopCash = 'Shop tiền mặt';
+  static const paymentSourceDrawerCash = 'Tiền mặt tại quầy';
+  static const paymentSourceOwnerCash = 'Tiền mặt chủ sở hữu';
   static const paymentSourcePhuongVCB = 'TK Phượng VCB';
   static const paymentSourceAnVCB = 'TK Ân VCB';
   static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
@@ -1004,7 +1005,7 @@ class VN {
   // Cash drawer (DG-324) — labels for the daily cash drawer feature.
   // Kept alongside the accounting source-type labels because the drawer
   // source types extend the journal source-type vocabulary below.
-  static const cashDrawerTitle = 'Quỹ tiền mặt';
+  static const cashDrawerTitle = 'Tiền tại quầy';
   static const cashDrawerOpen = 'Mở quỹ';
   static const cashDrawerClose = 'Đóng quỹ';
   static const cashDrawerCashIn = 'Cho tiền vào quỹ';
@@ -1041,6 +1042,72 @@ class VN {
       'Bạn có muốn mang sang hôm nay không?';
   static const cashDrawerCarryOverAccept = 'Mang sang';
   static const cashDrawerCarryOverDecline = 'Không mang sang';
+
+  /// DG-330: transfer proposal when opening balance < 1101 reference.
+  static const cashDrawerTransferTitle = 'Chuyển tiền thừa vào quỹ chủ';
+  static const cashDrawerTransferQuestion =
+      'Bạn có muốn chuyển số tiền thừa vào Tiền mặt chủ sở hữu?';
+  static const cashDrawerTransferAccept = 'Chuyển';
+  static const cashDrawerTransferDeclineBlocked =
+      'Không thể mở quỹ khi có chênh lệch âm chưa giải trình. '
+      'Vui lòng chọn "Chuyển" hoặc liên hệ Kế toán.';
+
+  /// DG-330: stock reconciliation confirmation when opening balance > 1101.
+  static const cashDrawerStockReconTitle = 'Đối chiếu kho hàng';
+  static const cashDrawerStockReconQuestion =
+      'Bạn đã đối chiếu kho hàng POS chưa? Tiền thừa đến từ bán hàng?';
+  static const cashDrawerStockReconAccept = 'Bán hàng';
+  static const cashDrawerStockReconDecline = 'Chưa';
+  static const cashDrawerExcessOwnerCapital = 'Chủ cho thêm vốn';
+
+  /// DG-330: unidentified sale option after stock reconciliation.
+  static const cashDrawerUnidentifiedSaleTitle = 'Doanh thu chưa xác định';
+  static const cashDrawerUnidentifiedSaleQuestion =
+      'Ghi nhận thành doanh thu chưa xác định với 50% giá vốn để dễ truy vết sau này?';
+  static const cashDrawerUnidentifiedSaleAccept = 'Ghi nhận';
+  static const cashDrawerUnidentifiedSaleDecline = 'Bỏ qua';
+
+  /// DG-330: reference balance label in open dialog.
+  static const cashDrawerReferenceBalance = 'Số dư kế toán 1101';
+
+  /// DG-331 FR9: label for the previous close counted amount shown in the
+  /// open dialog as a second reference point ("Số dư sau khi đóng quỹ lần
+  /// trước"). Follows the 1101 reference balance line.
+  static const cashDrawerPreviousCloseBalance = 'Số dư sau khi đóng quỹ lần trước';
+
+  /// Phase 4.1 F5/F6: "current balance" helper shown in the cash-in and
+  /// cash-out dialogs so the owner knows how much is already in the drawer.
+  static const cashDrawerCurrentBalance = 'Số dư hiện tại';
+
+  /// DG-331: close surplus confirmation dialog labels. Shown when closing
+  /// the drawer with counted > expected and the surplus has not yet been
+  /// confirmed.
+  static const cashDrawerCloseSurplusTitle = 'Xác nhận chênh lệch thừa';
+  static const cashDrawerCloseSurplusQuestion =
+      'Số tiền đếm được lớn hơn số dư dự kiến. Chủ thêm tiền mặt hay ghi nhận doanh thu chưa xác định?';
+  static const cashDrawerCloseSurplusOwnerCash = 'Chủ thêm tiền mặt';
+  static const cashDrawerCloseSurplusUnidentifiedSale = 'Doanh thu chưa xác định';
+
+  /// DG-331: close shortage confirmation dialog labels. Shown when closing
+  /// the drawer with counted < expected and the shortage has not yet been
+  /// confirmed.
+  static const cashDrawerCloseShortageTitle = 'Xác nhận chênh lệch thiếu';
+  static const cashDrawerCloseShortageQuestion =
+      'Số tiền đếm được nhỏ hơn số dư dự kiến. Chủ rút tiền hay ghi nhận lỗ vốn chủ sở hữu?';
+  static const cashDrawerCloseShortageOwnerWithdraw = 'Chủ rút tiền';
+  static const cashDrawerCloseShortageEquityLoss = 'Lỗ vốn chủ sở hữu';
+
+  /// Cash-in source / cash-out destination dropdown labels (DG-330 Phase 8).
+  static const cashDrawerSourceLabel = 'Nguồn tiền vào';
+  static const cashDrawerDestinationLabel = 'Đích tiền ra';
+  static const cashDrawerSourceOwner = 'Tiền mặt chủ sở hữu';
+  static const cashDrawerSourceEmployee = 'Nhân viên';
+  static const cashDrawerSourceEquity = 'Vốn chủ sở hữu';
+  static const cashDrawerDestinationOwner = 'Tiền mặt chủ sở hữu';
+  static const cashDrawerDestinationEmployee = 'Nhân viên ứng trước';
+  static const cashDrawerStaffPickerLabel = 'Chọn nhân viên';
+  static const cashDrawerStaffPickerHint = 'Chọn nhân viên';
+  static const cashDrawerStaffRequired = 'Vui lòng chọn nhân viên';
 
   /// Cash-drawer journal source types (extend the accounting source-type
   /// vocabulary) — used by the journal filter and drawer movement history.

@@ -1,4 +1,4 @@
-/// Cash drawer model (DG-324 Phase 4).
+/// Cash drawer model (DG-324 Phase 2/6).
 ///
 /// Mirrors the JSON returned by the cash-drawer backend API
 /// (see `src/baker/api/cash_drawer.py` and `CashDrawer.to_api_dict`):
@@ -16,6 +16,7 @@
 ///     "countedAmount": null,
 ///     "discrepancy": null,
 ///     "expectedBalance": 1000000,
+///     "accountingBalance1101": 1000000, // optional, status only
 ///     "journalEntry": { ... } // optional, only on mutation responses
 ///   }
 ///
@@ -51,6 +52,13 @@ class CashDrawer {
   /// computes it; we do not recompute on the client to avoid drift).
   final int expectedBalance;
 
+  /// Phase 4.1 F2: the 1101 (Cash in Drawer) journal account balance from
+  /// `GET /api/cash-drawer/status`. Surfaced for reconciliation alongside
+  /// the computed [expectedBalance]; the two should match while the drawer
+  /// is open. Defaults to 0 when the backend omits the field (older
+  /// responses, history rows).
+  final int accountingBalance1101;
+
   /// Optional journal entry returned by mutation endpoints (open, cash-in,
   /// cash-out, close-with-discrepancy). Null for the status/history GETs.
   final JournalEntry? journalEntry;
@@ -68,6 +76,7 @@ class CashDrawer {
     this.countedAmount,
     this.discrepancy,
     required this.expectedBalance,
+    this.accountingBalance1101 = 0,
     this.journalEntry,
   });
 
@@ -96,6 +105,8 @@ class CashDrawer {
       countedAmount: (json['countedAmount'] as num?)?.toInt(),
       discrepancy: (json['discrepancy'] as num?)?.toInt(),
       expectedBalance: (json['expectedBalance'] as num?)?.toInt() ?? 0,
+      accountingBalance1101:
+          (json['accountingBalance1101'] as num?)?.toInt() ?? 0,
       journalEntry: journalJson is Map<String, dynamic>
           ? JournalEntry.fromJson(journalJson)
           : null,
@@ -115,6 +126,7 @@ class CashDrawer {
         'countedAmount': countedAmount,
         'discrepancy': discrepancy,
         'expectedBalance': expectedBalance,
+        'accountingBalance1101': accountingBalance1101,
         if (journalEntry != null) 'journalEntry': journalEntry!.toJson(),
       };
 

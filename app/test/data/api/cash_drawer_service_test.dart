@@ -80,6 +80,10 @@ void main() {
         'openingBalance': 1000000,
         'note': 'mở ca sáng',
         'carryOverConfirmed': false,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
       });
       expect(drawer.id, '1');
       expect(drawer.openingBalance, 1000000);
@@ -108,6 +112,10 @@ void main() {
         'openingBalance': 1550000,
         'note': 'mang sang',
         'carryOverConfirmed': true,
+        'transferConfirmed': false,
+        'stockReconciliationConfirmed': false,
+        'unidentifiedSaleConfirmed': false,
+        'ownerCapitalConfirmed': false,
       });
     });
 
@@ -204,7 +212,11 @@ void main() {
       final drawer = await service.cashIn(amount: 200000, note: 'thêm lẻ');
 
       expect(interceptor.lastPath, '/api/cash-drawer/cash-in');
-      expect(interceptor.lastBody, {'amount': 200000, 'note': 'thêm lẻ'});
+      expect(interceptor.lastBody, {
+        'amount': 200000,
+        'note': 'thêm lẻ',
+        'source': 'equity',
+      });
       expect(drawer.expectedBalance, 1200000);
       expect(drawer.journalEntry!.sourceType, 'cash_drawer_cash_in');
     });
@@ -224,7 +236,11 @@ void main() {
       final drawer = await service.cashOut(amount: 100000);
 
       expect(interceptor.lastPath, '/api/cash-drawer/cash-out');
-      expect(interceptor.lastBody, {'amount': 100000, 'note': ''});
+      expect(interceptor.lastBody, {
+        'amount': 100000,
+        'note': '',
+        'destination': 'owner',
+      });
       expect(drawer.expectedBalance, 900000);
     });
 

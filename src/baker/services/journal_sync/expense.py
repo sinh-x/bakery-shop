@@ -31,11 +31,14 @@ from baker.services.journal_sync._common import (
 )
 
 
-# FR6 (DG-324 Phase 3): expense ``payment_source`` value whose asset code is
-# the on-hand cash account (1100). Expenses paid from this source draw physical
-# cash from the drawer and must auto-link to the active day's drawer.
-CASH_EXPENSE_PAYMENT_SOURCE = "Shop tiền mặt"
-CASH_ASSET_CODE = "1100"
+# FR6 (DG-324 Phase 3, updated by DG-330 Phase 4.4): the on-hand cash account
+# whose asset code identifies drawer cash. Expenses paid from the source that
+# maps to this code draw physical cash from the drawer and must auto-link to
+# the active day's drawer. DG-330 split the legacy "Shop tiền mặt" (1100) into
+# two payment sources — "Tiền mặt tại quầy" (1101, drawer cash) and "Tiền mặt
+# chủ sở hữu" (1102, owner cash). Only 1101 expenses link to the drawer; 1102
+# expenses do not, because owner-held cash is not physically in the POS drawer.
+CASH_ASSET_CODE = "1101"
 
 
 def _resolve_expense_account_code(data: dict) -> Optional[str]:
@@ -181,12 +184,15 @@ def _build_expense_journal_lines(
     return description, lines
 
 def _is_cash_expense(data: dict[str, Any]) -> bool:
-    """FR6 (DG-324 Phase 3): return True iff the expense pays from on-hand cash.
+    """FR6 (DG-324 Phase 3, updated by DG-330 Phase 4.4): return True iff the
+    expense pays from on-hand drawer cash.
 
     Debt expenses (``payment_method == 'Nợ'``) credit Accounts Payable, not
     cash, so they never link. Staff-advance expenses credit a per-staff 2300
     sub-account, also not cash. Only expenses whose ``payment_source`` maps to
-    the on-hand cash asset code (1100) draw from the drawer.
+    the drawer-cash asset code (1101 — "Tiền mặt tại quầy") draw from the
+    drawer and link to it. The owner-cash source "Tiền mặt chủ sở hữu" (1102)
+    does not link because that cash is not physically held in the POS drawer.
     """
     payment_method = data.get("payment_method", "")
     if payment_method == EXPENSE_DEBT_PAYMENT_METHOD:

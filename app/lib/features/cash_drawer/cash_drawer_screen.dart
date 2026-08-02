@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/cash_drawer_service.dart';
+import '../../data/api/staff_service.dart';
 import '../../data/models/cash_drawer.dart';
 import '../../providers/cash_drawer_provider.dart';
+import '../../providers/staff_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
@@ -61,15 +65,36 @@ class CashDrawerScreen extends ConsumerStatefulWidget {
 class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  // DG-331 FR11/AC11: polls the cash drawer status every 30 seconds while
+  // the screen is visible. Cancelled in [dispose] to avoid firing after the
+  // widget is gone.
+  Timer? _statusPollTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // DG-331 FR10/AC10: auto-refresh the cash drawer status on entering the
+    // screen so the "Tiền tại quầy" amount is current (not a stale cache).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(cashDrawerStatusProvider);
+      ref.invalidate(cashDrawerHistoryProvider);
+    });
+    // DG-331 FR11/AC11: poll every 30 seconds while the screen is visible.
+    _statusPollTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) {
+        if (!mounted) return;
+        ref.invalidate(cashDrawerStatusProvider);
+      },
+    );
   }
 
   @override
   void dispose() {
+    // DG-331 FR11/AC11: cancel the polling timer when the screen is removed.
+    _statusPollTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -80,6 +105,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     final historyAsync =
         ref.watch(cashDrawerHistoryProvider(const CashDrawerHistoryFilter()));
     final mutating = ref.watch(_mutationInProgressProvider);
+    final accountingBalance1101Async =
+        ref.watch(cashDrawerAccountingBalance1101Provider);
+    final previousCloseAsync = ref.watch(cashDrawerPreviousCloseProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -109,6 +137,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           _ActiveTab(
             statusAsync: statusAsync,
             mutating: mutating,
+            accountingBalance1101Async: accountingBalance1101Async,
+            previousCloseAsync: previousCloseAsync,
             onOpen: () => _handleOpen(context),
             onCashIn: () => _handleCashIn(context),
             onCashOut: () => _handleCashOut(context),
@@ -121,44 +151,104 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleOpen(BuildContext context) async {
-    final result = await showOpenDrawerDialog(context);
+    final previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
+    final accountingBalance1101 =
+        await ref.read(cashDrawerAccountingBalance1101Provider.future);
+    final result = await showOpenDrawerDialog(
+      context,
+      referenceBalance: accountingBalance1101,
+      previousCloseCountedAmount: previousClose,
+    );
     if (result == null || !context.mounted) return;
-    // FR9: the first open attempt may raise a carry-over proposal (HTTP 409)
-    // when the previous day's drawer is still open. We try the open outside
-    // the mutation notifier so we can intercept the proposal, surface it to
-    // the owner, and re-issue the request with `carryOverConfirmed`.
-    try {
-      await ref.read(cashDrawerServiceProvider).openDrawer(
-            openingBalance: result.amount,
-            note: result.note,
+
+    bool carryOverConfirmed = false;
+    bool transferConfirmed = false;
+    bool stockReconciliationConfirmed = false;
+    bool unidentifiedSaleConfirmed = false;
+    bool ownerCapitalConfirmed = false;
+
+    while (true) {
+      try {
+        await ref.read(cashDrawerServiceProvider).openDrawer(
+              openingBalance: result.amount,
+              note: result.note,
+              carryOverConfirmed: carryOverConfirmed,
+              transferConfirmed: transferConfirmed,
+              stockReconciliationConfirmed: stockReconciliationConfirmed,
+              unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
+              ownerCapitalConfirmed: ownerCapitalConfirmed,
+            );
+        if (!context.mounted) return;
+        _onOpenSuccess(context);
+        return;
+      } on CarryOverProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCarryOverConfirmationDialog(
+          context,
+          carryOverAmount: e.amount,
+        );
+        if (decision == null || !context.mounted) return;
+        carryOverConfirmed = true;
+      } on TransferProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showTransferConfirmationDialog(
+          context,
+          referenceBalance: e.referenceBalance,
+          openingBalance: e.openingBalance,
+          excess: e.excess,
+        );
+        if (decision == null || !context.mounted) return;
+        transferConfirmed = true;
+        break;
+      } on ExcessProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showStockReconciliationDialog(
+          context,
+          referenceBalance: e.referenceBalance,
+          openingBalance: e.openingBalance,
+          excess: e.excess,
+        );
+        if (decision == null || !context.mounted) return;
+        if (decision == StockReconDecision.accept) {
+          stockReconciliationConfirmed = true;
+          final saleDecision = await showUnidentifiedSaleDialog(
+            context,
+            excess: e.excess,
           );
-      if (!context.mounted) return;
-      _onOpenSuccess(context);
-    } on CarryOverProposalException catch (e) {
-      if (!context.mounted) return;
-      final decision = await showCarryOverConfirmationDialog(
-        context,
-        carryOverAmount: e.amount,
-      );
-      if (decision == null || !context.mounted) return;
-      // CQ-4: `carryOverConfirmed` confirms the owner is aware of the
-      // pending carry-over — it must be `true` for both accept and decline
-      // decisions. Sending `false` causes the backend to treat the request
-      // as unconfirmed and re-emit a 409, re-looping the proposal dialog.
+          if (saleDecision == null || !context.mounted) return;
+          if (saleDecision == UnidentifiedSaleDecision.accept) {
+            unidentifiedSaleConfirmed = true;
+          }
+        } else if (decision == StockReconDecision.ownerCapital) {
+          ownerCapitalConfirmed = true;
+        }
+        break;
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+        return;
+      }
+    }
+    // Re-issue the final call with confirmation flags (outside the loop
+    // for transfer/excess — these don't loop like carry-over).
+    try {
       await ref.read(_mutationInProgressProvider.notifier).run(
             context,
             () => ref.read(cashDrawerServiceProvider).openDrawer(
                   openingBalance: result.amount,
                   note: result.note,
-                  carryOverConfirmed: true,
+                  carryOverConfirmed: carryOverConfirmed,
+                  transferConfirmed: transferConfirmed,
+                  stockReconciliationConfirmed: stockReconciliationConfirmed,
+                  unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
+                  ownerCapitalConfirmed: ownerCapitalConfirmed,
                 ),
             VN.cashDrawerOpenSuccess,
             ref,
           );
     } catch (e) {
-      // CQ-5: surface non-carry-over errors (409 already-active, network
-      // failures, etc.) via the snackbar instead of letting them escape
-      // the error UI silently.
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${VN.apiError}: $e')),
@@ -177,26 +267,50 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleCashIn(BuildContext context) async {
-    final result = await showCashInDialog(context);
+    final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
+    // Phase 4.1 F5: show the current expected balance as helper text so the
+    // owner knows how much is already in the drawer.
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    final expectedBalance = drawer?.expectedBalance ?? 0;
+    final result = await showCashInDialog(
+      context,
+      staff: staff,
+      expectedBalance: expectedBalance,
+    );
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .cashIn(amount: result.amount, note: result.note),
+          () => ref.read(cashDrawerServiceProvider).cashIn(
+                amount: result.amount,
+                note: result.note,
+                source: result.source ?? 'equity',
+                staffName: result.staffName,
+              ),
           VN.cashDrawerCashInSuccess,
           ref,
         );
   }
 
   Future<void> _handleCashOut(BuildContext context) async {
-    final result = await showCashOutDialog(context);
+    final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
+    // Phase 4.1 F6: show the current expected balance as helper text so the
+    // owner knows how much they can withdraw.
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    final expectedBalance = drawer?.expectedBalance ?? 0;
+    final result = await showCashOutDialog(
+      context,
+      staff: staff,
+      expectedBalance: expectedBalance,
+    );
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .cashOut(amount: result.amount, note: result.note),
+          () => ref.read(cashDrawerServiceProvider).cashOut(
+                amount: result.amount,
+                note: result.note,
+                destination: result.destination ?? 'owner',
+                staffName: result.staffName,
+              ),
           VN.cashDrawerCashOutSuccess,
           ref,
         );
@@ -205,19 +319,79 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   Future<void> _handleClose(BuildContext context) async {
     final drawer = ref.read(cashDrawerStatusProvider).value;
     if (drawer == null) return;
+    // Phase 4.1 F4: surface the 1101 accounting balance below the expected
+    // balance for reconciliation reference.
     final result = await showCloseDrawerDialog(
       context,
       expectedBalance: drawer.expectedBalance,
+      accountingBalance1101: drawer.accountingBalance1101,
     );
     if (result == null || !context.mounted) return;
-    await ref.read(_mutationInProgressProvider.notifier).run(
-          context,
-          () => ref
-              .read(cashDrawerServiceProvider)
-              .closeDrawer(countedAmount: result.amount, note: result.note),
-          VN.cashDrawerCloseSuccess,
-          ref,
+
+    // DG-331 AC9: close may return a 409 surplus/shortage proposal instead
+    // of 200. The mutation notifier's generic catch-all swallows typed
+    // exceptions, so the first call goes directly to the service. The
+    // typed `on` handlers surface the confirmation dialog. After the owner
+    // chooses the nature of the discrepancy, the second call goes through
+    // the mutation notifier so the success snackbar + invalidation fire.
+    bool surplusConfirmed = false;
+    String? surplusSource;
+    bool shortageConfirmed = false;
+    String? shortageSource;
+    while (true) {
+      try {
+        final service = ref.read(cashDrawerServiceProvider);
+        final drawer = await service.closeDrawer(
+          countedAmount: result.amount,
+          note: result.note,
+          surplusConfirmed: surplusConfirmed,
+          surplusSource: surplusSource,
+          shortageConfirmed: shortageConfirmed,
+          shortageSource: shortageSource,
         );
+        // Confirmed close succeeded — show success via the notifier pattern.
+        ref.invalidate(cashDrawerStatusProvider);
+        ref.invalidate(cashDrawerHistoryProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: const Text(VN.cashDrawerCloseSuccess)),
+          );
+        }
+        return;
+      } on CloseSurplusProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCloseSurplusDialog(
+          context,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          surplus: e.surplus,
+        );
+        if (decision == null || !context.mounted) return;
+        surplusConfirmed = true;
+        surplusSource = decision == CloseSurplusDecision.ownerCash
+            ? 'owner_cash'
+            : 'unidentified_sale';
+      } on CloseShortageProposalException catch (e) {
+        if (!context.mounted) return;
+        final decision = await showCloseShortageDialog(
+          context,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          shortage: e.shortage,
+        );
+        if (decision == null || !context.mounted) return;
+        shortageConfirmed = true;
+        shortageSource = decision == CloseShortageDecision.ownerWithdraw
+            ? 'owner_withdraw'
+            : 'equity_loss';
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+        return;
+      }
+    }
   }
 }
 
@@ -225,6 +399,8 @@ class _ActiveTab extends StatelessWidget {
   const _ActiveTab({
     required this.statusAsync,
     required this.mutating,
+    required this.accountingBalance1101Async,
+    required this.previousCloseAsync,
     required this.onOpen,
     required this.onCashIn,
     required this.onCashOut,
@@ -233,6 +409,8 @@ class _ActiveTab extends StatelessWidget {
 
   final AsyncValue<CashDrawer?> statusAsync;
   final bool mutating;
+  final AsyncValue<int> accountingBalance1101Async;
+  final AsyncValue<int?> previousCloseAsync;
   final Future<void> Function() onOpen;
   final Future<void> Function() onCashIn;
   final Future<void> Function() onCashOut;
@@ -257,7 +435,14 @@ class _ActiveTab extends StatelessWidget {
       ),
       data: (drawer) {
         if (drawer == null) {
-          return _EmptyActiveView(onOpen: onOpen, mutating: mutating);
+          final balance1101 = accountingBalance1101Async.value ?? 0;
+          final previousClose = previousCloseAsync.value;
+          return _EmptyActiveView(
+            onOpen: onOpen,
+            mutating: mutating,
+            accountingBalance1101: balance1101,
+            previousCloseCountedAmount: previousClose,
+          );
         }
         return ListView(
           children: [
@@ -280,10 +465,17 @@ class _ActiveTab extends StatelessWidget {
 }
 
 class _EmptyActiveView extends StatelessWidget {
-  const _EmptyActiveView({required this.onOpen, required this.mutating});
+  const _EmptyActiveView({
+    required this.onOpen,
+    required this.mutating,
+    required this.accountingBalance1101,
+    required this.previousCloseCountedAmount,
+  });
 
   final Future<void> Function() onOpen;
   final bool mutating;
+  final int accountingBalance1101;
+  final int? previousCloseCountedAmount;
 
   @override
   Widget build(BuildContext context) {
@@ -296,6 +488,20 @@ class _EmptyActiveView extends StatelessWidget {
             const Icon(Icons.lock_open_outlined, size: 48),
             const SizedBox(height: 12),
             const Text(VN.cashDrawerNoActive),
+            if (accountingBalance1101 > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${VN.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+            if (previousCloseCountedAmount != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${VN.cashDrawerPreviousCloseBalance}: ${formatVND(previousCloseCountedAmount!.toDouble())}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: mutating ? null : onOpen,

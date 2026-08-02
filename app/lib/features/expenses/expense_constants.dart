@@ -25,7 +25,8 @@ const expensePaymentMethods = <String>[
 ];
 
 const expensePaymentSources = <String>[
-  VN.paymentSourceShopCash,
+  VN.paymentSourceDrawerCash,
+  VN.paymentSourceOwnerCash,
   VN.paymentSourcePhuongVCB,
   VN.paymentSourceAnVCB,
   VN.paymentSourceStaffAdvance,

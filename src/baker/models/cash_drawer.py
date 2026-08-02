@@ -160,12 +160,17 @@ class CashDrawer:
         expected = self.expected_balance()
         discrepancy = int(counted_amount) - expected
         closed_ts = closed_at or now_utc()
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE cash_drawer "
             "SET status = 'closed', closed_at = ?, counted_amount = ?, discrepancy = ? "
-            "WHERE id = ?",
+            "WHERE id = ? AND status = 'open'",
             (closed_ts, int(counted_amount), discrepancy, self.id),
         )
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"CashDrawer.close(): expected 1 row updated, got "
+                f"{cursor.rowcount} (drawer id={self.id} not open)"
+            )
         self.status = "closed"
         self.closed_at = closed_ts
         self.counted_amount = int(counted_amount)
@@ -198,6 +203,14 @@ class CashDrawer:
         self.counted_amount = expected
         self.discrepancy = 0
         return 0
+
+    @staticmethod
+    def get_most_recent_closed(conn) -> "CashDrawer | None":
+        row = conn.execute(
+            "SELECT * FROM cash_drawer WHERE status = 'closed' "
+            "ORDER BY closed_at DESC LIMIT 1"
+        ).fetchone()
+        return CashDrawer.from_row(row) if row else None
 
     @staticmethod
     def get_stale_open_before(conn, *, before_iso: str) -> list["CashDrawer"]:

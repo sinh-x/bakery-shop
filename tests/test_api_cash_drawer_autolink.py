@@ -48,7 +48,7 @@ def _create_txn(client, ref, amount=100000, **kwargs):
 
 
 def _create_expense(client, amount=50000, category="Vận chuyển",
-                    payment_source="Shop tiền mặt", paid_by_name="Phượng",
+                    payment_source="Tiền mặt tại quầy", paid_by_name="Phượng",
                     vendor="Chợ", note="ghi chu", summary="Chi phí test",
                     payment_method="Tiền mặt"):
     resp = client.post("/api/events", json={
@@ -244,7 +244,7 @@ def test_cash_expense_links_to_active_drawer_ac5(api_client):
     drawer = _open_drawer(api_client, opening=1_000_000)
     drawer_id = int(drawer["id"])
     ev = _create_expense(api_client, amount=50_000,
-                         payment_source="Shop tiền mặt")
+                         payment_source="Tiền mặt tại quầy")
     event_id = int(ev["id"])
     with get_db() as conn:
         assert _event_cash_drawer_id(conn, event_id) == drawer_id
@@ -292,7 +292,7 @@ def test_debt_expense_not_linked(api_client):
 def test_cash_expense_without_active_drawer_not_linked(api_client):
     """No active drawer → cash expense keeps NULL cash_drawer_id (no error)."""
     ev = _create_expense(api_client, amount=50_000,
-                         payment_source="Shop tiền mặt")
+                         payment_source="Tiền mặt tại quầy")
     with get_db() as conn:
         assert _event_cash_drawer_id(conn, int(ev["id"])) is None
         assert CashDrawer.get_active(conn) is None
@@ -303,7 +303,7 @@ def test_update_cash_expense_amount_adjusts_cash_expenses(api_client):
     drawer = _open_drawer(api_client, opening=1_000_000)
     drawer_id = int(drawer["id"])
     ev = _create_expense(api_client, amount=50_000,
-                         payment_source="Shop tiền mặt")
+                         payment_source="Tiền mặt tại quầy")
     event_id = int(ev["id"])
     with get_db() as conn:
         assert _drawer(conn, drawer_id).cash_expenses == 50_000
@@ -313,7 +313,7 @@ def test_update_cash_expense_amount_adjusts_cash_expenses(api_client):
             "amount_vnd": 120_000,
             "category": "Vận chuyển",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "ghi chu",
             "paid_by_name": "Phượng",
@@ -331,7 +331,7 @@ def test_update_expense_to_bank_unlinks(api_client):
     drawer = _open_drawer(api_client, opening=1_000_000)
     drawer_id = int(drawer["id"])
     ev = _create_expense(api_client, amount=60_000,
-                         payment_source="Shop tiền mặt")
+                         payment_source="Tiền mặt tại quầy")
     event_id = int(ev["id"])
     with get_db() as conn:
         assert _drawer(conn, drawer_id).cash_expenses == 60_000
@@ -358,7 +358,7 @@ def test_delete_cash_expense_reverses_cash_expenses(api_client):
     drawer = _open_drawer(api_client, opening=1_000_000)
     drawer_id = int(drawer["id"])
     ev = _create_expense(api_client, amount=70_000,
-                         payment_source="Shop tiền mặt")
+                         payment_source="Tiền mặt tại quầy")
     event_id = int(ev["id"])
     with get_db() as conn:
         assert _drawer(conn, drawer_id).cash_expenses == 70_000
@@ -380,7 +380,7 @@ def test_expected_balance_includes_cash_sales_and_cash_expenses(api_client):
     _open_drawer(api_client, opening=1_000_000)
     order = _create_order(api_client)
     _create_txn(api_client, order["orderRef"], amount=500_000, method="cash")
-    _create_expense(api_client, amount=50_000, payment_source="Shop tiền mặt")
+    _create_expense(api_client, amount=50_000, payment_source="Tiền mặt tại quầy")
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
     body = resp.json()
@@ -396,7 +396,7 @@ def test_autolink_journal_entries_still_balance(api_client):
     _open_drawer(api_client, opening=1_000_000)
     order = _create_order(api_client)
     _create_txn(api_client, order["orderRef"], amount=200_000, method="cash")
-    _create_expense(api_client, amount=30_000, payment_source="Shop tiền mặt")
+    _create_expense(api_client, amount=30_000, payment_source="Tiền mặt tại quầy")
 
     with get_db() as conn:
         for source_type in ("payment_transaction", "expense"):

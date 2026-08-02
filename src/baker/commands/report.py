@@ -1097,7 +1097,7 @@ def order_status_cmd(since, until):
 # 1200 (the parent bank account, used by the expense flow and owner-capital
 # transfers) is included alongside the DG-244 Phase 4 bank sub-accounts so the
 # report matches the cash-flow integrity check in accounting_validation.py.
-CASH_ACCOUNT_CODES = ("1100", "1200", "1210", "1220", "1290")
+CASH_ACCOUNT_CODES = ("1100", "1101", "1102", "1200", "1210", "1220", "1290")
 
 # Fixed-asset account seeded by DG-300 Phase 1 — investing-activity cash flows
 # land on this account.
