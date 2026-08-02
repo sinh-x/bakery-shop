@@ -664,17 +664,18 @@ def test_history_supports_pagination(api_client):
     for i in range(3):
         opening = 100_000 * (i + 1)
         # First open (100k): no prior 1101 balance → no gate
-        # Second open (200k): > 1101 balance (100k) → excess gate → stockRecon+unidSale
-        # Third open (300k): < 1101 balance after second open (100k+200k+100k=400k) → transfer gate
+        # Second open (200k): > 1101 balance (100k) → excess gate → ownerCapital
+        # Third open (300k): > 1101 balance (200k now, not 400k like before fix)
+        #   → excess gate → stockRecon+unidSale
         payload: dict = {"openingBalance": opening}
-        # DG-330: when opening > reference 1101 balance, confirm stock recon
         if i == 1:
+            payload["ownerCapitalConfirmed"] = True
+        elif i == 2:
             payload["stockReconciliationConfirmed"] = True
             payload["unidentifiedSaleConfirmed"] = True
-        elif i == 2:
-            payload["transferConfirmed"] = True
-        api_client.post("/api/cash-drawer/open", json=payload)
-        api_client.post("/api/cash-drawer/close", json={"countedAmount": 100_000 * (i + 1)})
+        open_resp = api_client.post("/api/cash-drawer/open", json=payload)
+        assert open_resp.status_code in (200, 201), open_resp.text
+        api_client.post("/api/cash-drawer/close", json={"countedAmount": opening})
 
     resp = api_client.get("/api/cash-drawer/history?limit=2&offset=0")
     assert resp.status_code == 200

@@ -435,13 +435,15 @@ def open_drawer(body: OpenDrawerRequest):
         drawer = CashDrawer(opened_at=now_utc(), opening_balance=opening)
         drawer.save(conn)
 
-        # DG-330: when opening balance < accounting 1101 reference, the excess
-        # moved from drawer to owner's cash (1102). Since 1101 already holds the
-        # reference balance from migration/prior entries, we only create the
-        # auto-transfer (DR 1102 / CR 1101 = excess). No open journal entry is
-        # created — the 1101 position was already established by prior entries
-        # and the auto-transfer adjusts it down to the opening balance.
-        # 1101 = reference - excess + 0 (no open DR) = opening.
+        # DG-330: 1101 already reflects prior activity (reference_balance).
+        # The open journal entry must only bridge the gap between the 1101
+        # reference and the requested opening balance, so that after the open
+        # the 1101 balance equals the drawer expected balance (NFR4).
+        #
+        #   opening < reference  → auto-transfer the excess to 1102 (CR 1101)
+        #   opening > reference  → DR 1101 for the delta (owner capital / new cash)
+        #   opening == reference → no journal entry (1101 already at target)
+        #   reference == 0       → DR 1101 for full opening (first open)
         auto_transfer = None
         if reference_balance > 0 and opening < reference_balance:
             excess = int(reference_balance - opening)
@@ -457,8 +459,32 @@ def open_drawer(body: OpenDrawerRequest):
                 amount=excess,
             )
             journal = None
+        elif reference_balance > 0 and opening > reference_balance:
+            # When the owner confirmed unidentified sale or owner capital,
+            # the dedicated sections below create the 1101 side of the entry
+            # with the correct source_type and description. Otherwise, record
+            # the delta as a plain equity injection.
+            if not body.unidentifiedSaleConfirmed and not body.ownerCapitalConfirmed:
+                delta = int(opening - reference_balance)
+                desc = (
+                    f"Mở quỹ tiền mặt: {opening} (chênh lệch tăng {delta})"
+                )
+                if body.note:
+                    desc += f" — {body.note}"
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["cash_drawer"],
+                    credit_account_id=accounts["equity"],
+                    amount=delta,
+                )
+            else:
+                journal = None
+        elif reference_balance > 0:
+            # opening == reference — no journal entry needed
+            journal = None
         else:
-            # Normal open — no prior 1101 adjustment needed.
             desc = f"Mở quỹ tiền mặt: {opening}"
             if body.note:
                 desc += f" — {body.note}"
