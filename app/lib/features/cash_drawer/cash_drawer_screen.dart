@@ -306,31 +306,35 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     );
     if (result == null || !context.mounted) return;
 
-    // DG-331 AC9: the first close attempt may raise a 409 surplus/shortage
-    // proposal. Loop so the owner can confirm the nature of the discrepancy
-    // and re-send the close with the matching confirmation flag + source.
-    // The loop runs at most twice: first call → 409 proposal, second call
-    // → confirmed close (or cancel). No carry-over style re-loop here — the
-    // close confirmation is a single round-trip per the plan.
+    // DG-331 AC9: close may return a 409 surplus/shortage proposal instead
+    // of 200. The mutation notifier's generic catch-all swallows typed
+    // exceptions, so the first call goes directly to the service. The
+    // typed `on` handlers surface the confirmation dialog. After the owner
+    // chooses the nature of the discrepancy, the second call goes through
+    // the mutation notifier so the success snackbar + invalidation fire.
     bool surplusConfirmed = false;
     String? surplusSource;
     bool shortageConfirmed = false;
     String? shortageSource;
     while (true) {
       try {
-        await ref.read(_mutationInProgressProvider.notifier).run(
-              context,
-              () => ref.read(cashDrawerServiceProvider).closeDrawer(
-                    countedAmount: result.amount,
-                    note: result.note,
-                    surplusConfirmed: surplusConfirmed,
-                    surplusSource: surplusSource,
-                    shortageConfirmed: shortageConfirmed,
-                    shortageSource: shortageSource,
-                  ),
-              VN.cashDrawerCloseSuccess,
-              ref,
-            );
+        final service = ref.read(cashDrawerServiceProvider);
+        final drawer = await service.closeDrawer(
+          countedAmount: result.amount,
+          note: result.note,
+          surplusConfirmed: surplusConfirmed,
+          surplusSource: surplusSource,
+          shortageConfirmed: shortageConfirmed,
+          shortageSource: shortageSource,
+        );
+        // Confirmed close succeeded — show success via the notifier pattern.
+        ref.invalidate(cashDrawerStatusProvider);
+        ref.invalidate(cashDrawerHistoryProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: const Text(VN.cashDrawerCloseSuccess)),
+          );
+        }
         return;
       } on CloseSurplusProposalException catch (e) {
         if (!context.mounted) return;
