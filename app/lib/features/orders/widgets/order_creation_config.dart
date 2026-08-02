@@ -35,7 +35,23 @@ class OrderCreationController {
   /// the configured [OrderCreateStateNotifier] and notifies the container.
   final void Function(int stage) goToStage;
 
-  const OrderCreationController({required this.goToStage});
+  /// Submits the wizard via the orchestrator's shared submission spine. The
+  /// stage-4 review widget's submit button invokes this so the host screen
+  /// does not need to reach into the orchestrator's state. Returns `true`
+  /// when the order was created and navigation fired.
+  final Future<bool> Function() submit;
+
+  /// Whether the shared submission spine is currently in progress. Stage 4
+  /// reads this to disable its submit button and show the spinner while the
+  /// orchestrator's `submitOrder` runs (mirrors the pre-refactor `_submitting`
+  /// flag on `order_create_screen.dart` and `_isProcessing` on POS).
+  final bool isSubmitting;
+
+  const OrderCreationController({
+    required this.goToStage,
+    required this.submit,
+    this.isSubmitting = false,
+  });
 }
 
 /// Context handed to workflow-specific submission hooks so they can run
@@ -45,8 +61,13 @@ class OrderCreationController {
 class SubmitHookContext {
   final OrderCreateState state;
   final WidgetRef ref;
+  final BuildContext context;
 
-  const SubmitHookContext({required this.state, required this.ref});
+  const SubmitHookContext({
+    required this.state,
+    required this.ref,
+    required this.context,
+  });
 }
 
 /// Result of [OrderCreationConfig.onBeforeSubmit]. Workflow-specific hooks
@@ -158,6 +179,15 @@ class OrderCreationConfig {
   /// POS pickup flags when entering stage 3).
   final void Function(int stage)? onStageChange;
 
+  /// Resolves the `createdBy` value sent to `OrderService.createOrder`.
+  ///
+  /// The shared submission spine does not know who the current staff member
+  /// is — that is a workflow/environment concern. Normal order resolves it
+  /// from `loggedByProvider`; POS does not set `createdBy` (matches the
+  /// pre-refactor POS behaviour). Returning an empty string omits the field
+  /// (see `OrderService.createOrder`).
+  final String Function(WidgetRef ref)? createdByResolver;
+
   /// Workflow-specific pre-submission hook (Phase 2, FR2/FR3/FR6/FR7).
   ///
   /// The orchestrator awaits this before calling `OrderService.createOrder`.
@@ -203,6 +233,7 @@ class OrderCreationConfig {
     required this.stageContainerBuilder,
     this.stageCount = 4,
     this.onStageChange,
+    this.createdByResolver,
     this.onBeforeSubmit,
     this.onAfterSubmit,
     this.onNavigateAfterSubmit,

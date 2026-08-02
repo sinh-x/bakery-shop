@@ -95,8 +95,11 @@ class _OrderCreationOrchestratorState
     if (target != null && s.canNavigateToStage(target)) _goToStage(target);
   }
 
-  OrderCreationController get _controller =>
-      OrderCreationController(goToStage: _goToStage);
+  OrderCreationController get _controller => OrderCreationController(
+        goToStage: _goToStage,
+        submit: submitOrder,
+        isSubmitting: _isSubmitting,
+      );
 
   List<Widget> _buildStageWidgets() {
     final ctx = context;
@@ -151,14 +154,15 @@ class _OrderCreationOrchestratorState
   }
 
   /// Persists the current wizard state to `orderDraftProvider` unless a
-  /// submission has already completed (`_submitted`) — in which case the
-  /// draft is cleared instead so a completed order does not re-hydrate.
+  /// submission has already completed (`_submitted`) — in which case this is
+  /// a no-op. The post-submit draft clear is owned by the workflow's
+  /// `onAfterSubmit` hook (run earlier in the submission spine), so re-clearing
+  /// here would modify a provider during `deactivate` (which runs inside a
+  /// build phase) and trigger a riverpod build-phase guard. Mirrors the
+  /// pre-refactor `order_create_screen._saveDraft` early-return.
   void _saveDraft() {
     if (!_config.enableDraft) return;
-    if (_submitted) {
-      ref.read(orderDraftProvider.notifier).clear();
-      return;
-    }
+    if (_submitted) return;
     final state = ref.read(_provider);
     final draft = OrderDraft(
       customerName: state.wizardData.customerName,
@@ -216,7 +220,7 @@ class _OrderCreationOrchestratorState
 
     setState(() => _isSubmitting = true);
     try {
-      final hookCtx = SubmitHookContext(state: state, ref: ref);
+      final hookCtx = SubmitHookContext(state: state, ref: ref, context: context);
       final prep = await _config.onBeforeSubmit?.call(hookCtx);
       final resolvedCustomerId = prep?.customerId ??
           state.wizardData.selectedCustomer?.id;
@@ -225,6 +229,11 @@ class _OrderCreationOrchestratorState
       final customerName = state.wizardData.customerName.isEmpty
           ? OrdersLabels.walkInCustomerFallback
           : state.wizardData.customerName;
+      // `createdBy` is workflow-supplied (normal order resolves it from
+      // `loggedByProvider`; POS leaves it empty to match pre-refactor
+      // behaviour). Resolved here so the shared spine stays the single
+      // `createOrder` call site.
+      final createdBy = _config.createdByResolver?.call(ref) ?? '';
 
       // Price floor enforcement (FR3/AC3): clamp selling price to the
       // assigned price for trưng bày markup items before submitting.
@@ -257,6 +266,7 @@ class _OrderCreationOrchestratorState
         source: state.source.isEmpty ? null : state.source,
         status: status,
         paymentMethod: paymentMethod,
+        createdBy: createdBy,
         latitude: state.latitude,
         longitude: state.longitude,
         googleMapsUrl: state.googleMapsUrl,

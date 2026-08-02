@@ -3,25 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/customer_service.dart';
-import '../../data/api/order_service.dart';
-import '../../data/api/work_item_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
-import '../../providers/order_providers.dart';
-import '../../shared/utils/api_error.dart';
-import '../../shared/utils/date_formatting.dart';
-import '../../shared/utils/delivery_helpers.dart';
+import '../../providers/order/order_draft_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'widgets/order_stage_indicator.dart';
-import 'widgets/gated_page_physics.dart';
-import 'widgets/order_wizard.dart';
-import 'utils/trung_bay_inventory_extensions.dart';
+import 'widgets/order_creation_config.dart';
+import 'widgets/order_creation_orchestrator.dart';
 import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
 import 'widgets/stage4_review_screen.dart';
 
+/// Normal order creation wizard.
+///
+/// Thin wrapper over [OrderCreationOrchestrator] (Phase 3 of DG-322). The
+/// orchestrator owns the stage shell, draft save/restore (FR6), swipe
+/// navigation, and the shared submission spine. This screen supplies the
+/// normal-order [OrderCreationConfig]:
+/// - PageView container (preserves swipe + animated stage transitions).
+/// - `enableDraft: true` / `enableCartSync: false` (FR6/FR7).
+/// - `onBeforeSubmit`: auto-create a customer when name+phone are present.
+/// - `onAfterSubmit`: clear draft, reset state, show success snackbar.
+/// - `onNavigateAfterSubmit`: `pushReplacement('/orders/{orderRef}')` — the
+///   FR2 fix so back from detail returns to the order list, not the empty
+///   creation screen.
+/// - `createdByResolver`: reads `loggedByProvider` (preserves pre-refactor
+///   `createdBy: staffName` behaviour).
 class OrderCreateScreen extends ConsumerStatefulWidget {
   const OrderCreateScreen({super.key});
 
@@ -31,20 +39,17 @@ class OrderCreateScreen extends ConsumerStatefulWidget {
 
 class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   late final PageController _pageController;
-  bool _submitting = false;
-  bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
-    _restoreDraft();
-  }
-
-  @override
-  void deactivate() {
-    _saveDraft();
-    super.deactivate();
+    // Sync the PageController's initial page with the draft-restored stage so
+    // the PageView opens on the right stage when a draft is hydrated by the
+    // orchestrator. The orchestrator owns the full restore; this only reads
+    // the persisted stage for initial-page placement.
+    final draft = ref.read(orderDraftProvider);
+    final initialStage = draft != null ? draft.currentStage.clamp(1, 4) : 1;
+    _pageController = PageController(initialPage: initialStage - 1);
   }
 
   @override
@@ -53,292 +58,88 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     super.dispose();
   }
 
-  void _restoreDraft() {
-    final draft = ref.read(orderDraftProvider);
-    if (draft == null) return;
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final data = OrderWizardData(
-      customerName: draft.customerName,
-      customerPhone: draft.customerPhone,
-      deliveryType: draft.deliveryType,
-      deliveryAddress: draft.deliveryAddress,
-      deliveryPhone: draft.deliveryPhone,
-      shippingFee: draft.shippingFee,
-      notes: draft.notes,
-    );
-    notifier.updateWizardData(data);
-    notifier.updateItems(List.of(draft.items));
-    notifier.updateDueDate(draft.dueDate);
-    notifier.updateDueTime(draft.dueTime);
-    notifier.updateSource(draft.source);
-    notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
-    notifier.updateGpsFields(
-      latitude: draft.latitude,
-      longitude: draft.longitude,
-      googleMapsUrl: draft.googleMapsUrl,
-    );
-    if (draft.customerId != null) {
-      notifier.restoreCustomerFromDraft(draft.customerId!);
-    }
-    final targetStage = draft.currentStage.clamp(1, 4);
-    notifier.goToStage(targetStage);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(targetStage - 1);
-      }
-    });
-  }
-
-  void _saveDraft() {
-    if (_submitted) return;
-    final state = ref.read(orderCreateStateProvider);
-    final draft = OrderDraft(
-      customerName: state.wizardData.customerName,
-      customerPhone: state.wizardData.customerPhone,
-      deliveryPhone: state.wizardData.deliveryPhone,
-      items: List.of(state.items),
-      dueDate: state.dueDate,
-      dueTime: state.dueTime,
-      deliveryType: state.wizardData.deliveryType,
-      deliveryAddress: state.wizardData.deliveryAddress,
-      shippingFee: state.wizardData.shippingFee,
-      notes: state.wizardData.notes,
-      source: state.source,
-      currentStage: state.currentStage,
-      selectedCategorySlug: state.selectedCategorySlug,
-      customerId: state.wizardData.selectedCustomer?.id,
-      latitude: state.latitude,
-      longitude: state.longitude,
-      googleMapsUrl: state.googleMapsUrl,
-    );
-    if (draft.isNotEmpty) {
-      ref.read(orderDraftProvider.notifier).save(draft);
-    } else {
-      ref.read(orderDraftProvider.notifier).clear();
-    }
-  }
-
-  void _goToStage(int stage) {
-    _saveDraft();
-    ref.read(orderCreateStateProvider.notifier).goToStage(stage);
-    _pageController.animateToPage(
-      stage - 1,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  Future<void> _submitOrder() async {
-    if (_submitting) return;
-    final state = ref.read(orderCreateStateProvider);
-    if (state.items.isEmpty) {
-      showTopSnackBar(context, OrdersLabels.validationSelectAtLeastOneProduct);
-      return;
-    }
-
-    setState(() => _submitting = true);
-    try {
-      final service = ref.read(orderServiceProvider);
-      final staffName = ref.read(loggedByProvider);
-      final customerName = state.wizardData.customerName.isEmpty
-          ? OrdersLabels.walkInCustomerFallback
-          : state.wizardData.customerName;
-
-      // Price floor enforcement (FR3/AC3): clamp selling price to the assigned
-      // price for trưng bày markup items before submitting. DG-296 Phase 4.
-      for (final i in state.items) {
-        if (i.product.isTrungBay &&
-            i.assignedPrice != null &&
-            i.unitPrice < i.assignedPrice!) {
-          i.customUnitPrice = i.assignedPrice;
-        }
-      }
-
-      var customerId = state.wizardData.selectedCustomer?.id;
-      if (customerId == null &&
-          state.wizardData.customerName.trim().isNotEmpty &&
-          state.wizardData.customerPhone.trim().isNotEmpty) {
-        try {
-          final customerSvc = ref.read(customerServiceProvider);
-          final result = await customerSvc.createCustomer(
-            name: state.wizardData.customerName.trim(),
-            phone: state.wizardData.customerPhone.trim(),
-          );
-          customerId = result.customer.id;
-        } catch (e) {
-          debugPrint('[OrderCreate] _submitOrder auto-create-customer failed: $e');
-        }
-      }
-
-      final newOrder = await service.createOrder(
-        customerName: customerName,
-        customerPhone: state.wizardData.customerPhone,
-        customerId: customerId,
-        items: state.items.map((i) {
-          final m = <String, dynamic>{
-            'productId': i.product.id.toString(),
-            'productName': i.product.name,
-            'quantity': i.quantity,
-            'unitPrice': i.unitPrice,
-            'notes': i.notes,
-            'isBirthday': i.isBirthday,
-            'isExtra': i.isExtra,
-            'isGift': i.isGift,
-            'attributes': i.attributes,
-            'priceChipId': i.priceChipId,
-            if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
-          };
-          if (i.isBirthday && i.age.isNotEmpty) {
-            final age = int.tryParse(i.age.trim());
-            if (age != null) m['age'] = age;
-          }
-          return m;
-        }).toList(),
-        shippingFee: state.wizardData.shippingFee,
-        dueDate: state.dueDate != null ? formatApiDate(state.dueDate!) : null,
-        dueTime: state.dueTime != null
-            ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
-            : null,
-        deliveryType: state.wizardData.deliveryType,
-        deliveryAddress: state.wizardData.deliveryAddress,
-        deliveryPhone: state.wizardData.deliveryPhone,
-        notes: state.wizardData.notes.trim(),
-        source: state.source.isEmpty ? null : state.source,
-        createdBy: staffName,
-        latitude: state.latitude,
-        longitude: state.longitude,
-        googleMapsUrl: state.googleMapsUrl,
-        // DG-306 Phase 1 / FR1: auto-derive the slot from `dueTime`.
-        deliveryTimeSlot: state.dueTime != null
-            ? deriveTimeSlot(formatHourMinute(state.dueTime!.hour, state.dueTime!.minute))
-            : null,
-      );
-
-      final hasPerItemPhotos = state.items.any(
-        (i) => i.pendingPhotos.isNotEmpty,
-      );
-      if (hasPerItemPhotos) {
-        final workItemSvc = ref.read(workItemServiceProvider);
-        final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
-        workItems.sort((a, b) => a.position.compareTo(b.position));
-
-        int totalPhotos = 0;
-        int failedPhotos = 0;
-        for (var idx = 0; idx < state.items.length; idx++) {
-          final draftItem = state.items[idx];
-          if (draftItem.pendingPhotos.isEmpty) continue;
-          final workItemId = idx < workItems.length
-              ? int.tryParse(workItems[idx].id)
-              : null;
-          for (final xfile in draftItem.pendingPhotos) {
-            totalPhotos++;
-            try {
-              await service.uploadOrderPhoto(
-                newOrder.orderRef,
-                xfile,
-                workItemId: workItemId,
-              );
-            } catch (e) {
-              failedPhotos++;
-              debugPrint('Photo upload failed (${xfile.path}): $e');
-            }
-          }
-        }
-        if (failedPhotos > 0 && mounted) {
-          showTopSnackBar(
-            context,
-            OrdersLabels.photoUploadResult(
-              totalPhotos - failedPhotos,
-              totalPhotos,
-              failedPhotos,
-            ),
+  OrderCreationConfig _buildConfig() {
+    return OrderCreationConfig(
+      orderStateProvider: orderCreateStateProvider,
+      posMode: false,
+      enableDraft: true,
+      enableCartSync: false,
+      enableSwipeNavigation: true,
+      createdByResolver: (ref) => ref.read(loggedByProvider),
+      onStageChange: (stage) {
+        if (_pageController.hasClients) {
+          _pageController.animateToPage(
+            stage - 1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
           );
         }
-      }
-
-      await ref.read(orderListProvider.notifier).refresh();
-
-      if (mounted) {
-        _submitted = true;
-        ref.read(orderDraftProvider.notifier).clear();
-        ref.read(orderCreateStateProvider.notifier).reset();
-        showTopSnackBar(context, VN.orderCreated);
-        context.push('/orders/${newOrder.orderRef}');
-      }
-    } catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, normalizeApiError(e).message);
-      }
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
+      },
+      stage1Builder: (ctx, controller) => Stage1ProductSelectionScreen(
+        onContinue: () => controller.goToStage(2),
+        orderStateProvider: orderCreateStateProvider,
+      ),
+      stage2Builder: (ctx, controller) => Stage2CustomerInfoScreen(
+        onBack: () => controller.goToStage(1),
+        onContinue: () => controller.goToStage(3),
+        orderStateProvider: orderCreateStateProvider,
+      ),
+      stage3Builder: (ctx, controller) => Stage3DeliveryOptionsScreen(
+        onBack: () => controller.goToStage(2),
+        onContinue: () => controller.goToStage(4),
+        orderStateProvider: orderCreateStateProvider,
+      ),
+      stage4Builder: (ctx, controller) => Stage4ReviewScreen(
+        onBack: () => controller.goToStage(3),
+        onSubmit: controller.submit,
+        isProcessing: controller.isSubmitting,
+        orderStateProvider: orderCreateStateProvider,
+      ),
+      stageContainerBuilder: (ctx, stages, _) => PageView(
+        controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
+        children: stages,
+      ),
+      onBeforeSubmit: (hookCtx) async {
+        final state = hookCtx.state;
+        var customerId = state.wizardData.selectedCustomer?.id;
+        if (customerId == null &&
+            state.wizardData.customerName.trim().isNotEmpty &&
+            state.wizardData.customerPhone.trim().isNotEmpty) {
+          try {
+            final customerSvc = hookCtx.ref.read(customerServiceProvider);
+            final result = await customerSvc.createCustomer(
+              name: state.wizardData.customerName.trim(),
+              phone: state.wizardData.customerPhone.trim(),
+            );
+            customerId = result.customer.id;
+          } catch (e) {
+            debugPrint('[OrderCreate] auto-create-customer failed: $e');
+          }
+        }
+        return SubmitPreparation(customerId: customerId);
+      },
+      onAfterSubmit: (hookCtx, order) async {
+        hookCtx.ref.read(orderDraftProvider.notifier).clear();
+        hookCtx.ref.read(orderCreateStateProvider.notifier).reset();
+        showTopSnackBar(hookCtx.context, VN.orderCreated);
+      },
+      onNavigateAfterSubmit: (ctx, orderRef) {
+        ctx.pushReplacement('/orders/$orderRef');
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderCreateStateProvider);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.createOrder),
         actions: const [AppBarOverflowMenu()],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: OrderStageIndicator(
-              currentStage: state.currentStage,
-              onStageTap: (s) => state.canNavigateToStage(s) ? _goToStage(s) : null,
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onHorizontalDragEnd: _onSwipe,
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  Stage1ProductSelectionScreen(
-                    onContinue: _goToStage2,
-                    orderStateProvider: orderCreateStateProvider,
-                  ),
-                  Stage2CustomerInfoScreen(
-                    onBack: _goToStage1,
-                    onContinue: _goToStage3,
-                    orderStateProvider: orderCreateStateProvider,
-                  ),
-                  Stage3DeliveryOptionsScreen(
-                    onBack: _goToStage2,
-                    onContinue: _goToStage4,
-                    orderStateProvider: orderCreateStateProvider,
-                  ),
-                  Stage4ReviewScreen(
-                    onBack: _goToStage3,
-                    onSubmit: _submitOrder,
-                    isProcessing: _submitting,
-                    orderStateProvider: orderCreateStateProvider,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+      body: OrderCreationOrchestrator(
+        config: _buildConfig(),
       ),
     );
   }
-
-  void _onSwipe(DragEndDetails d) {
-    final s = ref.read(orderCreateStateProvider);
-    final pv = d.primaryVelocity;
-    final target = targetStageForSwipe(
-      velocity: Velocity(pixelsPerSecond: pv == null ? Offset.zero : Offset(pv, 0)),
-      currentStage: s.currentStage, pageCount: 4);
-    if (target != null && s.canNavigateToStage(target)) _goToStage(target);
-  }
-
-  void _goToStage1() => _goToStage(1);
-  void _goToStage2() => _goToStage(2);
-  void _goToStage3() => _goToStage(3);
-  void _goToStage4() => _goToStage(4);
 }
