@@ -102,22 +102,38 @@ String? _resolveChipLabel(DraftOrderItem item) {
   return null;
 }
 
-/// Seeds `orderCreateStateProvider.items` from the current POS cart so Stage 1
-/// (product selection) displays the cart contents for editing. The POS cart
-/// remains the source of truth at submit; this only populates the wizard
-/// working copy (DG-218 Phase 3, FR-2).
-void syncCartToWizardItems(WidgetRef ref) {
+/// Seeds the wizard `items` from the current POS cart so Stage 1 (product
+/// selection) displays the cart contents for editing. The POS cart remains the
+/// source of truth at submit; this only populates the wizard working copy
+/// (DG-218 Phase 3, FR-2).
+///
+/// [provider] selects which wizard state instance to seed. When null, it
+/// defaults to [orderCreateStateProvider] for backward compatibility; the POS
+/// checkout flow (DG-322 Phase 4) passes [posOrderStateProvider] so the shared
+/// orchestrator can drive cart sync for either workflow via the same function
+/// (FR7).
+void syncCartToWizardItems(
+  WidgetRef ref, {
+  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>? provider,
+}) {
   final cart = ref.read(posCartProvider);
   final drafts = cart.items.map(cartItemToDraft).toList();
-  ref.read(orderCreateStateProvider.notifier).updateItems(drafts);
+  ref.read((provider ?? orderCreateStateProvider).notifier).updateItems(drafts);
 }
 
-/// Writes the wizard Stage 1 working copy (`orderCreateStateProvider.items`)
-/// back to the POS cart so the cart stays the single source of truth at
-/// submit (DG-218 Phase 3, FR-2). Empty items are ignored (cart unchanged)
-/// because Stage 1's continue button is disabled when no items are selected.
-void syncWizardItemsToCart(WidgetRef ref) {
-  final items = ref.read(orderCreateStateProvider).items;
+/// Writes the wizard Stage 1 working copy (`<provider>.items`) back to the
+/// POS cart so the cart stays the single source of truth at submit
+/// (DG-218 Phase 3, FR-2). Empty items are ignored (cart unchanged) because
+/// Stage 1's continue button is disabled when no items are selected.
+///
+/// [provider] selects which wizard state instance to read from. When null,
+/// it defaults to [orderCreateStateProvider] for backward compatibility; the
+/// POS checkout flow (DG-322 Phase 4) passes [posOrderStateProvider] (FR7).
+void syncWizardItemsToCart(
+  WidgetRef ref, {
+  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>? provider,
+}) {
+  final items = ref.read(provider ?? orderCreateStateProvider).items;
   if (items.isEmpty) return;
   final cartItems = items.map(draftItemToCart).toList();
   ref.read(posCartProvider.notifier).replaceCart(cartItems);

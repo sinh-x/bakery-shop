@@ -220,6 +220,15 @@ class OrderCreationConfig {
   /// The hook receives the created [Order] and the orchestrator's [WidgetRef].
   final Future<void> Function(WidgetRef ref, Order order, OrderCreateState state)? onUploadPendingPhotos;
 
+  /// Whether the orchestrator should refresh `orderListProvider` after a
+  /// successful `createOrder` so the new order appears in the order list
+  /// when the user navigates back. `true` for the normal order workflow
+  /// (the user returns to the order list); `false` for POS (the user
+  /// navigates to the receipt, not the order list, and the refresh would
+  /// issue an unnecessary network request — preserved from the pre-refactor
+  /// POS behaviour which did not refresh the list). DG-322 Phase 4.
+  final bool enableOrderListRefresh;
+
   const OrderCreationConfig({
     required this.orderStateProvider,
     required this.posMode,
@@ -238,5 +247,6 @@ class OrderCreationConfig {
     this.onAfterSubmit,
     this.onNavigateAfterSubmit,
     this.onUploadPendingPhotos,
+    this.enableOrderListRefresh = true,
   });
 }

@@ -47,10 +47,14 @@ class OrderCreationOrchestrator extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<OrderCreationOrchestrator> createState() =>
-      _OrderCreationOrchestratorState();
+      OrderCreationOrchestratorState();
 }
 
-class _OrderCreationOrchestratorState
+/// Public state surface so host screens (e.g. POS checkout, DG-322 Phase 4)
+/// can drive submission via a [GlobalKey] when the workflow-specific submit
+/// button lives outside the orchestrator's stage-4 widget (POS keeps the
+/// pay-now/pay-later buttons in its own stage-5 payment step).
+class OrderCreationOrchestratorState
     extends ConsumerState<OrderCreationOrchestrator> {
   OrderCreationConfig get _config => widget.config;
 
@@ -78,7 +82,12 @@ class _OrderCreationOrchestratorState
     if (_config.enableDraft) _saveDraft();
     // FR7: write the wizard Stage-1 working copy back to the POS cart after
     // each stage transition so the cart stays the single source of truth.
-    if (_config.enableCartSync) syncWizardItemsToCart(ref);
+    // Pass the configured provider so POS (posOrderStateProvider) and normal
+    // order (orderCreateStateProvider) each sync the correct wizard instance
+    // (DG-322 Phase 4).
+    if (_config.enableCartSync) {
+      syncWizardItemsToCart(ref, provider: _provider);
+    }
   }
 
   void _onSwipe(DragEndDetails d) {
@@ -286,7 +295,12 @@ class _OrderCreationOrchestratorState
 
       // Refresh the order list so the new order appears in the list screen
       // when the user navigates back from the detail/receipt destination.
-      await ref.read(orderListProvider.notifier).refresh();
+      // Gated by `enableOrderListRefresh` (POS skips it — the user navigates
+      // to the receipt, not the order list, and the pre-refactor POS flow
+      // did not refresh the list). DG-322 Phase 4.
+      if (_config.enableOrderListRefresh) {
+        await ref.read(orderListProvider.notifier).refresh();
+      }
 
       if (!mounted) return false;
 
@@ -388,11 +402,21 @@ class _OrderCreationOrchestratorState
   @override
   void initState() {
     super.initState();
-    // FR6: restore the draft (no-op when `enableDraft=false`).
+    // FR6: restore the draft (no-op when `enableDraft=false`). Done in
+    // initState because the draft restore must land before the first build
+    // so the initial stage reflects the persisted state.
     _restoreDraft();
     // FR7: seed wizard items from the POS cart on init (no-op when
-    // `enableCartSync=false`).
-    if (_config.enableCartSync) syncCartToWizardItems(ref);
+    // `enableCartSync=false`). Deferred to a post-frame callback because the
+    // orchestrator is constructed inside its host screen's build, and
+    // modifying `posOrderStateProvider` synchronously during initState would
+    // trip riverpod's "modify provider while widget tree is building" guard
+    // (the host screen watches `posCartProvider`, which the sync reads).
+    if (_config.enableCartSync) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) syncCartToWizardItems(ref, provider: _provider);
+      });
+    }
   }
 
   @override
