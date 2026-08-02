@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/event_photo.dart';
+import '../../../providers/photo_upload_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Photo picker + preview section for the event create/edit form.
@@ -13,16 +15,20 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// reported to the parent via [onSelectionChanged] for upload after the
 /// event is created or updated.
 ///
+/// The add button is disabled while the shared [PhotoUploadNotifier] is
+/// uploading; per-photo progress/error/success is rendered by the parent
+/// via [UploadProgressIndicator] (FR5). DG-333 Phase 6 removed the deferred
+/// `uploading` param — the disabling state is now derived from the notifier.
+///
 /// Extracted from `event_form_screen.dart` per Flutter coding standards
 /// §1 (screen ≤300 lines).
-class EventFormPhotoSection extends StatefulWidget {
+class EventFormPhotoSection extends ConsumerStatefulWidget {
   const EventFormPhotoSection({
     super.key,
     required this.existingPhotos,
     required this.selectedPhotos,
     required this.onSelectionChanged,
     required this.baseUrl,
-    this.uploading = false,
   });
 
   /// Photos already attached to the event (edit mode only). Empty on
@@ -41,15 +47,12 @@ class EventFormPhotoSection extends StatefulWidget {
   /// this may be empty (same-origin relative URLs).
   final String baseUrl;
 
-  /// When true, the add button is disabled and an upload spinner is
-  /// shown. The parent sets this while uploading after submit.
-  final bool uploading;
-
   @override
-  State<EventFormPhotoSection> createState() => _EventFormPhotoSectionState();
+  ConsumerState<EventFormPhotoSection> createState() =>
+      _EventFormPhotoSectionState();
 }
 
-class _EventFormPhotoSectionState extends State<EventFormPhotoSection> {
+class _EventFormPhotoSectionState extends ConsumerState<EventFormPhotoSection> {
   final _picker = ImagePicker();
 
   Future<void> _pickPhotos() async {
@@ -68,6 +71,11 @@ class _EventFormPhotoSectionState extends State<EventFormPhotoSection> {
     final theme = Theme.of(context);
     final newCount = widget.selectedPhotos.length;
     final totalCount = widget.existingPhotos.length + newCount;
+    // Disable the add button while an upload batch is in progress. The
+    // per-photo progress/error/success UI is rendered by the parent's
+    // UploadProgressIndicator (FR5), so this widget no longer draws its
+    // own spinner. DG-333 Phase 6.
+    final uploading = ref.watch(photoUploadNotifierProvider).isUploading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,24 +119,10 @@ class _EventFormPhotoSectionState extends State<EventFormPhotoSection> {
             ),
           ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            OutlinedButton.icon(
-              onPressed: widget.uploading ? null : _pickPhotos,
-              icon: const Icon(Icons.add_a_photo, size: 18),
-              label: const Text(VN.addEventPhoto),
-            ),
-            if (widget.uploading) ...[
-              const SizedBox(width: 12),
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 6),
-              Text(VN.uploadingPhotos, style: theme.textTheme.bodySmall),
-            ],
-          ],
+        OutlinedButton.icon(
+          onPressed: uploading ? null : _pickPhotos,
+          icon: const Icon(Icons.add_a_photo, size: 18),
+          label: const Text(VN.addEventPhoto),
         ),
         const SizedBox(height: 24),
       ],

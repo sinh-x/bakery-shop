@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.8.20+130] — 2026-08-02
+- chore: raise widget max lines threshold 200→300
+
 ## [Unreleased]
 
 ## [0.8.13] — 2026-07-27

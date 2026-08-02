@@ -5,6 +5,8 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
+import 'package:bakery_app/providers/photo_upload_provider.dart';
+import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -1618,4 +1620,72 @@ void main() {
       expect(tapped, isTrue);
     },
   );
+
+  // DG-333 Phase 5.6-c1-fix (M3): photo-upload integration. The expense
+  // form mounts an UploadProgressIndicator fed by the shared
+  // PhotoUploadNotifier. We seed the provider with an in-progress batch
+  // (bypassing ImagePicker) and verify the indicator renders a visible
+  // count summary on the form.
+  testWidgets(
+    'expense form renders UploadProgressIndicator with seeded upload state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auth_token': kTestAdminToken,
+        'auth_username': 'Lan',
+        'auth_role': 'staff',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_EmptyPhotosInterceptor());
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          dioProvider.overrideWithValue(dio),
+          eventServiceProvider.overrideWithValue(EventService(dio)),
+          photoUploadNotifierProvider
+              .overrideWith(_SeededUploadNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Use pump (not pumpAndSettle) — the indicator itself has no pending
+      // animations once both seeded photos are terminal, but pump avoids
+      // settling any background timers from the form's async loads.
+      await tester.pump();
+
+      expect(find.byType(UploadProgressIndicator, skipOffstage: false),
+          findsOneWidget);
+      expect(find.text(VN.photoUploadComplete(2), skipOffstage: false),
+          findsOneWidget);
+    },
+  );
+}
+
+/// Notifier that emits a fixed terminal batch (2 successes) so the
+/// ExpenseFormScreen's watched [UploadProgressIndicator] renders a visible
+/// completion summary without driving a real upload. `reset()` is
+/// overridden to a no-op so the screen's initState microtask reset does not
+/// clear the seeded state (DG-333 Phase 5.6-c1-fix m2/M3).
+class _SeededUploadNotifier extends PhotoUploadNotifier {
+  @override
+  PhotoUploadBatchState build() => const PhotoUploadBatchState([
+        PhotoUploadItem(
+          fileName: 'a.jpg',
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+        PhotoUploadItem(
+          fileName: 'b.jpg',
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+      ]);
+
+  @override
+  void reset() {}
 }

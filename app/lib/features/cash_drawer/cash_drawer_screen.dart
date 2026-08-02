@@ -154,6 +154,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     final previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
     final accountingBalance1101 =
         await ref.read(cashDrawerAccountingBalance1101Provider.future);
+    if (!context.mounted) return;
     final result = await showOpenDrawerDialog(
       context,
       referenceBalance: accountingBalance1101,
@@ -341,7 +342,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     while (true) {
       try {
         final service = ref.read(cashDrawerServiceProvider);
-        final drawer = await service.closeDrawer(
+        await service.closeDrawer(
           countedAmount: result.amount,
           note: result.note,
           surplusConfirmed: surplusConfirmed,
@@ -354,7 +355,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.invalidate(cashDrawerHistoryProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: const Text(VN.cashDrawerCloseSuccess)),
+            const SnackBar(content: Text(VN.cashDrawerCloseSuccess)),
           );
         }
         return;

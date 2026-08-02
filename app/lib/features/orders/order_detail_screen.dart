@@ -53,8 +53,8 @@ class OrderDetailScreen extends ConsumerWidget {
           } else {
             items.add(PopupMenuItem<String>(
               value: 'claim',
-              child: Text(OrdersLabels.deliveryClaimButton),
               enabled: !isClaiming,
+              child: const Text(OrdersLabels.deliveryClaimButton),
             ));
           }
         }

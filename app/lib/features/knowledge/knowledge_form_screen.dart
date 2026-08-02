@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded — pre-existing oversized file (was 436 lines before DG-333 Phase 8). Splitting form fields (title/content/type/tags/photos/pin) into sub-widgets now would duplicate controller ownership and save-flow wiring across widget boundaries. Phase 8 only replaced the inline upload loop with the shared notifier + indicator (+13 net). Reviewed 2026-08-02.
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -10,7 +11,9 @@ import '../../data/api/api_client.dart';
 import '../../data/api/knowledge_service.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 // Knowledge types for the form
@@ -62,6 +65,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
     final e = widget.entry;
     _titleCtrl = TextEditingController(text: e?.title ?? '');
     _contentCtrl = TextEditingController(text: e?.content ?? '');
@@ -172,7 +183,17 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.toString());
+        // Format the typed partial-failure exception's user-facing message
+        // (DG-333 Phase 5.6-c1-fix m3); fall back to e.toString() for other
+        // unexpected errors.
+        final message = e is PhotoUploadPartialFailure
+            ? VN.photoUploadCompleteWithErrors(
+                e.completedCount,
+                e.failedCount,
+                e.totalCount,
+              )
+            : e.toString();
+        showTopSnackBar(context, message);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -389,6 +410,11 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          // Per-photo upload progress / error states (FR1/FR2/FR4/AC10)
+          UploadProgressIndicator(
+            states: ref.watch(photoUploadNotifierProvider).states,
+          ),
+          const SizedBox(height: 8),
           CheckboxListTile(
             value: _pinAfterSave,
             onChanged: (v) => setState(() => _pinAfterSave = v ?? false),
@@ -405,21 +431,25 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     final newPhotos = _photos.where((p) => p.file != null).toList();
     if (newPhotos.isEmpty) return;
     final service = ref.read(knowledgeServiceProvider);
-    var failed = 0;
-    for (final photo in newPhotos) {
-      try {
-        final file = photo.file!;
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    await upload.uploadAll(
+      newPhotos.map((p) => p.file!).toList(growable: false),
+      (file) async {
+        final bytes = await file.readAsBytes();
         await service.attachPhoto(
           entryId,
-          bytes: await file.readAsBytes(),
+          bytes: bytes,
           filename: file.name,
         );
-      } catch (_) {
-        failed += 1;
-      }
-    }
-    if (failed > 0) {
-      throw Exception('Không thể tải lên $failed ảnh');
+      },
+    );
+    final batch = ref.read(photoUploadNotifierProvider);
+    if (batch.hasErrors) {
+      throw PhotoUploadPartialFailure(
+        completedCount: batch.completedCount,
+        failedCount: batch.failedCount,
+        totalCount: batch.totalCount,
+      );
     }
   }
 

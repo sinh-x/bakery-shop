@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../providers/photo_upload_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Compact photo picker for the quick-log event form (FR6).
@@ -10,16 +12,20 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// Shows a single "Add photos" button by default; expands to a compact
 /// thumbnail strip when photos are selected. Designed to keep the
 /// dashboard quick-log form compact (NFR1 — upload happens after event
-/// creation; the parent sets [uploading] while uploading).
+/// creation).
+///
+/// The add button is disabled while the shared [PhotoUploadNotifier] is
+/// uploading; per-photo progress/error/success is rendered by the parent
+/// via [UploadProgressIndicator] (FR5). DG-333 Phase 6 removed the deferred
+/// `uploading` param — the disabling state is now derived from the notifier.
 ///
 /// Newly-picked files are reported via [onSelectionChanged]; the parent
 /// owns the upload lifecycle and reads the final list at submit time.
-class QuickLogPhotoPicker extends StatefulWidget {
+class QuickLogPhotoPicker extends ConsumerStatefulWidget {
   const QuickLogPhotoPicker({
     super.key,
     required this.selectedPhotos,
     required this.onSelectionChanged,
-    this.uploading = false,
   });
 
   /// Newly-picked local files not yet uploaded.
@@ -28,14 +34,11 @@ class QuickLogPhotoPicker extends StatefulWidget {
   /// Called whenever the user adds or removes a locally-picked photo.
   final ValueChanged<List<XFile>> onSelectionChanged;
 
-  /// When true, the add button is disabled and an upload spinner is shown.
-  final bool uploading;
-
   @override
-  State<QuickLogPhotoPicker> createState() => _QuickLogPhotoPickerState();
+  ConsumerState<QuickLogPhotoPicker> createState() => _QuickLogPhotoPickerState();
 }
 
-class _QuickLogPhotoPickerState extends State<QuickLogPhotoPicker> {
+class _QuickLogPhotoPickerState extends ConsumerState<QuickLogPhotoPicker> {
   final _picker = ImagePicker();
 
   Future<void> _pickPhotos() async {
@@ -51,8 +54,12 @@ class _QuickLogPhotoPickerState extends State<QuickLogPhotoPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final count = widget.selectedPhotos.length;
+    // Disable the add button while an upload batch is in progress. The
+    // per-photo progress/error/success UI is rendered by the parent's
+    // UploadProgressIndicator (FR5), so this widget no longer draws its
+    // own spinner. DG-333 Phase 6.
+    final uploading = ref.watch(photoUploadNotifierProvider).isUploading;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -76,26 +83,12 @@ class _QuickLogPhotoPickerState extends State<QuickLogPhotoPicker> {
             ),
           ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            OutlinedButton.icon(
-              onPressed: widget.uploading ? null : _pickPhotos,
-              icon: const Icon(Icons.add_a_photo, size: 18),
-              label: Text(
-                count > 0 ? '${VN.addEventPhoto} ($count)' : VN.addEventPhoto,
-              ),
-            ),
-            if (widget.uploading) ...[
-              const SizedBox(width: 12),
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 6),
-              Text(VN.uploadingPhotos, style: theme.textTheme.bodySmall),
-            ],
-          ],
+        OutlinedButton.icon(
+          onPressed: uploading ? null : _pickPhotos,
+          icon: const Icon(Icons.add_a_photo, size: 18),
+          label: Text(
+            count > 0 ? '${VN.addEventPhoto} ($count)' : VN.addEventPhoto,
+          ),
         ),
       ],
     );

@@ -5,11 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+// EXEMPT: 300-line screen threshold exceeded because the event form owns
+// type/tag selection, photo upload lifecycle, and submit flow in one screen
+// to keep EventFormPhotoSection under its widget limit. Pre-existing at 435
+// lines before DG-333 Phase 4 (race-condition fix reduced to 423). Reviewed
+// 2026-08-02.
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
 import '../../data/models/event_photo.dart';
 import '../../providers/events_provider.dart';
+import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/upload_progress_indicator.dart';
 import 'widgets/event_form_photo_section.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
@@ -68,7 +75,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   final _customTags = <String>[];
   bool _showCustomTagField = false;
   bool _saving = false;
-  bool _uploading = false;
 
   final _selectedPhotos = <XFile>[];
   final _existingPhotos = <EventPhoto>[];
@@ -79,6 +85,14 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
     final e = widget.event;
     _summaryCtrl = TextEditingController(text: e?.summary ?? '');
     _selectedType = e?.type ?? 'note';
@@ -120,6 +134,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     try {
       final loggedBy = ref.read(loggedByProvider);
       final hasNewPhotos = _selectedPhotos.isNotEmpty;
+      final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_isEditing) {
         await ref
             .read(eventsProvider.notifier)
@@ -131,26 +146,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               loggedBy: loggedBy,
             );
         if (hasNewPhotos && mounted) {
-          setState(() => _uploading = true);
-          final service = ref.read(eventServiceProvider);
-          try {
-            for (final xfile in _selectedPhotos) {
-              await service.uploadEventPhoto(
-                widget.event!.id,
-                File(xfile.path),
-              );
-            }
-          } catch (uploadErr) {
-            debugPrint('uploadEventPhoto (edit) failed: $uploadErr');
-            if (mounted) {
-              showTopSnackBar(context, VN.eventPhotosUploadFailed);
-            }
-          }
+          await _uploadPhotos(widget.event!.id, upload);
         }
-        if (mounted) {
-          showTopSnackBar(context, VN.eventUpdated);
-          context.pop();
-        }
+        if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
         final createdEvent = await ref
             .read(eventsProvider.notifier)
@@ -163,39 +161,40 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             );
 
         if (hasNewPhotos && mounted) {
-          setState(() => _uploading = true);
-          final service = ref.read(eventServiceProvider);
-          try {
-            for (final xfile in _selectedPhotos) {
-              await service.uploadEventPhoto(
-                createdEvent.id,
-                File(xfile.path),
-              );
-            }
-          } catch (uploadErr) {
-            debugPrint('uploadEventPhoto (create) failed: $uploadErr');
-            if (mounted) {
-              showTopSnackBar(context, VN.eventPhotosUploadFailed);
-            }
-          }
+          await _uploadPhotos(createdEvent.id, upload);
         }
-
-        if (mounted) {
-          showTopSnackBar(context, VN.eventLogged);
-          context.pop();
-        }
+        if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
+      if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _saving = false;
-          _uploading = false;
-        });
+        setState(() => _saving = false);
       }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_submit] before `context.pop()` so the screen does not dismiss until
+  /// every upload reaches a terminal state (FR3 — race condition fix).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(
+    int eventId,
+    PhotoUploadNotifier upload,
+  ) async {
+    final service = ref.read(eventServiceProvider);
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 
@@ -382,12 +381,14 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           EventFormPhotoSection(
             existingPhotos: _existingPhotos,
             selectedPhotos: _selectedPhotos,
-            uploading: _uploading,
             baseUrl: ref.read(apiBaseUrlProvider),
             onSelectionChanged: (files) =>
                 setState(() => _selectedPhotos
                   ..clear()
                   ..addAll(files)),
+          ),
+          UploadProgressIndicator(
+            states: ref.watch(photoUploadNotifierProvider).states,
           ),
           Row(
             children: [
