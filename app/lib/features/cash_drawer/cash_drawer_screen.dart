@@ -105,6 +105,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     final historyAsync =
         ref.watch(cashDrawerHistoryProvider(const CashDrawerHistoryFilter()));
     final mutating = ref.watch(_mutationInProgressProvider);
+    final accountingBalance1101Async =
+        ref.watch(cashDrawerAccountingBalance1101Provider);
+    final previousCloseAsync = ref.watch(cashDrawerPreviousCloseProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -134,6 +137,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           _ActiveTab(
             statusAsync: statusAsync,
             mutating: mutating,
+            accountingBalance1101Async: accountingBalance1101Async,
+            previousCloseAsync: previousCloseAsync,
             onOpen: () => _handleOpen(context),
             onCashIn: () => _handleCashIn(context),
             onCashOut: () => _handleCashOut(context),
@@ -146,14 +151,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleOpen(BuildContext context) async {
-    // DG-331 FR9/AC8: surface the previous close counted amount ("Số dư sau
-    // khi đóng quỹ lần trước") in the open dialog as a reference. Phase 4.1
-    // F3: also surface the 1101 accounting balance upfront (before any 409
-    // proposal) so the owner can reconcile immediately. The 1101 balance is
-    // still passed through by the 409 proposal paths below.
-    final previousClose = ref.read(cashDrawerPreviousCloseProvider).value;
+    final previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
     final accountingBalance1101 =
-        ref.read(cashDrawerAccountingBalance1101Provider).value ?? 0;
+        await ref.read(cashDrawerAccountingBalance1101Provider.future);
     final result = await showOpenDrawerDialog(
       context,
       referenceBalance: accountingBalance1101,
@@ -399,6 +399,8 @@ class _ActiveTab extends StatelessWidget {
   const _ActiveTab({
     required this.statusAsync,
     required this.mutating,
+    required this.accountingBalance1101Async,
+    required this.previousCloseAsync,
     required this.onOpen,
     required this.onCashIn,
     required this.onCashOut,
@@ -407,6 +409,8 @@ class _ActiveTab extends StatelessWidget {
 
   final AsyncValue<CashDrawer?> statusAsync;
   final bool mutating;
+  final AsyncValue<int> accountingBalance1101Async;
+  final AsyncValue<int?> previousCloseAsync;
   final Future<void> Function() onOpen;
   final Future<void> Function() onCashIn;
   final Future<void> Function() onCashOut;
@@ -431,7 +435,14 @@ class _ActiveTab extends StatelessWidget {
       ),
       data: (drawer) {
         if (drawer == null) {
-          return _EmptyActiveView(onOpen: onOpen, mutating: mutating);
+          final balance1101 = accountingBalance1101Async.value ?? 0;
+          final previousClose = previousCloseAsync.value;
+          return _EmptyActiveView(
+            onOpen: onOpen,
+            mutating: mutating,
+            accountingBalance1101: balance1101,
+            previousCloseCountedAmount: previousClose,
+          );
         }
         return ListView(
           children: [
@@ -454,10 +465,17 @@ class _ActiveTab extends StatelessWidget {
 }
 
 class _EmptyActiveView extends StatelessWidget {
-  const _EmptyActiveView({required this.onOpen, required this.mutating});
+  const _EmptyActiveView({
+    required this.onOpen,
+    required this.mutating,
+    required this.accountingBalance1101,
+    required this.previousCloseCountedAmount,
+  });
 
   final Future<void> Function() onOpen;
   final bool mutating;
+  final int accountingBalance1101;
+  final int? previousCloseCountedAmount;
 
   @override
   Widget build(BuildContext context) {
@@ -470,6 +488,20 @@ class _EmptyActiveView extends StatelessWidget {
             const Icon(Icons.lock_open_outlined, size: 48),
             const SizedBox(height: 12),
             const Text(VN.cashDrawerNoActive),
+            if (accountingBalance1101 > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${VN.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+            if (previousCloseCountedAmount != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${VN.cashDrawerPreviousCloseBalance}: ${formatVND(previousCloseCountedAmount!.toDouble())}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: mutating ? null : onOpen,
