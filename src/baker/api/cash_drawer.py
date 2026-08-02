@@ -660,44 +660,27 @@ def close_drawer(body: CloseDrawerRequest):
 
         if discrepancy > 0:
             if not body.surplusConfirmed:
-                # Backward compat (NFR2): old client, no new flags → current behavior.
-                if body.surplusSource is None:
-                    desc = (
-                        f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
-                        f"chênh lệch={discrepancy}"
-                    )
-                    if body.note:
-                        desc += f" — {body.note}"
-                    journal = _create_drawer_journal_entry(
-                        conn,
-                        source_type="cash_drawer_close_adjust",
-                        description=desc,
-                        debit_account_id=accounts["cash_drawer"],
-                        credit_account_id=accounts["equity"],
-                        amount=discrepancy,
-                    )
-                else:
-                    logger.warning(
-                        "close_drawer surplus proposal: drawer=%s expected=%s "
-                        "counted=%s surplus=%s",
-                        drawer.id, expected, body.countedAmount, discrepancy,
-                    )
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "message": (
-                                f"Chênh lệch thừa {discrepancy:,} VND. "
-                                f"Số dư dự kiến: {expected:,}. "
-                                f"Số tiền đếm thực tế: {body.countedAmount:,}. "
-                                f"Chủ thêm tiền mặt hay doanh thu chưa xác định?"
-                            ),
-                            "surplusProposal": {
-                                "expectedBalance": expected,
-                                "countedAmount": body.countedAmount,
-                                "surplus": discrepancy,
-                            },
+                logger.warning(
+                    "close_drawer surplus proposal: drawer=%s expected=%s "
+                    "counted=%s surplus=%s",
+                    drawer.id, expected, body.countedAmount, discrepancy,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            f"Chênh lệch thừa {discrepancy:,} VND. "
+                            f"Số dư dự kiến: {expected:,}. "
+                            f"Số tiền đếm thực tế: {body.countedAmount:,}. "
+                            f"Chủ thêm tiền mặt hay doanh thu chưa xác định?"
+                        ),
+                        "surplusProposal": {
+                            "expectedBalance": expected,
+                            "countedAmount": body.countedAmount,
+                            "surplus": discrepancy,
                         },
-                    )
+                    },
+                )
             else:
                 desc = (
                     f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
@@ -747,44 +730,27 @@ def close_drawer(body: CloseDrawerRequest):
         elif discrepancy < 0:
             amt = abs(discrepancy)
             if not body.shortageConfirmed:
-                # Backward compat (NFR2): old client, no new flags → current behavior.
-                if body.shortageSource is None:
-                    desc = (
-                        f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
-                        f"chênh lệch={discrepancy}"
-                    )
-                    if body.note:
-                        desc += f" — {body.note}"
-                    journal = _create_drawer_journal_entry(
-                        conn,
-                        source_type="cash_drawer_close_adjust",
-                        description=desc,
-                        debit_account_id=accounts["equity"],
-                        credit_account_id=accounts["cash_drawer"],
-                        amount=amt,
-                    )
-                else:
-                    logger.warning(
-                        "close_drawer shortage proposal: drawer=%s expected=%s "
-                        "counted=%s shortage=%s",
-                        drawer.id, expected, body.countedAmount, amt,
-                    )
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "message": (
-                                f"Chênh lệch thiếu {amt:,} VND. "
-                                f"Số dư dự kiến: {expected:,}. "
-                                f"Số tiền đếm thực tế: {body.countedAmount:,}. "
-                                f"Chủ rút tiền hay lỗ vốn chủ sở hữu?"
-                            ),
-                            "shortageProposal": {
-                                "expectedBalance": expected,
-                                "countedAmount": body.countedAmount,
-                                "shortage": amt,
-                            },
+                logger.warning(
+                    "close_drawer shortage proposal: drawer=%s expected=%s "
+                    "counted=%s shortage=%s",
+                    drawer.id, expected, body.countedAmount, amt,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            f"Chênh lệch thiếu {amt:,} VND. "
+                            f"Số dư dự kiến: {expected:,}. "
+                            f"Số tiền đếm thực tế: {body.countedAmount:,}. "
+                            f"Chủ rút tiền hay lỗ vốn chủ sở hữu?"
+                        ),
+                        "shortageProposal": {
+                            "expectedBalance": expected,
+                            "countedAmount": body.countedAmount,
+                            "shortage": amt,
                         },
-                    )
+                    },
+                )
             else:
                 desc = (
                     f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
