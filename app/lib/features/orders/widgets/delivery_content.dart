@@ -151,9 +151,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
           filterDeliveryOrders(orders, todayOnly: _showToday),
           staffId: _selectedStaffId,
         );
-        // Auto-focus the calendars on the next upcoming non-terminal
-        // delivery order (FR2/FR3/AC2/AC3); fall back to today when none
-        // (AC4). Computed once per rebuild from the non-terminal set.
+        // Auto-focus the WEEK calendar on the next upcoming non-terminal
+        // delivery order (FR2/FR3/AC2); fall back to today when none
+        // (AC4). The DAY calendar always defaults to today (FR4/AC3) —
+        // see `_buildView`. Computed once per rebuild from the
+        // non-terminal set.
         final nextDue = findNextDueDate(calendarOrders) ?? DateTime.now();
         final nextDueWeekStart = startOfWeek(nextDue);
 
@@ -197,7 +199,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
               todayOrders: filterDeliveryOrders(orders, todayOnly: true),
             ),
             Expanded(
-              child: _buildView(calendarOrders, listOrders, nextDue, nextDueWeekStart),
+              child: _buildView(calendarOrders, listOrders, nextDueWeekStart),
             ),
           ],
         );
@@ -208,7 +210,6 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   Widget _buildView(
     List<Order> calendarOrders,
     List<Order> listOrders,
-    DateTime nextDue,
     DateTime nextDueWeekStart,
   ) {
     switch (_viewMode) {
@@ -219,10 +220,14 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
           initialWeekStart: nextDueWeekStart,
         );
       case 'day':
+        // Day calendar always defaults to today (FR4/AC3) — the
+        // current-time line requires viewing today, and "next due" may
+        // be a future date with no orders today. The week calendar keeps
+        // the "next due" auto-focus (FR2/FR3/AC2); only the day calendar
+        // anchors to today.
         return DeliveryDayCalendarView(
           orders: calendarOrders,
           onRefresh: _onRefresh,
-          initialDate: nextDue,
         );
       default:
         if (listOrders.isEmpty) {

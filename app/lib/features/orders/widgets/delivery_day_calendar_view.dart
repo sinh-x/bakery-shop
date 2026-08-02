@@ -20,8 +20,12 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
   final List<Order> orders;
   final Future<void> Function() onRefresh;
 
-  /// Optional initial focus date (FR2/AC2). When null or today, the view
-  /// defaults to today — matching the pre-existing behavior.
+  /// Optional initial focus date (FR2/AC2). When null (the default from
+  /// `DeliveryContent`), the view defaults to today — per FR4/AC3 the day
+  /// calendar always anchors to today so the current-time line is visible
+  /// on open, even when no orders exist today. Callers may pass an explicit
+  /// date to focus a different day (e.g. for deep links); `DeliveryContent`
+  /// does not pass this so the today default always applies.
   final DateTime? initialDate;
 
   @override

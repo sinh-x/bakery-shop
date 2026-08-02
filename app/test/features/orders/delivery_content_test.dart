@@ -6,6 +6,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_content.dart';
+import 'package:bakery_app/features/orders/widgets/delivery_week_calendar_components.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
@@ -368,8 +369,8 @@ void main() {
       expect(todayButton.onPressed, isNull);
     });
 
-    testWidgets('AC2: day view focuses the date of the next upcoming '
-        'non-terminal delivery order', (tester) async {
+    testWidgets('AC3/FR4: day view defaults to today even when next due '
+        'order is in the future', (tester) async {
       final orders = [
         _order(
           id: 1,
@@ -382,17 +383,39 @@ void main() {
       await tester.pumpWidget(buildTestWidget(orders));
       await tester.pumpAndSettle();
 
-      // The day nav label should render the focused date (2099-06-15), and
-      // the "Hôm nay" button should be enabled (not today).
-      expect(find.text(OrdersLabels.deliveryDayLabel(DateTime(2099, 6, 15))),
-          findsOneWidget);
+      // Per FR4/AC3 the day calendar always defaults to today (not the
+      // next due date). The "Hôm nay" button must be disabled (already
+      // on today) and the day nav label shows today — NOT 2099-06-15.
       final todayButton = tester.widget<TextButton>(
         find.ancestor(
           of: find.text(OrdersLabels.deliveryDayToday),
           matching: find.byType(TextButton),
         ),
       );
-      expect(todayButton.onPressed, isNotNull);
+      expect(todayButton.onPressed, isNull);
+      expect(
+        find.text(OrdersLabels.deliveryDayLabel(DateTime.now())),
+        findsOneWidget,
+      );
+      expect(
+        find.text(OrdersLabels.deliveryDayLabel(DateTime(2099, 6, 15))),
+        findsNothing,
+      );
+    });
+
+    testWidgets('AC3/FR4: current-time line widget is present on the day '
+        'calendar (visible when current time is in the 6:00–21:00 range)',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(const []));
+      await tester.pumpAndSettle();
+
+      // The day calendar is the default view and always constructs a
+      // CurrentTimeLine. The line's `visible` flag is true only when the
+      // focused day is today AND the current time is within the 6:00–21:00
+      // grid range (currentTimeGridOffset() != null). Since the day calendar
+      // now defaults to today (FR4/AC3), the time line is visible whenever
+      // the current time is in range — satisfying AC3.
+      expect(find.byType(CurrentTimeLine), findsOneWidget);
     });
 
     // ── DG-304 Phase 4: staff filter + workload summary ──────────────
