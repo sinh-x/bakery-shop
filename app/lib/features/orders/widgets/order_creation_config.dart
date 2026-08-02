@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 
 /// Builds the container that hosts the wizard stage widgets.
@@ -37,6 +38,71 @@ class OrderCreationController {
   const OrderCreationController({required this.goToStage});
 }
 
+/// Context handed to workflow-specific submission hooks so they can run
+/// pre/post-submission logic without the orchestrator needing to know which
+/// workflow is active. The hook receives the current [OrderCreateState] and
+/// the [WidgetRef] of the orchestrator so it can read/write providers.
+class SubmitHookContext {
+  final OrderCreateState state;
+  final WidgetRef ref;
+
+  const SubmitHookContext({required this.state, required this.ref});
+}
+
+/// Result of [OrderCreationConfig.onBeforeSubmit]. Workflow-specific hooks
+/// return pre-submission mutations that the orchestrator applies before
+/// calling `OrderService.createOrder`.
+///
+/// Currently the only mutable field is [customerId] — workflows may resolve
+/// a customer id (e.g. normal order auto-creates a customer) before the
+/// orchestrator sends the create request. Other fields stay on `state`.
+class SubmitPreparation {
+  /// Customer id to send to `createOrder`. When non-null, overrides the
+  /// `state.wizardData.selectedCustomer?.id` value the orchestrator would
+  /// otherwise use. Null means "use whatever the state already has".
+  final int? customerId;
+
+  const SubmitPreparation({this.customerId});
+}
+
+/// Hook invoked before `OrderService.createOrder` runs. Workflows use it to
+/// perform pre-submission side effects:
+/// - Normal order: auto-create a customer when name+phone are present and no
+///   `selectedCustomer` is set.
+/// - POS: no-op (POS does not auto-create customers).
+///
+/// The hook may be async (e.g. calling `customerService.createCustomer`).
+/// Returning `null` is equivalent to `SubmitPreparation()`.
+typedef OnBeforeSubmitHook = Future<SubmitPreparation?> Function(
+  SubmitHookContext ctx,
+);
+
+/// Hook invoked after `OrderService.createOrder` succeeds and the orchestrator
+/// has finished shared post-submission work (photo upload, order-list
+/// refresh). Workflows use it for divergent cleanup:
+/// - Normal order: clear `orderDraftProvider`, reset `orderCreateStateProvider`.
+/// - POS: clear `posCartProvider`, invalidate `productsProvider` /
+///   `stockOverviewProvider`, run any cart-write-back already performed.
+///
+/// The hook receives the created [Order] so it can derive the `orderRef` if
+/// needed (e.g. for payment transactions).
+typedef OnAfterSubmitHook = Future<void> Function(
+  SubmitHookContext ctx,
+  Order order,
+);
+
+/// Hook invoked after `onAfterSubmit` completes successfully. Workflows use it
+/// to navigate to the workflow-specific destination via `pushReplacement`:
+/// - Normal order: `context.pushReplacement('/orders/{orderRef}')`.
+/// - POS: `context.pushReplacement('/pos/receipt/{orderRef}')`.
+///
+/// The orchestrator passes the current [BuildContext] so the hook can use
+/// `go_router` without the orchestrator importing it.
+typedef OnNavigateAfterSubmitHook = void Function(
+  BuildContext context,
+  String orderRef,
+);
+
 /// Workflow-specific configuration consumed by [OrderCreationOrchestrator].
 ///
 /// This model is the single change point for behaviour that differs between
@@ -56,9 +122,17 @@ class OrderCreationConfig {
   final bool posMode;
 
   /// Gates draft save/restore. `true` for normal order, `false` for POS
-  /// (FR6). Used by the host screen in later phases; stored here so the
-  /// orchestrator is the single source of truth for workflow flags.
+  /// (FR6). Used by the orchestrator's draft save/restore helpers so the
+  /// POS workflow never persists a draft.
   final bool enableDraft;
+
+  /// Gates POS cart sync (PosCartItem ↔ DraftOrderItem). `true` for POS,
+  /// `false` for normal order (FR7). When enabled, the orchestrator calls
+  /// the existing `pos_cart_wizard_sync` functions at the correct lifecycle
+  /// points (seed items on init, write-back on stage-1 continue / app-bar
+  /// back). Normal order leaves this false because it never touches the POS
+  /// cart.
+  final bool enableCartSync;
 
   /// Enables horizontal-swipe stage navigation (normal order only). POS uses
   /// explicit back/continue buttons, so swipe is disabled there.
@@ -84,10 +158,43 @@ class OrderCreationConfig {
   /// POS pickup flags when entering stage 3).
   final void Function(int stage)? onStageChange;
 
+  /// Workflow-specific pre-submission hook (Phase 2, FR2/FR3/FR6/FR7).
+  ///
+  /// The orchestrator awaits this before calling `OrderService.createOrder`.
+  /// Normal order uses it to auto-create a customer; POS uses it to transfer
+  /// `tien_rut` photos / no-op. See [OnBeforeSubmitHook].
+  final OnBeforeSubmitHook? onBeforeSubmit;
+
+  /// Workflow-specific post-submission hook (Phase 2). The orchestrator
+  /// awaits this after uploading per-item photos and refreshing
+  /// `orderListProvider`. Normal order uses it to clear `orderDraftProvider`
+  /// and reset `orderCreateStateProvider`; POS uses it to clear
+  /// `posCartProvider` and invalidate `productsProvider` /
+  /// `stockOverviewProvider`. See [OnAfterSubmitHook].
+  final OnAfterSubmitHook? onAfterSubmit;
+
+  /// Workflow-specific navigation hook (Phase 2, FR2/FR3). The orchestrator
+  /// invokes this after `onAfterSubmit` succeeds. Normal order does
+  /// `context.pushReplacement('/orders/{orderRef}')`; POS does
+  /// `context.pushReplacement('/pos/receipt/{orderRef}')`. See
+  /// [OnNavigateAfterSubmitHook].
+  final OnNavigateAfterSubmitHook? onNavigateAfterSubmit;
+
+  /// Optional builder for the per-item photo-upload step that runs after
+  /// `createOrder` succeeds. Both workflows currently upload per-item
+  /// `pendingPhotos` via `orderService.uploadOrderPhoto`; the builder is
+  /// extracted so each workflow can supply its own upload routine without
+  /// the orchestrator duplicating the loop. Returning `null` skips photo
+  /// upload entirely (used by POS when `skipPayment` is true).
+  ///
+  /// The hook receives the created [Order] and the orchestrator's [WidgetRef].
+  final Future<void> Function(WidgetRef ref, Order order, OrderCreateState state)? onUploadPendingPhotos;
+
   const OrderCreationConfig({
     required this.orderStateProvider,
     required this.posMode,
     required this.enableDraft,
+    required this.enableCartSync,
     required this.enableSwipeNavigation,
     required this.stage1Builder,
     required this.stage2Builder,
@@ -96,5 +203,9 @@ class OrderCreationConfig {
     required this.stageContainerBuilder,
     this.stageCount = 4,
     this.onStageChange,
+    this.onBeforeSubmit,
+    this.onAfterSubmit,
+    this.onNavigateAfterSubmit,
+    this.onUploadPendingPhotos,
   });
 }
