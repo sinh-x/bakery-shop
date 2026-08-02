@@ -230,6 +230,26 @@ class OrdersLabels {
   static const deliveryDayPrevTooltip = 'Ngày trước';
   static const deliveryDayNextTooltip = 'Ngày sau';
 
+  // Delivery calendar time-slot count badge + compact layout (DG-329
+  // Phase 4 / FR5 / AC4). Shown next to a slot label when the slot has 3+
+  // orders, e.g. "15:00 (3 đơn)".
+  static String deliverySlotCountBadge(int count) => '$count đơn';
+
+  /// Minimum readable width (in logical pixels) of a compact order chip in
+  /// the calendar time-slot row (NFR2). Below this width chips become too
+  /// narrow to display the customer name and staff line legibly.
+  static const double compactOrderChipMinWidth = 120.0;
+
+  /// Maximum number of compact order chips rendered per row in a calendar
+  /// time-slot row on screens ≥ 480px wide (NFR2). On narrower screens the
+  /// slot falls back to a vertically scrollable list.
+  static const int compactOrderChipsPerRow = 4;
+
+  /// Screen-width threshold (in logical pixels) at or above which the
+  /// calendar time-slot row renders the compact `Wrap` layout. Below this
+  /// width the slot falls back to a scrollable single-column list.
+  static const double compactLayoutMinScreenWidth = 480.0;
+
   // Delivery staff claiming UI (DG-310 Phase 4) — FR5/FR6/FR7.
   static const deliveryClaimButton = 'Nhận giao';
   static const deliveryUnclaimButton = 'Trả đơn';
