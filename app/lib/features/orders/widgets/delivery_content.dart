@@ -105,10 +105,10 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
     await ref.read(orderListProvider.notifier).refresh();
   }
 
-  /// Delivery-role staff filtered client-side from the cached
-  /// `staffListProvider` (FR2/NFR1/NFR2 — no extra API call on toggle).
+  /// All active staff filtered client-side from the cached
+  /// `staffListProvider` (FR2/NFR1 — no extra API call on toggle).
   List<StaffMember> _deliveryStaff(List<StaffMember> all) {
-    return all.where((s) => s.role == 'giao-hang' && s.active).toList();
+    return all.where((s) => s.active).toList();
   }
 
   @override
@@ -316,9 +316,9 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   }
 }
 
-/// Staff filter dropdown populated from delivery-role staff (FR2/FR4).
+/// Staff filter dropdown populated from all active staff (FR2/FR4).
 /// "All" is always the first option and the default selection (FR4).
-/// No extra API call on toggle (NFR1/NFR2) — uses already-loaded staff.
+/// No extra API call on toggle (NFR1) — uses already-loaded staff.
 class _StaffFilterDropdown extends StatelessWidget {
   const _StaffFilterDropdown({
     required this.deliveryStaff,
@@ -359,10 +359,10 @@ class _StaffFilterDropdown extends StatelessWidget {
   }
 }
 
-/// Per-staff workload summary (FR5/AC3): shows each delivery-role staff
+/// Per-staff workload summary (FR5/AC3): shows each active staff
 /// member's count of today's non-terminal delivery orders, plus an
 /// "unassigned" bucket. Collapsed to a single line when there are no
-/// delivery-role staff.
+/// active staff.
 class _WorkloadSummary extends StatelessWidget {
   const _WorkloadSummary({
     required this.deliveryStaff,

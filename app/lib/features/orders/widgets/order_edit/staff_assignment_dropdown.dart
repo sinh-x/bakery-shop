@@ -6,10 +6,10 @@ import '../../../../providers/order/delivery_staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Staff assignment `DropdownButtonFormField` for the order edit wizard
-/// delivery stage (DG-304 Phase 5 / FR8/AC5/AC6). Populated from active
-/// delivery-role staff (role "giao-hang") via [deliveryStaffForAssignmentProvider];
-/// deactivated staff are excluded (FR10). An "unassign" option (null) is the
-/// first item so an admin can clear the assignment (FR6).
+/// delivery stage (DG-304 Phase 5 / FR8/AC5/AC6). Populated from all active
+/// staff via [deliveryStaffForAssignmentProvider]; deactivated staff are
+/// excluded. An "unassign" option (null) is the first item so an admin
+/// can clear the assignment (FR6).
 ///
 /// Follows the `DropdownButtonFormField` pattern from
 /// `staff_binding_section.dart`.

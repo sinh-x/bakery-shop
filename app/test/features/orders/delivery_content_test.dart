@@ -400,9 +400,10 @@ void main() {
     final deliveryStaff = [
       StaffMember(id: 10, name: 'An', role: 'giao-hang', active: true),
       StaffMember(id: 20, name: 'Binh', role: 'giao-hang', active: true),
-      // Non-delivery role staff should be excluded from the dropdown.
+      // Non-delivery role staff are now included (DG-329 Phase 1 / FR2 —
+      // all active staff appear in the dropdown regardless of role).
       StaffMember(id: 30, name: 'Ca', role: 'thu-ngan', active: true),
-      // Inactive delivery staff should be excluded (FR10/NFR2).
+      // Inactive staff should still be excluded.
       StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
     ];
 
@@ -432,8 +433,8 @@ void main() {
       ),
     ];
 
-    testWidgets('FR2/FR4: staff filter dropdown includes All + delivery '
-        'staff only (excludes other roles + inactive)', (tester) async {
+    testWidgets('FR2/FR4: staff filter dropdown includes All + all active '
+        'staff (excludes inactive)', (tester) async {
       await tester.pumpWidget(buildTestWidget(
         todayOrders,
         staff: deliveryStaff,
@@ -444,12 +445,14 @@ void main() {
       await tester.tap(find.text(OrdersLabels.staffFilterAll));
       await tester.pumpAndSettle();
 
-      // "All" appears as both the selected hint and a menu item; the
-      // delivery staff appear as menu items only.
+      // "All" appears as both the selected hint and a menu item; all
+      // active staff appear as menu items only.
       expect(find.text('An'), findsOneWidget);
       expect(find.text('Binh'), findsOneWidget);
-      // Non-delivery role and inactive staff are excluded.
-      expect(find.text('Ca'), findsNothing);
+      // Non-delivery role but active staff are now included (DG-329
+      // Phase 1 / FR2).
+      expect(find.text('Ca'), findsOneWidget);
+      // Inactive staff remain excluded.
       expect(find.text('Dung'), findsNothing);
     });
 
@@ -522,6 +525,12 @@ void main() {
       );
       expect(
         find.text(OrdersLabels.workloadStaffCount('Binh', 1)),
+        findsOneWidget,
+      );
+      // Non-delivery role but active staff now also appear in the summary
+      // with a zero count (DG-329 Phase 1 / FR6).
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Ca', 0)),
         findsOneWidget,
       );
       expect(
