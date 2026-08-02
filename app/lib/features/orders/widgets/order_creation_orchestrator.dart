@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/order_draft.dart';
 import '../../../features/pos/utils/pos_cart_wizard_sync.dart';
+import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/order/order_draft_provider.dart';
 import 'gated_page_physics.dart';
 import 'order_creation_config.dart';
 import 'order_stage_indicator.dart';
+import 'order_submission_host.dart';
 import 'order_submission_mixin.dart';
 import 'order_wizard.dart';
 
@@ -45,9 +47,25 @@ class OrderCreationOrchestrator extends ConsumerStatefulWidget {
 /// can drive submission via a [GlobalKey] when the workflow-specific submit
 /// button lives outside the orchestrator's stage-4 widget (POS keeps the
 /// pay-now/pay-later buttons in its own stage-5 payment step).
+///
+/// Implements [OrderSubmissionHost] so [OrderSubmissionMixin] depends on the
+/// abstract interface rather than this concrete state class. This breaks the
+/// prior circular import (orchestrator ↔ mixin) and keeps the submission
+/// spine reusable (CQ-2 / CQ-3).
 class OrderCreationOrchestratorState
     extends ConsumerState<OrderCreationOrchestrator>
-    with OrderSubmissionMixin {
+    with OrderSubmissionMixin<OrderCreationOrchestrator>
+    implements OrderSubmissionHost {
+  // OrderSubmissionHost implementation — exposes the workflow config and the
+  // backing provider to the submission mixin without coupling the mixin to
+  // this concrete state class.
+  @override
+  OrderCreationConfig get config => widget.config;
+
+  @override
+  NotifierProvider<OrderCreateStateNotifier, OrderCreateState> get provider =>
+      config.orderStateProvider;
+
   void _goToStage(int stage) {
     final clamped = stage.clamp(1, config.stageCount);
     ref.read(provider.notifier).goToStage(clamped);

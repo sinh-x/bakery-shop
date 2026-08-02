@@ -17,7 +17,6 @@ import '../../../providers/products_provider.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../features/stock/stock_screen.dart';
 import 'pos_checkout_dialogs.dart';
-import 'pos_payment_step.dart';
 
 /// Callback the controller uses to invoke the shared orchestrator's
 /// submission spine. Returns `true` when the order was created and
@@ -355,59 +354,6 @@ class PosCheckoutPaymentController {
     ref.read(posCartProvider.notifier).clearCart();
     ref.invalidate(productsProvider);
     ref.invalidate(stockOverviewProvider);
-  }
-
-  /// Builds the [PosPaymentStep] widget for stage 5, bound to this
-  /// controller's state and handlers. The screen calls `setState` after
-  /// each callback so the snapshot values stay in sync with the widget.
-  Widget buildPaymentStep(
-    BuildContext context, {
-    required bool deliverImmediately,
-    required bool mounted,
-    required VoidCallback onChanged,
-  }) {
-    return PosPaymentStep(
-      key: const ValueKey('pos-payment'),
-      orderTotal: _cartTotal,
-      initialAmount: _paidAmount,
-      hasTienRut: _hasTienRut,
-      tienRutAmount: _tienRutAmount,
-      selectedPaymentMethod: _selectedPaymentMethod,
-      selectedTargetAccount: _selectedTargetAccount,
-      isProcessing: _isProcessing,
-      onPaymentMethodChanged: (m) {
-        onPaymentMethodChanged(m);
-        onChanged();
-      },
-      onAmountChanged: (a) {
-        onAmountChanged(a);
-        onChanged();
-      },
-      onTienRutAmountChanged: (a) {
-        onTienRutAmountChanged(a);
-        onChanged();
-      },
-      onTargetAccountChanged: (a) {
-        onTargetAccountChanged(a);
-        onChanged();
-      },
-      onBack: () {
-        backFromPaymentStep();
-        onChanged();
-      },
-      onPayNow: () {
-        handlePayNow(
-          context,
-          deliverImmediately: deliverImmediately,
-          mounted: mounted,
-        );
-        onChanged();
-      },
-      onPayLater: () {
-        handlePayLater(context, mounted: mounted);
-        onChanged();
-      },
-    );
   }
 }
 

@@ -12,9 +12,9 @@ import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'order_creation_config.dart';
-import 'order_creation_orchestrator.dart';
+import 'order_submission_host.dart';
 
-/// Submission pipeline extracted from [OrderCreationOrchestratorState] so the
+/// Submission pipeline extracted from the orchestrator state so the
 /// orchestrator file stays under the 400-line threshold (DG-322 / CQ-1).
 ///
 /// Owns the shared submission spine:
@@ -22,13 +22,28 @@ import 'order_creation_orchestrator.dart';
 /// refresh → `onAfterSubmit` → `onNavigateAfterSubmit`, plus the per-item
 /// payload builder and the default photo-upload loop. The re-entry guard
 /// (`isSubmitting`) and the post-submit latch (`submitted`) live here so the
-/// orchestrator's draft-save helper can read `submitted` via the public
-/// getter.
+/// host's draft-save helper can read `submitted` via the public getter.
 ///
-/// Applied onto `OrderCreationOrchestratorState` so `submitOrder` remains a
-/// public method on the state class (host screens still call it via a
-/// `GlobalKey<OrderCreationOrchestratorState>`).
-mixin OrderSubmissionMixin on ConsumerState<OrderCreationOrchestrator> {
+/// Constrained to `ConsumerState<W>` (generic over the host widget type) so
+/// the mixin can be applied to any `ConsumerState` subclass without importing
+/// the concrete orchestrator. The workflow config and backing provider are
+/// exposed via the abstract [config] and [provider] getters, which match the
+/// [OrderSubmissionHost] interface the host implements. This breaks the
+/// prior circular import (orchestrator ↔ mixin) and lets the submission
+/// spine be reused by any host that implements [OrderSubmissionHost]
+/// (CQ-2 / CQ-3). Host screens still call `submitOrder` via a `GlobalKey`
+/// typed against the concrete state class — see
+/// `OrderCreationOrchestratorState`.
+mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
+    on ConsumerState<W> {
+  /// The workflow configuration. Provided by the host state class (which
+  /// implements [OrderSubmissionHost]); `widget` is only visible on the host.
+  OrderCreationConfig get config;
+
+  /// The provider backing the wizard state. Provided by the host state class
+  /// for the same reason as [config].
+  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
+      get provider;
   /// Guards `submitOrder` against double-tap re-entry (matches the prior
   /// `_submitting` flag in `order_create_screen.dart` and `_isProcessing` in
   /// `pos_checkout_screen.dart`). The host screen reads this via
@@ -46,18 +61,9 @@ mixin OrderSubmissionMixin on ConsumerState<OrderCreationOrchestrator> {
   /// [OrderCreationController.isSubmitting].
   bool get isSubmitting => _isSubmitting;
 
-  /// Post-submit latch read by the orchestrator's `_saveDraft` helper so it
+  /// Post-submit latch read by the host's `_saveDraft` helper so it
   /// skips persisting a draft after a successful submission (FR6).
   bool get submitted => _submitted;
-
-  /// The orchestrator's config. Provided by the host state class because
-  /// `widget` is only visible there (mixin-private names are file-scoped).
-  OrderCreationConfig get config => widget.config;
-
-  /// The provider backing the wizard state. Provided by the host state class
-  /// for the same reason as [config].
-  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
-      get provider => config.orderStateProvider;
 
   /// Shared submission entrypoint invoked by the stage-4 review widget's
   /// submit button (normal order) or the POS payment step's pay-later/pay-now

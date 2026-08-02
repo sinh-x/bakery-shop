@@ -16,6 +16,7 @@ import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_checkout_payment_controller.dart';
+import '../../features/pos/widgets/pos_payment_step_builder.dart';
 import '../../features/pos/widgets/pos_review_panel.dart';
 import '../../features/pos/widgets/pos_stage3_pickup_screen.dart';
 import '../../providers/order/order_create_state_provider.dart';
@@ -205,7 +206,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         child: currentStage == 5
-            ? _payment.buildPaymentStep(
+            ? PosPaymentStepBuilder(controller: _payment).build(
                 context,
                 deliverImmediately: _posDeliverImmediately,
                 mounted: mounted,
