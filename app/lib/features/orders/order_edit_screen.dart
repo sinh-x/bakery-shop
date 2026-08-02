@@ -57,8 +57,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   // edit form — the URL is now managed via the Google Maps modal on the
   // order detail screen. The existing URL is preserved at save time by
   // passing the loaded order's `googleMapsUrl` back to the backend.
-  final _latitudeCtrl = TextEditingController();
-  final _longitudeCtrl = TextEditingController();
+  // DG-329 Phase 7 / FR9: the manual Lat/Long text fields were removed from
+  // the edit wizard. The loaded order's stored coordinates are preserved
+  // verbatim at save time (no user editing in the wizard); coordinates are
+  // managed via the Google Maps modal on the order detail screen.
+  double? _existingLatitude;
+  double? _existingLongitude;
   String? _existingGoogleMapsUrl;
   // FR9: single-state customer model (was tri-state: _selectedCustomer +
   // _linkedCustomerId + _customerTouched). The existing linked customer is
@@ -106,8 +110,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
-    _latitudeCtrl.dispose();
-    _longitudeCtrl.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -166,10 +168,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);
     // DG-303 Phase 4: prefill GPS + time slot fields from the existing order.
-    _latitudeCtrl.text =
-        order.latitude != null ? order.latitude.toString() : '';
-    _longitudeCtrl.text =
-        order.longitude != null ? order.longitude.toString() : '';
+    // DG-329 Phase 7 / FR9: Lat/Long are no longer editable in the wizard;
+    // preserve the stored values verbatim for save.
+    _existingLatitude = order.latitude;
+    _existingLongitude = order.longitude;
     _existingGoogleMapsUrl = order.googleMapsUrl;
     // DG-304 Phase 5: prefill the staff assignment from the existing order so
     // the dropdown shows the current assignee (FR8/AC5).
@@ -293,8 +295,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
-            latitude: double.tryParse(_latitudeCtrl.text.trim()),
-            longitude: double.tryParse(_longitudeCtrl.text.trim()),
+            latitude: _existingLatitude,
+            longitude: _existingLongitude,
             googleMapsUrl: _existingGoogleMapsUrl,
             // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
             deliveryTimeSlot: _dueTime != null
@@ -341,8 +343,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         shippingFee: _shippingFee,
         notes: _notesCtrl.text,
         source: _source,
-        latitude: double.tryParse(_latitudeCtrl.text.trim()),
-        longitude: double.tryParse(_longitudeCtrl.text.trim()),
+        latitude: _existingLatitude,
+        longitude: _existingLongitude,
         googleMapsUrl: _existingGoogleMapsUrl,
       );
 
@@ -465,8 +467,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),
                         onContinue: () => _goToStage(4),
-                        latitudeCtrl: _latitudeCtrl,
-                        longitudeCtrl: _longitudeCtrl,
                         // DG-304 Phase 5: staff assignment dropdown state.
                         assignedStaffId: _assignedStaffId,
                         onAssignedStaffChanged: _onAssignedStaffChanged,

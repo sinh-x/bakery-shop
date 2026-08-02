@@ -30,8 +30,6 @@ class _Stage3DeliveryOptionsScreenState
   final _addressCtrl = TextEditingController();
   final _deliveryPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  final _latitudeCtrl = TextEditingController();
-  final _longitudeCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -40,13 +38,9 @@ class _Stage3DeliveryOptionsScreenState
     _addressCtrl.text = state.wizardData.deliveryAddress;
     _deliveryPhoneCtrl.text = state.wizardData.deliveryPhone;
     _notesCtrl.text = state.wizardData.notes;
-    _latitudeCtrl.text = state.latitude?.toString() ?? '';
-    _longitudeCtrl.text = state.longitude?.toString() ?? '';
     _addressCtrl.addListener(_syncToState);
     _deliveryPhoneCtrl.addListener(_syncToState);
     _notesCtrl.addListener(_syncToState);
-    _latitudeCtrl.addListener(_syncGpsToState);
-    _longitudeCtrl.addListener(_syncGpsToState);
     // CQ-1: deferring the prefill to the next frame avoids synchronously
     // mutating the provider during widget build (initState), which broke
     // 3 tests that assert the build phase does not update wizard state.
@@ -62,13 +56,9 @@ class _Stage3DeliveryOptionsScreenState
     _addressCtrl.removeListener(_syncToState);
     _deliveryPhoneCtrl.removeListener(_syncToState);
     _notesCtrl.removeListener(_syncToState);
-    _latitudeCtrl.removeListener(_syncGpsToState);
-    _longitudeCtrl.removeListener(_syncGpsToState);
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
-    _latitudeCtrl.dispose();
-    _longitudeCtrl.dispose();
     super.dispose();
   }
 
@@ -84,21 +74,13 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
-  /// DG-303 Phase 4 / DG-306 Phase 1: sync GPS coordinate text fields back to
-  /// `OrderCreateState`. Latitude/longitude are parsed to `double?` so the
-  /// backend receives numeric values; invalid input is left as `null` and
-  /// the field validator surfaces the error to the user. The manual
-  /// `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) — the
-  /// slot is auto-derived from `dueTime`. DG-306 Phase 3 / FR7: the Google
-  /// Maps URL field was removed from the create form — the URL is now
-  /// managed via the Google Maps modal on the order detail screen.
-  void _syncGpsToState() {
-    final notifier = ref.read(widget.orderStateProvider.notifier);
-    notifier.updateGpsFields(
-      latitude: double.tryParse(_latitudeCtrl.text.trim()),
-      longitude: double.tryParse(_longitudeCtrl.text.trim()),
-    );
-  }
+  /// DG-303 Phase 4 / DG-306 Phase 1: the manual `deliveryTimeSlot` dropdown
+  /// was removed (DG-306 Phase 1 / FR2) — the slot is auto-derived from
+  /// `dueTime`. DG-306 Phase 3 / FR7: the Google Maps URL field was removed
+  /// from the create form — the URL is now managed via the Google Maps modal
+  /// on the order detail screen. DG-329 Phase 7 / FR9: the manual Lat/Long
+  /// text fields were removed from the wizard; stored coordinates are
+  /// preserved via the Google Maps modal on the order detail screen.
 
   void _updateDeliveryType(String type) {
     final notifier = ref.read(widget.orderStateProvider.notifier);
@@ -214,8 +196,6 @@ class _Stage3DeliveryOptionsScreenState
                   (feeConfig?.hasError ?? false) ? VN.errorLoading : null,
               onRetryShippingFeeConfig: () =>
                   _retryShippingFeeConfig(data.deliveryType),
-              latitudeCtrl: _latitudeCtrl,
-              longitudeCtrl: _longitudeCtrl,
               summaryCardSlots: [
                 ProductSummaryCard(items: state.items),
                 CustomerSummaryCard(
