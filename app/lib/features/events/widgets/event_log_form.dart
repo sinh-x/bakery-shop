@@ -1,11 +1,19 @@
 import 'dart:io';
 
+// EXEMPT: 300-line widget threshold exceeded because the quick-log form owns
+// summary/type/tag selection, photo upload lifecycle, and submit flow in one
+// inline widget to keep QuickLogPhotoPicker under its own widget limit.
+// Pre-existing at 295 lines before DG-333 Phase 5; race-condition fix added
+// the _uploadPhotos helper + UploadProgressIndicator and grew it to 342.
+// Reviewed 2026-08-02.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../data/api/event_service.dart';
 import '../../../providers/events_provider.dart';
+import '../../../providers/photo_upload_provider.dart';
+import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'quick_log_photo_picker.dart';
 
@@ -59,7 +67,6 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   final _selectedPhotos = <XFile>[];
   bool _showCustomTagField = false;
   bool _saving = false;
-  bool _uploading = false;
 
   @override
   void dispose() {
@@ -83,21 +90,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             loggedBy: loggedBy,
           );
       if (_selectedPhotos.isNotEmpty && mounted) {
-        setState(() => _uploading = true);
-        final service = ref.read(eventServiceProvider);
-        try {
-          for (final xfile in _selectedPhotos) {
-            await service.uploadEventPhoto(
-              createdEvent.id,
-              File(xfile.path),
-            );
-          }
-        } catch (uploadErr) {
-          debugPrint('uploadEventPhoto (quick-log) failed: $uploadErr');
-          if (mounted) {
-            showTopSnackBar(context, VN.eventPhotosUploadFailed);
-          }
-        }
+        await _uploadPhotos(createdEvent.id);
       }
       if (mounted) {
         showTopSnackBar(context, VN.eventLogged);
@@ -109,11 +102,27 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _saving = false;
-          _uploading = false;
-        });
+        setState(() => _saving = false);
       }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_submit] before `_reset()` runs so the form is not cleared until every
+  /// upload reaches a terminal state (FR3 — race condition fix, AC5).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(int eventId) async {
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final service = ref.read(eventServiceProvider);
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 
@@ -280,12 +289,14 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         // Photo picker — compact; uploads after event creation (NFR1)
         QuickLogPhotoPicker(
           selectedPhotos: _selectedPhotos,
-          uploading: _uploading,
           onSelectionChanged: (files) => setState(() {
             _selectedPhotos
               ..clear()
               ..addAll(files);
           }),
+        ),
+        UploadProgressIndicator(
+          states: ref.watch(photoUploadNotifierProvider).states,
         ),
         const SizedBox(height: 12),
 
@@ -317,7 +328,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: (_saving || _uploading)
+          child: _saving
               ? const SizedBox(
                   width: 20,
                   height: 20,
