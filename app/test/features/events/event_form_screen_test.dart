@@ -221,7 +221,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           eventServiceProvider.overrideWithValue(EventService(dio)),
           photoUploadNotifierProvider
-              .overrideWith(() => _SeededUploadNotifier()),
+              .overrideWith(_SeededUploadNotifier.new),
         ],
       );
       addTearDown(container.dispose);

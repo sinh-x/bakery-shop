@@ -1643,7 +1643,7 @@ void main() {
           dioProvider.overrideWithValue(dio),
           eventServiceProvider.overrideWithValue(EventService(dio)),
           photoUploadNotifierProvider
-              .overrideWith(() => _SeededUploadNotifier()),
+              .overrideWith(_SeededUploadNotifier.new),
         ],
       );
       addTearDown(container.dispose);
