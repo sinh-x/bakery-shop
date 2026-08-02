@@ -65,6 +65,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
     final e = widget.entry;
     _titleCtrl = TextEditingController(text: e?.title ?? '');
     _contentCtrl = TextEditingController(text: e?.content ?? '');
@@ -175,7 +183,17 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.toString());
+        // Format the typed partial-failure exception's user-facing message
+        // (DG-333 Phase 5.6-c1-fix m3); fall back to e.toString() for other
+        // unexpected errors.
+        final message = e is PhotoUploadPartialFailure
+            ? VN.photoUploadCompleteWithErrors(
+                e.completedCount,
+                e.failedCount,
+                e.totalCount,
+              )
+            : e.toString();
+        showTopSnackBar(context, message);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -427,12 +445,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     );
     final batch = ref.read(photoUploadNotifierProvider);
     if (batch.hasErrors) {
-      throw Exception(
-        VN.photoUploadCompleteWithErrors(
-          batch.completedCount,
-          batch.failedCount,
-          batch.totalCount,
-        ),
+      throw PhotoUploadPartialFailure(
+        completedCount: batch.completedCount,
+        failedCount: batch.failedCount,
+        totalCount: batch.totalCount,
       );
     }
   }

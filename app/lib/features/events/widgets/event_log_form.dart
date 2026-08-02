@@ -69,6 +69,19 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
+  }
+
+  @override
   void dispose() {
     _summaryCtrl.dispose();
     _customTagCtrl.dispose();

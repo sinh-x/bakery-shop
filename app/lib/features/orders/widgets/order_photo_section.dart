@@ -98,6 +98,19 @@ class OrderPhotoSection extends ConsumerStatefulWidget {
 class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
   final _picker = ImagePicker();
 
+  @override
+  void initState() {
+    super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
+  }
+
   Future<void> _pickAndUpload() async {
     final files = await _picker.pickMultiImage(imageQuality: 85);
     if (files.isEmpty || !mounted) return;
@@ -112,7 +125,18 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
     if (mounted) {
       final batch = ref.read(photoUploadNotifierProvider);
       if (batch.hasErrors) {
-        showTopSnackBar(context, VN.apiError);
+        final firstError = batch.items
+            .firstWhere(
+              (i) => i.state.status == PhotoUploadStatus.error,
+              orElse: () => batch.items.first,
+            )
+            .state.errorMessage;
+        showTopSnackBar(
+          context,
+          firstError == null || firstError.isEmpty
+              ? VN.apiError
+              : '${VN.apiError}: $firstError',
+        );
       } else {
         showTopSnackBar(context, VN.orderPhotoAdded);
       }

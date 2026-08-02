@@ -2,6 +2,8 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/events/event_form_screen.dart';
+import 'package:bakery_app/providers/photo_upload_provider.dart';
+import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -200,4 +202,73 @@ void main() {
     await _pump(tester, container);
     expect(find.text(VN.addTag, skipOffstage: false), findsOneWidget);
   });
+
+  // DG-333 Phase 5.6-c1-fix (M3): photo-upload integration. When the shared
+  // PhotoUploadNotifier holds in-progress upload state, the EventFormScreen
+  // mounts an UploadProgressIndicator that surfaces the per-photo progress.
+  // We seed the provider state directly (bypassing ImagePicker) and verify
+  // the indicator renders with the expected count summary.
+  testWidgets(
+    'renders UploadProgressIndicator with seeded in-progress upload state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final prefs = await SharedPreferences.getInstance();
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_EventsInterceptor());
+      final container = ProviderContainer(
+        overrides: [
+          dioProvider.overrideWithValue(dio),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          eventServiceProvider.overrideWithValue(EventService(dio)),
+          photoUploadNotifierProvider
+              .overrideWith(() => _SeededUploadNotifier()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: _router(),
+          ),
+        ),
+      );
+      // Drive a few frames without pumpAndSettle so the form's initState
+      // microtask (reset) and the seeded provider state settle without
+      // waiting on background async loads.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // The indicator is mounted; the seeded terminal batch shows the
+      // "upload complete" summary. Use skipOffstage:false because the
+      // indicator lives below the fold in the form's ListView.
+      expect(find.byType(UploadProgressIndicator, skipOffstage: false),
+          findsOneWidget);
+      expect(find.text(VN.photoUploadComplete(2), skipOffstage: false),
+          findsOneWidget);
+    },
+  );
+}
+
+/// Notifier that emits a fixed terminal batch (2 successes) so the
+/// EventFormScreen's watched [UploadProgressIndicator] renders a visible
+/// completion summary without driving a real upload. `reset()` is
+/// overridden to a no-op so the screen's initState microtask reset does not
+/// clear the seeded state (DG-333 Phase 5.6-c1-fix m2/M3).
+class _SeededUploadNotifier extends PhotoUploadNotifier {
+  @override
+  PhotoUploadBatchState build() => PhotoUploadBatchState([
+        PhotoUploadItem(
+          fileName: 'a.jpg',
+          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+        PhotoUploadItem(
+          fileName: 'b.jpg',
+          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+      ]);
+
+  @override
+  void reset() {}
 }

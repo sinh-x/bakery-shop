@@ -3,6 +3,33 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../shared/widgets/upload_progress_indicator.dart';
 
+/// Typed exception thrown when a photo-upload batch completes with one or
+/// more per-photo failures (DG-333 Phase 5.6-c1-fix m3).
+///
+/// Replaces the prior `throw Exception(VN...)` pattern in
+/// `knowledge_form_screen._uploadNewPhotos` so callers can catch a
+/// structured failure instead of string-matching on the user-facing
+/// message. The [userMessage] getter formats the VN summary from the
+/// structured counts so the catch handler can surface it directly.
+class PhotoUploadPartialFailure implements Exception {
+  PhotoUploadPartialFailure({
+    required this.completedCount,
+    required this.failedCount,
+    required this.totalCount,
+  });
+
+  final int completedCount;
+  final int failedCount;
+  final int totalCount;
+
+  /// User-facing summary string built from the structured counts.
+  String get userMessage => '$completedCount/$totalCount ảnh ($failedCount lỗi)';
+
+  @override
+  String toString() => 'PhotoUploadPartialFailure($completedCount/$totalCount, '
+      '$failedCount failed)';
+}
+
 /// Per-photo upload item tracked by [PhotoUploadNotifier].
 ///
 /// Wraps the Phase 1 [PhotoUploadState] with the originating [fileName] so
