@@ -396,6 +396,19 @@ class CashDrawerService {
     return amount is num ? amount.toInt() : null;
   }
 
+  /// Phase 4.1 F1/F3: returns the 1101 (Cash in Drawer) journal account
+  /// balance from `GET /api/cash-drawer/status`, regardless of whether a
+  /// drawer is currently open. Surfaced in the open dialog (upfront, before
+  /// any 409 proposal) and the close dialog for reconciliation. Returns 0
+  /// when the backend omits the field or no drawer state exists.
+  Future<int> getAccountingBalance1101() async {
+    final response = await _dio.get('/api/cash-drawer/status');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) return 0;
+    final amount = data['accountingBalance1101'];
+    return amount is num ? amount.toInt() : 0;
+  }
+
   /// FR10: paginated list of past drawers, optionally filtered by date range.
   Future<CashDrawerHistoryResponse> getDrawerHistory({
     String? since,

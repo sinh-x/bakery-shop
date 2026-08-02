@@ -824,13 +824,21 @@ def drawer_status():
     """
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
+        # Phase 4.1 F1/F7: surface the 1101 journal balance so the client
+        # can display it alongside the computed expected balance. The two
+        # may diverge only transiently between a mutation and the next read,
+        # but showing both supports reconciliation (DG-331 review phase 4.1).
+        accounting_balance_1101 = int(_get_account_balance(conn, CASH_DRAWER_ASSET_CODE))
         drawer = CashDrawer.get_active(conn)
         if drawer:
-            return drawer.to_api_dict()
+            result = drawer.to_api_dict()
+            result["accountingBalance1101"] = accounting_balance_1101
+            return result
         recent = CashDrawer.get_most_recent_closed(conn)
         if recent:
             data = {"activeDrawer": None}
             data["previousCloseCountedAmount"] = recent.counted_amount
+            data["accountingBalance1101"] = accounting_balance_1101
             return data
         return None
 

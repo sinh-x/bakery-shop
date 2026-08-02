@@ -63,6 +63,16 @@ final cashDrawerPreviousCloseProvider = FutureProvider<int?>((ref) async {
   return service.getPreviousCloseCountedAmount();
 });
 
+/// Phase 4.1 F3: the 1101 (Cash in Drawer) journal account balance from
+/// `GET /api/cash-drawer/status`, returned regardless of whether a drawer is
+/// currently open. Displayed in the open dialog upfront (before any 409
+/// proposal) as "Số dư kế toán 1101" for reconciliation reference. Falls
+/// back to 0 when the backend omits the field.
+final cashDrawerAccountingBalance1101Provider = FutureProvider<int>((ref) async {
+  final service = ref.watch(cashDrawerServiceProvider);
+  return service.getAccountingBalance1101();
+});
+
 /// FR10: paginated cash-drawer history, filterable by date range. Uses
 /// `FutureProvider.family` so distinct filter arguments cache independently,
 /// matching the [journalEntriesProvider] pattern in `accounting_provider.dart`.

@@ -1075,6 +1075,10 @@ class VN {
   /// trước"). Follows the 1101 reference balance line.
   static const cashDrawerPreviousCloseBalance = 'Số dư sau khi đóng quỹ lần trước';
 
+  /// Phase 4.1 F5/F6: "current balance" helper shown in the cash-in and
+  /// cash-out dialogs so the owner knows how much is already in the drawer.
+  static const cashDrawerCurrentBalance = 'Số dư hiện tại';
+
   /// DG-331: close surplus confirmation dialog labels. Shown when closing
   /// the drawer with counted > expected and the surplus has not yet been
   /// confirmed.

@@ -147,13 +147,16 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 
   Future<void> _handleOpen(BuildContext context) async {
     // DG-331 FR9/AC8: surface the previous close counted amount ("Số dư sau
-    // khi đóng quỹ lần trước") in the open dialog as a reference. The 1101
-    // accounting reference balance is only revealed by the backend on a 409
-    // proposal (see TransferProposalException/ExcessProposalException below),
-    // so it is not passed here upfront.
+    // khi đóng quỹ lần trước") in the open dialog as a reference. Phase 4.1
+    // F3: also surface the 1101 accounting balance upfront (before any 409
+    // proposal) so the owner can reconcile immediately. The 1101 balance is
+    // still passed through by the 409 proposal paths below.
     final previousClose = ref.read(cashDrawerPreviousCloseProvider).value;
+    final accountingBalance1101 =
+        ref.read(cashDrawerAccountingBalance1101Provider).value ?? 0;
     final result = await showOpenDrawerDialog(
       context,
+      referenceBalance: accountingBalance1101,
       previousCloseCountedAmount: previousClose,
     );
     if (result == null || !context.mounted) return;
@@ -265,7 +268,15 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 
   Future<void> _handleCashIn(BuildContext context) async {
     final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
-    final result = await showCashInDialog(context, staff: staff);
+    // Phase 4.1 F5: show the current expected balance as helper text so the
+    // owner knows how much is already in the drawer.
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    final expectedBalance = drawer?.expectedBalance ?? 0;
+    final result = await showCashInDialog(
+      context,
+      staff: staff,
+      expectedBalance: expectedBalance,
+    );
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
@@ -282,7 +293,15 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 
   Future<void> _handleCashOut(BuildContext context) async {
     final staff = ref.read(staffListProvider).value ?? const <StaffMember>[];
-    final result = await showCashOutDialog(context, staff: staff);
+    // Phase 4.1 F6: show the current expected balance as helper text so the
+    // owner knows how much they can withdraw.
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    final expectedBalance = drawer?.expectedBalance ?? 0;
+    final result = await showCashOutDialog(
+      context,
+      staff: staff,
+      expectedBalance: expectedBalance,
+    );
     if (result == null || !context.mounted) return;
     await ref.read(_mutationInProgressProvider.notifier).run(
           context,
@@ -300,9 +319,12 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   Future<void> _handleClose(BuildContext context) async {
     final drawer = ref.read(cashDrawerStatusProvider).value;
     if (drawer == null) return;
+    // Phase 4.1 F4: surface the 1101 accounting balance below the expected
+    // balance for reconciliation reference.
     final result = await showCloseDrawerDialog(
       context,
       expectedBalance: drawer.expectedBalance,
+      accountingBalance1101: drawer.accountingBalance1101,
     );
     if (result == null || !context.mounted) return;
 

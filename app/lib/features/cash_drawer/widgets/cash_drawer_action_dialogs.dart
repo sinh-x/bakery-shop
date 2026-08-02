@@ -50,6 +50,10 @@ enum CarryOverDecision { accept, decline }
 /// (non-zero), it is displayed as the 1101 accounting reference. When
 /// [previousCloseCountedAmount] is provided (non-null), it is displayed as
 /// "Số dư sau khi đóng quỹ lần trước" (DG-331 FR9 / AC8).
+///
+/// Phase 4.1 F3: [referenceBalance] is now shown upfront (before any 409
+/// proposal) so the owner can reconcile against the 1101 journal balance
+/// immediately, not only after a transfer/excess proposal.
 Future<CashDrawerDialogResult?> showOpenDrawerDialog(
   BuildContext context, {
   int referenceBalance = 0,
@@ -423,9 +427,13 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
 /// the user selects the `employee` source. Pass an empty list when no staff
 /// are configured (the employee option remains selectable but the picker will
 /// be empty).
+///
+/// Phase 4.1 F5: [expectedBalance] is shown as "Số dư hiện tại" helper text so
+/// the owner knows how much is already in the drawer before adding more.
 Future<CashDrawerDialogResult?> showCashInDialog(
   BuildContext context, {
   List<StaffMember> staff = const <StaffMember>[],
+  int expectedBalance = 0,
 }) =>
     _showAmountDialog(
       context: context,
@@ -433,6 +441,9 @@ Future<CashDrawerDialogResult?> showCashInDialog(
       amountLabel: VN.cashDrawerAmountLabel,
       confirmLabel: VN.xacNhan,
       allowZero: false,
+      helper: expectedBalance > 0
+          ? '${VN.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+          : null,
       selector: _CashDrawerSelector.cashIn(staff),
     );
 
@@ -440,9 +451,13 @@ Future<CashDrawerDialogResult?> showCashInDialog(
 ///
 /// `staff` is the active staff list used to populate the per-staff picker when
 /// the user selects the `employee` destination.
+///
+/// Phase 4.1 F6: [expectedBalance] is shown as "Số dư hiện tại" helper text so
+/// the owner knows how much they can withdraw.
 Future<CashDrawerDialogResult?> showCashOutDialog(
   BuildContext context, {
   List<StaffMember> staff = const <StaffMember>[],
+  int expectedBalance = 0,
 }) =>
     _showAmountDialog(
       context: context,
@@ -450,6 +465,9 @@ Future<CashDrawerDialogResult?> showCashOutDialog(
       amountLabel: VN.cashDrawerAmountLabel,
       confirmLabel: VN.xacNhan,
       allowZero: false,
+      helper: expectedBalance > 0
+          ? '${VN.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+          : null,
       selector: _CashDrawerSelector.cashOut(staff),
     );
 
@@ -457,19 +475,31 @@ Future<CashDrawerDialogResult?> showCashOutDialog(
 ///
 /// Displays the current expected balance so the owner can compare against
 /// the counted amount; the discrepancy is computed by the backend on close.
+///
+/// Phase 4.1 F4: [accountingBalance1101] is shown below the expected balance
+/// line as "Số dư kế toán 1101" for reconciliation reference.
 Future<CashDrawerDialogResult?> showCloseDrawerDialog(
   BuildContext context, {
   required int expectedBalance,
-}) =>
-    _showAmountDialog(
-      context: context,
-      title: VN.cashDrawerClose,
-      amountLabel: VN.cashDrawerCountedAmount,
-      confirmLabel: VN.cashDrawerClose,
-      allowZero: true,
-      helper:
-          '${VN.cashDrawerExpectedBalance}: ${formatVND(expectedBalance.toDouble())}',
+  int accountingBalance1101 = 0,
+}) {
+  final helpers = <String>[
+    '${VN.cashDrawerExpectedBalance}: ${formatVND(expectedBalance.toDouble())}',
+  ];
+  if (accountingBalance1101 > 0) {
+    helpers.add(
+      '${VN.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
     );
+  }
+  return _showAmountDialog(
+    context: context,
+    title: VN.cashDrawerClose,
+    amountLabel: VN.cashDrawerCountedAmount,
+    confirmLabel: VN.cashDrawerClose,
+    allowZero: true,
+    helper: helpers.join('\n'),
+  );
+}
 
 Future<CashDrawerDialogResult?> _showAmountDialog({
   required BuildContext context,
