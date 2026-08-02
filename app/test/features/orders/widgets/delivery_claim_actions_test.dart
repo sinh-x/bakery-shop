@@ -208,6 +208,36 @@ void main() {
     expect(find.text(OrdersLabels.deliveryUnclaimButton), findsNothing);
   });
 
+  // DG-329 Phase 6 / FR8 / AC7: delivery order cards in the list view show a
+  // claim button when the order is unassigned (regression guard for the card
+  // claim button — DeliveryClaimActions already renders on the card; this
+  // test pins the behavior so future repositioning cannot regress it).
+  testWidgets(
+      'AC7: delivery order card shows claim button when unassigned '
+      '(list-view regression)', (tester) async {
+    await tester.pumpWidget(await _buildApp(_deliveryOrder(), _giaoHangStaff()));
+    await tester.pump();
+
+    expect(find.byType(DeliveryOrderCard), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryUnassigned), findsOneWidget);
+  });
+
+  testWidgets(
+      'AC7: delivery order card shows no claim button when assigned to '
+      'another staff (non-admin)', (tester) async {
+    final order = _deliveryOrder(
+      assignedStaffId: '7',
+      assignedStaffName: 'Người Giao A',
+    );
+    await tester.pumpWidget(await _buildApp(order, _giaoHangStaff(staffId: 8)));
+    await tester.pump();
+
+    expect(find.byType(DeliveryOrderCard), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryClaimButton), findsNothing);
+    expect(find.text(OrdersLabels.deliveryUnclaimButton), findsNothing);
+  });
+
   // AC9: any linked staff sees the claim button.
   testWidgets('AC9: any linked staff sees claim button',
       (tester) async {

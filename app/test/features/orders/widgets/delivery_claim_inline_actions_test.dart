@@ -5,9 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/providers/delivery_claim_providers.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/delivery_claim_inline_actions.dart';
+import 'package:bakery_app/features/orders/widgets/order_detail/order_info_block.dart';
+import 'package:bakery_app/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 
@@ -117,6 +120,17 @@ Future<Widget> _buildApp(
       ),
     ),
   );
+}
+
+/// Fake [StaffListNotifier] returning a fixed staff list so [OrderInfoBlock]
+/// can resolve the assigned staff name without hitting the network
+/// (DG-329 Phase 6 / FR7 / AC6).
+class _FakeStaffListNotifier extends StaffListNotifier {
+  final List<StaffMember> staff;
+  _FakeStaffListNotifier(this.staff);
+
+  @override
+  Future<List<StaffMember>> build() async => staff;
 }
 
 class _InlineInterceptor extends Interceptor {
@@ -301,6 +315,114 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(OrdersLabels.deliveryUnclaimFailed), findsOneWidget);
+    });
+  });
+
+  // DG-329 Phase 6 / FR7 / AC6: the claim/unclaim button must render directly
+  // below the "Nhân viên giao hàng" assignment row, inside OrderInfoBlock —
+  // not below the entire OrderInfoBlock as a sibling. This group verifies the
+  // repositioned layout by rendering OrderInfoBlock (which now owns
+  // DeliveryClaimInlineActions) and asserting the claim button appears after
+  // the assignment label in widget tree order.
+  group('DeliveryClaimInlineActions repositioned inside OrderInfoBlock (FR7/AC6)', () {
+    Future<Widget> buildInfoBlockApp(
+      Order order,
+      CurrentStaff staff, {
+      List<StaffMember>? staffList,
+    }) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final prefs = await SharedPreferences.getInstance();
+      return ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          currentStaffProvider.overrideWith((ref) async => staff),
+          staffListProvider.overrideWith(() =>
+              _FakeStaffListNotifier(staffList ?? const [])),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 400,
+              child: OrderInfoBlock(
+                order: order,
+                formatDueDisplay: (a, b) => '',
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets(
+        'AC6: claim button renders inside OrderInfoBlock directly below '
+        'the "Nhân viên giao hàng" assignment row for an unassigned order',
+        (tester) async {
+      await tester.pumpWidget(
+        await buildInfoBlockApp(_deliveryOrder(), _giaoHangStaff()),
+      );
+      await tester.pump();
+
+      // The assignment label "Nhân viên giao hàng" is present.
+      expect(find.text(VN.deliveryAssignee), findsOneWidget);
+      // The claim button is present (repositioned inside OrderInfoBlock).
+      expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
+
+      // Tree-order assertion: the claim button is a descendant of
+      // OrderInfoBlock (i.e. repositioned inside the block, not a sibling),
+      // and the button paints below the assignment label.
+      final infoBlockFinder = find.byType(OrderInfoBlock);
+      final labelFinder = find.text(VN.deliveryAssignee);
+      final buttonFinder = find.text(OrdersLabels.deliveryClaimButton);
+      expect(
+        find.descendant(of: infoBlockFinder, matching: labelFinder),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: infoBlockFinder, matching: buttonFinder),
+        findsOneWidget,
+      );
+      final labelRect = tester.getTopLeft(labelFinder);
+      final buttonRect = tester.getTopLeft(buttonFinder);
+      expect(buttonRect.dy, greaterThan(labelRect.dy),
+          reason: 'claim button should render below the assignment label');
+    });
+
+    testWidgets(
+        'AC6: unclaim button renders inside OrderInfoBlock directly below '
+        'the "Nhân viên giao hàng" assignment row for an assigned order '
+        '(assigned staff)', (tester) async {
+      final order = _deliveryOrder(
+        assignedStaffId: '7',
+        assignedStaffName: 'Người Giao A',
+      );
+      await tester.pumpWidget(
+        await buildInfoBlockApp(order, _giaoHangStaff(staffId: 7)),
+      );
+      await tester.pump();
+
+      expect(find.text(VN.deliveryAssignee), findsOneWidget);
+      expect(find.text(OrdersLabels.deliveryUnclaimButton), findsOneWidget);
+
+      final labelRect = tester.getTopLeft(find.text(VN.deliveryAssignee));
+      final buttonRect = tester.getTopLeft(
+          find.text(OrdersLabels.deliveryUnclaimButton));
+      expect(buttonRect.dy, greaterThan(labelRect.dy),
+          reason: 'unclaim button should render below the assignment label');
+    });
+
+    testWidgets(
+        'AC6: non-delivery order renders no claim button inside '
+        'OrderInfoBlock', (tester) async {
+      await tester.pumpWidget(
+        await buildInfoBlockApp(
+          _deliveryOrder(deliveryType: 'pickup'),
+          _giaoHangStaff(),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text(VN.deliveryAssignee), findsNothing);
+      expect(find.text(OrdersLabels.deliveryClaimButton), findsNothing);
     });
   });
 }

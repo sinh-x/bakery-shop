@@ -10,6 +10,7 @@ import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../providers/delivery_claim_providers.dart';
+import 'delivery_claim_inline_actions.dart';
 import '../../../orders/widgets/order_edit/staff_assignment_dropdown.dart';
 import '../order_customer_section.dart';
 import '../order_delivery_section.dart';
@@ -144,10 +145,16 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
               widget.order.dueTime,
             ),
           ),
-        if (showAssignment)
+        if (showAssignment) ...[
           isAdmin
               ? _buildEditableAssignmentRow(selectedStaffId)
               : _buildStaticAssignmentRow(theme, ref),
+          // DG-329 Phase 6 / FR7 / AC6: claim/unclaim button renders directly
+          // below the "Nhân viên giao hàng" assignment row, inside the
+          // OrderInfoBlock — not below the entire block. Reuses the existing
+          // DeliveryClaimInlineActions widget verbatim; only repositioned.
+          DeliveryClaimInlineActions(order: widget.order),
+        ],
         OrderDeliverySection(
           deliveryType: widget.order.deliveryType,
           deliveryAddress: widget.order.deliveryAddress,
