@@ -12,7 +12,7 @@
 | Rule | Threshold / Directive |
 |------|----------------------|
 | Screen max lines | 300 |
-| Widget max lines | 200 |
+| Widget max lines | 300 |
 | Provider max lines | 400 |
 | Service max lines | 300 |
 | Widget extraction trigger | ≥3 private inner widget classes in a file |
