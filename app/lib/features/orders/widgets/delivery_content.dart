@@ -364,10 +364,13 @@ class _StaffFilterDropdown extends StatelessWidget {
   }
 }
 
-/// Per-staff workload summary (FR5/AC3): shows each active staff
+/// Per-staff workload summary (FR6/AC5): shows each active staff
 /// member's count of today's non-terminal delivery orders, plus an
-/// "unassigned" bucket. Collapsed to a single line when there are no
-/// active staff.
+/// "unassigned" bucket. Renders for ALL active staff regardless of role
+/// (not just `giao-hang`) — Phase 1 expanded `_deliveryStaff` to all
+/// active staff, so the summary now appears whenever any active staff
+/// exist. Collapses to the empty-state label when there are no active
+/// staff and hides entirely when the staff list is still loading.
 class _WorkloadSummary extends StatelessWidget {
   const _WorkloadSummary({
     required this.deliveryStaff,

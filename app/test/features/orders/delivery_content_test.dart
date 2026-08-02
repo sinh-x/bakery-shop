@@ -562,6 +562,79 @@ void main() {
       );
     });
 
+    testWidgets('AC5/FR6: workload summary shows for all active staff even '
+        'when no giao-hang role staff exist', (tester) async {
+      // Reproduces the original bug: previously the summary was hidden when
+      // no `giao-hang`-role staff existed. After DG-329 Phase 1 + Phase 5,
+      // `_deliveryStaff` returns ALL active staff, so the summary renders
+      // whenever any active staff exist (regardless of role).
+      final nonDeliveryOnlyStaff = [
+        StaffMember(id: 30, name: 'Ca', role: 'thu-ngan', active: true),
+        StaffMember(id: 50, name: 'Em', role: 'ban-hang', active: true),
+        // Inactive staff excluded.
+        StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
+      ];
+      final todayOrdersNoGiaoHang = [
+        _order(
+          id: 1,
+          ref: 'ORD-CA',
+          status: 'new',
+          deliveryType: 'bus',
+          dueDate: '2026-07-19',
+          assignedStaffId: '30',
+        ),
+        _order(
+          id: 2,
+          ref: 'ORD-UNASSIGNED',
+          status: 'ready',
+          deliveryType: 'door',
+          dueDate: '2026-07-19',
+        ),
+      ];
+      await tester.pumpWidget(buildTestWidget(
+        todayOrdersNoGiaoHang,
+        staff: nonDeliveryOnlyStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // The summary title is present (NOT hidden) even though no active
+      // `giao-hang`-role staff exist — this is the AC5 regression guard.
+      expect(find.text(OrdersLabels.workloadSummaryTitle), findsOneWidget);
+      // Active non-delivery-role staff appear with their counts.
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Ca', 1)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Em', 0)),
+        findsOneWidget,
+      );
+      // Inactive `giao-hang` staff (Dung) is excluded.
+      expect(find.text('Dung'), findsNothing);
+      // Unassigned bucket reflects the one unassigned order.
+      expect(
+        find.text('${OrdersLabels.workloadUnassigned}: 1'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('AC5/FR6: workload summary hides when no active staff exist',
+        (tester) async {
+      final allInactiveStaff = [
+        StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
+      ];
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: allInactiveStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // No active staff → `_deliveryStaff` is empty → summary hides entirely
+      // (no title, no chips).
+      expect(find.text(OrdersLabels.workloadSummaryTitle), findsNothing);
+      expect(find.text(OrdersLabels.workloadSummaryEmpty), findsNothing);
+    });
+
     testWidgets('AC7: staff filter resets to "All" on tab leave',
         (tester) async {
       final tabController = TabController(length: 3, vsync: tester);

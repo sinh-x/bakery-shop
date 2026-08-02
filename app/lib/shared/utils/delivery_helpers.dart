@@ -269,7 +269,7 @@ List<Order> filterDeliveryOrdersByStaff(List<Order> orders, {String? staffId}) {
 }
 
 /// A single staff member's workload count for today's non-terminal delivery
-/// orders (FR5). Used by [computeWorkloadSummary] to build the per-staff list.
+/// orders (FR6). Used by [computeWorkloadSummary] to build the per-staff list.
 class WorkloadEntry {
   final StaffMember staff;
   final int count;
@@ -278,14 +278,16 @@ class WorkloadEntry {
 }
 
 /// Computes a per-staff count of today's non-terminal delivery orders for the
-/// given delivery-role staff list (FR5/NFR3). [orders] should already be
-/// filtered to today's non-terminal delivery orders (the output of
+/// given active staff list (FR6/NFR3). [orders] should already be filtered to
+/// today's non-terminal delivery orders (the output of
 /// `filterDeliveryOrders(orders, todayOnly: true)`), so this function does a
 /// single O(n) pass over [orders] and an O(m) build of the per-staff counter
-/// (where m = number of delivery-role staff) — overall O(n + m) (NFR3).
+/// (where m = number of active staff) — overall O(n + m) (NFR3).
 ///
-/// Orders whose `assignedStaffId` is null/empty/unknown are counted under the
-/// "unassigned" bucket (returned via [unassignedCount]); only staff present in
+/// [deliveryStaff] is expected to be ALL active staff (any role), not just
+/// `giao-hang`-role staff (DG-329 Phase 5 / FR6). Orders whose
+/// `assignedStaffId` is null/empty/unknown are counted under the "unassigned"
+/// bucket (returned via [unassignedCount]); only staff present in
 /// [deliveryStaff] appear as [WorkloadEntry] results. The returned list is
 /// ordered to match [deliveryStaff] input order (typically the dropdown order).
 ({List<WorkloadEntry> entries, int unassignedCount}) computeWorkloadSummary(
