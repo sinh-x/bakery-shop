@@ -18,7 +18,7 @@ pytestmark = pytest.mark.critical
 
 
 def _create_expense(client, *, summary, category, subcategory=None, payment_method="Tiền mặt",
-                    payment_source="Shop tiền mặt", vendor="NCC", note="ghi chú",
+                    payment_source="Tiền mặt tại quầy", vendor="NCC", note="ghi chú",
                     staff_name="Lan", paid_by_name="Phượng", amount_vnd=50000):
     data = {
         "amount_vnd": amount_vnd,

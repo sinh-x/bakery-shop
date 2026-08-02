@@ -197,7 +197,7 @@ def test_settle_debt_records_actor_in_history(api_client):
         json={
             "amount": 200000,
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
         },
     )
     assert resp.status_code == 200
@@ -220,7 +220,7 @@ def test_settle_debt_full_creates_journal_entry(api_client):
     resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 500000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert resp.status_code == 200
     body = resp.json()
@@ -240,14 +240,14 @@ def test_settle_debt_full_creates_journal_entry(api_client):
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
         # FR5: DR the vendor's 25xx sub-account under 2500 (not the 2500
-        # parent), CR 1100 (Cash on Hand — Shop tiền mặt).
+        # parent), CR 1101 (Cash in Drawer — Tiền mặt tại quầy).
         ap_acc = Account.get_by_id(conn, debit_line.account_id)
         asset_acc = Account.get_by_id(conn, credit_line.account_id)
         assert ap_acc.code.startswith("25") and ap_acc.code != "2500"
         assert ap_acc.name == "Nhà cung cấp A"
         parent_acc = Account.get_by_id(conn, ap_acc.parent_id)
         assert parent_acc.code == "2500"
-        assert asset_acc.code == "1100"
+        assert asset_acc.code == "1101"
         assert debit_line.debit == 500000.0
         assert credit_line.credit == 500000.0
 
@@ -261,7 +261,7 @@ def test_settle_debt_full_nets_vendor_sub_account_to_zero(api_client):
     resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 400000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert resp.status_code == 200
     assert resp.json()["status"] == "paid"
@@ -290,7 +290,7 @@ def test_settle_debt_partial_keeps_vendor_sub_account_positive(api_client):
     resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 200000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert resp.status_code == 200
     assert resp.json()["remaining"] == 300000
@@ -330,7 +330,7 @@ def test_settle_debt_partial_tracks_remaining_balance(api_client):
     resp2 = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 200000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert resp2.status_code == 200
     body2 = resp2.json()
@@ -354,7 +354,7 @@ def test_settle_debt_rejects_amount_exceeding_remaining(api_client):
     resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 600000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert resp.status_code == 422
 
@@ -368,7 +368,7 @@ def test_settle_non_debt_expense_rejected(api_client):
             "amount_vnd": 50000,
             "category": "Khác",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "",
             "paid_by_name": "Phượng",
@@ -379,7 +379,7 @@ def test_settle_non_debt_expense_rejected(api_client):
     settle = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 50000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     assert settle.status_code == 422
 
@@ -425,7 +425,7 @@ def test_list_outstanding_debts_excludes_settled_by_default(api_client):
     api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 300000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     # status=all returns both
     all_resp = api_client.get("/api/expenses/debts?status=all")
@@ -447,7 +447,7 @@ def test_list_events_debt_status_filter_unpaid(api_client):
             "amount_vnd": 50000,
             "category": "Khác",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "",
             "paid_by_name": "Phượng",
@@ -467,7 +467,7 @@ def test_delete_debt_expense_reverses_settlement_journals(api_client):
     settle_resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 200000,
         "payment_method": "Tiền mặt",
-        "payment_source": "Shop tiền mặt",
+        "payment_source": "Tiền mặt tại quầy",
     })
     sid = settle_resp.json()["settlement_id"]
     with get_db() as conn:
@@ -550,9 +550,9 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
     """AC2 (DG-245 Phase 3): editing an expense cash→debt→cash produces the
     correct credit each time and leaves no stale journal entry.
 
-    - Start as cash expense → credit asset 1100 (Shop tiền mặt).
+    - Start as cash expense → credit asset 1101 (Tiền mặt tại quầy).
     - Edit to debt → credit vendor 25xx sub-account under 2500.
-    - Edit back to cash → credit 1100 again.
+    - Edit back to cash → credit 1101 again.
     - Exactly one journal entry exists for the expense at each step (in-place
       update, no stale entries).
     """
@@ -564,7 +564,7 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
             "amount_vnd": 200000,
             "category": "Vận chuyển",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "NCC RoundTrip",
             "note": "",
             "paid_by_name": "",
@@ -582,7 +582,7 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
 
     with get_db() as conn:
         code_cash, entry_id_1 = _credit_code(conn)
-    assert code_cash == "1100"
+    assert code_cash == "1101"
 
     # 2. Edit cash → debt. The existing unlocked JE is updated in place and
     #    its credit must now hit the vendor's 25xx sub-account (not 2500).
@@ -605,14 +605,14 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
         # In-place update: same entry id, no stale JE.
         assert entry_id_2 == entry_id_1
 
-    # 3. Edit debt → cash. The credit must return to the asset 1100 and the
+    # 3. Edit debt → cash. The credit must return to the asset 1101 and the
     #    entry must still be the same in-place JE (no stale entry left behind).
     patch_cash = api_client.patch(f"/api/events/{eid}", json={
         "data": {
             "amount_vnd": 200000,
             "category": "Vận chuyển",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "NCC RoundTrip",
             "note": "chuyển lại tiền mặt",
             "paid_by_name": "",
@@ -621,7 +621,7 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
     assert patch_cash.status_code == 200
     with get_db() as conn:
         code_cash2, entry_id_3 = _credit_code(conn)
-    assert code_cash2 == "1100"
+    assert code_cash2 == "1101"
     assert entry_id_3 == entry_id_1
 
 

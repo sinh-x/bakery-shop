@@ -655,7 +655,7 @@ def test_orphaned_lines_passes_on_valid_account():
 
 
 def _insert_expense_event(conn, *, category: str, amount: float = 10000,
-                          payment_source: str = "Shop tiền mặt") -> int:
+                          payment_source: str = "Tiền mặt tại quầy") -> int:
     """Insert an expense event and return its id."""
     import json
 
@@ -1028,13 +1028,13 @@ def _expense_je(conn, event_id: int, debit_code: str, credit_code: str,
 
 
 def test_expense_payment_account_mismatch_passes_cash_correct():
-    """Cash expense crediting 1100 (Shop tiền mặt) passes."""
+    """Cash expense crediting 1101 (Tiền mặt tại quầy) passes."""
     with get_db() as conn:
         ensure_schema(conn)
         event_id = _insert_expense_event_full(
-            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+            conn, category="Vận chuyển", payment_source="Tiền mặt tại quầy",
         )
-        _expense_je(conn, event_id, "5300", "1100")
+        _expense_je(conn, event_id, "5300", "1101")
         report = run_validation(conn)
     check = next(
         c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
@@ -1044,11 +1044,11 @@ def test_expense_payment_account_mismatch_passes_cash_correct():
 
 
 def test_expense_payment_account_mismatch_flags_cash_wrong_credit():
-    """Cash expense crediting 1200 instead of 1100 is flagged."""
+    """Cash expense crediting 1200 instead of 1101 is flagged."""
     with get_db() as conn:
         ensure_schema(conn)
         event_id = _insert_expense_event_full(
-            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+            conn, category="Vận chuyển", payment_source="Tiền mặt tại quầy",
         )
         _expense_je(conn, event_id, "5300", "1200")  # wrong credit
         report = run_validation(conn)
@@ -1058,7 +1058,7 @@ def test_expense_payment_account_mismatch_flags_cash_wrong_credit():
     assert check["status"] == "fail"
     assert check["issue_count"] == 1
     f = check["details"][0]
-    assert f["expected_account_code"] == "1100"
+    assert f["expected_account_code"] == "1101"
     assert f["actual_account_code"] == "1200"
     assert f["mismatch_kind"] == "payment_account"
 
@@ -1189,9 +1189,9 @@ def test_source_ledger_totals_passes_when_expense_in_sync():
     with get_db() as conn:
         ensure_schema(conn)
         event_id = _insert_expense_event_full(
-            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+            conn, category="Vận chuyển", payment_source="Tiền mặt tại quầy",
         )
-        _expense_je(conn, event_id, "5300", "1100", amount=10000)
+        _expense_je(conn, event_id, "5300", "1101", amount=10000)
         report = run_validation(conn)
     check = next(
         c for c in report["checks"] if c["check"] == "source_ledger_totals"
@@ -1211,7 +1211,7 @@ def test_source_ledger_totals_flags_expense_gap_when_je_removed():
     with get_db() as conn:
         ensure_schema(conn)
         event_id = _insert_expense_event_full(
-            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+            conn, category="Vận chuyển", payment_source="Tiền mặt tại quầy",
             amount=15000,
         )
         # No journal entry created — the source SUM includes it, journal SUM
@@ -1515,7 +1515,7 @@ def test_source_ledger_totals_skips_unmapped_category_expense():
         ensure_schema(conn)
         # Unmapped category — _build_expense_journal_lines returns None.
         eid = _insert_expense_event_full(
-            conn, category="UnmappedCategoryXYZ", payment_source="Shop tiền mặt",
+            conn, category="UnmappedCategoryXYZ", payment_source="Tiền mặt tại quầy",
             amount=12000,
         )
         # No JE created (mirrors build-time skip).

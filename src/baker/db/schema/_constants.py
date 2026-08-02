@@ -629,6 +629,7 @@ ALLOWED_TABLES = {
     "events",
     "journal_entries",
     "payment_transactions",
+    "cash_drawer",
 }
 
 PRODUCT_STOCK_SCHEMA = """
@@ -758,6 +759,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_name_parent
     ON expense_categories(name, COALESCE(parent_id, -1));
 """
 
+CASH_DRAWER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cash_drawer (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    opened_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    closed_at       TEXT,
+    status          TEXT NOT NULL DEFAULT 'open',
+    opening_balance INTEGER NOT NULL DEFAULT 0,
+    cash_sales      INTEGER NOT NULL DEFAULT 0,
+    owner_in        INTEGER NOT NULL DEFAULT 0,
+    owner_out       INTEGER NOT NULL DEFAULT 0,
+    cash_expenses   INTEGER NOT NULL DEFAULT 0,
+    counted_amount  INTEGER,
+    discrepancy     INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_opened_at ON cash_drawer(opened_at);
+"""
+
 SEED_EXPENSE_CATEGORIES = [
     # Parent categories
     ("Nguyên liệu", "5100", None),
@@ -784,6 +804,12 @@ SEED_CHART_OF_ACCOUNTS = [
     # Assets
     ("1000", "Tài sản", "asset", None),
     ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
+    # DG-330 Phase 1: cash sub-accounts under 1100. 1101 is the cash physically
+    # in the POS drawer (used by all cash that touches the drawer — cash sales,
+    # cash expenses, drawer ops); 1102 is cash the owner holds personally.
+    # INSERT OR IGNORE seeding keeps this idempotent on re-migration.
+    ("1101", "Tiền mặt tại quầy", "asset", "1100"),
+    ("1102", "Tiền mặt chủ sở hữu", "asset", "1100"),
     ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
     # DG-244 Phase 4: distinct bank sub-accounts under 1200 for payment
     # transaction routing. The expense flow still maps both VCB labels to
@@ -883,14 +909,20 @@ INVENTORY_PURCHASE_CATEGORIES = {
 }
 
 EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
-    "Shop tiền mặt": "1100",
+    # DG-330 Phase 1: split "Shop tiền mặt" into drawer cash (1101) and owner
+    # cash (1102). Cash expenses paid from the drawer credit 1101; cash paid
+    # from the owner's personal holdings credit 1102.
+    "Tiền mặt tại quầy": "1101",
+    "Tiền mặt chủ sở hữu": "1102",
     "TK Phượng VCB": "1210",
     "TK Ân VCB": "1220",
     "Nhân viên ứng trước": "2300",
 }
 
 PAYMENT_METHOD_TO_ASSET_CODE = {
-    "cash": "1100",
+    # DG-330 Phase 1: cash now routes to 1101 (Tiền mặt tại quầy) so the cash
+    # physically in the POS drawer is tracked separately from main 1100.
+    "cash": "1101",
     "card": "1100",
     "transfer": "1200",
 }
@@ -1233,6 +1265,7 @@ __all__ = [
     'ACCOUNTING_SCHEMA',
     'EXPENSE_CATEGORIES_SCHEMA',
     'SEED_EXPENSE_CATEGORIES',
+    'CASH_DRAWER_SCHEMA',
     'SEED_CHART_OF_ACCOUNTS',
     'EXPENSE_CATEGORY_TO_ACCOUNT_CODE',
     'INVENTORY_PURCHASE_CATEGORIES',

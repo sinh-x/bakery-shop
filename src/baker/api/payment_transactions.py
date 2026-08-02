@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from baker.api.auth import resolve_actor
 from baker.db.connection import get_db
+from baker.models.cash_drawer import CashDrawer
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
 from baker.utils.time import now_utc
 
@@ -93,7 +94,31 @@ def create_transaction(ref: str, body: TransactionCreate):
             note=body.note,
             payment_source=body.payment_source or "",
         )
+        # FR5 (DG-324 Phase 3): cash payments auto-link to the active day's
+        # drawer via cash_drawer_id and accumulate into the drawer's cash_sales
+        # total. Only cash payments link — bank transfers and card payments do
+        # not touch the physical drawer. When no active drawer exists, the
+        # link is skipped (NULL cash_drawer_id — journal sync unchanged).
+        drawer_id = None
+        if body.method == PaymentMethod.CASH.value:
+            active = CashDrawer.get_active(conn)
+            if active is not None:
+                drawer_id = active.id
         txn.save(conn)
+        if drawer_id is not None:
+            conn.execute(
+                "UPDATE payment_transactions SET cash_drawer_id = ? WHERE id = ?",
+                (drawer_id, txn.id),
+            )
+            # Outflow types (refund) return cash to the customer, reducing the
+            # drawer's cash; inflows (deposit/payment/full_payment/tien_rut)
+            # add cash. tien_rut is a deposit held in 2400, not revenue, but it
+            # is still physical cash handed to the shop and counts in the drawer.
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            delta = -abs(body.amount) if body.type in PAYMENT_OUTFLOW_TYPES else abs(body.amount)
+            active = CashDrawer.get_by_id(conn, drawer_id)
+            if active is not None:
+                active.add_cash_sale(conn, delta)
 
         # Auto-generate double-entry journal entry (DG-175).
         # Bus orders split the credit between Customer Deposits (2100) and
@@ -134,6 +159,10 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
 
         txn = PaymentTransaction.from_row(row)
+        old_method = str(row["method"])
+        old_amount = float(row["amount"])
+        old_type = str(row["type"])
+        old_drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
 
         if body.amount is not None:
             if body.amount <= 0:
@@ -164,6 +193,35 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, note = ?, payment_source = ? WHERE id = ?",
             (txn.amount, txn.type, txn.method, txn.note, txn.payment_source, txn.id),
         )
+
+        # FR5 (DG-324 Phase 3): reconcile the cash_drawer link + cash_sales
+        # aggregate when method/amount/type changes. First reverse the prior
+        # contribution from the previously-linked drawer (if any), then
+        # re-link to the active drawer when the new method is cash.
+        from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+        if old_drawer_id is not None:
+            old_delta = -abs(old_amount) if old_type in PAYMENT_OUTFLOW_TYPES else abs(old_amount)
+            prev_drawer = CashDrawer.get_by_id(conn, int(old_drawer_id))
+            if prev_drawer is not None:
+                prev_drawer.add_cash_sale(conn, -old_delta)
+            conn.execute(
+                "UPDATE payment_transactions SET cash_drawer_id = NULL WHERE id = ?",
+                (txn.id,),
+            )
+        new_drawer_id = None
+        if txn.method == PaymentMethod.CASH.value:
+            active = CashDrawer.get_active(conn)
+            if active is not None:
+                new_drawer_id = active.id
+        if new_drawer_id is not None:
+            conn.execute(
+                "UPDATE payment_transactions SET cash_drawer_id = ? WHERE id = ?",
+                (new_drawer_id, txn.id),
+            )
+            new_delta = -abs(txn.amount) if txn.type in PAYMENT_OUTFLOW_TYPES else abs(txn.amount)
+            active = CashDrawer.get_by_id(conn, new_drawer_id)
+            if active is not None:
+                active.add_cash_sale(conn, new_delta)
 
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
@@ -196,12 +254,23 @@ def delete_transaction(ref: str, txn_id: int):
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
-            "SELECT id, amount, type, method, payment_source FROM payment_transactions WHERE id = ? AND order_id = ?",
+            "SELECT id, amount, type, method, payment_source, cash_drawer_id FROM payment_transactions WHERE id = ? AND order_id = ?",
             (txn_id, order_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
         payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
+
+        # FR5 (DG-324 Phase 3): reverse the cash_sales contribution from the
+        # linked drawer before deleting the transaction row.
+        old_drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
+        if old_drawer_id is not None:
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            old_delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
+            prev_drawer = CashDrawer.get_by_id(conn, int(old_drawer_id))
+            if prev_drawer is not None:
+                prev_drawer.add_cash_sale(conn, -old_delta)
+
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
@@ -265,6 +334,18 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
             "SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
             (invalidated_at, invalidated_by, txn_id),
         )
+
+        # FR5 (DG-324 Phase 3): an invalidated transaction must no longer
+        # contribute to the drawer's cash_sales. Reverse the contribution
+        # from the linked drawer (the cash_drawer_id link is preserved for
+        # audit traceability).
+        drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
+        if drawer_id is not None:
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
+            linked = CashDrawer.get_by_id(conn, int(drawer_id))
+            if linked is not None:
+                linked.add_cash_sale(conn, -delta)
 
         # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
         # (deleted=True) reverses locked entries (preserving the original
@@ -331,6 +412,17 @@ def restore_transaction(ref: str, txn_id: int):
             "SET invalidated_at = NULL, invalidated_by = '' WHERE id = ?",
             (txn_id,),
         )
+
+        # FR5 (DG-324 Phase 3): restoring a transaction re-applies its
+        # contribution to the linked drawer's cash_sales (only if the drawer
+        # is still open — a closed drawer's totals are frozen at close time).
+        drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
+        if drawer_id is not None:
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
+            linked = CashDrawer.get_by_id(conn, int(drawer_id))
+            if linked is not None and linked.status == "open":
+                linked.add_cash_sale(conn, delta)
 
         # FR4/NFR2: journal sync is fire-and-forget. The create path reads the
         # transaction's created_at for transaction_date. If a prior reversal

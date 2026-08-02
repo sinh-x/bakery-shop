@@ -132,7 +132,7 @@ void main() {
       expect(captured!['eventId'], 7);
       expect(captured!['amount'], 300000);
       expect(captured!['paymentMethod'], VN.methodCash);
-      expect(captured!['paymentSource'], VN.paymentSourceShopCash);
+      expect(captured!['paymentSource'], VN.paymentSourceDrawerCash);
       // settledBy is sourced from loggedByProvider (saved staff name).
       expect(captured!['settledBy'], 'Lan');
     },
