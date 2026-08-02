@@ -1,22 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../data/api/order_service.dart';
-import '../../../data/api/work_item_service.dart';
-import '../../../data/models/order.dart';
 import '../../../data/models/order_draft.dart';
 import '../../../features/pos/utils/pos_cart_wizard_sync.dart';
-import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/order/order_draft_provider.dart';
-import '../../../providers/order/order_list_providers.dart';
-import '../../../shared/labels/orders.dart';
-import '../../../shared/utils/api_error.dart';
-import '../../../shared/utils/date_formatting.dart';
-import '../../../shared/utils/delivery_helpers.dart';
-import '../utils/trung_bay_inventory_extensions.dart';
 import 'gated_page_physics.dart';
 import 'order_creation_config.dart';
 import 'order_stage_indicator.dart';
+import 'order_submission_mixin.dart';
 import 'order_wizard.dart';
 
 /// Shared wizard shell that renders stages 1-4 for both the normal order
@@ -55,51 +46,35 @@ class OrderCreationOrchestrator extends ConsumerStatefulWidget {
 /// button lives outside the orchestrator's stage-4 widget (POS keeps the
 /// pay-now/pay-later buttons in its own stage-5 payment step).
 class OrderCreationOrchestratorState
-    extends ConsumerState<OrderCreationOrchestrator> {
-  OrderCreationConfig get _config => widget.config;
-
-  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
-      get _provider => _config.orderStateProvider;
-
-  /// Guards `_submitOrder` against double-tap re-entry (matches the prior
-  /// `_submitting` flag in `order_create_screen.dart` and `_isProcessing` in
-  /// `pos_checkout_screen.dart`). The host screen reads this via
-  /// [OrderCreationController.isSubmitting] to drive its submit button's
-  /// `onPressed: null` disabled state.
-  bool _isSubmitting = false;
-
-  /// Set to `true` once `onAfterSubmit` + `onNavigateAfterSubmit` complete so
-  /// the draft-save helper invoked from `deactivate` does not overwrite a
-  /// cleared draft (FR6). Mirrors `_submitted` in `order_create_screen.dart`.
-  bool _submitted = false;
-
+    extends ConsumerState<OrderCreationOrchestrator>
+    with OrderSubmissionMixin {
   void _goToStage(int stage) {
-    final clamped = stage.clamp(1, _config.stageCount);
-    ref.read(_provider.notifier).goToStage(clamped);
-    _config.onStageChange?.call(clamped);
+    final clamped = stage.clamp(1, config.stageCount);
+    ref.read(provider.notifier).goToStage(clamped);
+    config.onStageChange?.call(clamped);
     // FR6: persist the draft after each stage transition for the normal
     // order workflow. POS has `enableDraft=false` so this is a no-op there.
-    if (_config.enableDraft) _saveDraft();
+    if (config.enableDraft) _saveDraft();
     // FR7: write the wizard Stage-1 working copy back to the POS cart after
     // each stage transition so the cart stays the single source of truth.
     // Pass the configured provider so POS (posOrderStateProvider) and normal
     // order (orderCreateStateProvider) each sync the correct wizard instance
     // (DG-322 Phase 4).
-    if (_config.enableCartSync) {
-      syncWizardItemsToCart(ref, provider: _provider);
+    if (config.enableCartSync) {
+      syncWizardItemsToCart(ref, provider: provider);
     }
   }
 
   void _onSwipe(DragEndDetails d) {
-    if (!_config.enableSwipeNavigation) return;
-    final s = ref.read(_provider);
+    if (!config.enableSwipeNavigation) return;
+    final s = ref.read(provider);
     final pv = d.primaryVelocity;
     final target = targetStageForSwipe(
       velocity: Velocity(
         pixelsPerSecond: pv == null ? Offset.zero : Offset(pv, 0),
       ),
       currentStage: s.currentStage,
-      pageCount: _config.stageCount,
+      pageCount: config.stageCount,
     );
     if (target != null && s.canNavigateToStage(target)) _goToStage(target);
   }
@@ -107,17 +82,17 @@ class OrderCreationOrchestratorState
   OrderCreationController get _controller => OrderCreationController(
         goToStage: _goToStage,
         submit: submitOrder,
-        isSubmitting: _isSubmitting,
+        isSubmitting: isSubmitting,
       );
 
   List<Widget> _buildStageWidgets() {
     final ctx = context;
     final c = _controller;
     return [
-      _config.stage1Builder(ctx, c),
-      _config.stage2Builder(ctx, c),
-      _config.stage3Builder(ctx, c),
-      _config.stage4Builder(ctx, c),
+      config.stage1Builder(ctx, c),
+      config.stage2Builder(ctx, c),
+      config.stage3Builder(ctx, c),
+      config.stage4Builder(ctx, c),
     ];
   }
 
@@ -131,10 +106,10 @@ class OrderCreationOrchestratorState
   /// Restores the wizard state from `orderDraftProvider` on init. No-op when
   /// `enableDraft` is false or no draft is saved.
   void _restoreDraft() {
-    if (!_config.enableDraft) return;
+    if (!config.enableDraft) return;
     final draft = ref.read(orderDraftProvider);
     if (draft == null) return;
-    final notifier = ref.read(_provider.notifier);
+    final notifier = ref.read(provider.notifier);
     final data = OrderWizardData(
       customerName: draft.customerName,
       customerPhone: draft.customerPhone,
@@ -158,7 +133,7 @@ class OrderCreationOrchestratorState
     if (draft.customerId != null) {
       notifier.restoreCustomerFromDraft(draft.customerId!);
     }
-    final targetStage = draft.currentStage.clamp(1, _config.stageCount);
+    final targetStage = draft.currentStage.clamp(1, config.stageCount);
     notifier.goToStage(targetStage);
   }
 
@@ -170,9 +145,9 @@ class OrderCreationOrchestratorState
   /// build phase) and trigger a riverpod build-phase guard. Mirrors the
   /// pre-refactor `order_create_screen._saveDraft` early-return.
   void _saveDraft() {
-    if (!_config.enableDraft) return;
-    if (_submitted) return;
-    final state = ref.read(_provider);
+    if (!config.enableDraft) return;
+    if (submitted) return;
+    final state = ref.read(provider);
     final draft = OrderDraft(
       customerName: state.wizardData.customerName,
       customerPhone: state.wizardData.customerPhone,
@@ -201,203 +176,14 @@ class OrderCreationOrchestratorState
 
   // ---------------------------------------------------------------------------
   // FR2/FR3 — Shared submission pipeline with workflow hooks (Phase 2).
-  // The orchestrator owns the common spine: validate → onBeforeSubmit →
-  // createOrder → uploadPendingPhotos → refresh orderListProvider →
-  // onAfterSubmit → onNavigateAfterSubmit. Workflow-specific divergent
-  // behaviour lives in the config hooks.
+  // The common spine (validate → onBeforeSubmit → createOrder → photo upload
+  // → refresh orderListProvider → onAfterSubmit → onNavigateAfterSubmit)
+  // and the per-item payload builder / default photo-upload loop live in
+  // [OrderSubmissionMixin] so this file stays under the 400-line threshold
+  // (DG-322 / CQ-1). `submitOrder` remains public on this state class via the
+  // mixin, so host screens can still call it through a
+  // `GlobalKey<OrderCreationOrchestratorState>`.
   // ---------------------------------------------------------------------------
-
-  /// Shared submission entrypoint invoked by the stage-4 review widget's
-  /// submit button (normal order) or the POS payment step's pay-later/pay-now
-  /// path. Returns `true` when the order was created and navigation fired.
-  ///
-  /// The [submitArgs] parameter carries optional workflow-specific createOrder
-  /// arguments (POS `status` / `paymentMethod`); normal order passes `null`
-  /// and the orchestrator derives the fields from `state`.
-  Future<bool> submitOrder({
-    String? status,
-    String? paymentMethod,
-  }) async {
-    if (_isSubmitting) return false;
-    final state = ref.read(_provider);
-    if (state.items.isEmpty) {
-      if (mounted) {
-        showTopSnackBar(context, OrdersLabels.validationSelectAtLeastOneProduct);
-      }
-      return false;
-    }
-
-    setState(() => _isSubmitting = true);
-    try {
-      final hookCtx = SubmitHookContext(state: state, ref: ref, context: context);
-      final prep = await _config.onBeforeSubmit?.call(hookCtx);
-      final resolvedCustomerId = prep?.customerId ??
-          state.wizardData.selectedCustomer?.id;
-
-      final service = ref.read(orderServiceProvider);
-      final customerName = state.wizardData.customerName.isEmpty
-          ? OrdersLabels.walkInCustomerFallback
-          : state.wizardData.customerName;
-      // `createdBy` is workflow-supplied (normal order resolves it from
-      // `loggedByProvider`; POS leaves it empty to match pre-refactor
-      // behaviour). Resolved here so the shared spine stays the single
-      // `createOrder` call site.
-      final createdBy = _config.createdByResolver?.call(ref) ?? '';
-
-      // Price floor enforcement (FR3/AC3): clamp selling price to the
-      // assigned price for trưng bày markup items before submitting.
-      // DG-296 Phase 4 — kept on the shared path so both workflows apply it.
-      for (final i in state.items) {
-        if (i.product.isTrungBay &&
-            i.assignedPrice != null &&
-            i.unitPrice < i.assignedPrice!) {
-          i.customUnitPrice = i.assignedPrice;
-        }
-      }
-
-      final orderItems = _buildOrderItemsPayload(state);
-
-      final order = await service.createOrder(
-        customerName: customerName,
-        customerPhone: state.wizardData.customerPhone,
-        customerId: resolvedCustomerId,
-        items: orderItems,
-        shippingFee: state.wizardData.shippingFee,
-        dueDate: state.dueDate != null ? formatApiDate(state.dueDate!) : null,
-        dueTime: state.dueTime != null
-            ? formatHourMinute(
-                state.dueTime!.hour, state.dueTime!.minute)
-            : null,
-        deliveryType: state.wizardData.deliveryType,
-        deliveryAddress: state.wizardData.deliveryAddress,
-        deliveryPhone: state.wizardData.deliveryPhone,
-        notes: state.wizardData.notes.trim(),
-        source: state.source.isEmpty ? null : state.source,
-        status: status,
-        paymentMethod: paymentMethod,
-        createdBy: createdBy,
-        latitude: state.latitude,
-        longitude: state.longitude,
-        googleMapsUrl: state.googleMapsUrl,
-        deliveryTimeSlot: state.dueTime != null
-            ? deriveTimeSlot(formatHourMinute(
-                state.dueTime!.hour, state.dueTime!.minute))
-            : null,
-      );
-
-      // Shared per-item photo upload. Workflows can override via
-      // `onUploadPendingPhotos` (e.g. POS adds transfer-photo upload).
-      if (_config.onUploadPendingPhotos != null) {
-        await _config.onUploadPendingPhotos!(ref, order, state);
-      } else {
-        await _uploadPendingPhotosDefault(order, state);
-      }
-
-      // Refresh the order list so the new order appears in the list screen
-      // when the user navigates back from the detail/receipt destination.
-      // Gated by `enableOrderListRefresh` (POS skips it — the user navigates
-      // to the receipt, not the order list, and the pre-refactor POS flow
-      // did not refresh the list). DG-322 Phase 4.
-      if (_config.enableOrderListRefresh) {
-        await ref.read(orderListProvider.notifier).refresh();
-      }
-
-      if (!mounted) return false;
-
-      _submitted = true;
-      await _config.onAfterSubmit?.call(hookCtx, order);
-
-      if (!mounted) return false;
-      _config.onNavigateAfterSubmit?.call(context, order.orderRef);
-      return true;
-    } catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, normalizeApiError(e).message);
-      }
-      return false;
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  /// Builds the `items` payload for `OrderService.createOrder` from the
-  /// current wizard state. Shared by both workflows because the per-item
-  /// field mapping is identical (only the workflow-specific extra fields
-  /// like POS `attributes.useInventory` differ, and those are already
-  /// encoded in `DraftOrderItem.attributes` by the cart-sync layer).
-  List<Map<String, dynamic>> _buildOrderItemsPayload(OrderCreateState state) {
-    return state.items.map((i) {
-      final m = <String, dynamic>{
-        'productId': i.product.id.toString(),
-        'productName': i.product.name,
-        'quantity': i.quantity,
-        'unitPrice': i.unitPrice,
-        'notes': i.notes,
-        'isBirthday': i.isBirthday,
-        'isExtra': i.isExtra,
-        'isGift': i.isGift,
-        'attributes': i.attributes,
-        'priceChipId': i.priceChipId,
-        if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
-      };
-      if (i.isBirthday && i.age.isNotEmpty) {
-        final age = int.tryParse(i.age.trim());
-        if (age != null) m['age'] = age;
-      }
-      return m;
-    }).toList();
-  }
-
-  /// Default per-item photo upload used when `onUploadPendingPhotos` is not
-  /// supplied. Mirrors the loop in `order_create_screen.dart` so the normal
-  /// order workflow keeps its existing photo-upload behavior (with the
-  /// failed-photo summary snackbar) after extraction.
-  Future<void> _uploadPendingPhotosDefault(
-    Order order,
-    OrderCreateState state,
-  ) async {
-    final hasPerItemPhotos = state.items.any(
-      (i) => i.pendingPhotos.isNotEmpty,
-    );
-    if (!hasPerItemPhotos) return;
-    final service = ref.read(orderServiceProvider);
-    final workItemSvc = ref.read(workItemServiceProvider);
-    final workItems = await workItemSvc.listWorkItems(order.orderRef);
-    workItems.sort((a, b) => a.position.compareTo(b.position));
-
-    int totalPhotos = 0;
-    int failedPhotos = 0;
-    for (var idx = 0; idx < state.items.length; idx++) {
-      final draftItem = state.items[idx];
-      if (draftItem.pendingPhotos.isEmpty) continue;
-      final workItemId = idx < workItems.length
-          ? int.tryParse(workItems[idx].id)
-          : null;
-      for (final xfile in draftItem.pendingPhotos) {
-        totalPhotos++;
-        try {
-          await service.uploadOrderPhoto(
-            order.orderRef,
-            xfile,
-            workItemId: workItemId,
-          );
-        } catch (e) {
-          failedPhotos++;
-          debugPrint('Photo upload failed (${xfile.path}): $e');
-        }
-      }
-    }
-    if (failedPhotos > 0 && mounted) {
-      showTopSnackBar(
-        context,
-        OrdersLabels.photoUploadResult(
-          totalPhotos - failedPhotos,
-          totalPhotos,
-          failedPhotos,
-        ),
-      );
-    }
-  }
 
   @override
   void initState() {
@@ -412,9 +198,9 @@ class OrderCreationOrchestratorState
     // modifying `posOrderStateProvider` synchronously during initState would
     // trip riverpod's "modify provider while widget tree is building" guard
     // (the host screen watches `posCartProvider`, which the sync reads).
-    if (_config.enableCartSync) {
+    if (config.enableCartSync) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) syncCartToWizardItems(ref, provider: _provider);
+        if (mounted) syncCartToWizardItems(ref, provider: provider);
       });
     }
   }
@@ -423,13 +209,13 @@ class OrderCreationOrchestratorState
   void deactivate() {
     // FR6: persist the draft on exit so a partially-filled normal order
     // survives the user backing out of the wizard. No-op for POS.
-    if (_config.enableDraft) _saveDraft();
+    if (config.enableDraft) _saveDraft();
     super.deactivate();
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(_provider);
+    final state = ref.watch(provider);
 
     return Column(
       children: [
@@ -437,23 +223,23 @@ class OrderCreationOrchestratorState
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: OrderStageIndicator(
             currentStage: state.currentStage,
-            posMode: _config.posMode,
+            posMode: config.posMode,
             onStageTap: (s) {
               if (state.canNavigateToStage(s)) _goToStage(s);
             },
           ),
         ),
         Expanded(
-          child: _config.enableSwipeNavigation
+          child: config.enableSwipeNavigation
               ? GestureDetector(
                   onHorizontalDragEnd: _onSwipe,
-                  child: _config.stageContainerBuilder(
+                  child: config.stageContainerBuilder(
                     context,
                     _buildStageWidgets(),
                     state.currentStage,
                   ),
                 )
-              : _config.stageContainerBuilder(
+              : config.stageContainerBuilder(
                   context,
                   _buildStageWidgets(),
                   state.currentStage,
