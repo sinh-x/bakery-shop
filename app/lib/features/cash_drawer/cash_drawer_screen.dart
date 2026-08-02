@@ -354,7 +354,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.invalidate(cashDrawerHistoryProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: const Text(VN.cashDrawerCloseSuccess)),
+            const SnackBar(content: Text(VN.cashDrawerCloseSuccess)),
           );
         }
         return;

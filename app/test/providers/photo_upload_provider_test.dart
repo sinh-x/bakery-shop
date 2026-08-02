@@ -109,14 +109,14 @@ void main() {
 
   group('PhotoUploadBatchState convenience accessors', () {
     test('isUploading true while any item pending or uploading', () {
-      final state = PhotoUploadBatchState([
+      const state = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.uploading),
+          state: PhotoUploadState(status: PhotoUploadStatus.uploading),
         ),
         PhotoUploadItem(
           fileName: 'b',
-          state: const PhotoUploadState(status: PhotoUploadStatus.pending),
+          state: PhotoUploadState(status: PhotoUploadStatus.pending),
         ),
       ]);
 
@@ -127,14 +127,14 @@ void main() {
     });
 
     test('hasErrors true when any item errored', () {
-      final state = PhotoUploadBatchState([
+      const state = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
         ),
         PhotoUploadItem(
           fileName: 'b',
-          state: const PhotoUploadState(
+          state: PhotoUploadState(
             status: PhotoUploadStatus.error,
             errorMessage: 'nope',
           ),
@@ -148,23 +148,23 @@ void main() {
 
     test('isComplete true only when non-empty and nothing pending/uploading',
         () {
-      final done = PhotoUploadBatchState([
+      const done = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
         ),
       ]);
-      final withError = PhotoUploadBatchState([
+      const withError = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.error),
+          state: PhotoUploadState(status: PhotoUploadStatus.error),
         ),
       ]);
       final empty = PhotoUploadBatchState.empty();
-      final stillUploading = PhotoUploadBatchState([
+      const stillUploading = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.uploading),
+          state: PhotoUploadState(status: PhotoUploadStatus.uploading),
         ),
       ]);
 
@@ -175,14 +175,14 @@ void main() {
     });
 
     test('states getter preserves selection order', () {
-      final state = PhotoUploadBatchState([
+      const state = PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a',
-          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
         ),
         PhotoUploadItem(
           fileName: 'b',
-          state: const PhotoUploadState(status: PhotoUploadStatus.error),
+          state: PhotoUploadState(status: PhotoUploadStatus.error),
         ),
       ]);
 

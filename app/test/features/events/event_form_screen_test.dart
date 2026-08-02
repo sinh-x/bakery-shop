@@ -258,14 +258,14 @@ void main() {
 /// clear the seeded state (DG-333 Phase 5.6-c1-fix m2/M3).
 class _SeededUploadNotifier extends PhotoUploadNotifier {
   @override
-  PhotoUploadBatchState build() => PhotoUploadBatchState([
+  PhotoUploadBatchState build() => const PhotoUploadBatchState([
         PhotoUploadItem(
           fileName: 'a.jpg',
-          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
         ),
         PhotoUploadItem(
           fileName: 'b.jpg',
-          state: const PhotoUploadState(status: PhotoUploadStatus.success),
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
         ),
       ]);
 

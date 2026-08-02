@@ -200,7 +200,7 @@ void main() {
       'scroll) while day columns scroll horizontally', (tester) async {
     // Use a narrow surface so the 7 day columns (>=130px each = 910px)
     // overflow the available width and require horizontal scrolling.
-    await tester.binding.setSurfaceSize(Size(400, 800));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(const Size(800, 600)));
 
     SharedPreferences.setMockInitialValues(<String, Object>{});
