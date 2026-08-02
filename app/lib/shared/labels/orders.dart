@@ -230,6 +230,26 @@ class OrdersLabels {
   static const deliveryDayPrevTooltip = 'Ngày trước';
   static const deliveryDayNextTooltip = 'Ngày sau';
 
+  // Delivery calendar time-slot count badge + compact layout (DG-329
+  // Phase 4 / FR5 / AC4). Shown next to a slot label when the slot has 3+
+  // orders, e.g. "15:00 (3 đơn)".
+  static String deliverySlotCountBadge(int count) => '$count đơn';
+
+  /// Minimum readable width (in logical pixels) of a compact order chip in
+  /// the calendar time-slot row (NFR2). Below this width chips become too
+  /// narrow to display the customer name and staff line legibly.
+  static const double compactOrderChipMinWidth = 120.0;
+
+  /// Maximum number of compact order chips rendered per row in a calendar
+  /// time-slot row on screens ≥ 480px wide (NFR2). On narrower screens the
+  /// slot falls back to a vertically scrollable list.
+  static const int compactOrderChipsPerRow = 4;
+
+  /// Screen-width threshold (in logical pixels) at or above which the
+  /// calendar time-slot row renders the compact `Wrap` layout. Below this
+  /// width the slot falls back to a scrollable single-column list.
+  static const double compactLayoutMinScreenWidth = 480.0;
+
   // Delivery staff claiming UI (DG-310 Phase 4) — FR5/FR6/FR7.
   static const deliveryClaimButton = 'Nhận giao';
   static const deliveryUnclaimButton = 'Trả đơn';
@@ -256,7 +276,16 @@ class OrdersLabels {
   static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
   static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
   static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
-  static String assignStaffInactive(String staffId) => 'NV #$staffId (đã ngưng)';
+  /// Display label for an inactive (deactivated) staff member in the
+  /// assignment dropdown. Shows the real name followed by the "(đã ngưng)"
+  /// suffix only when the staff record exists but is deactivated (DG-329
+  /// Phase 2 / FR3 / AC2).
+  static String assignStaffInactive(String staffName) => '$staffName (đã ngưng)';
+
+  /// Fallback label for an assigned staff member whose record is missing
+  /// entirely from the staff list (e.g. deleted). Shows "NV #`<id>`" without
+  /// the misleading "(đã ngưng)" suffix (DG-329 Phase 2 / FR3 / AC2).
+  static String assignStaffMissing(String staffId) => 'NV #$staffId';
 
   /// Formats a single day label as "T2, 29/07".
   static String deliveryDayLabel(DateTime d) {

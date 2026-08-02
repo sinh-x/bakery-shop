@@ -737,4 +737,128 @@ void main() {
       expect(result.entries[0].count, 2);
     });
   });
+
+  // DG-329 Phase 2 / FR3 / AC2: staff name resolution helpers.
+  group('resolveAssignedStaffDisplayName', () {
+    final activeStaff = <StaffMember>[
+      StaffMember(id: 10, name: 'An', role: 'giao-hang', active: true),
+      StaffMember(id: 20, name: 'Bình', role: 'giao-hang', active: false),
+    ];
+
+    test('returns null when assignedStaffId is null (unassigned)', () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: null,
+        assignedStaffName: '',
+        staffList: activeStaff,
+      );
+      expect(name, isNull);
+    });
+
+    test('returns null when assignedStaffId is empty (unassigned)', () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '',
+        assignedStaffName: '',
+        staffList: activeStaff,
+      );
+      expect(name, isNull);
+    });
+
+    test('returns the backend-provided name when non-empty (active staff)',
+        () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '10',
+        assignedStaffName: 'An',
+        staffList: activeStaff,
+      );
+      expect(name, 'An');
+    });
+
+    test(
+        'returns the backend-provided name when non-empty (deactivated staff)',
+        () {
+      // The backend JOINs staff.name regardless of active flag, so a
+      // deactivated staff member's real name is returned as-is.
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '20',
+        assignedStaffName: 'Bình',
+        staffList: activeStaff,
+      );
+      expect(name, 'Bình');
+    });
+
+    test('resolves name from staffList when backend name is empty (record '
+        'still exists client-side)', () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '20',
+        assignedStaffName: '',
+        staffList: activeStaff,
+      );
+      expect(name, 'Bình');
+    });
+
+    test(
+        'falls back to "NV #<id>" when staff record is missing entirely '
+        '(deleted)', () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '999',
+        assignedStaffName: '',
+        staffList: activeStaff,
+      );
+      expect(name, OrdersLabels.assignStaffMissing('999'));
+      expect(name, 'NV #999');
+      // NEVER the misleading "NV #<id> (đã ngưng)" combo (FR3/AC2).
+      expect(name!.contains('đã ngưng'), isFalse);
+    });
+
+    test('falls back to "NV #<id>" when staffList is empty', () {
+      final name = resolveAssignedStaffDisplayName(
+        assignedStaffId: '5',
+        assignedStaffName: '',
+        staffList: const [],
+      );
+      expect(name, 'NV #5');
+    });
+  });
+
+  group('isAssignedStaffInactive', () {
+    final staff = <StaffMember>[
+      StaffMember(id: 10, name: 'An', role: 'giao-hang', active: true),
+      StaffMember(id: 20, name: 'Bình', role: 'giao-hang', active: false),
+    ];
+
+    test('returns false when assignedStaffId is null', () {
+      expect(
+        isAssignedStaffInactive(assignedStaffId: null, staffList: staff),
+        isFalse,
+      );
+    });
+
+    test('returns false when assignedStaffId is empty', () {
+      expect(
+        isAssignedStaffInactive(assignedStaffId: '', staffList: staff),
+        isFalse,
+      );
+    });
+
+    test('returns false for an active staff member', () {
+      expect(
+        isAssignedStaffInactive(assignedStaffId: '10', staffList: staff),
+        isFalse,
+      );
+    });
+
+    test('returns true for a deactivated staff member', () {
+      expect(
+        isAssignedStaffInactive(assignedStaffId: '20', staffList: staff),
+        isTrue,
+      );
+    });
+
+    test('returns false when the staff record is missing entirely', () {
+      expect(
+        isAssignedStaffInactive(assignedStaffId: '999', staffList: staff),
+        isFalse,
+      );
+    });
+  });
 }

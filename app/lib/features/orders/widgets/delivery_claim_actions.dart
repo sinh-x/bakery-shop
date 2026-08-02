@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/api/staff_service.dart';
 import '../../../data/models/order.dart';
+import '../../../providers/staff_provider.dart';
 import '../../../shared/labels/orders.dart';
+import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
 import '../../orders/providers/delivery_claim_handler.dart';
 import '../../orders/providers/delivery_claim_providers.dart';
@@ -14,6 +17,13 @@ import '../../orders/providers/delivery_claim_providers.dart';
 /// is any linked staff member (or is an admin). Single-assignee (AC10) is
 /// enforced server-side; the button is hidden when the order is already
 /// claimed by someone else.
+///
+/// DG-329 Phase 2 / FR3 / AC2: the assigned staff name is resolved via
+/// [resolveAssignedStaffDisplayName] so the real name shows (the backend
+/// already JOINs the staff name, including deactivated staff). When the
+/// staff record is missing entirely (deleted), the "NV #`<id>`" fallback is
+/// shown instead of an empty name — never the misleading
+/// "NV #`<id>` (đã ngưng)" combo.
 class DeliveryClaimActions extends ConsumerWidget {
   const DeliveryClaimActions({super.key, required this.order});
 
@@ -23,6 +33,7 @@ class DeliveryClaimActions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final staffAsync = ref.watch(currentStaffProvider);
     final claimAsync = ref.watch(orderClaimProvider);
+    final allStaffAsync = ref.watch(staffListProvider);
     final theme = Theme.of(context);
 
     final isTerminal = !activeOrderStatuses.contains(order.status);
@@ -37,12 +48,22 @@ class DeliveryClaimActions extends ConsumerWidget {
             (staff.isAdmin || order.isClaimedBy(staff.staffIdAsString));
         final canClaim = canShowButtons && !order.isAssigned;
 
+        final allStaff = allStaffAsync.maybeWhen(
+          data: (list) => list,
+          orElse: () => const <StaffMember>[],
+        );
+        final displayName = resolveAssignedStaffDisplayName(
+          assignedStaffId: order.assignedStaffId,
+          assignedStaffName: order.assignedStaffName,
+          staffList: allStaff,
+        );
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (order.isAssigned)
-              _AssignedStaffName(name: order.assignedStaffName, theme: theme)
+            if (order.isAssigned && displayName != null)
+              _AssignedStaffName(name: displayName, theme: theme)
             else if (canShowButtons)
               Text(
                 OrdersLabels.deliveryUnassigned,

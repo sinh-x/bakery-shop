@@ -6,6 +6,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_content.dart';
+import 'package:bakery_app/features/orders/widgets/delivery_week_calendar_components.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
@@ -368,8 +369,8 @@ void main() {
       expect(todayButton.onPressed, isNull);
     });
 
-    testWidgets('AC2: day view focuses the date of the next upcoming '
-        'non-terminal delivery order', (tester) async {
+    testWidgets('AC3/FR4: day view defaults to today even when next due '
+        'order is in the future', (tester) async {
       final orders = [
         _order(
           id: 1,
@@ -382,17 +383,39 @@ void main() {
       await tester.pumpWidget(buildTestWidget(orders));
       await tester.pumpAndSettle();
 
-      // The day nav label should render the focused date (2099-06-15), and
-      // the "Hôm nay" button should be enabled (not today).
-      expect(find.text(OrdersLabels.deliveryDayLabel(DateTime(2099, 6, 15))),
-          findsOneWidget);
+      // Per FR4/AC3 the day calendar always defaults to today (not the
+      // next due date). The "Hôm nay" button must be disabled (already
+      // on today) and the day nav label shows today — NOT 2099-06-15.
       final todayButton = tester.widget<TextButton>(
         find.ancestor(
           of: find.text(OrdersLabels.deliveryDayToday),
           matching: find.byType(TextButton),
         ),
       );
-      expect(todayButton.onPressed, isNotNull);
+      expect(todayButton.onPressed, isNull);
+      expect(
+        find.text(OrdersLabels.deliveryDayLabel(DateTime.now())),
+        findsOneWidget,
+      );
+      expect(
+        find.text(OrdersLabels.deliveryDayLabel(DateTime(2099, 6, 15))),
+        findsNothing,
+      );
+    });
+
+    testWidgets('AC3/FR4: current-time line widget is present on the day '
+        'calendar (visible when current time is in the 6:00–21:00 range)',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(const []));
+      await tester.pumpAndSettle();
+
+      // The day calendar is the default view and always constructs a
+      // CurrentTimeLine. The line's `visible` flag is true only when the
+      // focused day is today AND the current time is within the 6:00–21:00
+      // grid range (currentTimeGridOffset() != null). Since the day calendar
+      // now defaults to today (FR4/AC3), the time line is visible whenever
+      // the current time is in range — satisfying AC3.
+      expect(find.byType(CurrentTimeLine), findsOneWidget);
     });
 
     // ── DG-304 Phase 4: staff filter + workload summary ──────────────
@@ -400,9 +423,10 @@ void main() {
     final deliveryStaff = [
       StaffMember(id: 10, name: 'An', role: 'giao-hang', active: true),
       StaffMember(id: 20, name: 'Binh', role: 'giao-hang', active: true),
-      // Non-delivery role staff should be excluded from the dropdown.
+      // Non-delivery role staff are now included (DG-329 Phase 1 / FR2 —
+      // all active staff appear in the dropdown regardless of role).
       StaffMember(id: 30, name: 'Ca', role: 'thu-ngan', active: true),
-      // Inactive delivery staff should be excluded (FR10/NFR2).
+      // Inactive staff should still be excluded.
       StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
     ];
 
@@ -432,8 +456,8 @@ void main() {
       ),
     ];
 
-    testWidgets('FR2/FR4: staff filter dropdown includes All + delivery '
-        'staff only (excludes other roles + inactive)', (tester) async {
+    testWidgets('FR2/FR4: staff filter dropdown includes All + all active '
+        'staff (excludes inactive)', (tester) async {
       await tester.pumpWidget(buildTestWidget(
         todayOrders,
         staff: deliveryStaff,
@@ -444,12 +468,14 @@ void main() {
       await tester.tap(find.text(OrdersLabels.staffFilterAll));
       await tester.pumpAndSettle();
 
-      // "All" appears as both the selected hint and a menu item; the
-      // delivery staff appear as menu items only.
+      // "All" appears as both the selected hint and a menu item; all
+      // active staff appear as menu items only.
       expect(find.text('An'), findsOneWidget);
       expect(find.text('Binh'), findsOneWidget);
-      // Non-delivery role and inactive staff are excluded.
-      expect(find.text('Ca'), findsNothing);
+      // Non-delivery role but active staff are now included (DG-329
+      // Phase 1 / FR2).
+      expect(find.text('Ca'), findsOneWidget);
+      // Inactive staff remain excluded.
       expect(find.text('Dung'), findsNothing);
     });
 
@@ -524,10 +550,89 @@ void main() {
         find.text(OrdersLabels.workloadStaffCount('Binh', 1)),
         findsOneWidget,
       );
+      // Non-delivery role but active staff now also appear in the summary
+      // with a zero count (DG-329 Phase 1 / FR6).
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Ca', 0)),
+        findsOneWidget,
+      );
       expect(
         find.text('${OrdersLabels.workloadUnassigned}: 1'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('AC5/FR6: workload summary shows for all active staff even '
+        'when no giao-hang role staff exist', (tester) async {
+      // Reproduces the original bug: previously the summary was hidden when
+      // no `giao-hang`-role staff existed. After DG-329 Phase 1 + Phase 5,
+      // `_deliveryStaff` returns ALL active staff, so the summary renders
+      // whenever any active staff exist (regardless of role).
+      final nonDeliveryOnlyStaff = [
+        StaffMember(id: 30, name: 'Ca', role: 'thu-ngan', active: true),
+        StaffMember(id: 50, name: 'Em', role: 'ban-hang', active: true),
+        // Inactive staff excluded.
+        StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
+      ];
+      final todayOrdersNoGiaoHang = [
+        _order(
+          id: 1,
+          ref: 'ORD-CA',
+          status: 'new',
+          deliveryType: 'bus',
+          dueDate: '2026-07-19',
+          assignedStaffId: '30',
+        ),
+        _order(
+          id: 2,
+          ref: 'ORD-UNASSIGNED',
+          status: 'ready',
+          deliveryType: 'door',
+          dueDate: '2026-07-19',
+        ),
+      ];
+      await tester.pumpWidget(buildTestWidget(
+        todayOrdersNoGiaoHang,
+        staff: nonDeliveryOnlyStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // The summary title is present (NOT hidden) even though no active
+      // `giao-hang`-role staff exist — this is the AC5 regression guard.
+      expect(find.text(OrdersLabels.workloadSummaryTitle), findsOneWidget);
+      // Active non-delivery-role staff appear with their counts.
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Ca', 1)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(OrdersLabels.workloadStaffCount('Em', 0)),
+        findsOneWidget,
+      );
+      // Inactive `giao-hang` staff (Dung) is excluded.
+      expect(find.text('Dung'), findsNothing);
+      // Unassigned bucket reflects the one unassigned order.
+      expect(
+        find.text('${OrdersLabels.workloadUnassigned}: 1'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('AC5/FR6: workload summary hides when no active staff exist',
+        (tester) async {
+      final allInactiveStaff = [
+        StaffMember(id: 40, name: 'Dung', role: 'giao-hang', active: false),
+      ];
+      await tester.pumpWidget(buildTestWidget(
+        todayOrders,
+        staff: allInactiveStaff,
+      ));
+      await tester.pumpAndSettle();
+
+      // No active staff → `_deliveryStaff` is empty → summary hides entirely
+      // (no title, no chips).
+      expect(find.text(OrdersLabels.workloadSummaryTitle), findsNothing);
+      expect(find.text(OrdersLabels.workloadSummaryEmpty), findsNothing);
     });
 
     testWidgets('AC7: staff filter resets to "All" on tab leave',

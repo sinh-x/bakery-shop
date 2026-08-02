@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../data/api/staff_service.dart';
 import '../../../../data/models/order.dart';
 import '../../../../providers/order/order_detail_notifier.dart';
+import '../../../../providers/staff_provider.dart';
 import 'package:bakery_app/shared/utils/launch_external_url.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../providers/delivery_claim_providers.dart';
+import 'delivery_claim_inline_actions.dart';
 import '../../../orders/widgets/order_edit/staff_assignment_dropdown.dart';
 import '../order_customer_section.dart';
 import '../order_delivery_section.dart';
@@ -141,10 +145,16 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
               widget.order.dueTime,
             ),
           ),
-        if (showAssignment)
+        if (showAssignment) ...[
           isAdmin
               ? _buildEditableAssignmentRow(selectedStaffId)
-              : _buildStaticAssignmentRow(theme),
+              : _buildStaticAssignmentRow(theme, ref),
+          // DG-329 Phase 6 / FR7 / AC6: claim/unclaim button renders directly
+          // below the "Nhân viên giao hàng" assignment row, inside the
+          // OrderInfoBlock — not below the entire block. Reuses the existing
+          // DeliveryClaimInlineActions widget verbatim; only repositioned.
+          DeliveryClaimInlineActions(order: widget.order),
+        ],
         OrderDeliverySection(
           deliveryType: widget.order.deliveryType,
           deliveryAddress: widget.order.deliveryAddress,
@@ -187,13 +197,30 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
   /// assigned staff name with a person icon when the order is assigned, or
   /// "Chưa nhận" in italic when the delivery order is unassigned. Only
   /// rendered for delivery-type orders.
-  Widget _buildStaticAssignmentRow(ThemeData theme) {
-    if (widget.order.isAssigned && widget.order.assignedStaffName.isNotEmpty) {
-      return OrderInfoRow(
-        icon: Icons.person_outline,
-        label: VN.deliveryAssignee,
-        value: widget.order.assignedStaffName,
+  ///
+  /// DG-329 Phase 2 / FR3 / AC2: resolves the assigned staff display name
+  /// via [resolveAssignedStaffDisplayName] so the real name shows. When the
+  /// staff record is missing entirely (deleted), the "NV #`<id>`" fallback
+  /// is shown instead of the misleading "Chưa nhận" label for an assigned
+  /// order.
+  Widget _buildStaticAssignmentRow(ThemeData theme, WidgetRef ref) {
+    if (widget.order.isAssigned) {
+      final allStaff = ref.watch(staffListProvider).maybeWhen(
+            data: (list) => list,
+            orElse: () => const <StaffMember>[],
+          );
+      final displayName = resolveAssignedStaffDisplayName(
+        assignedStaffId: widget.order.assignedStaffId,
+        assignedStaffName: widget.order.assignedStaffName,
+        staffList: allStaff,
       );
+      if (displayName != null) {
+        return OrderInfoRow(
+          icon: Icons.person_outline,
+          label: VN.deliveryAssignee,
+          value: displayName,
+        );
+      }
     }
     return OrderInfoRow(
       icon: Icons.person_outline,

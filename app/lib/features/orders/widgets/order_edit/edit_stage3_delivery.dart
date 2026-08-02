@@ -39,8 +39,6 @@ class EditStage3Delivery extends ConsumerWidget {
     required this.summaryItems,
     required this.onBack,
     required this.onContinue,
-    this.latitudeCtrl,
-    this.longitudeCtrl,
     // DG-304 Phase 5: staff assignment dropdown state (FR8/AC5/AC6).
     this.assignedStaffId,
     this.onAssignedStaffChanged,
@@ -65,16 +63,11 @@ class EditStage3Delivery extends ConsumerWidget {
   final List<DraftOrderItem> summaryItems;
   final VoidCallback onBack;
   final VoidCallback onContinue;
-  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
-  // manual `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) —
-  // the slot is now auto-derived from `dueTime` by `deriveTimeSlot()`.
-  // DG-306 Phase 3 / FR7: the Google Maps URL text field was removed from
-  // the edit form — the URL is now managed via the Google Maps modal on
-  // the order detail screen.
-  final TextEditingController? latitudeCtrl;
-  final TextEditingController? longitudeCtrl;
   // DG-304 Phase 5: staff assignment dropdown state (FR8/AC5/AC6). The
   // current `assignedStaffId` (null when unassigned) and change callback.
+  // DG-329 Phase 7 / FR9: the manual Lat/Long text fields were removed from
+  // the edit wizard; stored coordinates are preserved via the Google Maps
+  // modal on the order detail screen.
   final String? assignedStaffId;
   final ValueChanged<String?>? onAssignedStaffChanged;
 
@@ -116,8 +109,6 @@ class EditStage3Delivery extends ConsumerWidget {
                   dueDate: dueDate,
                   dueTime: dueTime,
                   dueDateTimeSlot: _buildEditDueDateTime(context),
-                  latitudeCtrl: latitudeCtrl,
-                  longitudeCtrl: longitudeCtrl,
                   summaryCardSlots: [
                     ProductSummaryCard(items: summaryItems),
                     CustomerSummaryCard(

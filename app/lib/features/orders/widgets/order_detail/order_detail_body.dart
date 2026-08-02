@@ -29,7 +29,6 @@ import 'order_payment_summary.dart';
 import 'order_print_checklist_dialog.dart';
 import 'order_print_status_row.dart';
 import 'order_record_payment_sheet.dart';
-import 'delivery_claim_inline_actions.dart';
 import 'order_status_actions.dart';
 import 'order_status_banner.dart';
 import 'order_transaction_detail_sheet.dart';
@@ -271,7 +270,6 @@ class _OrderDetailBodyState extends ConsumerState<OrderDetailBody> {
           onUnmarkPrinted: _onUnmarkPrinted,
         ),
         OrderInfoBlock(order: order, formatDueDisplay: _formatDueDisplay),
-        DeliveryClaimInlineActions(order: order),
         const SizedBox(height: 16),
         OrderItemsList(order: order, enumAttributesFor: _enumAttributesFor),
         OrderPaymentSummary(

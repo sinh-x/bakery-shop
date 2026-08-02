@@ -1,85 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/labels/orders.dart';
-import 'section_header.dart';
-
-/// Editable GPS coordinate fields (latitude + longitude) for door delivery
-/// orders (FR1/FR2/AC1). Latitude validated to [-90, 90], longitude to
-/// [-180, 180] per NFR2. Extracted from [OrderDeliverySection] to keep the
-/// parent widget under the 400-line Flutter coding-standards limit.
-class GpsFieldsSection extends StatelessWidget {
-  const GpsFieldsSection({
-    super.key,
-    required this.latitudeCtrl,
-    required this.longitudeCtrl,
-  });
-
-  final TextEditingController latitudeCtrl;
-  final TextEditingController longitudeCtrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionHeader(OrdersLabels.gpsCoordinatesLabel),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: latitudeCtrl,
-                decoration: const InputDecoration(
-                  labelText: OrdersLabels.latitudeLabel,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-                validator: validateLatitude,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                controller: longitudeCtrl,
-                decoration: const InputDecoration(
-                  labelText: OrdersLabels.longitudeLabel,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-                validator: validateLongitude,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-String? validateLatitude(String? v) {
-  if (v == null || v.trim().isEmpty) return null;
-  final n = double.tryParse(v.trim());
-  if (n == null) return VN.invalidPrice;
-  if (n < -90 || n > 90) return OrdersLabels.latitudeInvalid;
-  return null;
-}
-
-String? validateLongitude(String? v) {
-  if (v == null || v.trim().isEmpty) return null;
-  final n = double.tryParse(v.trim());
-  if (n == null) return VN.invalidPrice;
-  if (n < -180 || n > 180) return OrdersLabels.longitudeInvalid;
-  return null;
-}
 
 /// Read-only tappable Google Maps link row (AC2/AC4).
 /// Extracted from [OrderDeliverySection] to keep the parent widget under the
 /// 400-line Flutter coding-standards limit.
+///
+/// DG-329 Phase 7 / FR9: the editable `GpsFieldsSection` (manual Lat/Long
+/// TextFormFields) was removed from the wizard. Stored coordinates are now
+/// managed exclusively via the Google Maps modal on the order detail screen.
+/// This `MapLinkRow` is retained for read-only display of the stored URL.
 class MapLinkRow extends StatelessWidget {
   const MapLinkRow({
     super.key,

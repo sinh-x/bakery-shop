@@ -20,8 +20,12 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
   final List<Order> orders;
   final Future<void> Function() onRefresh;
 
-  /// Optional initial focus date (FR2/AC2). When null or today, the view
-  /// defaults to today — matching the pre-existing behavior.
+  /// Optional initial focus date (FR2/AC2). When null (the default from
+  /// `DeliveryContent`), the view defaults to today — per FR4/AC3 the day
+  /// calendar always anchors to today so the current-time line is visible
+  /// on open, even when no orders exist today. Callers may pass an explicit
+  /// date to focus a different day (e.g. for deep links); `DeliveryContent`
+  /// does not pass this so the today default always applies.
   final DateTime? initialDate;
 
   @override
@@ -32,14 +36,33 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
 class _DeliveryDayCalendarViewState
     extends ConsumerState<DeliveryDayCalendarView> {
   late DateTime _date = widget.initialDate ?? DateTime.now();
+  final ScrollController _scrollController = ScrollController();
+  bool _didInitialScroll = false;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _goToday() => setState(() {
+        _date = DateTime.now();
+        _didInitialScroll = false;
+      });
 
   void _shift(int days) => setState(() {
         _date = _date.add(Duration(days: days));
       });
 
-  void _goToday() => setState(() {
-        _date = DateTime.now();
-      });
+  void _scrollToCurrentTime() {
+    final offset = currentTimeGridOffset();
+    if (offset != null) {
+      final viewport = MediaQuery.of(context).size.height;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      final target = (offset - viewport * 0.3).clamp(0.0, maxScroll);
+      _scrollController.jumpTo(target);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +80,15 @@ class _DeliveryDayCalendarViewState
     final showTimeLine =
         timeLineOffset != null && isTodayDate(_date);
 
+    if (showTimeLine && !_didInitialScroll) {
+      _didInitialScroll = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollToCurrentTime();
+        }
+      });
+    }
+
     return Column(
       children: [
         _DayCalendarNav(
@@ -69,6 +101,7 @@ class _DeliveryDayCalendarViewState
           child: RefreshIndicator(
             onRefresh: widget.onRefresh,
             child: SingleChildScrollView(
+              controller: _scrollController,
               child: Stack(
                 children: [
                   Row(

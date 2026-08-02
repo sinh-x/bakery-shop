@@ -47,8 +47,6 @@ class OrderDeliverySection extends StatelessWidget {
     this.latitude,
     this.longitude,
     this.googleMapsUrl,
-    this.latitudeCtrl,
-    this.longitudeCtrl,
     this.onLaunchMap,
   });
 
@@ -79,19 +77,19 @@ class OrderDeliverySection extends StatelessWidget {
 
   // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only).
   // Read-only mode consumes `latitude`, `longitude`, `googleMapsUrl`
-  // directly; editable mode uses the controllers so changes sync back to
-  // the parent provider/state. The manual `deliveryTimeSlot` dropdown was
+  // directly for display. The manual `deliveryTimeSlot` dropdown was
   // removed (DG-306 Phase 1 / FR2/AC5) — the slot is now auto-derived from
   // `dueTime` by `deriveTimeSlot()` in `delivery_helpers.dart`.
   // DG-306 Phase 3 / FR7: the Google Maps URL text field was removed from
   // create/edit forms — the URL is now managed via the Google Maps modal on
   // the order detail screen (`google_maps_modal.dart`). The `googleMapsUrl`
   // field is kept for read-only display.
+  // DG-329 Phase 7 / FR9: the manual Lat/Long text fields were removed from
+  // the wizard editable mode; stored coordinates are preserved via the
+  // Google Maps modal on the order detail screen.
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
-  final TextEditingController? latitudeCtrl;
-  final TextEditingController? longitudeCtrl;
   final VoidCallback? onLaunchMap;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
@@ -259,15 +257,6 @@ class OrderDeliverySection extends StatelessWidget {
             error: shippingFeeConfigError,
             onRetry: onRetryShippingFeeConfig,
           ),
-        ],
-        if (_isDoorDelivery) ...[
-          if (latitudeCtrl != null && longitudeCtrl != null) ...[
-            const SizedBox(height: 16),
-            GpsFieldsSection(
-              latitudeCtrl: latitudeCtrl!,
-              longitudeCtrl: longitudeCtrl!,
-            ),
-          ],
         ],
         if (notesCtrl != null) ...[
           const SizedBox(height: 16),
