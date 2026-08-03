@@ -151,9 +151,24 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   }
 
   Future<void> _handleOpen(BuildContext context) async {
-    final previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
-    final accountingBalance1101 =
-        await ref.read(cashDrawerAccountingBalance1101Provider.future);
+    // FR2: read the balance providers defensively. If either provider is in
+    // an error state, `ref.read(...future)` throws — wrapping in try-catch
+    // prevents the open dialog from silently failing to appear. On error
+    // we fall back to 0 / null so the dialog still opens; the user can see
+    // the reference lines as "—" or the default values.
+    int accountingBalance1101 = 0;
+    int? previousClose;
+    try {
+      previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
+    } catch (_) {
+      previousClose = null;
+    }
+    try {
+      accountingBalance1101 =
+          await ref.read(cashDrawerAccountingBalance1101Provider.future);
+    } catch (_) {
+      accountingBalance1101 = 0;
+    }
     if (!context.mounted) return;
     final result = await showOpenDrawerDialog(
       context,
@@ -436,13 +451,11 @@ class _ActiveTab extends StatelessWidget {
       ),
       data: (drawer) {
         if (drawer == null) {
-          final balance1101 = accountingBalance1101Async.value ?? 0;
-          final previousClose = previousCloseAsync.value;
           return _EmptyActiveView(
             onOpen: onOpen,
             mutating: mutating,
-            accountingBalance1101: balance1101,
-            previousCloseCountedAmount: previousClose,
+            accountingBalance1101Async: accountingBalance1101Async,
+            previousCloseAsync: previousCloseAsync,
           );
         }
         return ListView(
@@ -469,14 +482,14 @@ class _EmptyActiveView extends StatelessWidget {
   const _EmptyActiveView({
     required this.onOpen,
     required this.mutating,
-    required this.accountingBalance1101,
-    required this.previousCloseCountedAmount,
+    required this.accountingBalance1101Async,
+    required this.previousCloseAsync,
   });
 
   final Future<void> Function() onOpen;
   final bool mutating;
-  final int accountingBalance1101;
-  final int? previousCloseCountedAmount;
+  final AsyncValue<int> accountingBalance1101Async;
+  final AsyncValue<int?> previousCloseAsync;
 
   @override
   Widget build(BuildContext context) {
@@ -489,20 +502,53 @@ class _EmptyActiveView extends StatelessWidget {
             const Icon(Icons.lock_open_outlined, size: 48),
             const SizedBox(height: 12),
             const Text(VN.cashDrawerNoActive),
-            if (accountingBalance1101 > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                '${VN.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
-                style: Theme.of(context).textTheme.bodyMedium,
+            // FR1/AC1: render the 1101 reference balance line only when the
+            // provider has resolved to a positive value. While loading, show
+            // a small inline placeholder so the line does not silently
+            // disappear on slow networks (PWA bug root cause). On error, the
+            // line is omitted rather than crashing the whole screen.
+            accountingBalance1101Async.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               ),
-            ],
-            if (previousCloseCountedAmount != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${VN.cashDrawerPreviousCloseBalance}: ${formatVND(previousCloseCountedAmount!.toDouble())}',
-                style: Theme.of(context).textTheme.bodyMedium,
+              error: (_, _) => const SizedBox.shrink(),
+              data: (balance1101) {
+                if (balance1101 <= 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '${VN.cashDrawerReferenceBalance}: ${formatVND(balance1101.toDouble())}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                );
+              },
+            ),
+            previousCloseAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               ),
-            ],
+              error: (_, _) => const SizedBox.shrink(),
+              data: (previousClose) {
+                if (previousClose == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${VN.cashDrawerPreviousCloseBalance}: ${formatVND(previousClose.toDouble())}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: mutating ? null : onOpen,
