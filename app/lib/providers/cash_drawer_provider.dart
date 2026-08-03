@@ -56,7 +56,7 @@ final cashDrawerStatusProvider = FutureProvider<CashDrawer?>((ref) async {
 
 /// DG-331 FR9: the `previousCloseCountedAmount` (counted_amount of the most
 /// recent closed drawer) returned by `GET /status` when no active drawer is
-/// open. Displayed in the open dialog as "Số dư sau khi đóng quỹ lần trước".
+/// open. Displayed in the open dialog as "Số dư sau khi đóng quầy lần trước".
 /// `null` when an active drawer is open or no drawer history exists.
 final cashDrawerPreviousCloseProvider = FutureProvider<int?>((ref) async {
   final service = ref.watch(cashDrawerServiceProvider);

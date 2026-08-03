@@ -49,7 +49,7 @@ enum CarryOverDecision { accept, decline }
 /// amount or `null` when cancelled. When [referenceBalance] is provided
 /// (non-zero), it is displayed as the 1101 accounting reference. When
 /// [previousCloseCountedAmount] is provided (non-null), it is displayed as
-/// "Số dư sau khi đóng quỹ lần trước" (DG-331 FR9 / AC8).
+/// "Số dư sau khi đóng quầy lần trước" (DG-331 FR9 / AC8).
 ///
 /// Phase 4.1 F3: [referenceBalance] is now shown upfront (before any 409
 /// proposal) so the owner can reconcile against the 1101 journal balance
@@ -160,7 +160,7 @@ Future<TransferDecision?> showTransferConfirmationDialog(
         children: [
           Text('Số dư kế toán 1101: ${formatVND(referenceBalance.toDouble())}'),
           const SizedBox(height: 4),
-          Text('Số tiền mở quỹ: ${formatVND(openingBalance.toDouble())}'),
+          Text('Số tiền mở quầy: ${formatVND(openingBalance.toDouble())}'),
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thiếu: ${formatVND(excess.toDouble())}',
@@ -215,7 +215,7 @@ Future<StockReconDecision?> showStockReconciliationDialog(
         children: [
           Text('Số dư kế toán 1101: ${formatVND(referenceBalance.toDouble())}'),
           const SizedBox(height: 4),
-          Text('Số tiền mở quỹ: ${formatVND(openingBalance.toDouble())}'),
+          Text('Số tiền mở quầy: ${formatVND(openingBalance.toDouble())}'),
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thừa: ${formatVND(excess.toDouble())}',

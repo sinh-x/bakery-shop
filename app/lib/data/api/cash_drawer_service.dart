@@ -385,7 +385,7 @@ class CashDrawerService {
   /// previously closed drawer is present. Returns `null` when an active
   /// drawer is open (the reference is only for the open dialog) or when no
   /// drawer history exists. Used by the open dialog to display "Số dư sau
-  /// khi đóng quỹ lần trước".
+  /// khi đóng quầy lần trước".
   Future<int?> getPreviousCloseCountedAmount() async {
     final response = await _dio.get('/api/cash-drawer/status');
     final data = response.data;

@@ -1045,10 +1045,10 @@ class VN {
   // Kept alongside the accounting source-type labels because the drawer
   // source types extend the journal source-type vocabulary below.
   static const cashDrawerTitle = 'Tiền tại quầy';
-  static const cashDrawerOpen = 'Mở quỹ';
-  static const cashDrawerClose = 'Đóng quỹ';
-  static const cashDrawerCashIn = 'Cho tiền vào quỹ';
-  static const cashDrawerCashOut = 'Lấy tiền khỏi quỹ';
+  static const cashDrawerOpen = 'Mở quầy';
+  static const cashDrawerClose = 'Đóng quầy';
+  static const cashDrawerCashIn = 'Cho tiền vào quầy';
+  static const cashDrawerCashOut = 'Lấy tiền khỏi quầy';
   static const cashDrawerOpeningBalance = 'Số dư đầu ngày';
   static const cashDrawerExpectedBalance = 'Số dư dự kiến';
   static const cashDrawerCountedAmount = 'Số tiền đếm được';
@@ -1060,15 +1060,15 @@ class VN {
   static const cashDrawerOwnerIn = 'Chủ cho thêm';
   static const cashDrawerOwnerOut = 'Chủ rút ra';
   static const cashDrawerCashExpenses = 'Chi phí tiền mặt';
-  static const cashDrawerHistory = 'Lịch sử quỹ';
-  static const cashDrawerNoActive = 'Không có quỹ tiền mặt đang mở';
-  static const cashDrawerAlreadyOpen = 'Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại trước khi mở quỹ mới.';
+  static const cashDrawerHistory = 'Lịch sử quầy';
+  static const cashDrawerNoActive = 'Không có quầy tiền mặt đang mở';
+  static const cashDrawerAlreadyOpen = 'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.';
   static const cashDrawerAmountLabel = 'Số tiền (VND)';
   static const cashDrawerNoteLabel = 'Ghi chú (tùy chọn)';
-  static const cashDrawerOpenSuccess = 'Đã mở quỹ tiền mặt';
-  static const cashDrawerCloseSuccess = 'Đã đóng quỹ tiền mặt';
-  static const cashDrawerCashInSuccess = 'Đã cho tiền vào quỹ';
-  static const cashDrawerCashOutSuccess = 'Đã lấy tiền khỏi quỹ';
+  static const cashDrawerOpenSuccess = 'Đã mở quầy tiền mặt';
+  static const cashDrawerCloseSuccess = 'Đã đóng quầy tiền mặt';
+  static const cashDrawerCashInSuccess = 'Đã cho tiền vào quầy';
+  static const cashDrawerCashOutSuccess = 'Đã lấy tiền khỏi quầy';
   static const cashDrawerSurplus = 'Thừa';
   static const cashDrawerShortage = 'Thiếu';
   static const cashDrawerExact = 'Khớp';
@@ -1083,12 +1083,12 @@ class VN {
   static const cashDrawerCarryOverDecline = 'Không mang sang';
 
   /// DG-330: transfer proposal when opening balance < 1101 reference.
-  static const cashDrawerTransferTitle = 'Chuyển tiền thừa vào quỹ chủ';
+  static const cashDrawerTransferTitle = 'Chuyển tiền thừa vào quầy chủ';
   static const cashDrawerTransferQuestion =
       'Bạn có muốn chuyển số tiền thừa vào Tiền mặt chủ sở hữu?';
   static const cashDrawerTransferAccept = 'Chuyển';
   static const cashDrawerTransferDeclineBlocked =
-      'Không thể mở quỹ khi có chênh lệch âm chưa giải trình. '
+      'Không thể mở quầy khi có chênh lệch âm chưa giải trình. '
       'Vui lòng chọn "Chuyển" hoặc liên hệ Kế toán.';
 
   /// DG-330: stock reconciliation confirmation when opening balance > 1101.
@@ -1110,9 +1110,9 @@ class VN {
   static const cashDrawerReferenceBalance = 'Số dư kế toán 1101';
 
   /// DG-331 FR9: label for the previous close counted amount shown in the
-  /// open dialog as a second reference point ("Số dư sau khi đóng quỹ lần
+  /// open dialog as a second reference point ("Số dư sau khi đóng quầy lần
   /// trước"). Follows the 1101 reference balance line.
-  static const cashDrawerPreviousCloseBalance = 'Số dư sau khi đóng quỹ lần trước';
+  static const cashDrawerPreviousCloseBalance = 'Số dư sau khi đóng quầy lần trước';
 
   /// Phase 4.1 F5/F6: "current balance" helper shown in the cash-in and
   /// cash-out dialogs so the owner knows how much is already in the drawer.
@@ -1150,10 +1150,10 @@ class VN {
 
   /// Cash-drawer journal source types (extend the accounting source-type
   /// vocabulary) — used by the journal filter and drawer movement history.
-  static const accountingSourceTypeCashDrawerOpen = 'Mở quỹ tiền mặt';
-  static const accountingSourceTypeCashDrawerCashIn = 'Cho tiền vào quỹ';
-  static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quỹ';
-  static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quỹ — điều chỉnh chênh lệch';
+  static const accountingSourceTypeCashDrawerOpen = 'Mở quầy tiền mặt';
+  static const accountingSourceTypeCashDrawerCashIn = 'Cho tiền vào quầy';
+  static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quầy';
+  static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quầy — điều chỉnh chênh lệch';
 
   /// Map a journal entry ``sourceType`` to a Vietnamese label.
   ///
