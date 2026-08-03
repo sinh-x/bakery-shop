@@ -263,7 +263,10 @@ class PosCheckoutPaymentController {
       status: status,
       paymentMethod: paymentMethod,
     );
-    if (!submitted || !mounted || !context.mounted) return;
+    if (!submitted || !mounted || !context.mounted) {
+      _pendingTransferPhoto = null;
+      return;
+    }
     // The orchestrator's onAfterSubmit hook runs createPaymentTransactions +
     // provider invalidation; onNavigateAfterSubmit fires pushReplacement.
     // _pendingTransferPhoto is consumed by the onUploadPendingPhotos hook.

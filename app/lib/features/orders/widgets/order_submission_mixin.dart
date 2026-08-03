@@ -88,85 +88,15 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     setState(() => _isSubmitting = true);
     try {
       final hookCtx = SubmitHookContext(state: state, ref: ref, context: context);
-      final prep = await config.onBeforeSubmit?.call(hookCtx);
-      final resolvedCustomerId =
-          prep?.customerId ?? state.wizardData.selectedCustomer?.id;
-
-      final service = ref.read(orderServiceProvider);
-      final customerName = state.wizardData.customerName.isEmpty
-          ? OrdersLabels.walkInCustomerFallback
-          : state.wizardData.customerName;
-      // `createdBy` is workflow-supplied (normal order resolves it from
-      // `loggedByProvider`; POS leaves it empty to match pre-refactor
-      // behaviour). Resolved here so the shared spine stays the single
-      // `createOrder` call site.
-      final createdBy = config.createdByResolver?.call(ref) ?? '';
-
-      // Price floor enforcement (FR3/AC3): clamp selling price to the
-      // assigned price for trưng bày markup items before submitting.
-      // DG-296 Phase 4 — kept on the shared path so both workflows apply it.
-      for (final i in state.items) {
-        if (i.product.isTrungBay &&
-            i.assignedPrice != null &&
-            i.unitPrice < i.assignedPrice!) {
-          i.customUnitPrice = i.assignedPrice;
-        }
-      }
-
-      final orderItems = buildOrderItemsPayload(state);
-
-      final order = await service.createOrder(
-        customerName: customerName,
-        customerPhone: state.wizardData.customerPhone,
-        customerId: resolvedCustomerId,
-        items: orderItems,
-        shippingFee: state.wizardData.shippingFee,
-        dueDate: state.dueDate != null ? formatApiDate(state.dueDate!) : null,
-        dueTime: state.dueTime != null
-            ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
-            : null,
-        deliveryType: state.wizardData.deliveryType,
-        deliveryAddress: state.wizardData.deliveryAddress,
-        deliveryPhone: state.wizardData.deliveryPhone,
-        notes: state.wizardData.notes.trim(),
-        source: state.source.isEmpty ? null : state.source,
+      final prep = await _validateAndPrepare(state, hookCtx);
+      final order = await _createOrder(
+        state: state,
+        prep: prep,
+        hookCtx: hookCtx,
         status: status,
         paymentMethod: paymentMethod,
-        createdBy: createdBy,
-        latitude: state.latitude,
-        longitude: state.longitude,
-        googleMapsUrl: state.googleMapsUrl,
-        deliveryTimeSlot: state.dueTime != null
-            ? deriveTimeSlot(
-                formatHourMinute(state.dueTime!.hour, state.dueTime!.minute))
-            : null,
       );
-
-      // Shared per-item photo upload. Workflows can override via
-      // `onUploadPendingPhotos` (e.g. POS adds transfer-photo upload).
-      if (config.onUploadPendingPhotos != null) {
-        await config.onUploadPendingPhotos!(ref, order, state);
-      } else {
-        await uploadPendingPhotosDefault(order, state);
-      }
-
-      // Refresh the order list so the new order appears in the list screen
-      // when the user navigates back from the detail/receipt destination.
-      // Gated by `enableOrderListRefresh` (POS skips it — the user navigates
-      // to the receipt, not the order list, and the pre-refactor POS flow
-      // did not refresh the list). DG-322 Phase 4.
-      if (config.enableOrderListRefresh) {
-        await ref.read(orderListProvider.notifier).refresh();
-      }
-
-      if (!mounted) return false;
-
-      _submitted = true;
-      await config.onAfterSubmit?.call(hookCtx, order);
-
-      if (!mounted) return false;
-      config.onNavigateAfterSubmit?.call(context, order.orderRef);
-      return true;
+      return await _handlePostSubmit(state, order, hookCtx);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
@@ -175,6 +105,119 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  /// Stage 1 — pre-submit validation and preparation: runs `onBeforeSubmit`
+  /// and resolves the customer id. Returns the prep result to feed
+  /// [_createOrder]. Extracted from `submitOrder` to keep the spine under
+  /// the 60-line threshold (DG-322 / CQ-6).
+  Future<SubmitPreparation?> _validateAndPrepare(
+    OrderCreateState state,
+    SubmitHookContext hookCtx,
+  ) async {
+    final prep = await config.onBeforeSubmit?.call(hookCtx);
+    return prep;
+  }
+
+  /// Stage 2 — order creation: resolves `createdBy`, enforces the price
+  /// floor (FR3/AC3), builds the items payload, and calls `createOrder`.
+  /// Returns the freshly created [Order]. Extracted from `submitOrder`
+  /// (DG-322 / CQ-6).
+  Future<Order> _createOrder({
+    required OrderCreateState state,
+    required SubmitPreparation? prep,
+    required SubmitHookContext hookCtx,
+    required String? status,
+    required String? paymentMethod,
+  }) async {
+    final resolvedCustomerId =
+        prep?.customerId ?? state.wizardData.selectedCustomer?.id;
+
+    final service = ref.read(orderServiceProvider);
+    final customerName = state.wizardData.customerName.isEmpty
+        ? OrdersLabels.walkInCustomerFallback
+        : state.wizardData.customerName;
+    // `createdBy` is workflow-supplied (normal order resolves it from
+    // `loggedByProvider`; POS leaves it empty to match pre-refactor
+    // behaviour). Resolved here so the shared spine stays the single
+    // `createOrder` call site.
+    final createdBy = config.createdByResolver?.call(ref) ?? '';
+
+    // Price floor enforcement (FR3/AC3): clamp selling price to the
+    // assigned price for trưng bày markup items before submitting.
+    // DG-296 Phase 4 — kept on the shared path so both workflows apply it.
+    for (final i in state.items) {
+      if (i.product.isTrungBay &&
+          i.assignedPrice != null &&
+          i.unitPrice < i.assignedPrice!) {
+        i.customUnitPrice = i.assignedPrice;
+      }
+    }
+
+    final orderItems = buildOrderItemsPayload(state);
+
+    return service.createOrder(
+      customerName: customerName,
+      customerPhone: state.wizardData.customerPhone,
+      customerId: resolvedCustomerId,
+      items: orderItems,
+      shippingFee: state.wizardData.shippingFee,
+      dueDate: state.dueDate != null ? formatApiDate(state.dueDate!) : null,
+      dueTime: state.dueTime != null
+          ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
+          : null,
+      deliveryType: state.wizardData.deliveryType,
+      deliveryAddress: state.wizardData.deliveryAddress,
+      deliveryPhone: state.wizardData.deliveryPhone,
+      notes: state.wizardData.notes.trim(),
+      source: state.source.isEmpty ? null : state.source,
+      status: status,
+      paymentMethod: paymentMethod,
+      createdBy: createdBy,
+      latitude: state.latitude,
+      longitude: state.longitude,
+      googleMapsUrl: state.googleMapsUrl,
+      deliveryTimeSlot: state.dueTime != null
+          ? deriveTimeSlot(
+              formatHourMinute(state.dueTime!.hour, state.dueTime!.minute))
+          : null,
+    );
+  }
+
+  /// Stage 3 — post-submit: photo upload, order-list refresh, `onAfterSubmit`
+  /// hook, and `onNavigateAfterSubmit`. Sets the `_submitted` latch and
+  /// returns `true` when navigation fired. Extracted from `submitOrder`
+  /// (DG-322 / CQ-6).
+  Future<bool> _handlePostSubmit(
+    OrderCreateState state,
+    Order order,
+    SubmitHookContext hookCtx,
+  ) async {
+    // Shared per-item photo upload. Workflows can override via
+    // `onUploadPendingPhotos` (e.g. POS adds transfer-photo upload).
+    if (config.onUploadPendingPhotos != null) {
+      await config.onUploadPendingPhotos!(ref, order, state);
+    } else {
+      await uploadPendingPhotosDefault(order, state);
+    }
+
+    // Refresh the order list so the new order appears in the list screen
+    // when the user navigates back from the detail/receipt destination.
+    // Gated by `enableOrderListRefresh` (POS skips it — the user navigates
+    // to the receipt, not the order list, and the pre-refactor POS flow
+    // did not refresh the list). DG-322 Phase 4.
+    if (config.enableOrderListRefresh) {
+      await ref.read(orderListProvider.notifier).refresh();
+    }
+
+    if (!mounted) return false;
+
+    _submitted = true;
+    await config.onAfterSubmit?.call(hookCtx, order);
+
+    if (!mounted) return false;
+    config.onNavigateAfterSubmit?.call(context, order.orderRef);
+    return true;
   }
 
   /// Builds the `items` payload for `OrderService.createOrder` from the
