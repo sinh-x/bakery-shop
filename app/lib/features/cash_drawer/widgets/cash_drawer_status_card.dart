@@ -50,6 +50,18 @@ class CashDrawerStatusCard extends StatelessWidget {
               label: VN.cashDrawerCashSales,
               value: drawer.cashSales,
             ),
+            // DG-341 Phase 4.4 FR6/AC6: tien rut rows between cashSales and
+            // ownerIn. Tien rut in is cash held for safekeeping (positive
+            // contribution to expected balance); tien rut out is cash
+            // returned at delivery (negative contribution).
+            _BalanceRow(
+              label: VN.cashDrawerTienRutIn,
+              value: drawer.tienRutIn,
+            ),
+            _BalanceRow(
+              label: VN.cashDrawerTienRutOut,
+              value: -drawer.tienRutOut,
+            ),
             _BalanceRow(
               label: VN.cashDrawerOwnerIn,
               value: drawer.ownerIn,

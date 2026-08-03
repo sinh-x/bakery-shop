@@ -6,6 +6,8 @@ Map<String, dynamic> _drawerJson({
   String? closedAt,
   int? countedAmount,
   int? discrepancy,
+  int? tienRutIn,
+  int? tienRutOut,
   Map<String, dynamic>? journalEntry,
 }) {
   final json = <String, dynamic>{
@@ -22,6 +24,12 @@ Map<String, dynamic> _drawerJson({
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
   };
+  if (tienRutIn != null) {
+    json['tienRutIn'] = tienRutIn;
+  }
+  if (tienRutOut != null) {
+    json['tienRutOut'] = tienRutOut;
+  }
   if (journalEntry != null) {
     json['journalEntry'] = journalEntry;
   }
@@ -147,6 +155,50 @@ void main() {
       expect(drawer.ownerOut, 0);
       expect(drawer.cashExpenses, 0);
       expect(drawer.expectedBalance, 0);
+    });
+  });
+
+  group('CashDrawer tien rut fields (DG-341 Phase 4.4)', () {
+    test('fromJson parses tienRutIn and tienRutOut when present', () {
+      final drawer = CashDrawer.fromJson(_drawerJson(
+        tienRutIn: 300000,
+        tienRutOut: 100000,
+      ));
+
+      expect(drawer.tienRutIn, 300000);
+      expect(drawer.tienRutOut, 100000);
+    });
+
+    test('fromJson defaults tienRutIn/tienRutOut to 0 when missing (NFR2)', () {
+      // Old backend responses without these fields must not crash and
+      // should default to 0 for backward compatibility.
+      final drawer = CashDrawer.fromJson(_drawerJson());
+
+      expect(drawer.tienRutIn, 0);
+      expect(drawer.tienRutOut, 0);
+    });
+
+    test('toJson round-trips tienRutIn and tienRutOut', () {
+      final original = CashDrawer.fromJson(_drawerJson(
+        tienRutIn: 500000,
+        tienRutOut: 200000,
+      ));
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+
+      expect(roundTripped.tienRutIn, 500000);
+      expect(roundTripped.tienRutOut, 200000);
+    });
+
+    test('toJson includes tienRutIn and tienRutOut keys', () {
+      final json = CashDrawer.fromJson(_drawerJson(
+        tienRutIn: 750000,
+        tienRutOut: 250000,
+      )).toJson();
+
+      expect(json.containsKey('tienRutIn'), isTrue);
+      expect(json.containsKey('tienRutOut'), isTrue);
+      expect(json['tienRutIn'], 750000);
+      expect(json['tienRutOut'], 250000);
     });
   });
 
