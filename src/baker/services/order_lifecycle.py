@@ -34,6 +34,43 @@ from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
 logger = logging.getLogger("baker.server")
 
 
+def _sync_drawer_tien_rut_out(conn, order_id: int, order_ref: str) -> None:
+    """FR3 (DG-341 Phase 3): when an order with tien rut cash is delivered or
+    completed, increase ``tien_rut_out`` on each linked drawer that is still
+    open. Closed drawers are frozen (AC7) and skipped silently.
+
+    For every non-invalidated ``tien_rut`` cash payment on the order, look up
+    the drawer recorded on the payment row (``cash_drawer_id``). Only open
+    drawers are mutated — a drawer that was closed between the payment and the
+    delivery keeps its frozen totals (no error, no crash). The tien rut
+    return journal entry already handles the 2400 accounting side, so this is
+    a drawer-only update (no journal entry here).
+
+    NFR3: fire-and-forget — failures are logged via ``logger.exception`` and
+    never block the order status transition, mirroring the stock-mutation
+    wrappers in ``apply_pre_update_side_effects``.
+    """
+    from baker.db.schema import PAYMENT_TIEN_RUT_TYPES
+    from baker.models.cash_drawer import CashDrawer
+
+    placeholders = ",".join("?" for _ in PAYMENT_TIEN_RUT_TYPES)
+    rows = conn.execute(
+        f"SELECT amount, cash_drawer_id FROM payment_transactions "
+        f"WHERE order_id = ? AND type IN ({placeholders}) "
+        f"AND method = 'cash' AND invalidated_at IS NULL "
+        f"AND cash_drawer_id IS NOT NULL",
+        (order_id, *PAYMENT_TIEN_RUT_TYPES),
+    ).fetchall()
+    for row in rows:
+        amount = abs(float(row["amount"]))
+        if amount <= 0:
+            continue
+        drawer = CashDrawer.get_by_id(conn, int(row["cash_drawer_id"]))
+        if drawer is None or drawer.status != "open":
+            continue
+        drawer.add_tien_rut_out(conn, amount)
+
+
 def cascade_main_items_to_status(conn, order_id: int, target_status: str) -> None:
     """Auto-cascade a status transition to the order's main line items.
 
@@ -177,6 +214,17 @@ def apply_post_update_side_effects(
             source_id=order_id,
         )
         accounting_sync_warning = sync_status_to_warning(sync_status)
+
+        # FR3 (DG-341 Phase 3): return held tien rut cash to the customer at
+        # delivery by increasing ``tien_rut_out`` on the linked drawer(s).
+        # NFR3: fire-and-forget — never blocks the status transition.
+        try:
+            _sync_drawer_tien_rut_out(conn, order_id, order_ref)
+        except Exception:
+            logger.exception(
+                "drawer tien_rut_out sync failed for order %s (%s)",
+                order_id, order_ref,
+            )
 
     if to_status == "completed" and from_status != "completed":
         from baker.services.journal_sync import _sync_completed_order_journal
