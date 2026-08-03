@@ -112,13 +112,18 @@ def create_transaction(ref: str, body: TransactionCreate):
             )
             # Outflow types (refund) return cash to the customer, reducing the
             # drawer's cash; inflows (deposit/payment/full_payment/tien_rut)
-            # add cash. tien_rut is a deposit held in 2400, not revenue, but it
-            # is still physical cash handed to the shop and counts in the drawer.
-            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            # add cash. tien_rut is a deposit held in 2400, not revenue, and is
+            # tracked separately in ``tien_rut_in`` (DG-341 FR1) so it does not
+            # inflate ``cash_sales``; non-tien-rut cash payments still add to
+            # ``cash_sales`` (FR4).
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES, PAYMENT_TIEN_RUT_TYPES
             delta = -abs(body.amount) if body.type in PAYMENT_OUTFLOW_TYPES else abs(body.amount)
             active = CashDrawer.get_by_id(conn, drawer_id)
             if active is not None:
-                active.add_cash_sale(conn, delta)
+                if body.type in PAYMENT_TIEN_RUT_TYPES:
+                    active.add_tien_rut_in(conn, delta)
+                else:
+                    active.add_cash_sale(conn, delta)
 
         # Auto-generate double-entry journal entry (DG-175).
         # Bus orders split the credit between Customer Deposits (2100) and
@@ -198,12 +203,18 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
         # aggregate when method/amount/type changes. First reverse the prior
         # contribution from the previously-linked drawer (if any), then
         # re-link to the active drawer when the new method is cash.
-        from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+        # DG-341 FR1/FR4: tien rut payments route to ``tien_rut_in`` instead
+        # of ``cash_sales``; the reverse/apply logic below branches on the
+        # old/new type so each contribution lands in the correct bucket.
+        from baker.db.schema import PAYMENT_OUTFLOW_TYPES, PAYMENT_TIEN_RUT_TYPES
         if old_drawer_id is not None:
             old_delta = -abs(old_amount) if old_type in PAYMENT_OUTFLOW_TYPES else abs(old_amount)
             prev_drawer = CashDrawer.get_by_id(conn, int(old_drawer_id))
             if prev_drawer is not None:
-                prev_drawer.add_cash_sale(conn, -old_delta)
+                if old_type in PAYMENT_TIEN_RUT_TYPES:
+                    prev_drawer.add_tien_rut_in(conn, -old_delta)
+                else:
+                    prev_drawer.add_cash_sale(conn, -old_delta)
             conn.execute(
                 "UPDATE payment_transactions SET cash_drawer_id = NULL WHERE id = ?",
                 (txn.id,),
@@ -221,7 +232,10 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             new_delta = -abs(txn.amount) if txn.type in PAYMENT_OUTFLOW_TYPES else abs(txn.amount)
             active = CashDrawer.get_by_id(conn, new_drawer_id)
             if active is not None:
-                active.add_cash_sale(conn, new_delta)
+                if txn.type in PAYMENT_TIEN_RUT_TYPES:
+                    active.add_tien_rut_in(conn, new_delta)
+                else:
+                    active.add_cash_sale(conn, new_delta)
 
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
@@ -261,15 +275,19 @@ def delete_transaction(ref: str, txn_id: int):
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
         payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
 
-        # FR5 (DG-324 Phase 3): reverse the cash_sales contribution from the
-        # linked drawer before deleting the transaction row.
+        # FR5 (DG-324 Phase 3): reverse the contribution from the linked drawer
+        # before deleting the transaction row. DG-341 FR1: tien rut payments
+        # were routed to ``tien_rut_in``, so reverse them from the same bucket.
         old_drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
         if old_drawer_id is not None:
-            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES, PAYMENT_TIEN_RUT_TYPES
             old_delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
             prev_drawer = CashDrawer.get_by_id(conn, int(old_drawer_id))
             if prev_drawer is not None:
-                prev_drawer.add_cash_sale(conn, -old_delta)
+                if row["type"] in PAYMENT_TIEN_RUT_TYPES:
+                    prev_drawer.add_tien_rut_in(conn, -old_delta)
+                else:
+                    prev_drawer.add_cash_sale(conn, -old_delta)
 
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
 
@@ -336,16 +354,20 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
         )
 
         # FR5 (DG-324 Phase 3): an invalidated transaction must no longer
-        # contribute to the drawer's cash_sales. Reverse the contribution
-        # from the linked drawer (the cash_drawer_id link is preserved for
-        # audit traceability).
+        # contribute to the drawer's cash_sales/tien_rut_in. Reverse the
+        # contribution from the linked drawer (the cash_drawer_id link is
+        # preserved for audit traceability). DG-341 FR1: reverse tien rut
+        # payments from ``tien_rut_in`` instead of ``cash_sales``.
         drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
         if drawer_id is not None:
-            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES, PAYMENT_TIEN_RUT_TYPES
             delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
             linked = CashDrawer.get_by_id(conn, int(drawer_id))
             if linked is not None:
-                linked.add_cash_sale(conn, -delta)
+                if row["type"] in PAYMENT_TIEN_RUT_TYPES:
+                    linked.add_tien_rut_in(conn, -delta)
+                else:
+                    linked.add_cash_sale(conn, -delta)
 
         # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
         # (deleted=True) reverses locked entries (preserving the original
@@ -414,15 +436,20 @@ def restore_transaction(ref: str, txn_id: int):
         )
 
         # FR5 (DG-324 Phase 3): restoring a transaction re-applies its
-        # contribution to the linked drawer's cash_sales (only if the drawer
-        # is still open — a closed drawer's totals are frozen at close time).
+        # contribution to the linked drawer (only if the drawer is still
+        # open — a closed drawer's totals are frozen at close time).
+        # DG-341 FR1: re-apply tien rut payments to ``tien_rut_in`` instead
+        # of ``cash_sales``.
         drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
         if drawer_id is not None:
-            from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+            from baker.db.schema import PAYMENT_OUTFLOW_TYPES, PAYMENT_TIEN_RUT_TYPES
             delta = -abs(float(row["amount"])) if row["type"] in PAYMENT_OUTFLOW_TYPES else abs(float(row["amount"]))
             linked = CashDrawer.get_by_id(conn, int(drawer_id))
             if linked is not None and linked.status == "open":
-                linked.add_cash_sale(conn, delta)
+                if row["type"] in PAYMENT_TIEN_RUT_TYPES:
+                    linked.add_tien_rut_in(conn, delta)
+                else:
+                    linked.add_cash_sale(conn, delta)
 
         # FR4/NFR2: journal sync is fire-and-forget. The create path reads the
         # transaction's created_at for transaction_date. If a prior reversal
