@@ -74,7 +74,7 @@ void main() {
     test('fromJson parses nested journalEntry when present', () {
       final journal = {
         'id': '42',
-        'description': 'Mở quỹ tiền mặt: 1000000',
+        'description': 'Mở quầy tiền mặt: 1000000',
         'sourceType': 'cash_drawer_open',
         'lines': <Map<String, dynamic>>[],
       };

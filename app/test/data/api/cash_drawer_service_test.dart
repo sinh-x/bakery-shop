@@ -181,7 +181,7 @@ void main() {
                     statusCode: 409,
                     data: {
                       'detail':
-                          'Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại.',
+                          'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại.',
                     },
                   ),
                 ),

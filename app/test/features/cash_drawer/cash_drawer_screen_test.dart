@@ -237,7 +237,7 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    // Tap "Mở quỹ" → amount dialog.
+    // Tap "Mở quầy" → amount dialog.
     await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
     await tester.pumpAndSettle();
     // Enter an opening balance and confirm (dialog's confirm button).
