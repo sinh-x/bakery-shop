@@ -19,13 +19,15 @@ from baker.db.schema import _account_id_by_code, _insert_journal_entry
 from baker.db.schema import ensure_schema
 from baker.models.cash_drawer import CashDrawer
 
-# DG-347 Phase 3 will re-enable these tien rut delivery tests once the
-# order_lifecycle _sync_drawer_tien_rut_out call site is removed. Phase 2
-# removes the add_* methods from the model (FR7), so the delivery flow would
-# crash if these tests ran today.
+# DG-347 Phase 3 removed the _sync_drawer_tien_rut_out call site and the
+# tien_rut_out accumulator column from cash_drawer. These delivery tests
+# assert on drawer.tien_rut_out, which is no longer updated (drawer balances
+# derive from 1101 journal lines). Retained for historical context; skipped
+# because the column they assert on no longer exists.
 _PHASE3_SKIP = pytest.mark.skip(
-    reason="DG-347 Phase 3: order_lifecycle still calls add_tien_rut_out; "
-           "re-enable once Phase 3 removes the call site"
+    reason="DG-347 Phase 3: _sync_drawer_tien_rut_out removed; "
+           "tien_rut_out accumulator column dropped; drawer balances derive "
+           "from 1101 journal lines"
 )
 
 

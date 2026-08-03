@@ -14,14 +14,16 @@ Covers:
 
 import pytest
 
-# DG-347 Phase 1 dropped the cash_drawer_id column from payment_transactions
+# DG-347 Phase 3 removed the cash_drawer_id column from payment_transactions
 # and events, and dropped the accumulator columns from cash_drawer. The
-# auto-link tests assert on cash_drawer_id linking and accumulator totals,
-# which are removed in Phase 3. Skip until Phase 3 updates the API/service
-# code and these tests are adapted.
+# auto-link behavior these tests assert (cash_drawer_id linking + accumulator
+# totals) is permanently removed — drawer balances now derive from 1101
+# journal lines via the cash_drawer_journal_entries join table. These tests
+# are retained for historical context but are not applicable to the new
+# model. They remain skipped because the columns they query no longer exist.
 pytestmark = pytest.mark.skip(
-    reason="DG-347 Phase 1: cash_drawer_id and accumulator columns dropped; "
-           "re-enable in Phase 3 once API/service code is updated"
+    reason="DG-347 Phase 3: cash_drawer_id linking + accumulator columns "
+           "permanently removed; drawer balances derive from 1101 journal lines"
 )
 
 from baker.db.connection import get_db

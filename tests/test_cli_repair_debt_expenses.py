@@ -35,14 +35,6 @@ from baker.db.schema import (
     ensure_schema,
 )
 
-# DG-347 Phase 1 dropped the cash_drawer_id column from events. The debt
-# expense repair code calls _reconcile_expense_drawer_link which references
-# the dropped column. Skip until Phase 3 updates the service code.
-pytestmark = pytest.mark.skip(
-    reason="DG-347 Phase 1: cash_drawer_id dropped from events; debt expense "
-           "repair code references the dropped column; re-enable in Phase 3"
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
