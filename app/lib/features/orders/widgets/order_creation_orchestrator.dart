@@ -216,9 +216,15 @@ class OrderCreationOrchestratorState
     // modifying `posOrderStateProvider` synchronously during initState would
     // trip riverpod's "modify provider while widget tree is building" guard
     // (the host screen watches `posCartProvider`, which the sync reads).
+    // Only seeds when wizard items are empty. _initPosState in the host
+    // screen seeds items before goToStage, so this is a safety net.
     if (config.enableCartSync) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) syncCartToWizardItems(ref, provider: provider);
+        if (!mounted) return;
+        final items = ref.read(provider).items;
+        if (items.isEmpty) {
+          syncCartToWizardItems(ref, provider: provider);
+        }
       });
     }
   }

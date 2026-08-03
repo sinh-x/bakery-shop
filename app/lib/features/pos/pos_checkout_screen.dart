@@ -84,12 +84,6 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     _posStateInitialized = true;
 
     final posNotifier = ref.read(posOrderStateProvider.notifier);
-    // Seed items from the POS cart BEFORE setting the stage. The orchestrator's
-    // enableCartSync (syncCartToWizardItems) also seeds items in a separate
-    // post-frame callback, but by doing it here first we ensure items are
-    // available when stage transitions to 1 — avoiding a rebuild cycle where
-    // stage-1 widgets (ExpandableItemCard) render with empty items and then get
-    // recreated when items arrive later.
     final cart = ref.read(posCartProvider);
     final drafts = cart.items.map(cartItemToDraft).toList();
     posNotifier.updateItems(drafts);
