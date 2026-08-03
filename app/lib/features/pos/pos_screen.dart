@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
+import '../../../providers/order/order_create_state_provider.dart';
+import '../../../providers/pos_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../shared/mixins/auto_refresh_mixin.dart';
@@ -12,6 +14,7 @@ import '../../../shared/utils/category_grouping.dart';
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
+import '../pos/utils/pos_cart_wizard_sync.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
 
@@ -164,6 +167,12 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(posOrderStateProvider);
+    ref.listen(posCartProvider, (prev, next) {
+      final route = ModalRoute.of(context);
+      if (route?.isCurrent != true) return;
+      syncCartToWizardItems(ref, provider: posOrderStateProvider);
+    });
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
 
