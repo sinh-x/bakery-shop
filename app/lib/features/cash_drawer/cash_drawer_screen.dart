@@ -160,13 +160,15 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     int? previousClose;
     try {
       previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('cashDrawerPreviousCloseProvider failed: $e\n$st');
       previousClose = null;
     }
     try {
       accountingBalance1101 =
           await ref.read(cashDrawerAccountingBalance1101Provider.future);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('cashDrawerAccountingBalance1101Provider failed: $e\n$st');
       accountingBalance1101 = 0;
     }
     if (!context.mounted) return;

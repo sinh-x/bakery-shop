@@ -134,7 +134,7 @@ void main() {
                     data: {
                       'detail': {
                         'message':
-                            'Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
+                            'Quầy hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
                         'carryOverProposal': {
                           'amount': 1550000,
                           'fromDrawerId': '7',
