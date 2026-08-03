@@ -9,7 +9,8 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// Renders the opening balance, auto-linked cash sales, owner in/out,
 /// cash expenses, and the real-time expected balance. The expected balance
 /// is the backend-computed value (`opening + cashSales + ownerIn - ownerOut
-/// - cashExpenses`) — the client does not recompute it (avoids drift).
+/// - cashExpenses + tienRutIn - tienRutOut`) — the client does not recompute it
+/// (avoids drift).
 class CashDrawerStatusCard extends StatelessWidget {
   const CashDrawerStatusCard({super.key, required this.drawer});
 
