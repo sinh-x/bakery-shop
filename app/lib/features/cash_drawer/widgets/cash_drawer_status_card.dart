@@ -4,13 +4,13 @@ import '../../../data/models/cash_drawer.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
-/// Status card for the active (open) cash drawer (FR4 / AC6).
+/// Status card for the active (open) cash drawer (FR4 / AC6, updated by
+/// DG-347 Phase 5).
 ///
-/// Renders the opening balance, auto-linked cash sales, owner in/out,
-/// cash expenses, and the real-time expected balance. The expected balance
-/// is the backend-computed value (`opening + cashSales + ownerIn - ownerOut
-/// - cashExpenses + tienRutIn - tienRutOut`) — the client does not recompute it
-/// (avoids drift).
+/// Renders the opening balance and the backend-computed expected balance.
+/// DG-347 Phase 5 removed the per-accumulator rows (cash sales, owner
+/// in/out, cash expenses, tien rut in/out); the expected balance is now
+/// the single source of truth from the journal-derived backend value.
 class CashDrawerStatusCard extends StatelessWidget {
   const CashDrawerStatusCard({super.key, required this.drawer});
 
@@ -46,34 +46,6 @@ class CashDrawerStatusCard extends StatelessWidget {
             _BalanceRow(
               label: VN.cashDrawerOpeningBalance,
               value: drawer.openingBalance,
-            ),
-            _BalanceRow(
-              label: VN.cashDrawerCashSales,
-              value: drawer.cashSales,
-            ),
-            // DG-341 Phase 4.4 FR6/AC6: tien rut rows between cashSales and
-            // ownerIn. Tien rut in is cash held for safekeeping (positive
-            // contribution to expected balance); tien rut out is cash
-            // returned at delivery (negative contribution).
-            _BalanceRow(
-              label: VN.cashDrawerTienRutIn,
-              value: drawer.tienRutIn,
-            ),
-            _BalanceRow(
-              label: VN.cashDrawerTienRutOut,
-              value: -drawer.tienRutOut,
-            ),
-            _BalanceRow(
-              label: VN.cashDrawerOwnerIn,
-              value: drawer.ownerIn,
-            ),
-            _BalanceRow(
-              label: VN.cashDrawerOwnerOut,
-              value: -drawer.ownerOut,
-            ),
-            _BalanceRow(
-              label: VN.cashDrawerCashExpenses,
-              value: -drawer.cashExpenses,
             ),
             const Divider(height: 24),
             Row(

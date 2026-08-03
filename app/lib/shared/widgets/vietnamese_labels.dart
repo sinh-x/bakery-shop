@@ -1050,19 +1050,17 @@ class VN {
   static const cashDrawerCashIn = 'Cho tiền vào quầy';
   static const cashDrawerCashOut = 'Lấy tiền khỏi quầy';
   static const cashDrawerOpeningBalance = 'Số dư đầu ngày';
+  // DG-347 Phase 5: closing balance surfaced on closed drawer history rows.
+  static const cashDrawerClosingBalance = 'Số dư cuối ngày';
   static const cashDrawerExpectedBalance = 'Số dư dự kiến';
   static const cashDrawerCountedAmount = 'Số tiền đếm được';
   static const cashDrawerDiscrepancy = 'Chênh lệch';
   static const cashDrawerStatus = 'Trạng thái';
   static const cashDrawerStatusOpen = 'Đang mở';
   static const cashDrawerStatusClosed = 'Đã đóng';
-  static const cashDrawerCashSales = 'Tiền bán hàng';
-  // DG-341 Phase 4.4 FR6: tien rut rows shown between cashSales and ownerIn.
-  static const cashDrawerTienRutIn = 'Tiền rút vào';
-  static const cashDrawerTienRutOut = 'Tiền rút ra';
-  static const cashDrawerOwnerIn = 'Chủ cho thêm';
-  static const cashDrawerOwnerOut = 'Chủ rút ra';
-  static const cashDrawerCashExpenses = 'Chi phí tiền mặt';
+  // DG-347 Phase 5: removed per-accumulator labels (cashDrawerCashSales,
+  // cashDrawerTienRutIn/Out, cashDrawerOwnerIn/Out, cashDrawerCashExpenses)
+  // — the status card no longer shows an accumulator breakdown.
   static const cashDrawerHistory = 'Lịch sử quầy';
   static const cashDrawerNoActive = 'Không có quầy tiền mặt đang mở';
   static const cashDrawerAlreadyOpen = 'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.';

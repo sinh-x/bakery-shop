@@ -4,12 +4,16 @@ import '../../../data/models/cash_drawer.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
-/// Scrollable daily drawer history list (FR10 / AC10).
+/// Scrollable daily drawer history list (FR10 / AC10, updated by DG-347
+/// Phase 5).
 ///
-/// Each entry shows the open/close date, opening balance, expected balance,
-/// counted amount, and discrepancy with a surplus/shortage/exact chip. The
-/// movements (cashSales, ownerIn, ownerOut, cashExpenses) are summarised in
-/// an expandable detail section.
+/// Each entry shows the open/close date, opening balance, expected
+/// balance, counted amount, and discrepancy with a
+/// surplus/shortage/exact chip. DG-347 Phase 5 removed the per-accumulator
+/// rows (cash sales, owner in/out, cash expenses); the expected balance is
+/// now the single source of truth from the journal-derived backend value.
+/// When present, the [CashDrawer.closingBalance] is shown for closed
+/// drawers.
 class CashDrawerHistoryList extends StatelessWidget {
   const CashDrawerHistoryList({super.key, required this.items});
 
@@ -81,23 +85,17 @@ class _HistoryCard extends StatelessWidget {
                   label: VN.cashDrawerOpeningBalance,
                   value: drawer.openingBalance,
                 ),
-                _DetailRow(
-                  label: VN.cashDrawerCashSales,
-                  value: drawer.cashSales,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerOwnerIn,
-                  value: drawer.ownerIn,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerOwnerOut,
-                  value: -drawer.ownerOut,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerCashExpenses,
-                  value: -drawer.cashExpenses,
-                ),
+                if (drawer.closingBalance != null)
+                  _DetailRow(
+                    label: VN.cashDrawerClosingBalance,
+                    value: drawer.closingBalance ?? 0,
+                  ),
                 const Divider(height: 16),
+                _DetailRow(
+                  label: VN.cashDrawerExpectedBalance,
+                  value: drawer.expectedBalance,
+                  emphasize: true,
+                ),
                 _DetailRow(
                   label: VN.cashDrawerCountedAmount,
                   value: drawer.countedAmount ?? 0,
