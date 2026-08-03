@@ -298,6 +298,14 @@ final orderCreateStateProvider =
 );
 
 final posOrderStateProvider =
-    NotifierProvider<OrderCreateStateNotifier, OrderCreateState>(
-  OrderCreateStateNotifier.new,
+    NotifierProvider<PosOrderCreateStateNotifier, OrderCreateState>(
+  PosOrderCreateStateNotifier.new,
 );
+
+class PosOrderCreateStateNotifier extends OrderCreateStateNotifier {
+  @override
+  OrderCreateState build() {
+    ref.keepAlive();
+    return super.build();
+  }
+}

@@ -84,9 +84,6 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     _posStateInitialized = true;
 
     final posNotifier = ref.read(posOrderStateProvider.notifier);
-    final cart = ref.read(posCartProvider);
-    final drafts = cart.items.map(cartItemToDraft).toList();
-    posNotifier.updateItems(drafts);
     const wizardData = OrderWizardData(
       customerName: VN.khachLe,
       source: VN.taiTiemPOS,
