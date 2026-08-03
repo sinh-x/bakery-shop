@@ -189,6 +189,7 @@ from .migrations.v087 import _migrate_v87_order_delivery_schedule_gps  # noqa: F
 from .migrations.v089 import _migrate_v89_order_assigned_staff_id  # noqa: F401
 from .migrations.v091 import _migrate_v91_cash_drawer_schema  # noqa: F401
 from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts  # noqa: F401
+from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -356,6 +357,7 @@ __all__ = [
     '_migrate_v8_photos',
     '_migrate_v91_cash_drawer_schema',
     '_migrate_v92_cash_drawer_sub_accounts',
+    '_migrate_v93_rename_quy_to_quay_in_journal_entries',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

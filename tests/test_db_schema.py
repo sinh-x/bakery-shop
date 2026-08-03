@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3497,7 +3497,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
         _assert_users_role_check_constraint(conn)
 
 
@@ -3563,7 +3563,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3686,7 +3686,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3760,7 +3760,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3787,7 +3787,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4190,7 +4190,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         indexes = {
             r["name"]
@@ -4270,7 +4270,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4380,7 +4380,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4450,7 +4450,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4584,7 +4584,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 92
+        assert _migrated_version(conn) == 93
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4632,6 +4632,97 @@ def test_v92_balance_transfer_entry_is_balanced():
         ).fetchone()
         assert abs(totals["d"] - totals["c"]) < 0.005
         assert totals["d"] == amount
+
+
+# ---------------------------------------------------------------------------
+# v93 — rename "quỹ" → "quầy" in journal_entries.description
+# (DG-337 Phase 5, FR7/NFR3)
+# ---------------------------------------------------------------------------
+
+
+def test_v93_registered_in_migration_chain():
+    """v93 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 93 in MIGRATIONS
+    assert (
+        MIGRATIONS[93]["description"]
+        == "Rename 'quỹ' → 'quầy' in journal_entries.description for terminology consistency (DG-337 Phase 5)"
+    )
+    assert (
+        MIGRATIONS[93]["callable"].__name__
+        == "_migrate_v93_rename_quy_to_quay_in_journal_entries"
+    )
+
+
+def test_v93_renames_quy_to_quay_on_existing_db():
+    """Historical journal_entries.description rows containing "quỹ" are
+    rewritten to "quầy" (FR7). Multiple occurrences within one description
+    are all replaced.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 92)
+        conn.executescript(
+            """
+            INSERT INTO journal_entries (description, source_type, source_id, created_at) VALUES
+              ('Mở quỹ tiền mặt', 'manual', 1001, '2026-01-01T00:00:00Z'),
+              ('Đóng quỹ cuối ca', 'manual', 1002, '2026-01-02T00:00:00Z'),
+              ('Không liên quan', 'manual', 1003, '2026-01-03T00:00:00Z'),
+              ('quỹ và quỹ cùng lúc', 'manual', 1004, '2026-01-04T00:00:00Z');
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 93)
+        assert _migrated_version(conn) == 93
+
+        quy_rows = conn.execute(
+            "SELECT id, description FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchall()
+        quay_rows = conn.execute(
+            "SELECT id, description FROM journal_entries WHERE description LIKE '%quầy%'"
+        ).fetchall()
+        assert quy_rows == []
+        quay_descs = {r["description"] for r in quay_rows}
+        assert "Mở quầy tiền mặt" in quay_descs
+        assert "Đóng quầy cuối ca" in quay_descs
+        assert "quầy và quầy cùng lúc" in quay_descs
+        assert "Không liên quan" in {r["description"] for r in conn.execute(
+            "SELECT description FROM journal_entries WHERE source_id = 1003"
+        ).fetchall()}
+
+
+def test_v93_idempotent_on_already_migrated_db():
+    """Re-running v93 on a DB that already ran it is a no-op (NFR3 — the
+    WHERE description LIKE '%quỹ%' clause matches zero rows once everything
+    has been rewritten).
+    """
+    from baker.db.schema import _migrate_v93_rename_quy_to_quay_in_journal_entries
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        count_before = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert count_before == 0
+        # Re-running the callable must not raise and must not change anything.
+        _migrate_v93_rename_quy_to_quay_in_journal_entries(conn)
+        count_after = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert count_after == 0
+        assert _migrated_version(conn) == 93
+
+
+def test_v93_no_op_on_fresh_db():
+    """A fresh DB has no "quỹ" descriptions, so v93 is a no-op (NFR3 — the
+    UPDATE matches zero rows, keeping the migration well under 5s).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 93
+        quy_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert quy_count == 0
 
 
 def test_schema_all_matches_imported_symbols():
