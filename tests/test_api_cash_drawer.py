@@ -15,18 +15,17 @@ Covers:
 import pytest
 
 from baker.db.connection import get_db
+from baker.db.schema import _account_id_by_code, _insert_journal_entry
 from baker.db.schema import ensure_schema
 from baker.models.cash_drawer import CashDrawer
 
-# DG-347 Phase 1 skipped these tests because the CashDrawer model still reads
-# the now-dropped accumulator columns via ``from_row`` (Phase 2 will update the
-# model). The skipped tests assert on accumulator fields (cashSales, ownerIn,
-# ownerOut, cashExpenses, tienRutIn, tienRutOut, expectedBalance) that the
-# model can no longer populate from the DB row. Phase 2 (backend model +
-# journal linking) will re-enable and adapt these tests.
-_SKIP_REASON = (
-    "DG-347 Phase 1: CashDrawer.from_row reads dropped accumulator columns; "
-    "re-enable in Phase 2 once the model is updated"
+# DG-347 Phase 3 will re-enable these tien rut delivery tests once the
+# order_lifecycle _sync_drawer_tien_rut_out call site is removed. Phase 2
+# removes the add_* methods from the model (FR7), so the delivery flow would
+# crash if these tests ran today.
+_PHASE3_SKIP = pytest.mark.skip(
+    reason="DG-347 Phase 3: order_lifecycle still calls add_tien_rut_out; "
+           "re-enable once Phase 3 removes the call site"
 )
 
 
@@ -67,10 +66,6 @@ def test_open_drawer_creates_drawer_and_journal_entry(api_client):
     body = resp.json()
     assert body["status"] == "open"
     assert body["openingBalance"] == 1_000_000
-    assert body["cashSales"] == 0
-    assert body["ownerIn"] == 0
-    assert body["ownerOut"] == 0
-    assert body["cashExpenses"] == 0
     assert body["expectedBalance"] == 1_000_000
     # AC3: journal entry debit 1101 (Cash in Drawer), credit 3100 (equity)
     je = body["journalEntry"]
@@ -91,7 +86,7 @@ def test_open_drawer_rejects_negative_balance(api_client):
     assert resp.status_code == 422
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_open_second_drawer_blocked_while_active(api_client):
     r1 = api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
     assert r1.status_code == 201
@@ -105,13 +100,12 @@ def test_open_second_drawer_blocked_while_active(api_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_in_increases_owner_in_and_creates_journal(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000, "note": "bổ sung"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 200_000
     assert body["expectedBalance"] == 1_200_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_in"
@@ -126,7 +120,7 @@ def test_cash_in_increases_owner_in_and_creates_journal(api_client):
         assert _account_id(conn, "3100") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     """FR3a: cash-in source=owner → DR 1101 (Cash in Drawer), CR 1102 (Owner's Cash)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -136,7 +130,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 300_000
+    assert body["expectedBalance"] == 1_300_000
     je = body["journalEntry"]
     lines = je["lines"]
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -146,7 +140,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_in_from_employee_debits_1101_credits_23xx(api_client):
     """FR3a: cash-in source=employee → DR 1101, CR 23XX (staff sub-account created on first use)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -197,13 +191,12 @@ def test_cash_in_rejects_zero_or_negative(api_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_out_increases_owner_out_and_creates_journal(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerOut"] == 100_000
     assert body["expectedBalance"] == 900_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_out"
@@ -218,7 +211,7 @@ def test_cash_out_increases_owner_out_and_creates_journal(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
     """AC4: cash-out destination=owner → DR 1102 (Owner's Cash), CR 1101 (Cash in Drawer)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -236,7 +229,7 @@ def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_cash_out_to_employee_debits_23xx_credits_1101(api_client):
     """AC5: cash-out destination=employee → DR 23XX (staff sub-account created on first use),
     CR 1101 (Cash in Drawer)."""
@@ -281,7 +274,7 @@ def test_cash_out_requires_active_drawer(api_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_drawer_with_shortage_records_discrepancy(api_client):
     """Close with shortage: first call returns 409 shortageProposal,
     second call with confirmed flag creates DR 3100 / CR 1101."""
@@ -323,7 +316,7 @@ def test_close_drawer_with_shortage_records_discrepancy(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_drawer_with_surplus_records_discrepancy(api_client):
     """Close with surplus: first call returns 409 surplusProposal,
     second call with confirmed flag creates DR 1101 / CR 1102."""
@@ -365,19 +358,30 @@ def test_close_drawer_with_surplus_records_discrepancy(api_client):
 
 def _open_with_expected(api_client, *, opening: int, expected: int) -> None:
     """Open a drawer and adjust its expected balance to the target by
-    setting cash_sales directly on the DB row (bypasses auto-link)."""
+    inserting an additional 1101 journal entry linked to the drawer via
+    the join table (replaces the legacy direct cash_sales column update)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
     if expected != opening:
+        delta = expected - opening
         with get_db() as conn:
             drawer = CashDrawer.get_active(conn)
             assert drawer is not None
-            conn.execute(
-                "UPDATE cash_drawer SET cash_sales = ? WHERE id = ?",
-                (expected - opening, drawer.id),
+            cash_acct = _account_id(conn, "1101")
+            equity_acct = _account_id(conn, "3100")
+            _insert_journal_entry(
+                conn,
+                description=f"Test adjustment: {delta}",
+                source_type="cash_drawer_test_adjust",
+                source_id=None,
+                lines=[
+                    (cash_acct, float(delta), 0.0, "test"),
+                    (equity_acct, 0.0, float(delta), "test"),
+                ],
+                drawer_id=drawer.id,
             )
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
     """AC1: close with surplus and surplusSource set but surplusConfirmed
     false → 409 with surplusProposal {expectedBalance, countedAmount, surplus}.
@@ -397,7 +401,7 @@ def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
     assert proposal["surplus"] == 1_000_000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
     """AC2: close surplus with surplusConfirmed + surplusSource=owner_cash
     → DR 1101 (Cash in Drawer) / CR 1102 (Owner's Cash); discrepancy stored."""
@@ -426,7 +430,7 @@ def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
     """AC3: close surplus with surplusSource=unidentified_sale → compound
     entry DR 1101/CR 4100 (revenue) + DR 5900/CR 1300 (50% COGS)."""
@@ -474,7 +478,7 @@ def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
     assert float(inv_line["credit"]) == 500_000.0
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     """AC4: close with shortage and shortageSource set but shortageConfirmed
     false → 409 with shortageProposal {expectedBalance, countedAmount, shortage}.
@@ -494,7 +498,7 @@ def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     assert proposal["shortage"] == 500_000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
     """AC5: close shortage with shortageConfirmed + shortageSource=owner_withdraw
     → DR 1102 (Owner's Cash) / CR 1101 (Cash in Drawer); discrepancy stored."""
@@ -522,7 +526,7 @@ def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
     """AC6: close shortage with shortageConfirmed + shortageSource=equity_loss
     → DR 3100 (Equity) / CR 1101 (Cash in Drawer); discrepancy stored."""
@@ -550,7 +554,7 @@ def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     """AC7: zero discrepancy close → no journal entry, no confirmation flags
     needed. Drawer closes normally."""
@@ -567,7 +571,7 @@ def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     assert "shortageJournalEntry" not in body
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client):
     """NFR2: old client sends close with only countedAmount (no
     surplusConfirmed / surplusSource) → gets 409 surplusProposal just like
@@ -586,7 +590,7 @@ def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client)
     assert p["surplus"] == 100_000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_close_shortage_old_client_without_flags_backward_compat_nfr2(api_client):
     """NFR2: old client sends close with only countedAmount (no
     shortageConfirmed / shortageSource) → gets 409 shortageProposal just
@@ -627,7 +631,7 @@ def test_status_returns_accounting_balance_when_no_active_drawer(api_client):
     assert isinstance(body["accountingBalance1101"], int)
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_status_returns_active_drawer(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.get("/api/cash-drawer/status")
@@ -637,7 +641,7 @@ def test_status_returns_active_drawer(api_client):
     assert body["expectedBalance"] == 1_000_000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_status_after_close_returns_previous_counted_amount(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
@@ -651,27 +655,35 @@ def test_status_after_close_returns_previous_counted_amount(api_client):
     assert body["previousCloseCountedAmount"] == 1_000_000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
-def test_expected_balance_formula_ac6(api_client):
-    """AC6: opening=1M, cash_sales=500K, owner_in=200K, owner_out=100K,
-    cash_expenses=50K → expected_balance=1,550,000.
 
-    cash_sales and cash_expenses are populated by Phase 3 (auto-link), so
-    here we set them directly on the DB row to verify the formula in
-    isolation.
+def test_expected_balance_formula_ac6(api_client):
+    """AC6/FR1: opening=1M, +500K test adjustment → expected_balance=1,500,000.
+
+    The legacy accumulator formula (cash_sales + owner_in - owner_out -
+    cash_expenses + tien_rut_in - tien_rut_out) is now replaced by the sum of
+    1101 journal lines linked to the drawer via the join table, so we inject
+    a 500K 1101 journal entry to verify the journal-derived balance.
     """
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
-        conn.execute(
-            "UPDATE cash_drawer SET cash_sales = 500000, owner_in = 200000, "
-            "owner_out = 100000, cash_expenses = 50000 WHERE id = ?",
-            (drawer.id,),
+        cash_acct = _account_id(conn, "1101")
+        equity_acct = _account_id(conn, "3100")
+        _insert_journal_entry(
+            conn,
+            description="Test +500K",
+            source_type="cash_drawer_test_adjust",
+            source_id=None,
+            lines=[
+                (cash_acct, 500_000.0, 0.0, "test"),
+                (equity_acct, 0.0, 500_000.0, "test"),
+            ],
+            drawer_id=drawer.id,
         )
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
-    assert resp.json()["expectedBalance"] == 1_550_000
+    assert resp.json()["expectedBalance"] == 1_500_000
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +691,7 @@ def test_expected_balance_formula_ac6(api_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_history_returns_paginated_list(api_client):
     # First drawer
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -700,7 +712,7 @@ def test_history_returns_paginated_list(api_client):
     assert body["items"][0]["openingBalance"] in (1_000_000, 500_000)
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_history_supports_pagination(api_client):
     for i in range(3):
         opening = 100_000 * (i + 1)
@@ -716,7 +728,16 @@ def test_history_supports_pagination(api_client):
             payload["unidentifiedSaleConfirmed"] = True
         open_resp = api_client.post("/api/cash-drawer/open", json=payload)
         assert open_resp.status_code in (200, 201), open_resp.text
-        api_client.post("/api/cash-drawer/close", json={"countedAmount": opening})
+        # Close with the journal-derived expected balance so no confirmation
+        # gate triggers (DG-347 Phase 2: expected_balance is per-drawer 1101
+        # sum, which may differ from opening_balance when carry-over journals
+        # only the delta).
+        status = api_client.get("/api/cash-drawer/status").json()
+        counted = status["expectedBalance"]
+        close_resp = api_client.post(
+            "/api/cash-drawer/close", json={"countedAmount": counted}
+        )
+        assert close_resp.status_code == 200, close_resp.text
 
     resp = api_client.get("/api/cash-drawer/history?limit=2&offset=0")
     assert resp.status_code == 200
@@ -729,7 +750,7 @@ def test_history_supports_pagination(api_client):
     assert len(resp2.json()["items"]) == 1
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_history_supports_date_range_filter(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
@@ -749,7 +770,7 @@ def test_history_supports_date_range_filter(api_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_all_drawer_journal_entries_are_balanced(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
@@ -769,7 +790,7 @@ def test_all_drawer_journal_entries_are_balanced(api_client):
             )
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
 def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
     """NFR4/AC3: the 1101 (Cash in Drawer) journal balance must equal the
     drawer expected balance while the drawer is open.
@@ -806,15 +827,21 @@ def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
 
 
 def test_cash_drawer_expected_balance_model():
-    d = CashDrawer(
+    """Unit-level: expected_balance() without a conn falls back to
+    opening_balance for open drawers and closing_balance for closed drawers.
+    The full journal-derived balance is exercised via the API tests below."""
+    d_open = CashDrawer(
         opened_at="2026-08-01T00:00:00Z",
         opening_balance=1_000_000,
-        cash_sales=500_000,
-        owner_in=200_000,
-        owner_out=100_000,
-        cash_expenses=50_000,
     )
-    assert d.expected_balance() == 1_550_000
+    assert d_open.expected_balance() == 1_000_000
+    d_closed = CashDrawer(
+        opened_at="2026-08-01T00:00:00Z",
+        opening_balance=1_000_000,
+        status="closed",
+        closing_balance=1_550_000,
+    )
+    assert d_closed.expected_balance() == 1_550_000
 
 
 # ---------------------------------------------------------------------------
@@ -859,7 +886,8 @@ def _advance_to_delivered(client, ref):
         assert resp.status_code == 200, resp.text
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
+@_PHASE3_SKIP
 def test_tien_rut_out_increases_on_delivery_ac2(api_client):
     """AC2: Given an open drawer with ``tienRutIn`` = 500,000, when the order
     is delivered, then ``tienRutOut`` = 500,000 and ``expectedBalance``
@@ -890,7 +918,8 @@ def test_tien_rut_out_increases_on_delivery_ac2(api_client):
     assert status_after["expectedBalance"] == expected_before - 500000
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
+@_PHASE3_SKIP
 def test_tien_rut_delivery_skips_closed_drawer_ac7(api_client):
     """AC7: Given an order with tien rut is delivered and the linked drawer is
     already closed, the delivery does not modify the closed drawer (no crash,
@@ -939,7 +968,8 @@ def test_tien_rut_delivery_no_active_drawer_no_error(api_client):
     assert status["activeDrawer"] is None
 
 
-@pytest.mark.skip(reason=_SKIP_REASON)
+
+@_PHASE3_SKIP
 def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
     """An invalidated tien_rut payment must not contribute to tien_rut_out at
     delivery (the inflow was already reversed from tien_rut_in on invalidate).
