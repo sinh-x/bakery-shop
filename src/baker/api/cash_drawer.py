@@ -861,22 +861,16 @@ def drawer_status():
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
         drawer = CashDrawer.get_active(conn)
-        # DG-347 Phase 2 (FR11/AC10): for an open drawer, the 1101 accounting
-        # balance scoped to this drawer via the join table equals the drawer's
-        # expected_balance — both derive from the same 1101 journal lines. For
-        # closed drawers, the persisted closing_balance is authoritative.
+        # DG-347 Phase 4 (FR11/AC10): accountingBalance1101 is the global 1101
+        # balance (unchanged). expectedBalance is derived per-drawer via the
+        # join table (open) or from closing_balance (closed) by the model. For
+        # an open single-active drawer both values are equal because all 1101
+        # journal lines are linked to that drawer.
+        accounting_balance_1101 = int(_get_account_balance(conn, CASH_DRAWER_ASSET_CODE))
         if drawer:
-            accounting_balance_1101 = int(
-                _get_account_balance(
-                    conn, CASH_DRAWER_ASSET_CODE, drawer_id=drawer.id
-                )
-            )
             result = drawer.to_api_dict(conn)
             result["accountingBalance1101"] = accounting_balance_1101
             return result
-        # No active drawer — fall back to the global 1101 balance for the
-        # reference display (no drawer_id filter possible).
-        accounting_balance_1101 = int(_get_account_balance(conn, CASH_DRAWER_ASSET_CODE))
         recent = CashDrawer.get_most_recent_closed(conn)
         if recent:
             data = {"activeDrawer": None}
