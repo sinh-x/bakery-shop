@@ -585,10 +585,16 @@ def test_close_drawer_requires_active_drawer(api_client):
 # ---------------------------------------------------------------------------
 
 
-def test_status_returns_null_when_no_active_drawer(api_client):
+def test_status_returns_accounting_balance_when_no_active_drawer(api_client):
+    # FR3 (DG-337 phase 4.1): /status must always return accountingBalance1101,
+    # even when no active drawer and no closed-drawer history exist.
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
-    assert resp.json() is None
+    body = resp.json()
+    assert body is not None
+    assert body.get("activeDrawer") is None
+    assert "accountingBalance1101" in body
+    assert isinstance(body["accountingBalance1101"], int)
 
 
 def test_status_returns_active_drawer(api_client):
