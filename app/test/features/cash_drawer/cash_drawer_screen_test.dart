@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/features/cash_drawer/cash_drawer_screen.dart';
+import 'package:bakery_app/providers/cash_drawer_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -322,6 +326,92 @@ void main() {
     // `false` would cause the backend to re-emit a 409 and re-loop the dialog.
     expect(interceptor.openCalls.last['carryOverConfirmed'], true);
     expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+  });
+
+  // UI-1: widget test coverage for loading/error states in _EmptyActiveView.
+  // The _EmptyActiveView is a private widget rendered when the active status
+  // resolves to null. Its 1101 and previous-close reference lines branch on
+  // AsyncValue loading/error/data, so we override those providers directly
+  // to exercise each branch without spinning up a real Dio flow.
+  testWidgets(
+      'UI-1 _EmptyActiveView shows inline progress while the 1101 and '
+      'previous-close providers are loading', (tester) async {
+    // Use never-completing Completers so the providers stay in the loading
+    // branch. We pump only a single frame (not pumpAndSettle, which would
+    // block waiting for the pending futures to resolve).
+    final balanceCompleter = Completer<int>();
+    final previousCloseCompleter = Completer<int?>();
+    final container = ProviderContainer(
+      overrides: [
+        cashDrawerStatusProvider.overrideWith((ref) async => null),
+        cashDrawerHistoryProvider(const CashDrawerHistoryFilter())
+            .overrideWith((ref) async => const CashDrawerHistoryResponse(
+                  total: 0,
+                  limit: 50,
+                  offset: 0,
+                  items: <CashDrawer>[],
+                )),
+        cashDrawerAccountingBalance1101Provider
+            .overrideWith((ref) => balanceCompleter.future),
+        cashDrawerPreviousCloseProvider
+            .overrideWith((ref) => previousCloseCompleter.future),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(() {
+      if (!balanceCompleter.isCompleted) balanceCompleter.complete(0);
+      if (!previousCloseCompleter.isCompleted) previousCloseCompleter.complete(null);
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: CashDrawerScreen()),
+      ),
+    );
+    // Pump a few frames so the status provider resolves to null and the
+    // _EmptyActiveView renders, without settling the pending references.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
+    // Two inline CircularProgressIndicator spinners (one per reference line).
+    expect(
+      find.byType(CircularProgressIndicator),
+      findsNWidgets(2),
+    );
+  });
+
+  testWidgets(
+      'UI-1 _EmptyActiveView hides the 1101 and previous-close lines when '
+      'those providers error (error branch renders SizedBox.shrink)',
+      (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        cashDrawerStatusProvider.overrideWith((ref) async => null),
+        cashDrawerHistoryProvider(const CashDrawerHistoryFilter())
+            .overrideWith((ref) async => const CashDrawerHistoryResponse(
+                  total: 0,
+                  limit: 50,
+                  offset: 0,
+                  items: <CashDrawer>[],
+                )),
+        cashDrawerAccountingBalance1101Provider
+            .overrideWith((ref) => Future<int>.error(Exception('1101 boom'))),
+        cashDrawerPreviousCloseProvider
+            .overrideWith((ref) => Future<int?>.error(Exception('prev boom'))),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
+    // The reference-balance labels must NOT appear on error — the lines
+    // collapse to SizedBox.shrink rather than crashing the screen.
+    expect(find.textContaining(VN.cashDrawerReferenceBalance), findsNothing);
+    expect(find.textContaining(VN.cashDrawerPreviousCloseBalance), findsNothing);
+    // No inline spinners remain once both providers settle to error.
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets(
