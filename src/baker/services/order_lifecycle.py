@@ -238,6 +238,17 @@ def apply_post_update_side_effects(
         )
         accounting_sync_warning = sync_status_to_warning(sync_status)
 
+        # FR3 (DG-341 Phase 3): return held tien rut cash to the customer at
+        # completion by increasing ``tien_rut_out`` on the linked drawer(s).
+        # NFR3: fire-and-forget — never blocks the status transition.
+        try:
+            _sync_drawer_tien_rut_out(conn, order_id, order_ref)
+        except Exception:
+            logger.exception(
+                "drawer tien_rut_out sync failed for order %s (%s)",
+                order_id, order_ref,
+            )
+
     cascade_main_items_to_status(conn, order_id, to_status)
 
     from baker.api.work_items import sync_extras_to_order_status
