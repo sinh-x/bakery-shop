@@ -134,7 +134,7 @@ void main() {
                     data: {
                       'detail': {
                         'message':
-                            'Quỹ hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
+                            'Quầy hôm trước chưa đóng — xác nhận số dư chuyển sang hôm nay.',
                         'carryOverProposal': {
                           'amount': 1550000,
                           'fromDrawerId': '7',
@@ -181,7 +181,7 @@ void main() {
                     statusCode: 409,
                     data: {
                       'detail':
-                          'Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại.',
+                          'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại.',
                     },
                   ),
                 ),

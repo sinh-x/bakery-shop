@@ -362,7 +362,7 @@ def open_drawer(body: OpenDrawerRequest):
         if active is not None:
             raise HTTPException(
                 status_code=409,
-                detail="Đã có quỹ tiền mặt đang mở — phải đóng quỹ hiện tại trước khi mở quỹ mới.",
+                detail="Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.",
             )
 
         # DG-330 confirmation gates for non-carry-over cases (or post-carry-over
@@ -380,7 +380,7 @@ def open_drawer(body: OpenDrawerRequest):
                         status_code=409,
                         detail={
                             "message": (
-                                f"Số tiền mở quỹ ({opening:,}) thấp hơn số dư "
+                                f"Số tiền mở quầy ({opening:,}) thấp hơn số dư "
                                 f"kế toán 1101 ({int(reference_balance):,}). "
                                 f"Chênh lệch {excess:,} sẽ chuyển vào "
                                 f"Tiền mặt chủ sở hữu (1102). Xác nhận?"
@@ -399,7 +399,7 @@ def open_drawer(body: OpenDrawerRequest):
                         status_code=409,
                         detail={
                             "message": (
-                                f"Số tiền mở quỹ ({opening:,}) cao hơn số dư "
+                                f"Số tiền mở quầy ({opening:,}) cao hơn số dư "
                                 f"kế toán 1101 ({int(reference_balance):,}). "
                                 f"Chênh lệch {excess:,}. Xác nhận đã đối chiếu "
                                 f"kho hàng POS?"
@@ -448,7 +448,7 @@ def open_drawer(body: OpenDrawerRequest):
         if reference_balance > 0 and opening < reference_balance:
             excess = int(reference_balance - opening)
             transfer_desc = (
-                f"Chuyển tiền thừa từ quỹ sang tiền mặt chủ sở hữu: {excess}"
+                f"Chuyển tiền thừa từ quầy sang tiền mặt chủ sở hữu: {excess}"
             )
             auto_transfer = _create_drawer_journal_entry(
                 conn,
@@ -467,7 +467,7 @@ def open_drawer(body: OpenDrawerRequest):
             if not body.unidentifiedSaleConfirmed and not body.ownerCapitalConfirmed:
                 delta = int(opening - reference_balance)
                 desc = (
-                    f"Mở quỹ tiền mặt: {opening} (chênh lệch tăng {delta})"
+                    f"Mở quầy tiền mặt: {opening} (chênh lệch tăng {delta})"
                 )
                 if body.note:
                     desc += f" — {body.note}"
@@ -485,7 +485,7 @@ def open_drawer(body: OpenDrawerRequest):
             # opening == reference — no journal entry needed
             journal = None
         else:
-            desc = f"Mở quỹ tiền mặt: {opening}"
+            desc = f"Mở quầy tiền mặt: {opening}"
             if body.note:
                 desc += f" — {body.note}"
             journal = _create_drawer_journal_entry(
@@ -510,7 +510,7 @@ def open_drawer(body: OpenDrawerRequest):
             cogs_acct = _account_id_by_code(conn, COGS_CODE)
             inventory_acct = _account_id_by_code(conn, INVENTORY_CODE)
             sale_desc = (
-                f"Doanh thu chưa xác định khi mở quỹ (đã đối chiếu kho): {excess}"
+                f"Doanh thu chưa xác định khi mở quầy (đã đối chiếu kho): {excess}"
             )
             sale_lines = [
                 (accounts["cash_drawer"], float(excess), 0.0, sale_desc),
@@ -541,7 +541,7 @@ def open_drawer(body: OpenDrawerRequest):
         if opening > reference_balance > 0 and body.ownerCapitalConfirmed:
             excess = int(opening - reference_balance)
             capital_desc = (
-                f"Chủ cho thêm tiền mặt khi mở quỹ (vốn chủ sở hữu): {excess}"
+                f"Chủ cho thêm tiền mặt khi mở quầy (vốn chủ sở hữu): {excess}"
             )
             owner_capital = _create_drawer_journal_entry(
                 conn,
@@ -588,7 +588,7 @@ def cash_in(body: CashInRequest):
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
         drawer.add_owner_in(conn, body.amount)
-        desc = f"Cho thêm tiền vào quỹ: {body.amount}"
+        desc = f"Cho thêm tiền vào quầy: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
         # Resolve the credit account based on the source.
@@ -633,7 +633,7 @@ def cash_out(body: CashOutRequest):
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
         drawer.add_owner_out(conn, body.amount)
-        desc = f"Lấy tiền khỏi quỹ: {body.amount}"
+        desc = f"Lấy tiền khỏi quầy: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
         # Resolve the debit account based on the destination.
@@ -709,7 +709,7 @@ def close_drawer(body: CloseDrawerRequest):
                 )
             else:
                 desc = (
-                    f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
+                    f"Đóng quầy tiền mặt: đếm={body.countedAmount}, "
                     f"chênh lệch={discrepancy}"
                 )
                 if body.note:
@@ -729,7 +729,7 @@ def close_drawer(body: CloseDrawerRequest):
                     cogs_acct = _account_id_by_code(conn, COGS_CODE)
                     inventory_acct = _account_id_by_code(conn, INVENTORY_CODE)
                     sale_desc = (
-                        f"Doanh thu chưa xác định khi đóng quỹ: {discrepancy}"
+                        f"Doanh thu chưa xác định khi đóng quầy: {discrepancy}"
                     )
                     lines = [
                         (accounts["cash_drawer"], float(discrepancy), 0.0, sale_desc),
@@ -779,7 +779,7 @@ def close_drawer(body: CloseDrawerRequest):
                 )
             else:
                 desc = (
-                    f"Đóng quỹ tiền mặt: đếm={body.countedAmount}, "
+                    f"Đóng quầy tiền mặt: đếm={body.countedAmount}, "
                     f"chênh lệch={discrepancy}"
                 )
                 if body.note:
@@ -820,7 +820,7 @@ def drawer_status():
     FR8: stale previous-day drawers are auto-closed lazily before this read.
     DG-331 FR9: includes previousCloseCountedAmount (counted_amount of most
     recent closed drawer) when no active drawer exists, for display in the
-    open dialog as "Số dư sau khi đóng quỹ lần trước".
+    open dialog as "Số dư sau khi đóng quầy lần trước".
     """
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
@@ -840,7 +840,14 @@ def drawer_status():
             data["previousCloseCountedAmount"] = recent.counted_amount
             data["accountingBalance1101"] = accounting_balance_1101
             return data
-        return None
+        # FR3 (DG-337 phase 4.1): always return accountingBalance1101, even when
+        # no active drawer and no closed-drawer history exist, so the client
+        # never receives a null balance display.
+        return {
+            "activeDrawer": None,
+            "previousCloseCountedAmount": None,
+            "accountingBalance1101": accounting_balance_1101,
+        }
 
 
 @router.get("/history")
@@ -873,6 +880,6 @@ def _require_active_drawer(conn) -> CashDrawer:
     if drawer is None:
         raise HTTPException(
             status_code=409,
-            detail="Không có quỹ tiền mặt đang mở — hãy mở quỹ trước.",
+            detail="Không có quầy tiền mặt đang mở — hãy mở quầy trước.",
         )
     return drawer

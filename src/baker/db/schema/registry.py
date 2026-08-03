@@ -73,6 +73,7 @@ from .migrations.v089 import _migrate_v89_order_assigned_staff_id
 from .migrations.v090 import _migrate_v90_force_password_change
 from .migrations.v091 import _migrate_v91_cash_drawer_schema
 from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts
+from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries
 
 MIGRATIONS = {
     1: {
@@ -522,6 +523,11 @@ MIGRATIONS = {
         "description": "Insert cash drawer sub-accounts 1101/1102 and transfer existing 1100 balance to 1101 (DG-330 Phase 2)",
         "sql": "",
         "callable": _migrate_v92_cash_drawer_sub_accounts,
+    },
+    93: {
+        "description": "Rename 'quỹ' → 'quầy' in journal_entries.description for terminology consistency (DG-337 Phase 5)",
+        "sql": "",
+        "callable": _migrate_v93_rename_quy_to_quay_in_journal_entries,
     },
 }
 
