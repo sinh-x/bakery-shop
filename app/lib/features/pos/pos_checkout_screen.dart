@@ -84,10 +84,15 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     _posStateInitialized = true;
 
     final posNotifier = ref.read(posOrderStateProvider.notifier);
-    // Seed the POS wizard defaults (khách lẻ, Tại tiệm - POS, pickup, default
-    // due date/time). Item seeding from the cart is handled by the
-    // orchestrator's enableCartSync (syncCartToWizardItems) — kept out of
-    // _initPosState to avoid double-seeding (DG-322 Phase 4).
+    // Seed items from the POS cart BEFORE setting the stage. The orchestrator's
+    // enableCartSync (syncCartToWizardItems) also seeds items in a separate
+    // post-frame callback, but by doing it here first we ensure items are
+    // available when stage transitions to 1 — avoiding a rebuild cycle where
+    // stage-1 widgets (ExpandableItemCard) render with empty items and then get
+    // recreated when items arrive later.
+    final cart = ref.read(posCartProvider);
+    final drafts = cart.items.map(cartItemToDraft).toList();
+    posNotifier.updateItems(drafts);
     const wizardData = OrderWizardData(
       customerName: VN.khachLe,
       source: VN.taiTiemPOS,
