@@ -160,7 +160,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     int? previousClose;
     try {
       previousClose = await ref.read(cashDrawerPreviousCloseProvider.future);
-    } catch (e, st) {
+    } on Exception catch (e, st) {
       debugPrint('cashDrawerPreviousCloseProvider failed: $e\n$st');
       // CQ-4: invalidate the failed async provider so the cached error does
       // not persist until the 30s poll — the next read re-fetches fresh.
@@ -170,7 +170,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     try {
       accountingBalance1101 =
           await ref.read(cashDrawerAccountingBalance1101Provider.future);
-    } catch (e, st) {
+    } on Exception catch (e, st) {
       debugPrint('cashDrawerAccountingBalance1101Provider failed: $e\n$st');
       // CQ-4: invalidate the failed async provider so the cached error does
       // not persist until the 30s poll — the next read re-fetches fresh.
