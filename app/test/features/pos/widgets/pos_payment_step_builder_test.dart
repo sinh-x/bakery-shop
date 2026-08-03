@@ -26,7 +26,6 @@ class _BuilderHost extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = PosCheckoutPaymentController(
-      ref: ref,
       submitOrder: ({status, paymentMethod}) async => false,
       resolveDeliveryType: () => 'pickup',
       goToStage: (_) {},

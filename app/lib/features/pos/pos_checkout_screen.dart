@@ -63,7 +63,6 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   void initState() {
     super.initState();
     _payment = PosCheckoutPaymentController(
-      ref: ref,
       submitOrder: ({status, paymentMethod}) =>
           _orchestratorKey.currentState?.submitOrder(
             status: status,
@@ -118,8 +117,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _enterPaymentStep() {
-    setState(() {});
-    _payment.enterPaymentStep();
+    _payment.enterPaymentStep(ref);
   }
 
   void _confirmClearCart() {

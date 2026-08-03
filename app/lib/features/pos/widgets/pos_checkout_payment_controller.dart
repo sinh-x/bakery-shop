@@ -43,14 +43,12 @@ typedef WriteBackToCartFn = void Function();
 /// screen file stays a thin orchestrator wrapper (DG-322 Phase 4, NFR4).
 class PosCheckoutPaymentController {
   PosCheckoutPaymentController({
-    required this.ref,
     required this.submitOrder,
     required this.resolveDeliveryType,
     required this.goToStage,
     required this.writeBackToCart,
   });
 
-  final WidgetRef ref;
   final SubmitOrderFn submitOrder;
   final ResolveDeliveryTypeFn resolveDeliveryType;
   final GoToStageFn goToStage;
@@ -91,7 +89,7 @@ class PosCheckoutPaymentController {
   /// back to the cart, computes the cart total / tien_rut defaults, and
   /// advances to stage 5. Returns the new payment state so the caller can
   /// rebuild the [PosPaymentStep] with the fresh values.
-  PosPaymentStepState enterPaymentStep() {
+  PosPaymentStepState enterPaymentStep(WidgetRef ref) {
     writeBackToCart();
     final cart = ref.read(posCartProvider);
     final cartTotal = cart.items
