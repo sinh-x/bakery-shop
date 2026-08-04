@@ -57,6 +57,43 @@ def _sums(conn, source_type: str) -> tuple[float, float]:
     return debit, credit
 
 
+def _adjust_drawer_balance(conn, drawer_id: int, delta: int) -> None:
+    """Insert a 1101/3100 journal entry linked to the drawer to adjust its
+    journal-derived expected_balance by ``delta``."""
+    if delta == 0:
+        return
+    cash_acct = _account_id(conn, "1101")
+    equity_acct = _account_id(conn, "3100")
+    _insert_journal_entry(
+        conn,
+        description=f"Test balance adjust: {delta}",
+        source_type="cash_drawer_test_adjust",
+        source_id=None,
+        lines=[
+            (cash_acct, float(delta), 0.0, "test"),
+            (equity_acct, 0.0, float(delta), "test"),
+        ],
+        drawer_id=drawer_id,
+    )
+
+
+def _backdate_drawer(conn, drawer_id: int, opened_at_iso: str) -> None:
+    """Set a drawer's opened_at to a past ISO-8601 UTC timestamp so the lazy
+    auto-close check treats it as belonging to a previous local day."""
+    conn.execute(
+        "UPDATE cash_drawer SET opened_at = ? WHERE id = ?",
+        (opened_at_iso, drawer_id),
+    )
+
+
+def _drawer_row(conn, drawer_id: int) -> CashDrawer:
+    return CashDrawer.from_row(
+        conn.execute(
+            "SELECT * FROM cash_drawer WHERE id = ?", (drawer_id,)
+        ).fetchone()
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /open (FR1, AC1)
 # ---------------------------------------------------------------------------
@@ -67,7 +104,13 @@ def test_open_drawer_creates_drawer_and_journal_entry(api_client):
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["status"] == "open"
-    assert body["openingBalance"] == 1_000_000
+    # DG-354 Phase 3 (FR1/FR2/AC1): openingBalance stores the 1101 accounting
+    # reference (0 for the first open) and countedOpeningBalance stores the
+    # user's physical cash count (1,000,000). The open journal entry books the
+    # full counted opening as DR 1101 / CR 3100 linked to this drawer, so
+    # expected_balance = opening_balance + SUM(linked 1101) = 0 + 1,000,000.
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
     assert body["expectedBalance"] == 1_000_000
     # AC3: journal entry debit 1101 (Cash in Drawer), credit 3100 (equity)
     je = body["journalEntry"]
@@ -1018,6 +1061,133 @@ def test_counted_opening_balance_round_trip(use_memory_db):
 
 
 # ---------------------------------------------------------------------------
+# DG-354 Phase 3 — API dual-balance acceptance criteria (AC1, AC4, AC5, AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_ac1_fresh_open_stores_1101_reference_and_counted_balance(api_client):
+    """AC1: Given a fresh database with no prior drawers, when opening a
+    drawer with openingBalance=1,000,000, then expected_balance() returns
+    1,000,000 and counted_opening_balance = 1,000,000.
+
+    DG-354 Phase 3: opening_balance stores the 1101 accounting reference (0
+    for the first open); counted_opening_balance stores the user's physical
+    cash count (1,000,000). The open journal entry books the full 1,000,000
+    as DR 1101 / CR 3100 linked to the drawer, so expected_balance =
+    opening_balance (0) + linked 1101 sum (1,000,000) = 1,000,000.
+    """
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
+    assert body["expectedBalance"] == 1_000_000
+
+
+def test_ac4_close_discrepancy_uses_expected_balance(api_client):
+    """AC4: Given a drawer with expected_balance()=1,200,000, when closing
+    with countedAmount=1,250,000, then discrepancy = 50,000 (surplus) and
+    closing_balance = 1,200,000.
+
+    Flow: open 1,000,000 (counted), cash-in 200,000 (linked) →
+    expected_balance = 0 (opening/1101 ref) + 1,200,000 (linked 1101) =
+    1,200,000. Close with 1,250,000 → discrepancy = 50,000 surplus,
+    closing_balance = expected_balance = 1,200,000.
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["expectedBalance"] == 1_200_000
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 1_250_000,
+            "surplusConfirmed": True,
+            "surplusSource": "owner_cash",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == 50_000
+    assert body["closingBalance"] == 1_200_000
+
+
+def test_ac5_carry_over_uses_expected_balance(api_client):
+    """AC5: Given a previous-day drawer with expected_balance()=1,550,000
+    still open, when opening today's drawer, then the carry-over proposal
+    shows 1,550,000 and on confirmation the stale drawer is auto-closed with
+    closing_balance=1,550,000.
+
+    Flow: open 1,000,000 (counted), +550,000 1101 adjustment →
+    expected_balance = 0 + 1,550,000 = 1,550,000. Backdate to previous day.
+    Open today → 409 carry-over proposal with amount = 1,550,000. Confirm →
+    stale drawer auto-closed with closing_balance = 1,550,000.
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
+        _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
+    # 409 carry-over proposal.
+    resp = api_client.post(
+        "/api/cash-drawer/open", json={"openingBalance": 1_550_000}
+    )
+    assert resp.status_code == 409
+    proposal = resp.json()["detail"]["carryOverProposal"]
+    assert proposal["amount"] == 1_550_000
+    assert proposal["fromExpectedBalance"] == 1_550_000
+    # Confirm carry-over → stale drawer auto-closed, today's drawer opens.
+    resp2 = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_550_000, "carryOverConfirmed": True},
+    )
+    assert resp2.status_code == 201, resp2.text
+    with get_db() as conn:
+        stale = _drawer_row(conn, drawer.id)
+        assert stale.status == "closed"
+        assert stale.closing_balance == 1_550_000
+        assert stale.discrepancy == 0
+
+
+def test_ac6_status_returns_both_balances(api_client):
+    """AC6: Given a drawer opened with openingBalance=1,000,000 (accounting)
+    and countedOpeningBalance=950,000 (physical count), when GET /status is
+    called, then the response includes both fields.
+
+    DG-354 Phase 3: openingBalance = 1101 accounting reference (0 for first
+    open), countedOpeningBalance = user's physical cash count. The user
+    requests 950,000; the open journal entry books 950,000 as DR 1101 / CR
+    3100 linked to the drawer. expected_balance = 0 + 950,000 = 950,000.
+    """
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 950_000})
+    assert resp.status_code == 201, resp.text
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["status"] == "open"
+    assert "openingBalance" in status
+    assert "countedOpeningBalance" in status
+    assert status["openingBalance"] == 0
+    assert status["countedOpeningBalance"] == 950_000
+    assert status["expectedBalance"] == 950_000
+
+
+def test_ac8_history_returns_counted_opening_balance_for_backfill(api_client):
+    """AC7/AC8: GET /history returns countedOpeningBalance for each drawer.
+    For a drawer opened before the migration (or with counted_opening_balance
+    backfilled to opening_balance), countedOpeningBalance equals openingBalance
+    and the drawer data is intact."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    resp = api_client.get("/api/cash-drawer/history")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) >= 1
+    item = items[0]
+    # The closed drawer has both fields; countedOpeningBalance was set at open.
+    assert "countedOpeningBalance" in item
+    assert item["countedOpeningBalance"] is not None
+
+
+# ---------------------------------------------------------------------------
 # DG-341 Phase 3 — tien rut delivery lifecycle (FR3, NFR3, AC2, AC7)
 # ---------------------------------------------------------------------------
 
@@ -1178,23 +1348,29 @@ def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
     closing_balance includes the return (CR 1101), and neither drawer's
     linked journal entries include the other drawer's entry.
 
+    DG-354 Phase 3: opening_balance stores the 1101 accounting reference at
+    open time; counted_opening_balance stores the user's physical cash count.
+    expected_balance() = opening_balance + SUM(linked 1101 debit - credit).
+
     Flow:
-      1. Open drawer A (opening_balance = 1,000,000; reference 1101 balance
-         is 0 → a ``cash_drawer_open`` entry DR 1101 / CR 3100 for 1,000,000
-         is created and linked to drawer A).
+      1. Open drawer A (counted=1,000,000; 1101 reference is 0 → opening_balance
+         = 0, counted_opening_balance = 1,000,000). A ``cash_drawer_open`` entry
+         DR 1101 / CR 3100 for 1,000,000 is created and linked to drawer A.
+         Drawer A expected_balance = 0 + 1,000,000 = 1,000,000.
       2. Create an order with a tien_rut work item (cash_amount = 500,000).
       3. Record a cash tien_rut payment → DR 1101 / CR 2400 linked to drawer A.
-         Drawer A expected_balance = 1,000,000 + 500,000 = 1,500,000.
+         Drawer A expected_balance = 0 + (1,000,000 + 500,000) = 1,500,000.
       4. Close drawer A (counted == expected) → closing_balance = 1,500,000.
          The 1101 reference balance is now 1,500,000.
-      5. Open drawer B with opening_balance = 2,000,000 (above the 1,500,000
-         reference) and ``ownerCapitalConfirmed`` so a
-         ``cash_drawer_owner_capital`` entry DR 1101 / CR 3100 for the 500,000
-         delta is created and linked to drawer B. Drawer B's 1101 net starts
-         at 500,000.
+      5. Open drawer B with counted=1,500,000 (== 1101 reference). No delta
+         entry is created (opening == reference). opening_balance = 1,500,000,
+         counted_opening_balance = 1,500,000. Drawer B expected_balance =
+         1,500,000 + 0 = 1,500,000.
       6. Deliver the order → tien_rut return entry DR 2400 / CR 1101 (500,000)
-         linked to drawer B. Drawer B expected_balance = 500,000 − 500,000 = 0.
-      7. Close drawer B (counted == expected = 0) → closing_balance = 0.
+         linked to drawer B. Drawer B expected_balance = 1,500,000 − 500,000
+         = 1,000,000.
+      7. Close drawer B (counted == expected = 1,000,000) → closing_balance
+         = 1,000,000.
       8. Assert each drawer's linked 1101 journal entries exclude the other
          drawer's entry (source_types disjoint, journal_entry_id sets disjoint).
     """
@@ -1226,14 +1402,12 @@ def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
     assert close_a_body["status"] == "closed"
     assert close_a_body["closingBalance"] == 1_500_000
 
-    # 5. Open drawer B with opening_balance = 2,000,000 (above the 1,500,000
-    #    1101 reference balance) and ownerCapitalConfirmed so a 500,000 delta
-    #    entry (DR 1101 / CR 3100) is created and linked to drawer B. This
-    #    gives drawer B a positive 1101 starting net so the return entry keeps
-    #    expected_balance non-negative (close requires countedAmount >= 0).
+    # 5. Open drawer B with counted_opening_balance = 1,500,000 (matching the
+    #    1101 reference balance). No delta entry is created; opening_balance
+    #    stores the 1,500,000 reference.
     resp = api_client.post(
         "/api/cash-drawer/open",
-        json={"openingBalance": 2_000_000, "ownerCapitalConfirmed": True},
+        json={"openingBalance": 1_500_000},
     )
     assert resp.status_code == 201, resp.text
     drawer_b_open = resp.json()
@@ -1244,28 +1418,30 @@ def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
     #    linked to the active drawer (drawer B).
     _advance_to_delivered(api_client, ref)
 
-    # Drawer B expected_balance = 500,000 (owner capital delta) − 500,000
-    # (tien_rut return CR 1101) = 0.
+    # Drawer B expected_balance = 1,500,000 (opening_balance) − 500,000
+    # (tien_rut return CR 1101) = 1,000,000.
     status_b = api_client.get("/api/cash-drawer/status").json()
     assert status_b["id"] == str(drawer_b_id)
-    assert status_b["expectedBalance"] == 0
+    assert status_b["expectedBalance"] == 1_000_000
 
-    # 7. Close drawer B (counted == expected = 0 → no confirmation gate).
+    # 7. Close drawer B (counted == expected = 1,000,000 → no confirmation gate).
     close_b = api_client.post(
-        "/api/cash-drawer/close", json={"countedAmount": 0}
+        "/api/cash-drawer/close", json={"countedAmount": 1_000_000}
     )
     assert close_b.status_code == 200, close_b.text
     close_b_body = close_b.json()
     assert close_b_body["status"] == "closed"
-    assert close_b_body["closingBalance"] == 0
+    assert close_b_body["closingBalance"] == 1_000_000
 
     # 8. Verify each drawer's linked 1101 journal entries exclude the other
     #    drawer's entry. The tien_rut deposit entry (source_type =
     #    'payment_transaction') must be linked only to drawer A; the tien_rut
     #    return entry (source_type = 'order') must be linked only to drawer B.
     with get_db() as conn:
-        # Drawer A: linked 1101 net = opening (1,000,000) + deposit (500,000)
-        # = 1,500,000. The return entry (CR 1101) is NOT linked to drawer A.
+        # Drawer A: linked 1101 net = opening entry (1,000,000) + deposit
+        # (500,000) = 1,500,000. The return entry (CR 1101) is NOT linked to
+        # drawer A. opening_balance (0) + linked 1101 sum (1,500,000) =
+        # 1,500,000 = closing_balance.
         row_a = conn.execute(
             """
             SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
@@ -1278,8 +1454,9 @@ def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
         ).fetchone()
         drawer_a_1101_net = int(row_a["balance"])
 
-        # Drawer B: linked 1101 net = owner capital delta (500,000) + return
-        # (-500,000) = 0. The deposit entry (DR 1101) is NOT linked to drawer B.
+        # Drawer B: linked 1101 net = return (-500,000). The deposit entry
+        # (DR 1101) is NOT linked to drawer B. opening_balance (1,500,000) +
+        # linked 1101 sum (-500,000) = 1,000,000 = closing_balance.
         row_b = conn.execute(
             """
             SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
@@ -1292,26 +1469,25 @@ def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
         ).fetchone()
         drawer_b_1101_net = int(row_b["balance"])
 
-        # Drawer A includes its opening (1,000,000) and the deposit (500,000),
-        # and excludes the return.
+        # Drawer A includes its opening entry (1,000,000) and the deposit
+        # (500,000), and excludes the return.
         assert drawer_a_1101_net == 1_500_000, (
             f"drawer A 1101 net expected 1,500,000 (opening + deposit, no return), "
             f"got {drawer_a_1101_net}"
         )
-        # Drawer B includes the owner capital delta (500,000) and the return
-        # (-500,000), and excludes the deposit.
-        assert drawer_b_1101_net == 0, (
-            f"drawer B 1101 net expected 0 (owner capital delta + return, no deposit), "
+        # Drawer B includes only the return (-500,000), and excludes the
+        # deposit and the opening entry (which belong to drawer A).
+        assert drawer_b_1101_net == -500_000, (
+            f"drawer B 1101 net expected -500,000 (return only, no deposit/opening), "
             f"got {drawer_b_1101_net}"
         )
 
-        # Verify closing_balance equals the journal-derived expected_balance
-        # for each drawer (FR1: close() persists closing_balance =
-        # expected_balance).
+        # Verify closing_balance equals opening_balance + linked 1101 sum
+        # (the DG-354 Phase 3 expected_balance formula) for each drawer.
         drawer_a = CashDrawer.get_by_id(conn, drawer_a_id)
         drawer_b = CashDrawer.get_by_id(conn, drawer_b_id)
-        assert drawer_a.closing_balance == drawer_a_1101_net
-        assert drawer_b.closing_balance == drawer_b_1101_net
+        assert drawer_a.closing_balance == drawer_a.opening_balance + drawer_a_1101_net
+        assert drawer_b.closing_balance == drawer_b.opening_balance + drawer_b_1101_net
 
         # Verify the journal_entry_id sets linked to each drawer are disjoint
         # — no journal entry is linked to both drawers (cross-drawer
