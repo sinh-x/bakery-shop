@@ -1376,3 +1376,223 @@ def test_v095_migration_idempotent_on_rerun(api_client):
     assert before_cd == after_cd
     assert before_pt == after_pt
     assert before_ev == after_ev
+
+
+# ---------------------------------------------------------------------------
+# DG-343 Phase 1 — GET /{drawer_id}/transactions (FR1, FR2, AC1, AC2, AC3)
+# ---------------------------------------------------------------------------
+
+
+def _get_drawer_id(client) -> int:
+    """Return the active drawer's id (assumes exactly one open drawer)."""
+    resp = client.get("/api/cash-drawer/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("status") == "open", "expected an open drawer"
+    return int(body["id"])
+
+
+def test_transactions_returns_open_cash_in_cash_out_with_signed_amounts(api_client):
+    """FR1/FR2/AC1/AC3: open + cash-in + cash-out each appear as a row with
+    type, signed amount (+/-), timestamp, and note."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post(
+        "/api/cash-drawer/cash-in",
+        json={"amount": 200_000, "note": "bổ sung", "source": "owner"},
+    )
+    api_client.post(
+        "/api/cash-drawer/cash-out",
+        json={"amount": 100_000, "note": "lấy ra", "destination": "owner"},
+    )
+    drawer_id = _get_drawer_id(api_client)
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    items = body["items"]
+    # 3 linked journal entries with 1101 lines: open, cash-in, cash-out.
+    assert body["total"] == 3
+    assert len(items) == 3
+    by_type = {it["type"]: it for it in items}
+    assert "cash_drawer_open" in by_type
+    assert "cash_drawer_cash_in" in by_type
+    assert "cash_drawer_cash_out" in by_type
+    # AC3: signed amounts — open and cash-in positive, cash-out negative.
+    assert by_type["cash_drawer_open"]["amount"] == 1_000_000
+    assert by_type["cash_drawer_cash_in"]["amount"] == 200_000
+    assert by_type["cash_drawer_cash_out"]["amount"] == -100_000
+    # AC3: every item has type, amount, timestamp, note.
+    for it in items:
+        assert "type" in it and isinstance(it["type"], str)
+        assert "amount" in it and isinstance(it["amount"], int)
+        assert "timestamp" in it and isinstance(it["timestamp"], str)
+        assert "note" in it and isinstance(it["note"], str)
+    # The cash-in note preserves the user-supplied note substring.
+    assert "bổ sung" in by_type["cash_drawer_cash_in"]["note"]
+
+
+def test_transactions_ordered_newest_first(api_client):
+    """FR1: transactions ordered newest-first by transaction_date then id DESC."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 100_000})
+    api_client.post("/api/cash-drawer/cash-out", json={"amount": 50_000})
+    drawer_id = _get_drawer_id(api_client)
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    # cash-out was created last → must appear before cash-in and open.
+    types_in_order = [it["type"] for it in items]
+    assert types_in_order[0] == "cash_drawer_cash_out"
+    assert types_in_order[-1] == "cash_drawer_open"
+
+
+def test_transactions_supports_pagination(api_client):
+    """AC2: pagination via limit/offset supports historical drawer queries."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 100_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 300_000})
+    drawer_id = _get_drawer_id(api_client)
+    # 4 linked entries: open + 3 cash-in. Page size 2.
+    page1 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=0"
+    )
+    assert page1.status_code == 200
+    p1 = page1.json()
+    assert p1["total"] == 4
+    assert len(p1["items"]) == 2
+    page2 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=2"
+    )
+    assert page2.status_code == 200
+    p2 = page2.json()
+    assert p2["total"] == 4
+    assert len(p2["items"]) == 2
+    # No overlap between pages.
+    ids_p1 = {it["id"] for it in p1["items"]}
+    ids_p2 = {it["id"] for it in p2["items"]}
+    assert ids_p1.isdisjoint(ids_p2)
+    # Beyond the last page returns an empty items list but total stays 4.
+    page3 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=4"
+    )
+    assert page3.status_code == 200
+    assert page3.json()["total"] == 4
+    assert page3.json()["items"] == []
+
+
+def test_transactions_includes_cash_payment_and_cash_expense(api_client):
+    """FR1: cash sales (payment_transaction with method=cash) and cash expenses
+    (expense with payment_source='Tiền mặt tại quầy') both touch 1101 and must
+    appear in the unified list with the correct signed amount."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Cash sale: create an order + a cash deposit payment.
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách A",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 150_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    txn = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 150_000, "method": "cash", "type": "deposit",
+    })
+    assert txn.status_code == 201, txn.text
+    # Cash expense: create an expense event paid from "Tiền mặt tại quầy".
+    expense = api_client.post("/api/events", json={
+        "summary": "Chi phí vận chuyển",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50_000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "tiền xe",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    by_type = {it["type"]: it for it in items}
+    # Cash sale appears as payment_transaction with +150,000.
+    assert "payment_transaction" in by_type
+    assert by_type["payment_transaction"]["amount"] == 150_000
+    # Cash expense appears as expense with -50,000.
+    assert "expense" in by_type
+    assert by_type["expense"]["amount"] == -50_000
+
+
+def test_transactions_excludes_non_cash_operations(api_client):
+    """FR1: non-cash operations (bank transfer, card) do not touch 1101 and
+    must NOT appear in the cash drawer transaction list."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách B",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201
+    ref = order.json()["orderRef"]
+    # Transfer payment → debits 1200, not 1101 → must not appear.
+    transfer = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 200_000, "method": "transfer", "type": "deposit",
+    })
+    assert transfer.status_code == 201
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    types = {it["type"] for it in items}
+    # Only the drawer-open entry should be present; the transfer is excluded.
+    assert "payment_transaction" not in types
+    assert "cash_drawer_open" in types
+
+
+def test_transactions_returns_404_for_unknown_drawer(api_client):
+    """FR1: 404 for a drawer id that does not exist."""
+    resp = api_client.get("/api/cash-drawer/999999/transactions")
+    assert resp.status_code == 404
+    detail = resp.json()["detail"]
+    assert "999999" in detail
+
+
+def test_transactions_limit_offset_bounds_enforced(api_client):
+    """AC2: limit and offset bounds (ge/le) are enforced by FastAPI."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000})
+    drawer_id = _get_drawer_id(api_client)
+    # limit must be >= 1
+    r1 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?limit=0")
+    assert r1.status_code == 422
+    # limit must be <= 500
+    r2 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?limit=501")
+    assert r2.status_code == 422
+    # offset must be >= 0
+    r3 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?offset=-1")
+    assert r3.status_code == 422
+
+
+def test_transactions_works_for_closed_drawer(api_client):
+    """FR1/AC2: closed drawers also expose their historical transactions for
+    the History-tab tap navigation."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
+    # Close with counted == expected (1,100,000) so no confirmation gate.
+    close = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_100_000}
+    )
+    assert close.status_code == 200
+    closed_id = int(close.json()["id"])
+    resp = api_client.get(f"/api/cash-drawer/{closed_id}/transactions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 3
+    types = {it["type"] for it in body["items"]}
+    assert "cash_drawer_open" in types
+    assert "cash_drawer_cash_in" in types
+    assert "cash_drawer_cash_out" in types

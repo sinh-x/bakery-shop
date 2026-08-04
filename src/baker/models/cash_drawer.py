@@ -217,3 +217,99 @@ class CashDrawer:
             (before_iso,),
         ).fetchall()
         return [CashDrawer.from_row(r) for r in rows]
+
+    @staticmethod
+    def get_transactions(
+        conn,
+        drawer_id: int,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Return a unified, paginated list of cash transactions for a drawer
+        (DG-343 Phase 1, FR1/FR2).
+
+        Each transaction item includes:
+            - ``type``: derived from the journal entry ``source_type``
+              (e.g. ``cash_drawer_open`` → "Mở quầy", ``payment_transaction`` →
+              "Bán hàng", ``expense`` → "Chi phí").
+            - ``amount``: signed net 1101 (Cash in Drawer) movement —
+              ``debit - credit`` for the 1101 line(s) of the linked journal
+              entry. Positive values are inflows (cash sales, cash-in, opening
+              balance, owner capital); negative values are outflows (cash-out,
+              cash expenses, close-adjust shortages, auto-transfer to owner).
+            - ``timestamp``: the journal entry ``transaction_date`` (the
+              business event date), falling back to ``created_at`` when NULL.
+            - ``note``: the journal entry ``description``.
+
+        The query joins ``journal_entries`` linked to the drawer via the
+        ``cash_drawer_journal_entries`` join table (DG-347 Phase 1) and
+        aggregates their 1101 journal lines so each linked entry collapses to
+        one row. Only linked entries that touch 1101 are returned — non-cash
+        operations (e.g. bank transfers, card payments) carry no 1101 line and
+        are excluded. Ordered newest-first by ``transaction_date`` then
+        ``journal_entries.id`` DESC. Paginated via ``limit``/``offset``.
+
+        Returns ``(items, total)`` where ``total`` is the total count of
+        matching linked entries (across all pages) for pagination UI.
+        """
+        # Aggregate 1101 lines per linked journal entry so each entry collapses
+        # to one transaction row with a single signed amount. Entries without a
+        # 1101 line are excluded by the inner WHERE clause.
+        rows = conn.execute(
+            """
+            SELECT je.id                AS je_id,
+                   je.source_type       AS source_type,
+                   je.description       AS description,
+                   je.transaction_date  AS transaction_date,
+                   je.created_at        AS created_at,
+                   COALESCE(SUM(jl1101.debit - jl1101.credit), 0) AS amount
+            FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje
+                 ON cdje.journal_entry_id = je.id
+            JOIN journal_lines jl1101
+                 ON jl1101.journal_entry_id = je.id
+            JOIN accounts a1101
+                 ON a1101.id = jl1101.account_id AND a1101.code = '1101'
+            WHERE cdje.cash_drawer_id = ?
+            GROUP BY je.id, je.source_type, je.description,
+                     je.transaction_date, je.created_at
+            ORDER BY COALESCE(je.transaction_date, je.created_at) DESC,
+                     je.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (int(drawer_id), int(limit), int(offset)),
+        ).fetchall()
+        items = [
+            {
+                "id": str(row["je_id"]),
+                "type": row["source_type"],
+                "amount": int(row["amount"]) if row["amount"] is not None else 0,
+                "timestamp": (
+                    row["transaction_date"] if row["transaction_date"]
+                    else row["created_at"]
+                ),
+                "note": row["description"] or "",
+            }
+            for row in rows
+        ]
+        total_row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM (
+                SELECT je.id
+                FROM journal_entries je
+                JOIN cash_drawer_journal_entries cdje
+                     ON cdje.journal_entry_id = je.id
+                JOIN journal_lines jl1101
+                     ON jl1101.journal_entry_id = je.id
+                JOIN accounts a1101
+                     ON a1101.id = jl1101.account_id AND a1101.code = '1101'
+                WHERE cdje.cash_drawer_id = ?
+                GROUP BY je.id
+            )
+            """,
+            (int(drawer_id),),
+        ).fetchone()
+        total = int(total_row["c"]) if total_row else 0
+        return items, total

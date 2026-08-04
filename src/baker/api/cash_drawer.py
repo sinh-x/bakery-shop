@@ -907,6 +907,40 @@ def drawer_history(
         }
 
 
+@router.get("/{drawer_id}/transactions")
+def drawer_transactions(
+    drawer_id: int,
+    limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
+    offset: int = Query(0, ge=0, description="Bỏ qua bao nhiêu kết quả"),
+):
+    """FR1/FR2 (DG-343 Phase 1): unified, paginated list of all cash
+    transactions for a given drawer, ordered newest-first.
+
+    Each item includes ``type`` (journal source_type), ``amount`` (signed:
+    + for inflow, - for outflow, derived from the net 1101 movement),
+    ``timestamp`` (transaction_date fallback to created_at), and ``note``
+    (journal description). Cash operations that do not touch 1101 (bank
+    transfers, card payments) are excluded.
+    """
+    with get_db() as conn:
+        # Validate the drawer exists; 404 if not.
+        drawer = CashDrawer.get_by_id(conn, drawer_id)
+        if drawer is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Không tìm thấy quầy tiền mặt id={drawer_id}.",
+            )
+        items, total = CashDrawer.get_transactions(
+            conn, drawer_id, limit=limit, offset=offset
+        )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": items,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
