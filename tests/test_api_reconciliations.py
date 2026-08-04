@@ -1232,8 +1232,8 @@ def test_submit_sale_creates_payment_journal_entry(api_client):
             "WHERE jl.journal_entry_id = ? ORDER BY a.code",
             (entries[0]["id"],),
         ).fetchall()
-        # Cash method → asset account 1100 (Cash on Hand).
-        asset_line = next(l for l in lines if l["code"] == "1100")
+        # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
+        asset_line = next(l for l in lines if l["code"] == "1101")
         deposits_line = next(l for l in lines if l["code"] == "2100")
         # 2 units × 12000 = 24000 inflow.
         assert asset_line["debit"] == 24000.0

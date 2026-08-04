@@ -57,7 +57,7 @@ def test_expense_categories_endpoint_returns_tree(api_client):
     nguyen_lieu = next(p for p in parents if p["name"] == "Nguyên liệu")
     bao_bi = next(p for p in parents if p["name"] == "Bao bì")
     assert {c["name"] for c in nguyen_lieu["children"]} == {
-        "Trứng", "Kem", "Bột", "Phụ gia khác",
+        "Trứng", "Kem", "Bột", "Phụ gia khác", "Trái cây",
     }
     assert {c["name"] for c in bao_bi["children"]} == {
         "Hộp & đế", "Phụ kiện", "Bọc nilon",
@@ -87,7 +87,7 @@ def test_expense_categories_endpoint_parents_without_children(api_client):
     parents = [n for n in tree if n["parent_id"] is None]
     for parent in parents:
         if parent["name"] in ("Nguyên liệu", "Bao bì"):
-            assert len(parent["children"]) == 4 if parent["name"] == "Nguyên liệu" else 3
+            assert len(parent["children"]) == 5 if parent["name"] == "Nguyên liệu" else 3
         else:
             assert parent["children"] == [], parent["name"]
 
@@ -96,7 +96,7 @@ def test_expense_categories_endpoint_total_subcategory_count(api_client):
     resp = api_client.get("/api/expense-categories")
     tree = resp.json()
     total_children = sum(len(p["children"]) for p in tree if p["parent_id"] is None)
-    assert total_children == 7
+    assert total_children == 8
 
 
 # ---------------------------------------------------------------------------

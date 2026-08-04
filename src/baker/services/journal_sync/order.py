@@ -426,7 +426,7 @@ def _reconcile_tien_rut_return_entry(
             """
             SELECT
               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END), 0) AS debit_2400,
-              COALESCE(SUM(CASE WHEN a.code IN ('1100','1200','1210','1220','1290') THEN jl.credit ELSE 0 END), 0) AS credit_asset
+              COALESCE(SUM(CASE WHEN a.code IN ('1100','1101','1102','1200','1210','1220','1290') THEN jl.credit ELSE 0 END), 0) AS credit_asset
             FROM journal_lines jl
             JOIN accounts a ON a.id = jl.account_id
             WHERE jl.journal_entry_id = ?

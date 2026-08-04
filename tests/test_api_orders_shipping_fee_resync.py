@@ -121,7 +121,7 @@ def test_shipping_fee_edit_resyncs_payment_journal_bus_order(api_client):
 
     with get_db() as conn:
         after = _payment_line_amounts(conn, txn_id)
-        assert after["1100"]["debit"] == 100000.0
+        assert after["1101"]["debit"] == 100000.0
         assert after[CUSTOMER_DEPOSITS_CODE]["credit"] == 50000.0
         assert after[BUS_SHIPPING_HELD_CODE]["credit"] == 50000.0
         # Entry updated in place, not duplicated.
@@ -145,7 +145,7 @@ def test_shipping_fee_edit_below_payment_amount(api_client):
         after = _payment_line_amounts(conn, txn_id)
         assert after[CUSTOMER_DEPOSITS_CODE]["credit"] == 90000.0
         assert after[BUS_SHIPPING_HELD_CODE]["credit"] == 10000.0
-        assert after["1100"]["debit"] == 100000.0
+        assert after["1101"]["debit"] == 100000.0
         assert _payment_entry_count(conn, txn_id) == 1
 
 
@@ -162,7 +162,7 @@ def test_shipping_fee_edit_zero_removes_2200_line(api_client):
         after = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in after
         assert after[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
-        assert after["1100"]["debit"] == 100000.0
+        assert after["1101"]["debit"] == 100000.0
 
 
 def test_shipping_fee_edit_resyncs_multiple_payments(api_client):
@@ -190,13 +190,13 @@ def test_shipping_fee_edit_resyncs_multiple_payments(api_client):
         after1 = _payment_line_amounts(conn, txn1)
         assert after1[BUS_SHIPPING_HELD_CODE]["credit"] == 50000.0
         assert after1[CUSTOMER_DEPOSITS_CODE]["credit"] == 0.0
-        assert after1["1100"]["debit"] == 50000.0
+        assert after1["1101"]["debit"] == 50000.0
         assert _payment_entry_count(conn, txn1) == 1
 
         after2 = _payment_line_amounts(conn, txn2)
         assert BUS_SHIPPING_HELD_CODE not in after2
         assert after2[CUSTOMER_DEPOSITS_CODE]["credit"] == 50000.0
-        assert after2["1100"]["debit"] == 50000.0
+        assert after2["1101"]["debit"] == 50000.0
         assert _payment_entry_count(conn, txn2) == 1
 
 
@@ -233,5 +233,5 @@ def test_pickup_order_shipping_fee_edit_no_2200_involvement(api_client):
         after = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in after
         assert after[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
-        assert after["1100"]["debit"] == 100000.0
+        assert after["1101"]["debit"] == 100000.0
         assert _payment_entry_count(conn, txn_id) == 1
