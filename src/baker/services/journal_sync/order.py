@@ -562,16 +562,29 @@ def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
     an order that already has an ``order_cogs`` entry (e.g. from a prior
     delivery sync on the delivered→completed path) is left untouched (FR2).
 
-    Bus-shipping release entries remain delivery-time entries created by
-    :func:`_sync_delivered_order_journal` and are not touched here; orders
-    that bypassed "delivered" still rely on the existing repair commands for
-    that release.
+    Bus-shipping release entries (2200 → 1100) are created here via
+    :func:`_sync_bus_shipping_release_entry` so orders that bypassed
+    "delivered" still get the ``order_shipping_release`` entry at completion
+    (DG-356). The call is idempotent and a no-op for non-bus orders or
+    ``shipping_fee <= 0``.
 
     Fire-and-forget error handling is provided by the caller wrapping this in
     :func:`run_journal_sync` with ``source_type="order"`` (FR5) — a COGS sync
     failure never blocks the completion transition (FR3).
     """
     _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+
+    # Release the held bus shipping (2200 → 1100) at completion for orders
+    # that bypassed "delivered" (DG-356). Wrapped in the shared non-blocking
+    # wrapper so accounting failures never block the primary business
+    # operation (NFR1) and are observable via the ``journal_sync_failures``
+    # counter — mirrors the delivery-time pattern at lines 599-603.
+    run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+    )
+
     _sync_order_cogs_entry(conn, order_id, order_ref)
     _sync_order_gift_cogs_entry(conn, order_id, order_ref)
 
