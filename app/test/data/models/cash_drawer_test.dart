@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 Map<String, dynamic> _drawerJson({
   String status = 'open',
   String? closedAt,
+  int? countedOpeningBalance,
   int? countedAmount,
   int? discrepancy,
   int? closingBalance,
@@ -15,6 +16,7 @@ Map<String, dynamic> _drawerJson({
     'closedAt': closedAt,
     'status': status,
     'openingBalance': 1000000,
+    'countedOpeningBalance': countedOpeningBalance,
     'countedAmount': countedAmount,
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
@@ -157,6 +159,55 @@ void main() {
 
       expect(drawer.openingBalance, 1000000);
       expect(drawer.expectedBalance, 1550000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: fromJson parses countedOpeningBalance when '
+        'present', () {
+      final drawer = CashDrawer.fromJson(_drawerJson(
+        countedOpeningBalance: 950000,
+      ));
+
+      expect(drawer.countedOpeningBalance, 950000);
+      // displayedOpeningBalance prefers the physical count (AC6).
+      expect(drawer.displayedOpeningBalance, 950000);
+      // The accounting opening balance is still available separately.
+      expect(drawer.openingBalance, 1000000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: countedOpeningBalance is null and '
+        'displayedOpeningBalance falls back to openingBalance for older '
+        'backends', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+
+      expect(drawer.countedOpeningBalance, isNull);
+      expect(drawer.displayedOpeningBalance, drawer.openingBalance);
+      expect(drawer.displayedOpeningBalance, 1000000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: toJson round-trips countedOpeningBalance', () {
+      final original = CashDrawer.fromJson(_drawerJson(
+        countedOpeningBalance: 950000,
+      ));
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+
+      expect(roundTripped.countedOpeningBalance, 950000);
+      expect(roundTripped.displayedOpeningBalance, 950000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: toJson includes countedOpeningBalance (null '
+        'when unset, value when set)', () {
+      final without = CashDrawer.fromJson(_drawerJson()).toJson();
+      expect(without.containsKey('countedOpeningBalance'), isTrue);
+      expect(without['countedOpeningBalance'], isNull);
+
+      final withCount = CashDrawer.fromJson(
+        _drawerJson(countedOpeningBalance: 950000),
+      ).toJson();
+      expect(withCount['countedOpeningBalance'], 950000);
     });
   });
 

@@ -9,6 +9,7 @@
 ///     "closedAt": null,
 ///     "status": "open",
 ///     "openingBalance": 1000000,
+///     "countedOpeningBalance": 950000,  // DG-354 Phase 4: physical count
 ///     "countedAmount": null,
 ///     "discrepancy": null,
 ///     "expectedBalance": 1000000,
@@ -43,6 +44,20 @@ class CashDrawer {
   final DateTime? closedAt;
   final String status;
   final int openingBalance;
+
+  /// DG-354 Phase 4 FR7: the user's physical cash count at open time.
+  /// The backend returns this separately from `openingBalance` (which
+  /// stores the 1101 accounting balance). The Flutter UI displays this
+  /// field as the opening balance. Nullable for backward compatibility
+  /// with older backends/rows; falls back to [openingBalance] when null
+  /// via [displayedOpeningBalance].
+  final int? countedOpeningBalance;
+
+  /// DG-354 Phase 4 FR7: the opening balance to display in the UI — the
+  /// physical count when available, otherwise the accounting opening
+  /// balance. Avoids null-check churn at call sites.
+  int get displayedOpeningBalance => countedOpeningBalance ?? openingBalance;
+
   final int? countedAmount;
   final int? discrepancy;
 
@@ -74,6 +89,7 @@ class CashDrawer {
     this.closedAt,
     required this.status,
     required this.openingBalance,
+    this.countedOpeningBalance,
     this.countedAmount,
     this.discrepancy,
     required this.expectedBalance,
@@ -100,6 +116,7 @@ class CashDrawer {
       closedAt: parseApiDateTime(json['closedAt'] as String?),
       status: (json['status'] as String?) ?? 'open',
       openingBalance: (json['openingBalance'] as num?)?.toInt() ?? 0,
+      countedOpeningBalance: (json['countedOpeningBalance'] as num?)?.toInt(),
       countedAmount: (json['countedAmount'] as num?)?.toInt(),
       discrepancy: (json['discrepancy'] as num?)?.toInt(),
       expectedBalance: (json['expectedBalance'] as num?)?.toInt() ?? 0,
@@ -118,6 +135,7 @@ class CashDrawer {
         'closedAt': timestampToJson(closedAt),
         'status': status,
         'openingBalance': openingBalance,
+        'countedOpeningBalance': countedOpeningBalance,
         'countedAmount': countedAmount,
         'discrepancy': discrepancy,
         'expectedBalance': expectedBalance,

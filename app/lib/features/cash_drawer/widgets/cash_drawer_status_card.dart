@@ -5,12 +5,15 @@ import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Status card for the active (open) cash drawer (FR4 / AC6, updated by
-/// DG-347 Phase 5).
+/// DG-347 Phase 5 and DG-354 Phase 4).
 ///
 /// Renders the opening balance and the backend-computed expected balance.
 /// DG-347 Phase 5 removed the per-accumulator rows (cash sales, owner
 /// in/out, cash expenses, tien rut in/out); the expected balance is now
 /// the single source of truth from the journal-derived backend value.
+/// DG-354 Phase 4 FR7: the opening balance row displays the physical
+/// cash count (`countedOpeningBalance`) rather than the accounting
+/// `openingBalance`, matching AC6.
 class CashDrawerStatusCard extends StatelessWidget {
   const CashDrawerStatusCard({super.key, required this.drawer});
 
@@ -45,7 +48,10 @@ class CashDrawerStatusCard extends StatelessWidget {
             const Divider(height: 24),
             _BalanceRow(
               label: VN.cashDrawerOpeningBalance,
-              value: drawer.openingBalance,
+              // DG-354 Phase 4 FR7/AC6: display the physical cash count
+              // (countedOpeningBalance) as the opening balance, falling
+              // back to the accounting openingBalance for older backends.
+              value: drawer.displayedOpeningBalance,
             ),
             const Divider(height: 24),
             Row(
