@@ -332,7 +332,9 @@ def _bus_orders_with_shipping_held(conn):
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
 
-def _resolve_shipping_release_asset_account(conn, order_id: int) -> tuple[str, int | None]:
+def _resolve_shipping_release_asset_account(
+    conn, order_id: int, order_ref: str
+) -> tuple[str, int | None]:
     """Return ``(asset_code, drawer_id)`` for the shipping release credit.
 
     Drawer-aware account selection (FR3/FR4):
@@ -344,7 +346,6 @@ def _resolve_shipping_release_asset_account(conn, order_id: int) -> tuple[str, i
     """
     drawer = CashDrawer.get_active(conn)
     if drawer is not None:
-        order_ref = _order_ref(conn, order_id)
         delivery_ts = _resolve_delivered_timestamp(conn, order_id, order_ref)
         if delivery_ts is not None and delivery_ts >= drawer.opened_at:
             return PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1101"), drawer.id
@@ -405,7 +406,9 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
             "action": "not-applicable",
         }
 
-    asset_code, drawer_id = _resolve_shipping_release_asset_account(conn, order_id)
+    asset_code, drawer_id = _resolve_shipping_release_asset_account(
+        conn, order_id, order_ref
+    )
 
     existing_id = _find_journal_entry(conn, "order_shipping_release", order_id)
     if existing_id is not None:
