@@ -217,6 +217,126 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
     auto_decrement_stock(conn, order_id, order_ref)
 
 
+def _sync_order_items_table(conn, order_id: int, items: list[OrderItem]) -> None:
+    """Sync ``order_items`` table rows to match the new JSON ``items`` list.
+
+    DG-342 Phase 3 (FR9/AC7): when ``edit_order`` replaces the ``orders.items``
+    JSON column, the denormalized ``order_items`` table rows must be reconciled
+    within the same transaction so work-item IDs, photo links, and blanks stay
+    consistent. The strategy is:
+
+    1. Load existing ``order_items`` rows for the order.
+    2. Update rows in-place when a new item maps to the same position (keep
+       the existing ``id`` so ``order_photos.work_item_id`` /
+       ``order_item_blanks.order_item_id`` links survive).
+    3. Delete surplus rows (positions beyond the new list). Linked
+       ``order_photos.work_item_id`` is NULLed first to avoid FK constraint
+       failure (the column has no ``ON DELETE SET NULL`` clause); the
+       ``order_item_blanks`` junction cascades via ``ON DELETE CASCADE``.
+    4. Insert new rows for positions not already present.
+
+    All mutations run within the caller's ``get_db()`` transaction (NFR3).
+    """
+    existing_rows = conn.execute(
+        "SELECT id, position FROM order_items WHERE order_id = ? ORDER BY position, id",
+        (order_id,),
+    ).fetchall()
+    existing_by_pos: dict[int, int] = {r["position"]: r["id"] for r in existing_rows}
+
+    oi_columns = {
+        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+    }
+    has_assigned_price = "assigned_price" in oi_columns
+
+    for position, item in enumerate(items):
+        item_id = existing_by_pos.get(position)
+        if item_id is not None:
+            # Update in-place to preserve photo/blank links.
+            if has_assigned_price:
+                conn.execute(
+                    """UPDATE order_items SET
+                       product_id = ?, product_name = ?, quantity = ?, unit_price = ?,
+                       notes = ?, position = ?, is_birthday = ?, age = ?,
+                       is_extra = ?, is_gift = ?, attributes = ?, price_chip_id = ?,
+                       assigned_price = ?
+                       WHERE id = ?""",
+                    (
+                        item.product_id,
+                        item.product,
+                        item.qty,
+                        item.price,
+                        item.notes,
+                        position,
+                        1 if item.is_birthday else 0,
+                        item.age,
+                        1 if item.is_extra else 0,
+                        1 if item.is_gift else 0,
+                        json.dumps(item.attributes),
+                        item.price_chip_id,
+                        item.assigned_price,
+                        item_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """UPDATE order_items SET
+                       product_id = ?, product_name = ?, quantity = ?, unit_price = ?,
+                       notes = ?, position = ?, is_birthday = ?, age = ?,
+                       is_extra = ?, is_gift = ?, attributes = ?, price_chip_id = ?
+                       WHERE id = ?""",
+                    (
+                        item.product_id,
+                        item.product,
+                        item.qty,
+                        item.price,
+                        item.notes,
+                        position,
+                        1 if item.is_birthday else 0,
+                        item.age,
+                        1 if item.is_extra else 0,
+                        1 if item.is_gift else 0,
+                        json.dumps(item.attributes),
+                        item.price_chip_id,
+                        item_id,
+                    ),
+                )
+        else:
+            work_item = WorkItem(
+                order_id=order_id,
+                product_id=item.product_id,
+                product_name=item.product,
+                quantity=item.qty,
+                unit_price=item.price,
+                notes=item.notes,
+                position=position,
+                is_birthday=item.is_birthday,
+                age=item.age,
+                is_extra=item.is_extra,
+                is_gift=item.is_gift,
+                attributes=item.attributes,
+                price_chip_id=item.price_chip_id,
+                assigned_price=item.assigned_price,
+            )
+            work_item.save(conn)
+
+    # Delete surplus rows (positions beyond the new list). Null
+    # ``order_photos.work_item_id`` for these rows first to avoid FK
+    # constraint failure (no ON DELETE SET NULL on the column).
+    new_positions = set(range(len(items)))
+    surplus_ids = [rid for pos, rid in existing_by_pos.items() if pos not in new_positions]
+    if surplus_ids:
+        placeholders = ",".join("?" * len(surplus_ids))
+        conn.execute(
+            f"UPDATE order_photos SET work_item_id = NULL "
+            f"WHERE work_item_id IN ({placeholders})",
+            surplus_ids,
+        )
+        conn.execute(
+            f"DELETE FROM order_items WHERE id IN ({placeholders})",
+            surplus_ids,
+        )
+
+
 def _item_in_to_model(item: OrderItemIn) -> OrderItem:
     return OrderItem(
         product=item.productName,
@@ -683,6 +803,16 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+        # DG-342 Phase 3 (FR8/AC6): status guard — block edits on cancelled
+        # orders before any mutation. Cancelled orders are terminal and must
+        # not be mutated through the edit endpoint; downstream stock/COGS/
+        # revenue side effects (Phases 4-5) assume a non-cancelled order.
+        if row["status"] == OrderStatus.CANCELLED.value:
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể sửa đơn hàng đã hủy",
+            )
+
         if "customerId" in data and data["customerId"] is not None:
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
             if not exists:
@@ -857,6 +987,12 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
             params,
         )
+
+        # DG-342 Phase 3 (FR9/AC7): sync the ``order_items`` table rows to
+        # match the new ``items`` JSON within the same transaction. Keeps
+        # work-item IDs, photo links, and blanks consistent (NFR3).
+        if items_changed:
+            _sync_order_items_table(conn, row["id"], items)
 
         # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
         if "workTicketPrintedAt" in data:

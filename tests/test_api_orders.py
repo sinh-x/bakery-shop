@@ -430,6 +430,111 @@ def test_edit_order_items_recalculates_total(api_client):
     assert len(resp.json()["items"]) == 1
 
 
+# --- DG-342 Phase 3: status guard (FR8/AC6) + order_items table sync (FR9/AC7) ---
+
+
+def test_edit_order_cancelled_returns_422(api_client):
+    """FR8/AC6: editing a cancelled order returns HTTP 422."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Transition to cancelled via the status endpoint.
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "khách hủy", "changedBy": "test"},
+    )
+    assert resp.status_code == 200
+    # Now any edit attempt must be blocked.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"customerName": "Tên mới"})
+    assert resp.status_code == 422
+    assert "đã hủy" in resp.json()["detail"]
+
+
+def test_edit_order_items_syncs_order_items_table(api_client):
+    """FR9/AC7: editing items syncs the order_items table within the same
+    transaction so workItems reflect the new items."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Initially one work item row.
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    first_id = work_items[0]["id"]
+
+    # Replace with two new items.
+    new_items = [
+        {"productName": "Bánh mì", "quantity": 2, "unitPrice": 15000},
+        {"productName": "Bánh kem nhỏ", "quantity": 1, "unitPrice": 80000},
+    ]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    # order_items table should now have 2 rows matching the new items.
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 2
+    assert work_items[0]["productName"] == "Bánh mì"
+    assert work_items[0]["quantity"] == 2
+    assert work_items[0]["unitPrice"] == 15000
+    assert work_items[1]["productName"] == "Bánh kem nhỏ"
+    assert work_items[1]["quantity"] == 1
+    assert work_items[1]["unitPrice"] == 80000
+
+
+def test_edit_order_items_preserves_existing_work_item_id(api_client):
+    """FR9: when the item count stays the same, the order_items rows are
+    updated in-place so photo/blank links survive (work item id is stable)."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    original_id = work_items[0]["id"]
+
+    # Edit the single item's price/quantity, keep count at 1.
+    new_items = [{"productName": "Bánh kem", "quantity": 3, "unitPrice": 250000, "productId": "BKS-16"}]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["id"] == original_id
+    assert work_items[0]["quantity"] == 3
+    assert work_items[0]["unitPrice"] == 250000
+
+
+def test_edit_order_items_shrinking_deletes_surplus_rows(api_client):
+    """FR9: removing items deletes the surplus order_items rows."""
+    created = _create_order(api_client, items=[
+        {"productName": "A", "quantity": 1, "unitPrice": 10000},
+        {"productName": "B", "quantity": 1, "unitPrice": 20000},
+        {"productName": "C", "quantity": 1, "unitPrice": 30000},
+    ])
+    ref = created["orderRef"]
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 3
+
+    # Shrink to a single item.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": [
+        {"productName": "A", "quantity": 1, "unitPrice": 10000},
+    ]})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["productName"] == "A"
+
+
+def test_edit_order_items_with_assigned_price_syncs_table(api_client):
+    """FR9: assignedPrice from the items JSON is persisted to the
+    order_items.assigned_price column."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    new_items = [{"productName": "Bánh trưng bày", "quantity": 1, "unitPrice": 120000, "assignedPrice": 100000}]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["assignedPrice"] == 100000
+
+
 def test_edit_order_empty_body(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
