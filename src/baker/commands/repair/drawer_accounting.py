@@ -139,11 +139,6 @@ def repair_drawer_accounting_cmd(dry_run):
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
                           AND je.created_at >= ?
-                          AND je.created_at <= ?
-                          AND je.source_type NOT IN (
-                              'migration_balance_transfer',
-                              'cash_drawer_auto_transfer'
-                          )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
@@ -151,7 +146,7 @@ def repair_drawer_accounting_cmd(dry_run):
                           )
                         ORDER BY je.created_at
                         """,
-                        (opened, closed, drawer_id),
+                        (opened, drawer_id),
                     ).fetchall()
                 else:
                     entries = conn.execute(
@@ -163,10 +158,6 @@ def repair_drawer_accounting_cmd(dry_run):
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
                           AND je.created_at >= ?
-                          AND je.source_type NOT IN (
-                              'migration_balance_transfer',
-                              'cash_drawer_auto_transfer'
-                          )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
@@ -201,7 +192,21 @@ def repair_drawer_accounting_cmd(dry_run):
                     total_linked += len(entries)
 
                     if status == "closed":
-                        new_closing = drawer["opening_balance"] + net
+                        row = conn.execute(
+                            """
+                            SELECT COALESCE(
+                                SUM(jl.debit - jl.credit), 0
+                            ) AS balance
+                            FROM cash_drawer_journal_entries cdje
+                            JOIN journal_lines jl
+                                 ON jl.journal_entry_id = cdje.journal_entry_id
+                            JOIN accounts a ON a.id = jl.account_id
+                            WHERE cdje.cash_drawer_id = ?
+                              AND a.code = '1101'
+                            """,
+                            (drawer_id,),
+                        ).fetchone()
+                        new_closing = int(row["balance"])
                         old_closing = drawer["closing_balance"]
                         if new_closing != old_closing:
                             conn.execute(
@@ -221,7 +226,21 @@ def repair_drawer_accounting_cmd(dry_run):
                 else:
                     total_linked += len(entries)
                     if status == "closed":
-                        new_closing = drawer["opening_balance"] + net
+                        row = conn.execute(
+                            """
+                            SELECT COALESCE(
+                                SUM(jl.debit - jl.credit), 0
+                            ) AS balance
+                            FROM cash_drawer_journal_entries cdje
+                            JOIN journal_lines jl
+                                 ON jl.journal_entry_id = cdje.journal_entry_id
+                            JOIN accounts a ON a.id = jl.account_id
+                            WHERE cdje.cash_drawer_id = ?
+                              AND a.code = '1101'
+                            """,
+                            (drawer_id,),
+                        ).fetchone()
+                        new_closing = int(row["balance"])
                         old_closing = drawer["closing_balance"]
                         if new_closing != old_closing:
                             closing_updates.append({
