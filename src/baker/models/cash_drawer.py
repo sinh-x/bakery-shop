@@ -20,6 +20,8 @@ class CashDrawer:
     opened_at: str
     opening_balance: int = 0
     cash_sales: int = 0
+    tien_rut_in: int = 0
+    tien_rut_out: int = 0
     owner_in: int = 0
     owner_out: int = 0
     cash_expenses: int = 0
@@ -30,11 +32,19 @@ class CashDrawer:
     id: Optional[int] = None
 
     def expected_balance(self) -> int:
-        """FR4: opening + cash_sales + owner_in - owner_out - cash_expenses."""
+        """FR2: opening + cash_sales + tien_rut_in + owner_in
+        - tien_rut_out - owner_out - cash_expenses.
+
+        Tien rut cash is physically in the drawer until delivery, so
+        ``tien_rut_in`` adds to the expected balance and ``tien_rut_out``
+        (returned to customer at delivery) reduces it.
+        """
         return (
             self.opening_balance
             + self.cash_sales
+            + self.tien_rut_in
             + self.owner_in
+            - self.tien_rut_out
             - self.owner_out
             - self.cash_expenses
         )
@@ -58,6 +68,8 @@ class CashDrawer:
             status=row["status"],
             opening_balance=int(row["opening_balance"]),
             cash_sales=int(row["cash_sales"]),
+            tien_rut_in=int(row["tien_rut_in"]),
+            tien_rut_out=int(row["tien_rut_out"]),
             owner_in=int(row["owner_in"]),
             owner_out=int(row["owner_out"]),
             cash_expenses=int(row["cash_expenses"]),
@@ -73,6 +85,8 @@ class CashDrawer:
             "status": self.status,
             "openingBalance": self.opening_balance,
             "cashSales": self.cash_sales,
+            "tienRutIn": self.tien_rut_in,
+            "tienRutOut": self.tien_rut_out,
             "ownerIn": self.owner_in,
             "ownerOut": self.owner_out,
             "cashExpenses": self.cash_expenses,
@@ -143,6 +157,31 @@ class CashDrawer:
             (int(amount), self.id),
         )
         self.cash_sales += int(amount)
+
+    def add_tien_rut_in(self, conn, amount: int) -> None:
+        """FR1 (DG-341): accumulate a tien_rut cash payment into the drawer's
+        ``tien_rut_in`` total instead of ``cash_sales``. Tien rut cash is
+        physically held in the drawer (and journaled to 2400) until the order
+        is delivered, at which point ``tien_rut_out`` is increased (Phase 3).
+        """
+        conn.execute(
+            "UPDATE cash_drawer SET tien_rut_in = tien_rut_in + ? WHERE id = ?",
+            (int(amount), self.id),
+        )
+        self.tien_rut_in += int(amount)
+
+    def add_tien_rut_out(self, conn, amount: int) -> None:
+        """FR3 (DG-341): record the return of tien rut cash to the customer
+        at order delivery/completion by increasing ``tien_rut_out``. This
+        reduces the drawer's expected balance (the cash leaves the drawer)
+        while preserving an auditable in/out trail (open question §14
+        recommendation: use both columns).
+        """
+        conn.execute(
+            "UPDATE cash_drawer SET tien_rut_out = tien_rut_out + ? WHERE id = ?",
+            (int(amount), self.id),
+        )
+        self.tien_rut_out += int(amount)
 
     def add_cash_expense(self, conn, amount: int) -> None:
         """FR6: accumulate a cash expense into the drawer's cash_expenses total."""

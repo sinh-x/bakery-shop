@@ -9,7 +9,8 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// Renders the opening balance, auto-linked cash sales, owner in/out,
 /// cash expenses, and the real-time expected balance. The expected balance
 /// is the backend-computed value (`opening + cashSales + ownerIn - ownerOut
-/// - cashExpenses`) — the client does not recompute it (avoids drift).
+/// - cashExpenses + tienRutIn - tienRutOut`) — the client does not recompute it
+/// (avoids drift).
 class CashDrawerStatusCard extends StatelessWidget {
   const CashDrawerStatusCard({super.key, required this.drawer});
 
@@ -49,6 +50,18 @@ class CashDrawerStatusCard extends StatelessWidget {
             _BalanceRow(
               label: VN.cashDrawerCashSales,
               value: drawer.cashSales,
+            ),
+            // DG-341 Phase 4.4 FR6/AC6: tien rut rows between cashSales and
+            // ownerIn. Tien rut in is cash held for safekeeping (positive
+            // contribution to expected balance); tien rut out is cash
+            // returned at delivery (negative contribution).
+            _BalanceRow(
+              label: VN.cashDrawerTienRutIn,
+              value: drawer.tienRutIn,
+            ),
+            _BalanceRow(
+              label: VN.cashDrawerTienRutOut,
+              value: -drawer.tienRutOut,
             ),
             _BalanceRow(
               label: VN.cashDrawerOwnerIn,

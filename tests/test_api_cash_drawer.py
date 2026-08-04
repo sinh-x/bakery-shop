@@ -777,3 +777,146 @@ def test_cash_drawer_expected_balance_model():
         cash_expenses=50_000,
     )
     assert d.expected_balance() == 1_550_000
+
+
+# ---------------------------------------------------------------------------
+# DG-341 Phase 3 — tien rut delivery lifecycle (FR3, NFR3, AC2, AC7)
+# ---------------------------------------------------------------------------
+
+
+def _create_order_with_tien_rut(client, cash_amount=200000):
+    """Create an order with a tien_rut work item and return the response."""
+    resp = client.post("/api/orders", json={
+        "customerName": "Khách Rút Tiền",
+        "dueDate": "2026-08-10",
+        "items": [{
+            "productName": "Bánh kem",
+            "quantity": 1,
+            "unitPrice": 350000,
+            "attributes": {
+                "rut_tien": "true",
+                "cash_amount": str(cash_amount),
+                "cash_fee": "20000",
+            },
+        }],
+    })
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _create_txn(client, ref, amount=100000, **kwargs):
+    payload = {"amount": amount, **kwargs}
+    resp = client.post(f"/api/orders/{ref}/transactions", json=payload)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _advance_to_delivered(client, ref):
+    """Walk the order through status transitions up to ``delivered``."""
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        resp = client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": "Tiến độ bình thường"},
+        )
+        assert resp.status_code == 200, resp.text
+
+
+def test_tien_rut_out_increases_on_delivery_ac2(api_client):
+    """AC2: Given an open drawer with ``tienRutIn`` = 500,000, when the order
+    is delivered, then ``tienRutOut`` = 500,000 and ``expectedBalance``
+    decreases by 500,000.
+    """
+    # Open a drawer with a known opening balance.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    # Create an order with a tien rut item.
+    order = _create_order_with_tien_rut(api_client, cash_amount=500000)
+    ref = order["orderRef"]
+    # Customer gives 500,000 cash for safekeeping (tien_rut deposit inflow).
+    _create_txn(api_client, ref, amount=500000, type="tien_rut", method="cash")
+
+    status_before = api_client.get("/api/cash-drawer/status").json()
+    assert status_before["tienRutIn"] == 500000
+    assert status_before["tienRutOut"] == 0
+    expected_before = status_before["expectedBalance"]
+    # expected_balance = 1,000,000 + 0 + 500,000 + 0 - 0 - 0 - 0 = 1,500,000
+    assert expected_before == 1_500_000
+
+    # Advance the order to delivered.
+    _advance_to_delivered(api_client, ref)
+
+    status_after = api_client.get("/api/cash-drawer/status").json()
+    assert status_after["tienRutIn"] == 500000  # in column preserved (audit trail)
+    assert status_after["tienRutOut"] == 500000
+    # expected_balance drops by 500,000
+    assert status_after["expectedBalance"] == expected_before - 500000
+
+
+def test_tien_rut_delivery_skips_closed_drawer_ac7(api_client):
+    """AC7: Given an order with tien rut is delivered and the linked drawer is
+    already closed, the delivery does not modify the closed drawer (no crash,
+    no error).
+    """
+    # Open a drawer and record a tien_rut payment against it.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=200000, type="tien_rut", method="cash")
+    # Close the drawer (freeze its totals).
+    close_resp = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_200_000}
+    )
+    assert close_resp.status_code == 200
+    closed_drawer = close_resp.json()
+    assert closed_drawer["status"] == "closed"
+    assert closed_drawer["tienRutOut"] == 0
+    closed_expected = closed_drawer["expectedBalance"]
+
+    # Advance the order to delivered after the drawer is closed.
+    _advance_to_delivered(api_client, ref)
+
+    # No crash; closed drawer totals are unchanged (frozen).
+    with get_db() as conn:
+        drawer = CashDrawer.get_by_id(conn, int(closed_drawer["id"]))
+    assert drawer.status == "closed"
+    assert drawer.tien_rut_out == 0
+    assert drawer.expected_balance() == closed_expected
+
+
+def test_tien_rut_delivery_no_active_drawer_no_error(api_client):
+    """Delivery of an order with tien rut when no drawer was ever opened must
+    not crash (no cash_drawer_id link → no drawer to update)."""
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    # Non-cash tien_rut (transfer) leaves no drawer link and must not error.
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 200000, "type": "tien_rut", "method": "transfer"},
+    )
+    assert resp.status_code == 201
+    _advance_to_delivered(api_client, ref)
+    # No drawer exists; the status endpoint reports no active drawer.
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["activeDrawer"] is None
+
+
+def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
+    """An invalidated tien_rut payment must not contribute to tien_rut_out at
+    delivery (the inflow was already reversed from tien_rut_in on invalidate).
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000, type="tien_rut", method="cash")
+    # Invalidate the payment (reverses tien_rut_in).
+    inv = api_client.post(f"/api/orders/{ref}/transactions/{txn['id']}/invalidate",
+                          json={"invalidatedBy": "test"})
+    assert inv.status_code == 200
+    # tien_rut_in has been reversed back to 0.
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["tienRutIn"] == 0
+
+    _advance_to_delivered(api_client, ref)
+
+    status_after = api_client.get("/api/cash-drawer/status").json()
+    # The invalidated payment is excluded → tien_rut_out stays 0.
+    assert status_after["tienRutOut"] == 0

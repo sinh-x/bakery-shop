@@ -767,6 +767,8 @@ CREATE TABLE IF NOT EXISTS cash_drawer (
     status          TEXT NOT NULL DEFAULT 'open',
     opening_balance INTEGER NOT NULL DEFAULT 0,
     cash_sales      INTEGER NOT NULL DEFAULT 0,
+    tien_rut_in     INTEGER NOT NULL DEFAULT 0,
+    tien_rut_out    INTEGER NOT NULL DEFAULT 0,
     owner_in        INTEGER NOT NULL DEFAULT 0,
     owner_out       INTEGER NOT NULL DEFAULT 0,
     cash_expenses   INTEGER NOT NULL DEFAULT 0,

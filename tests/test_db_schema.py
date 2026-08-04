@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3497,7 +3497,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
         _assert_users_role_check_constraint(conn)
 
 
@@ -3563,7 +3563,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3686,7 +3686,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3760,7 +3760,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3787,7 +3787,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4190,7 +4190,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         indexes = {
             r["name"]
@@ -4270,7 +4270,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4380,7 +4380,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4450,7 +4450,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4584,7 +4584,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4709,7 +4709,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4718,11 +4718,122 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 93
+        assert _migrated_version(conn) == 94
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert quy_count == 0
+
+
+# ---------------------------------------------------------------------------
+# v94 — add tien_rut_in / tien_rut_out columns to cash_drawer
+# (DG-341 Phase 4.1, FR1/FR2/NFR1/NFR2)
+# ---------------------------------------------------------------------------
+# Note: the requirements doc (2026-08-03-drawer-tien-rut-tracking.md) names
+# this migration v093, but v093 was already taken by DG-337 Phase 5. The
+# migration is therefore registered as v094, the next available version
+# number. The schema deliverable scope is otherwise unchanged.
+
+
+def test_v94_registered_in_migration_chain():
+    """v94 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 94 in MIGRATIONS
+    assert (
+        MIGRATIONS[94]["description"]
+        == "Add tien_rut_in/tien_rut_out INTEGER columns to cash_drawer for separate tien rut tracking (DG-341 Phase 4.1)"
+    )
+    assert (
+        MIGRATIONS[94]["callable"].__name__
+        == "_migrate_v94_cash_drawer_tien_rut_columns"
+    )
+
+
+def test_v94_adds_tien_rut_columns_to_existing_cash_drawer():
+    """Existing cash_drawer rows get the new columns with default 0 (NFR1 —
+    existing drawer data preserved).
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        # Insert a drawer BEFORE the new columns exist so we can prove the
+        # migration preserves existing data and defaults the new columns.
+        conn.executescript(
+            """
+            INSERT INTO cash_drawer (opened_at, status, opening_balance, cash_sales, owner_in, owner_out, cash_expenses)
+            VALUES ('2026-01-01T00:00:00Z', 'closed', 1000000, 500000, 0, 0, 0);
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 94)
+        assert _migrated_version(conn) == 94
+
+        cols = {r[1]: r for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+        assert "tien_rut_in" in cols
+        assert "tien_rut_out" in cols
+        # INTEGER NOT NULL DEFAULT 0 — PRAGMA table_info tuple is
+        # (cid, name, type, notnull, dflt_value, pk).
+        assert cols["tien_rut_in"][2] == "INTEGER"
+        assert cols["tien_rut_in"][3] == 1  # NOT NULL
+        assert cols["tien_rut_in"][4] == "0"  # DEFAULT 0
+        assert cols["tien_rut_out"][2] == "INTEGER"
+        assert cols["tien_rut_out"][3] == 1  # NOT NULL
+        assert cols["tien_rut_out"][4] == "0"  # DEFAULT 0
+
+        row = conn.execute(
+            "SELECT opening_balance, cash_sales, tien_rut_in, tien_rut_out, owner_in, owner_out, cash_expenses "
+            "FROM cash_drawer WHERE opened_at = '2026-01-01T00:00:00Z'"
+        ).fetchone()
+        # Existing values preserved; new columns default to 0.
+        assert row["opening_balance"] == 1000000
+        assert row["cash_sales"] == 500000
+        assert row["tien_rut_in"] == 0
+        assert row["tien_rut_out"] == 0
+        assert row["owner_in"] == 0
+        assert row["owner_out"] == 0
+        assert row["cash_expenses"] == 0
+
+
+def test_v94_fresh_db_has_columns_in_schema():
+    """A fresh DB (ensure_schema from scratch) has the two new columns in the
+    cash_drawer table (NFR2 — old clients ignore unknown keys; new columns
+    default to 0 so existing expected_balance computation is unchanged).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 94
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+        assert "tien_rut_in" in cols
+        assert "tien_rut_out" in cols
+        # A fresh drawer's expected balance is unchanged (zero tien rut totals).
+        conn.executescript(
+            """
+            INSERT INTO cash_drawer (opened_at, status, opening_balance)
+            VALUES ('2026-02-01T00:00:00Z', 'open', 0);
+            """
+        )
+        row = conn.execute(
+            "SELECT opening_balance + cash_sales + tien_rut_in + owner_in "
+            "       - tien_rut_out - owner_out - cash_expenses AS expected "
+            "FROM cash_drawer WHERE opened_at = '2026-02-01T00:00:00Z'"
+        ).fetchone()
+        assert row["expected"] == 0
+
+
+def test_v94_idempotent_on_already_migrated_db():
+    """Re-running v94 on a DB that already ran it is a no-op (NFR1 —
+    _guard_add_column skips columns that already exist).
+    """
+    from baker.db.schema import _migrate_v94_cash_drawer_tien_rut_columns
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 94
+        before = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v94_cash_drawer_tien_rut_columns(conn)
+        after = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
+        assert before == after
+        assert _migrated_version(conn) == 94
 
 
 def test_schema_all_matches_imported_symbols():

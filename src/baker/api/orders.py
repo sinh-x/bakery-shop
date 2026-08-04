@@ -600,6 +600,17 @@ def create_order(body: OrderCreate, request: Request):
             )
             accounting_sync_warning = sync_status_to_warning(sync_status)
 
+            # FR3 (DG-341 Phase 3): return held tien rut cash to the customer
+            # at delivery. NFR3: fire-and-forget — never blocks order creation.
+            from baker.services.order_lifecycle import _sync_drawer_tien_rut_out
+            try:
+                _sync_drawer_tien_rut_out(conn, order.id, order.order_ref)
+            except Exception:
+                logger.exception(
+                    "drawer tien_rut_out sync failed for order %s (%s)",
+                    order.id, order.order_ref,
+                )
+
         log_context(request, ref_type="order", ref_id=order.id)
         # DG-206 FR6/NFR2: keep customer_year_summary in sync within the same
         # order transaction (single UPSERT-equivalent recompute, <50ms overhead).

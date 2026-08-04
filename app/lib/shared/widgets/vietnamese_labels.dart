@@ -1057,6 +1057,9 @@ class VN {
   static const cashDrawerStatusOpen = 'Đang mở';
   static const cashDrawerStatusClosed = 'Đã đóng';
   static const cashDrawerCashSales = 'Tiền bán hàng';
+  // DG-341 Phase 4.4 FR6: tien rut rows shown between cashSales and ownerIn.
+  static const cashDrawerTienRutIn = 'Tiền rút vào';
+  static const cashDrawerTienRutOut = 'Tiền rút ra';
   static const cashDrawerOwnerIn = 'Chủ cho thêm';
   static const cashDrawerOwnerOut = 'Chủ rút ra';
   static const cashDrawerCashExpenses = 'Chi phí tiền mặt';

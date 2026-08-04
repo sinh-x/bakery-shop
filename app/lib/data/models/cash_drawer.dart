@@ -13,6 +13,8 @@
 ///     "ownerIn": 0,
 ///     "ownerOut": 0,
 ///     "cashExpenses": 0,
+///     "tienRutIn": 0,   // DG-341: cash held for safekeeping (in)
+///     "tienRutOut": 0,  // DG-341: cash returned at delivery (out)
 ///     "countedAmount": null,
 ///     "discrepancy": null,
 ///     "expectedBalance": 1000000,
@@ -44,6 +46,12 @@ class CashDrawer {
   final int ownerIn;
   final int ownerOut;
   final int cashExpenses;
+  // DG-341 Phase 4.4: tien rut (cash held for safekeeping) tracked
+  // separately from cashSales so the drawer expected balance reflects
+  // cash physically present. Defaults to 0 when missing from JSON
+  // (NFR2: backward compatible with older backend responses).
+  final int tienRutIn;
+  final int tienRutOut;
   final int? countedAmount;
   final int? discrepancy;
 
@@ -73,6 +81,8 @@ class CashDrawer {
     required this.ownerIn,
     required this.ownerOut,
     required this.cashExpenses,
+    this.tienRutIn = 0,
+    this.tienRutOut = 0,
     this.countedAmount,
     this.discrepancy,
     required this.expectedBalance,
@@ -102,6 +112,8 @@ class CashDrawer {
       ownerIn: (json['ownerIn'] as num?)?.toInt() ?? 0,
       ownerOut: (json['ownerOut'] as num?)?.toInt() ?? 0,
       cashExpenses: (json['cashExpenses'] as num?)?.toInt() ?? 0,
+      tienRutIn: (json['tienRutIn'] as num?)?.toInt() ?? 0,
+      tienRutOut: (json['tienRutOut'] as num?)?.toInt() ?? 0,
       countedAmount: (json['countedAmount'] as num?)?.toInt(),
       discrepancy: (json['discrepancy'] as num?)?.toInt(),
       expectedBalance: (json['expectedBalance'] as num?)?.toInt() ?? 0,
@@ -123,6 +135,8 @@ class CashDrawer {
         'ownerIn': ownerIn,
         'ownerOut': ownerOut,
         'cashExpenses': cashExpenses,
+        'tienRutIn': tienRutIn,
+        'tienRutOut': tienRutOut,
         'countedAmount': countedAmount,
         'discrepancy': discrepancy,
         'expectedBalance': expectedBalance,
