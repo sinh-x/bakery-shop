@@ -326,25 +326,6 @@ def _bus_orders_with_shipping_held(conn):
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
 
-def _resolve_shipping_release_asset_account(
-    conn, order_id: int, order_ref: str
-) -> tuple[str, int | None]:
-    """Return ``(asset_code, drawer_id)`` for the shipping release credit.
-
-    Drawer-aware account selection (FR3/FR4):
-      - If an open drawer exists and the order's delivery timestamp is at or
-        after the drawer's ``opened_at``, credit 1101 (Cash in Drawer) and
-        link the entry to that drawer.
-      - Otherwise (no open drawer, or delivery predates the open drawer),
-        credit 1102 (Owner's Cash) with no drawer link.
-    """
-    drawer = CashDrawer.get_active(conn)
-    if drawer is not None:
-        delivery_ts = _resolve_delivered_timestamp(conn, order_id, order_ref)
-        if delivery_ts is not None and delivery_ts >= drawer.opened_at:
-            return PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1101"), drawer.id
-    return OWNER_CASH_CODE, None
-
 def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Evaluate and optionally repair one order's shipping release entry.
 
