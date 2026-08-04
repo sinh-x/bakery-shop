@@ -312,8 +312,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
         spacing: 6,
         runSpacing: 4,
         children: product.priceChips.map((chip) {
-          final isSelected = selectedLabel == chip.label &&
-              widget.item.unitPrice == chip.price;
+          final isSelected = selectedLabel == chip.label;
           final stockLabel =
               chip.stockQty != null ? ' (${chip.stockQty})' : '';
           return ChoiceChip(
