@@ -45,6 +45,8 @@ Map<String, dynamic> _txn({
   int amount = 1000000,
   String timestamp = '2026-08-01T08:00:00Z',
   String note = '',
+  String reference = '',
+  String referenceDetail = '',
 }) =>
     {
       'id': id,
@@ -52,6 +54,8 @@ Map<String, dynamic> _txn({
       'amount': amount,
       'timestamp': timestamp,
       'note': note,
+      'reference': reference,
+      'referenceDetail': referenceDetail,
     };
 
 ProviderContainer _containerWith(Interceptor interceptor) => ProviderContainer(
@@ -222,6 +226,92 @@ void main() {
 
       // Empty state surfaces the tab label as a hint.
       expect(find.text(VN.cashDrawerTransactionsTab), findsOneWidget);
+    });
+  });
+
+  group('CashDrawerTransactionList (DG-343 Phase 4 — reference display)', () {
+    testWidgets(
+        'FR6/FR7: payment and expense rows render reference and referenceDetail '
+        'below the note; drawer-only rows render neither', (tester) async {
+      final interceptor = _TxnInterceptor(
+        total: 3,
+        items: [
+          _txn(
+            id: '1',
+            type: 'cash_drawer_open',
+            amount: 1000000,
+            note: 'Mở quầy sáng',
+          ),
+          _txn(
+            id: '2',
+            type: 'payment_transaction',
+            amount: 150000,
+            note: 'Bán bánh kem',
+            reference: 'BKS-16-001',
+            referenceDetail: 'Khách A',
+          ),
+          _txn(
+            id: '3',
+            type: 'expense',
+            amount: -50000,
+            note: 'Chi phí vận chuyển',
+            reference: 'Chi phí vận chuyển',
+            referenceDetail: 'Phượng — Tiền mặt tại quầy',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(drawerId: 7, poll: false),
+        container: container,
+      );
+
+      // FR6: payment_transaction row shows the order ref and customer name
+      // joined by " — " below the note.
+      expect(find.text('BKS-16-001 — Khách A'), findsOneWidget);
+      // FR7: expense row shows the summary and "staff — provider" below the note.
+      expect(
+          find.text('Chi phí vận chuyển — Phượng — Tiền mặt tại quầy'),
+          findsOneWidget);
+      // Drawer-only rows (cash_drawer_open) render no reference line — the
+      // "Mở quầy sáng" note appears once (as the note) and no reference
+      // composite string is added for that row.
+      expect(find.text('Mở quầy sáng'), findsOneWidget);
+    });
+
+    testWidgets(
+        'reference line is hidden when both reference and referenceDetail are '
+        'empty', (tester) async {
+      final interceptor = _TxnInterceptor(
+        total: 1,
+        items: [
+          _txn(
+            id: '1',
+            type: 'cash_drawer_cash_in',
+            amount: 200000,
+            note: 'bổ sung',
+            reference: '',
+            referenceDetail: '',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(drawerId: 1, poll: false),
+        container: container,
+      );
+
+      // Note renders; no reference line is added (no " — " composite).
+      expect(find.text('bổ sung'), findsOneWidget);
+      // No composite reference string present (the only Text children are the
+      // type label, timestamp, note, and amount).
+      expect(find.textContaining(' — '), findsNothing);
     });
   });
 }

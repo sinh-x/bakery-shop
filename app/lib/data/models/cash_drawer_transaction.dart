@@ -10,7 +10,9 @@
 ///     "type": "cash_drawer_open",        // journal entry source_type
 ///     "amount": 1000000,                  // signed int (VND): + inflow, - outflow
 ///     "timestamp": "2026-08-01T08:00:00Z",// transaction_date fallback to created_at
-///     "note": "Mở quầy sáng"              // journal entry description
+///     "note": "Mở quầy sáng",             // journal entry description
+///     "reference": "BKS-16-001",          // originating document (order ref / event summary)
+///     "reference_detail": "Khách A"       // customer name or "staff — provider"
 ///   }
 ///
 /// The backend computes `amount` as the net 1101 (Cash in Drawer) movement
@@ -51,12 +53,26 @@ class CashDrawerTransaction {
   /// Journal entry description; empty string when the backend has no note.
   final String note;
 
+  /// Originating document reference (DG-343 Phase 4). For
+  /// `payment_transaction` rows this is the order receiving code
+  /// (`order_ref`); for `expense` rows it is the event `summary`; empty
+  /// for drawer-only operations (open/cash-in/cash-out/close).
+  final String reference;
+
+  /// Secondary reference detail (DG-343 Phase 4). For
+  /// `payment_transaction` rows this is the order's `customer_name`; for
+  /// `expense` rows it is the "staff_name — payment_source" string parsed
+  /// from the event JSON; empty for drawer-only operations.
+  final String referenceDetail;
+
   const CashDrawerTransaction({
     required this.id,
     required this.type,
     required this.amount,
     this.timestamp,
     this.note = '',
+    this.reference = '',
+    this.referenceDetail = '',
   });
 
   /// Convenience: whether this transaction is a cash inflow (amount > 0).
@@ -72,6 +88,8 @@ class CashDrawerTransaction {
       amount: (json['amount'] as num?)?.toInt() ?? 0,
       timestamp: parseApiDateTime(json['timestamp'] as String?),
       note: (json['note'] as String?) ?? '',
+      reference: (json['reference'] as String?) ?? '',
+      referenceDetail: (json['referenceDetail'] as String?) ?? '',
     );
   }
 
@@ -81,6 +99,8 @@ class CashDrawerTransaction {
         'amount': amount,
         'timestamp': timestampToJson(timestamp),
         'note': note,
+        'reference': reference,
+        'referenceDetail': referenceDetail,
       };
 
   @override

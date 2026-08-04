@@ -339,6 +339,24 @@ class _TransactionCard extends StatelessWidget {
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
+                  // DG-343 Phase 4: reference information (order ref + customer
+                  // name for payment transactions; summary + staff/provider for
+                  // expenses) shown below the note in smaller, lighter text.
+                  if (transaction.reference.isNotEmpty ||
+                      transaction.referenceDetail.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (transaction.reference.isNotEmpty)
+                          transaction.reference,
+                        if (transaction.referenceDetail.isNotEmpty)
+                          transaction.referenceDetail,
+                      ].join(' — '),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),

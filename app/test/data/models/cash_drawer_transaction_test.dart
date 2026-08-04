@@ -91,6 +91,81 @@ void main() {
     });
   });
 
+  group('CashDrawerTransaction (DG-343 Phase 4 — reference fields)', () {
+    test('fromJson parses reference and referenceDetail for payment rows',
+        () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '30',
+        'type': 'payment_transaction',
+        'amount': 150000,
+        'timestamp': '2026-08-04T09:00:00Z',
+        'note': 'Bán bánh kem',
+        'reference': 'BKS-16-001',
+        'referenceDetail': 'Khách A',
+      });
+
+      expect(txn.reference, 'BKS-16-001');
+      expect(txn.referenceDetail, 'Khách A');
+    });
+
+    test('fromJson parses reference and referenceDetail for expense rows', () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '31',
+        'type': 'expense',
+        'amount': -50000,
+        'timestamp': '2026-08-04T10:00:00Z',
+        'note': 'Chi phí vận chuyển',
+        'reference': 'Chi phí vận chuyển',
+        'referenceDetail': 'Phượng — Tiền mặt tại quầy',
+      });
+
+      expect(txn.reference, 'Chi phí vận chuyển');
+      expect(txn.referenceDetail, 'Phượng — Tiền mặt tại quầy');
+    });
+
+    test('fromJson tolerates missing reference fields with empty defaults', () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '32',
+        'type': 'cash_drawer_open',
+        'amount': 1000000,
+        'timestamp': '2026-08-04T08:00:00Z',
+        'note': 'Mở quầy',
+      });
+
+      expect(txn.reference, '');
+      expect(txn.referenceDetail, '');
+    });
+
+    test('toJson round-trips reference and referenceDetail', () {
+      final original = CashDrawerTransaction.fromJson({
+        'id': '33',
+        'type': 'payment_transaction',
+        'amount': 50000,
+        'timestamp': '2026-08-04T09:30:00Z',
+        'note': 'sale',
+        'reference': 'BKS-16-002',
+        'referenceDetail': 'Khách B',
+      });
+
+      final roundTripped =
+          CashDrawerTransaction.fromJson(original.toJson());
+
+      expect(roundTripped.reference, original.reference);
+      expect(roundTripped.referenceDetail, original.referenceDetail);
+    });
+
+    test('constructor defaults reference and referenceDetail to empty', () {
+      const txn = CashDrawerTransaction(
+        id: '34',
+        type: 'cash_drawer_open',
+        amount: 1000000,
+      );
+
+      expect(txn.reference, '');
+      expect(txn.referenceDetail, '');
+    });
+  });
+
   group('CashDrawerTransactionResponse (DG-343 Phase 2)', () {
     test('fromJson parses paginated envelope with items', () {
       final resp = CashDrawerTransactionResponse.fromJson({

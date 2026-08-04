@@ -1596,3 +1596,128 @@ def test_transactions_works_for_closed_drawer(api_client):
     assert "cash_drawer_open" in types
     assert "cash_drawer_cash_in" in types
     assert "cash_drawer_cash_out" in types
+
+
+# ---------------------------------------------------------------------------
+# DG-343 Phase 4 — reference + reference_detail enrichment (FR6, FR7)
+# ---------------------------------------------------------------------------
+
+
+def test_transactions_reference_fields_for_payment_and_expense(api_client):
+    """FR6/FR7: payment_transaction rows carry the order receiving code and
+    customer name; expense rows carry the event summary and the
+    "staff_name — payment_source" string. Drawer-only operations (open,
+    cash-in, cash-out, close) leave both fields empty."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Cash sale: create an order + a cash deposit payment.
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách A",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 150_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    txn = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 150_000, "method": "cash", "type": "deposit",
+    })
+    assert txn.status_code == 201, txn.text
+    # Cash expense with staff_name + payment_source in the event data JSON.
+    expense = api_client.post("/api/events", json={
+        "summary": "Chi phí vận chuyển",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50_000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "tiền xe",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    # The API resolves events.staff_name from the authenticated session (not
+    # from data.paid_by_name). In unauthenticated tests staff_name is empty,
+    # so patch the events row directly to exercise the "staff — provider"
+    # branch of `CashDrawer.get_transactions`.
+    from baker.db.connection import get_db as _get_db
+    event_id = expense.json()["id"]
+    with _get_db() as conn:
+        conn.execute(
+            "UPDATE events SET staff_name = ? WHERE id = ?",
+            ("Phượng", event_id),
+        )
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    by_type = {it["type"]: it for it in resp.json()["items"]}
+    # FR6: payment_transaction → reference = order_ref, reference_detail = customer name.
+    pay = by_type["payment_transaction"]
+    assert pay["reference"] == ref
+    assert pay["reference_detail"] == "Khách A"
+    # FR7: expense → reference = summary, reference_detail = "staff — provider".
+    exp = by_type["expense"]
+    assert exp["reference"] == "Chi phí vận chuyển"
+    assert exp["reference_detail"] == "Phượng — Tiền mặt tại quầy"
+    # Drawer-only operations leave both reference fields empty.
+    for src_type in ("cash_drawer_open",):
+        it = by_type[src_type]
+        assert it["reference"] == ""
+        assert it["reference_detail"] == ""
+
+
+def test_transactions_reference_detail_handles_missing_payment_source(api_client):
+    """FR7: when an expense event has a staff_name but no payment_source in its
+    data JSON (a debt expense — debt expenses hide/ignore payment_source per
+    `_validate_expense_data`), reference_detail degrades to the staff_name
+    alone (no trailing " — ")."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Debt expense: payment_method = "Nợ" → payment_source is not required and
+    # the journal entry credits Accounts Payable (not 1101) so the expense
+    # will NOT appear in the cash drawer list. To exercise the missing-
+    # payment_source branch we instead create a normal cash expense and then
+    # patch the underlying events row directly to remove payment_source from
+    # the JSON, bypassing the API validator (this test asserts the read-side
+    # behaviour of `CashDrawer.get_transactions`, not the write-side guard).
+    expense = api_client.post("/api/events", json={
+        "summary": "Mua phụ liệu",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 30_000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "kem",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    event_id = expense.json()["id"]
+    # Bypass the API validator: rewrite events.data directly so payment_source
+    # is absent but staff_name remains. This simulates a legacy/historical
+    # expense row written before payment_source existed. Also set staff_name
+    # directly (the API derives it from the authenticated session, which is
+    # not active in tests).
+    import json as _json
+    from baker.db.connection import get_db as _get_db
+    with _get_db() as conn:
+        conn.execute(
+            "UPDATE events SET data = ?, staff_name = ? WHERE id = ?",
+            (_json.dumps({
+                "amount_vnd": 30_000,
+                "category": "Nguyên liệu",
+                "payment_method": "Tiền mặt",
+                "vendor": "Chợ",
+                "note": "kem",
+                "paid_by_name": "Phượng",
+            }), "Phượng", event_id),
+        )
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    by_type = {it["type"]: it for it in resp.json()["items"]}
+    exp = by_type["expense"]
+    assert exp["reference"] == "Mua phụ liệu"
+    assert exp["reference_detail"] == "Phượng"

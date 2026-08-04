@@ -918,9 +918,15 @@ def drawer_transactions(
 
     Each item includes ``type`` (journal source_type), ``amount`` (signed:
     + for inflow, - for outflow, derived from the net 1101 movement),
-    ``timestamp`` (transaction_date fallback to created_at), and ``note``
-    (journal description). Cash operations that do not touch 1101 (bank
-    transfers, card payments) are excluded.
+    ``timestamp`` (transaction_date fallback to created_at), ``note``
+    (journal description), and — as of Phase 4 — ``reference`` and
+    ``reference_detail`` describing the originating document. For
+    ``payment_transaction`` rows, ``reference`` is the order receiving code
+    and ``reference_detail`` the customer name; for ``expense`` rows,
+    ``reference`` is the event summary and ``reference_detail`` the
+    "staff_name — payment_source" string parsed from the event JSON. Cash
+    operations that do not touch 1101 (bank transfers, card payments) are
+    excluded.
     """
     with get_db() as conn:
         # Validate the drawer exists; 404 if not.
