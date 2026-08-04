@@ -244,63 +244,34 @@ def _sync_order_items_table(conn, order_id: int, items: list[OrderItem]) -> None
     ).fetchall()
     existing_by_pos: dict[int, int] = {r["position"]: r["id"] for r in existing_rows}
 
-    oi_columns = {
-        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
-    }
-    has_assigned_price = "assigned_price" in oi_columns
-
     for position, item in enumerate(items):
         item_id = existing_by_pos.get(position)
         if item_id is not None:
             # Update in-place to preserve photo/blank links.
-            if has_assigned_price:
-                conn.execute(
-                    """UPDATE order_items SET
-                       product_id = ?, product_name = ?, quantity = ?, unit_price = ?,
-                       notes = ?, position = ?, is_birthday = ?, age = ?,
-                       is_extra = ?, is_gift = ?, attributes = ?, price_chip_id = ?,
-                       assigned_price = ?
-                       WHERE id = ?""",
-                    (
-                        item.product_id,
-                        item.product,
-                        item.qty,
-                        item.price,
-                        item.notes,
-                        position,
-                        1 if item.is_birthday else 0,
-                        item.age,
-                        1 if item.is_extra else 0,
-                        1 if item.is_gift else 0,
-                        json.dumps(item.attributes),
-                        item.price_chip_id,
-                        item.assigned_price,
-                        item_id,
-                    ),
-                )
-            else:
-                conn.execute(
-                    """UPDATE order_items SET
-                       product_id = ?, product_name = ?, quantity = ?, unit_price = ?,
-                       notes = ?, position = ?, is_birthday = ?, age = ?,
-                       is_extra = ?, is_gift = ?, attributes = ?, price_chip_id = ?
-                       WHERE id = ?""",
-                    (
-                        item.product_id,
-                        item.product,
-                        item.qty,
-                        item.price,
-                        item.notes,
-                        position,
-                        1 if item.is_birthday else 0,
-                        item.age,
-                        1 if item.is_extra else 0,
-                        1 if item.is_gift else 0,
-                        json.dumps(item.attributes),
-                        item.price_chip_id,
-                        item_id,
-                    ),
-                )
+            conn.execute(
+                """UPDATE order_items SET
+                   product_id = ?, product_name = ?, quantity = ?, unit_price = ?,
+                   notes = ?, position = ?, is_birthday = ?, age = ?,
+                   is_extra = ?, is_gift = ?, attributes = ?, price_chip_id = ?,
+                   assigned_price = ?
+                   WHERE id = ?""",
+                (
+                    item.product_id,
+                    item.product,
+                    item.qty,
+                    item.price,
+                    item.notes,
+                    position,
+                    1 if item.is_birthday else 0,
+                    item.age,
+                    1 if item.is_extra else 0,
+                    1 if item.is_gift else 0,
+                    json.dumps(item.attributes),
+                    item.price_chip_id,
+                    item.assigned_price,
+                    item_id,
+                ),
+            )
         else:
             work_item = WorkItem(
                 order_id=order_id,
@@ -1003,6 +974,11 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # transaction so a failure rolls back the whole edit (NFR3). Stock
         # errors are logged but never crash the order update (NFR1,
         # mirroring the ``run_journal_sync`` fire-and-forget pattern).
+        # OPS-1: capture failures and surface an ``accountingSyncWarning``
+        # on the edit response (mirroring the ``create_order`` pattern) so
+        # the client can warn the user instead of silently dropping the
+        # failure.
+        edit_sync_warning = None
         if items_changed and _ORDER_STATUS_RANK.get(
             OrderStatus(row["status"]), 0
         ) >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]:
@@ -1014,6 +990,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     "edit_order stock reversal/re-deduction failed for order %s (%s)",
                     row["id"], row["order_ref"],
                 )
+                edit_sync_warning = "journal_sync_failed"
 
         # DG-342 Phase 5 (FR6, FR7, FR10, NFR1, NFR3, AC4, AC5): when items
         # or prices change on a delivered/completed order, the existing COGS
@@ -1065,6 +1042,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     "edit_order COGS/revenue journal adjustment failed for order %s (%s)",
                     row["id"], row["order_ref"],
                 )
+                edit_sync_warning = "journal_sync_failed"
 
         # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
         if "workTicketPrintedAt" in data:
@@ -1172,6 +1150,8 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             "previousCode": row["public_order_code"] or "",
             "currentCode": updated["public_order_code"] or "",
         }
+        if edit_sync_warning is not None:
+            response["accountingSyncWarning"] = edit_sync_warning
         return response
 
 

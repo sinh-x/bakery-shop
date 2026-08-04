@@ -538,22 +538,6 @@ def test_edit_order_items_with_assigned_price_syncs_table(api_client):
 # --- DG-342 Phase 4: stock reversal + re-deduction on item changes (FR5, AC3) ---
 
 
-def _stock_summary(conn, product_id: int, chip_id: int | None) -> dict:
-    sale = conn.execute(
-        "SELECT COUNT(*) AS c, COALESCE(SUM(quantity), 0) AS q FROM stock_movements "
-        "WHERE reference_id = ? AND movement_type = 'sale'",
-        ("",),
-    ).fetchone()
-    available = conn.execute(
-        """SELECT COUNT(*) AS c FROM inventory_items ii
-           JOIN stock_lots sl ON sl.id = ii.lot_id
-           WHERE sl.product_id = ? AND ii.status = 'available'
-             AND ((sl.price_chip_id IS NULL AND ? IS NULL) OR sl.price_chip_id = ?)""",
-        (product_id, chip_id, chip_id),
-    ).fetchone()
-    return {"sale_count": int(sale["c"]), "available": int(available["c"])}
-
-
 def test_edit_order_confirmed_reverses_and_re_deducts_stock(api_client):
     """FR5/AC3: editing items on a confirmed order reverses the old sale
     (un-consumes FIFO items, deletes the old sale movement) and re-deducts

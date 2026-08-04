@@ -321,8 +321,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               '${chip.label} · ${formatVND(chip.price)}$stockLabel',
             ),
             selected: isSelected,
-            onSelected: (isSelected) {
-              if (!isSelected) return;
+            onSelected: (nowSelected) {
+              if (!nowSelected) return;
               final next = Map<String, dynamic>.from(widget.item.attributes);
               next['price_chip_label'] = chip.label;
               setState(() {
