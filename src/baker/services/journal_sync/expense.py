@@ -22,6 +22,7 @@ from baker.db.schema import (
 )
 from baker.services.journal_sync._common import (
     STAFF_ADVANCE_PAYMENT_SOURCE,
+    _active_drawer_id,
     _delete_journal_entry_cascade,
     _find_journal_entry,
     _is_locked,
@@ -219,6 +220,7 @@ def _sync_expense_journal(
             source_id=event_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         # Locked: reverse the original, then create a new correct entry.
@@ -230,6 +232,7 @@ def _sync_expense_journal(
             source_id=event_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(
@@ -347,6 +350,7 @@ def _sync_debt_settlement_journal(
             source_id=settlement_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         _reverse_journal_entry(conn, existing_id)
@@ -357,6 +361,7 @@ def _sync_debt_settlement_journal(
             source_id=settlement_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(

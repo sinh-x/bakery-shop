@@ -20,6 +20,7 @@ from baker.db.schema import (
     _insert_journal_entry,
 )
 from baker.services.journal_sync._common import (
+    _active_drawer_id,
     _delete_journal_entry_cascade,
     _find_journal_entry,
     _is_locked,
@@ -366,6 +367,7 @@ def _sync_payment_journal(
             source_id=txn_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         _reverse_journal_entry(conn, existing_id)
@@ -376,6 +378,7 @@ def _sync_payment_journal(
             source_id=txn_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(

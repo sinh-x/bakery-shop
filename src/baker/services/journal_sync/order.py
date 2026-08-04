@@ -20,6 +20,7 @@ from baker.db.schema import (
 )
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync._common import (
+    _active_drawer_id,
     _delete_journal_entry_cascade,
     _find_journal_entry,
     _is_locked,
@@ -293,6 +294,7 @@ def _reconcile_revenue_entry_lines(
                 (revenue_account_id, 0.0, expected_credit_4100, "Doanh thu bán hàng"),
             ],
             transaction_date=order_transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
         return
 
@@ -347,6 +349,7 @@ def _reconcile_revenue_entry_lines(
         source_id=order_id,
         lines=lines,
         transaction_date=order_transaction_date,
+        drawer_id=_active_drawer_id(conn),
     )
 
 def _resolve_tien_rut_return_asset_account(conn, order_id: int) -> int:
@@ -450,6 +453,7 @@ def _reconcile_tien_rut_return_entry(
             (asset_account_id, 0.0, tien_rut_held, "Tiền rút đã trả"),
         ],
         transaction_date=order_transaction_date,
+        drawer_id=_active_drawer_id(conn),
     )
 
 def _sync_bus_shipping_release_entry(
@@ -526,6 +530,7 @@ def _sync_bus_shipping_release_entry(
             (asset_account_id, 0.0, release_amount, "Tiền ship bus đã trả"),
         ],
         transaction_date=order_transaction_date,
+        drawer_id=_active_drawer_id(conn),
     )
 
 def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
