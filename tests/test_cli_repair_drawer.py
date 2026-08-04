@@ -647,3 +647,104 @@ def test_repair_skips_je5975_when_already_correct(use_memory_db):
 
     with get_db() as conn:
         assert _je5975_amount(conn) == TARGET_AMOUNT
+
+
+# ---------------------------------------------------------------------------
+# repair-drawer-journal-backfill (DG-351 Phase 4.4 / CQ-3)
+#
+# The journal-backfill command shares the backfill + closing_balance + unlinked
+# breakdown logic with repair-drawer-accounting but omits the JE#5975 Step 1.
+# These tests cover registration and the source_type exclusion filter.
+# ---------------------------------------------------------------------------
+
+
+def test_repair_drawer_journal_backfill_registered():
+    """Smoke test: the ``repair-drawer-journal-backfill`` command is registered
+    and responds to ``--help`` with the ``--dry-run`` option."""
+    result = _invoke(["repair-drawer-journal-backfill", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--dry-run" in result.output
+
+
+def test_journal_backfill_links_entries_and_excludes_source_types(use_memory_db):
+    """CQ-3: the backfill step links 1101 entries in a drawer's window and
+    recomputes closing_balance, while excluding ``migration_balance_transfer``
+    and ``cash_drawer_auto_transfer`` source_types from both the backfill and
+    the unlinked-breakdown counts. The unlinked breakdown is printed."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # No JE#5975 here — this command does not touch it. Seed one anyway to
+        # confirm the journal-backfill command leaves it alone (it has no
+        # Step 1) and that its source_type is excluded from the breakdown.
+        _seed_je5975(conn, amount=313405500)
+
+        drawer_id = _insert_drawer(
+            conn,
+            opened_at="2026-07-01T08:00:00Z",
+            closed_at="2026-07-01T20:00:00Z",
+            opening_balance=1_000_000,
+            status="closed",
+        )
+        # A normal 1101 entry in the drawer window — must be linked.
+        linkable = _insert_1101_entry(
+            conn,
+            amount=500_000,
+            source_type="cash_drawer_test_adjust",
+            created_at="2026-07-01T12:00:00Z",
+        )
+        # Excluded source_type 1: cash_drawer_auto_transfer — must NOT be
+        # linked and must NOT appear in the unlinked-breakdown counts.
+        auto_entry = _insert_1101_entry(
+            conn,
+            amount=300_000,
+            source_type="cash_drawer_auto_transfer",
+            created_at="2026-07-01T13:00:00Z",
+        )
+        # Excluded source_type 2: migration_balance_transfer — same.
+        mig_entry = _insert_1101_entry(
+            conn,
+            amount=400_000,
+            source_type="migration_balance_transfer",
+            created_at="2026-07-01T14:00:00Z",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-drawer-journal-backfill"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        linked = _linked_entry_ids(conn, drawer_id)
+        assert linkable in linked
+        assert auto_entry not in linked
+        assert mig_entry not in linked
+        # closing_balance = opening + net of linked = 1,000,000 + 500,000.
+        assert _drawer_closing_balance(conn, drawer_id) == 1_500_000
+
+    # The breakdown line is printed and reports zero unlinked-within (category
+    # b) entries: every linkable entry was linked, and the excluded
+    # source_types are filtered out of the breakdown counts too.
+    assert "ngoài mọi drawer window" in result.output
+    assert "trong drawer window nhưng chưa liên kết" in result.output
+
+
+def test_journal_backfill_does_not_touch_je5975(use_memory_db):
+    """The journal-backfill command has no Step 1 — JE#5975 is left untouched
+    (unlike repair-drawer-accounting, which rewrites its amount)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_je5975(conn, amount=313405500)
+        _insert_drawer(
+            conn,
+            opened_at="2026-07-01T08:00:00Z",
+            closed_at="2026-07-01T20:00:00Z",
+            opening_balance=1_000_000,
+            status="closed",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-drawer-journal-backfill"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        # JE#5975 amount unchanged — the backfill command does not repair it.
+        assert _je5975_amount(conn) == 313405500
