@@ -138,25 +138,18 @@ def repair_drawer_accounting_cmd(dry_run):
                              ON je.id = jl.journal_entry_id
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
-                          AND je.created_at >= ?
-                          AND je.created_at <= ?
+                          AND je.transaction_date >= ?
+                          AND je.transaction_date <= ?
                           AND je.source_type NOT IN (
                               'migration_balance_transfer',
                               'cash_drawer_auto_transfer'
-                          )
-                          AND je.id NOT IN (
-                              SELECT DISTINCT jl2.journal_entry_id
-                              FROM journal_lines jl2
-                              JOIN accounts a2
-                                   ON a2.id = jl2.account_id
-                              WHERE a2.code = '2400'
                           )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
                               WHERE cash_drawer_id = ?
                           )
-                        ORDER BY je.created_at
+                        ORDER BY je.transaction_date
                         """,
                         (opened, closed, drawer_id),
                     ).fetchall()
@@ -169,24 +162,17 @@ def repair_drawer_accounting_cmd(dry_run):
                              ON je.id = jl.journal_entry_id
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
-                          AND je.created_at >= ?
+                          AND je.transaction_date >= ?
                           AND je.source_type NOT IN (
                               'migration_balance_transfer',
                               'cash_drawer_auto_transfer'
-                          )
-                          AND je.id NOT IN (
-                              SELECT DISTINCT jl2.journal_entry_id
-                              FROM journal_lines jl2
-                              JOIN accounts a2
-                                   ON a2.id = jl2.account_id
-                              WHERE a2.code = '2400'
                           )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
                               WHERE cash_drawer_id = ?
                           )
-                        ORDER BY je.created_at
+                        ORDER BY je.transaction_date
                         """,
                         (opened, drawer_id),
                     ).fetchall()
