@@ -117,20 +117,15 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       ref.invalidate(cashDrawerHistoryProvider);
     });
     // DG-331 FR11/AC11: poll every 30 seconds while the screen is visible.
+    // DG-343 CQ-2: only invalidate the status provider here. The transaction
+    // tab's full refresh cycle is handled by the widget-level timer in
+    // [CashDrawerTransactionList(poll: true)], so a second screen-level
+    // invalidation of [cashDrawerTransactionsProvider] would be redundant.
     _statusPollTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) {
         if (!mounted) return;
         ref.invalidate(cashDrawerStatusProvider);
-        // DG-343 Phase 3 FR3/AC4: also invalidate the active drawer's first
-        // transaction page so the transaction tab refreshes within 30s. The
-        // [CashDrawerTransactionList] watches this provider and rebuilds.
-        final activeDrawerId = _activeDrawerId;
-        if (activeDrawerId != null) {
-          ref.invalidate(cashDrawerTransactionsProvider(
-            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
-          ));
-        }
       },
     );
   }
