@@ -227,7 +227,7 @@ def repair_drawer_accounting_cmd(dry_run):
                 else:
                     total_linked += len(entries)
                     if status == "closed":
-                        row = conn.execute(
+                        prev_sum = conn.execute(
                             """
                             SELECT COALESCE(
                                 SUM(jl.debit - jl.credit), 0
@@ -240,8 +240,8 @@ def repair_drawer_accounting_cmd(dry_run):
                               AND a.code = '1101'
                             """,
                             (drawer_id,),
-                        ).fetchone()
-                        new_closing = int(row["balance"])
+                        ).fetchone()[0]
+                        new_closing = prev_sum + net
                         old_closing = drawer["closing_balance"]
                         if new_closing != old_closing:
                             closing_updates.append({
