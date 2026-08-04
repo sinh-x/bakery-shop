@@ -5,6 +5,8 @@ import io
 import pytest
 from PIL import Image
 
+pytestmark = pytest.mark.critical
+
 
 # --- Helpers ---
 

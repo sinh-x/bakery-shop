@@ -4,12 +4,19 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD
+from baker.utils.db import escape_like as _escape_like
 
-_BS = "\\"
 
+def _has_order_items_column(conn, col_name: str) -> bool:
+    """Return True when ``col_name`` exists on the ``order_items`` table.
 
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
+    Uses ``PRAGMA table_info`` so it works at any migration stage, letting
+    callers detect optional columns (e.g. ``assigned_price`` added in v84)
+    and fall back gracefully on older databases (DG-297 Phase 5 review-auto
+    Cycle 1, CQ-1 — deduplicated from journal_sync.py + accounting_validation.py).
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()}
+    return col_name in cols
 
 
 def today_range():
@@ -41,13 +48,24 @@ def month_range():
     return start.strftime("%Y-%m-%dT00:00:00Z"), end.strftime("%Y-%m-%dT23:59:59Z")
 
 
-def fetch_staff(conn, *, active_only=True):
-    """Fetch staff members."""
+def fetch_staff(conn, *, active_only=True, role=None):
+    """Fetch staff members.
+
+    When ``role`` is provided, only staff whose ``role`` column matches the
+    given value are returned (parameterized query — NFR4 for DG-304 Phase 1).
+    The ``active_only`` filter still applies when ``role`` is set.
+    """
+    clauses = []
+    params: tuple = ()
     if active_only:
-        return conn.execute(
-            "SELECT * FROM staff WHERE active = 1 ORDER BY name"
-        ).fetchall()
-    return conn.execute("SELECT * FROM staff ORDER BY name").fetchall()
+        clauses.append("active = 1")
+    if role is not None:
+        clauses.append("role = ?")
+        params = params + (role,)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    return conn.execute(
+        f"SELECT * FROM staff{where} ORDER BY name", params
+    ).fetchall()
 
 
 def find_staff_by_name(conn, name):
@@ -99,7 +117,8 @@ def count_events_by_logger(conn, since=None, until=None):
 
 def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  search=None, untagged=False, logged_by=None, involving=None,
-                 expense_category=None, expense_payment_method=None,
+                 expense_category=None, expense_subcategory=None,
+                 expense_payment_method=None,
                  expense_staff_name=None, expense_paid_by_name=None,
                  expense_payment_source=None,
                  expense_search=None, debt_status=None, limit=50):
@@ -147,6 +166,16 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
             "LOWER(COALESCE(json_extract(e.data, '$.category'), '')) = LOWER(?)"
         )
         params.append(expense_category)
+    if expense_subcategory:
+        # FR2 (DG-302 Phase 2): filter expenses by subcategory stored in the
+        # event data JSON. Uses COALESCE so expenses without a subcategory
+        # fall back to '' and never match a non-empty filter value (FR6
+        # backward compat — old expenses remain visible under category-only
+        # filters, but are excluded when a subcategory filter is applied).
+        conditions.append(
+            "LOWER(COALESCE(json_extract(e.data, '$.subcategory'), '')) = LOWER(?)"
+        )
+        params.append(expense_subcategory)
     if expense_payment_method:
         conditions.append(
             "LOWER(COALESCE(json_extract(e.data, '$.payment_method'), '')) = LOWER(?)"

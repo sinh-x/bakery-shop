@@ -21,6 +21,7 @@ Covers:
   when payment_source is set on the tien_rut transaction.
 """
 
+import pytest
 from baker.db.connection import get_db
 from baker.db.schema import (
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
@@ -29,6 +30,8 @@ from baker.db.schema import (
     ensure_schema,
 )
 from baker.models.payment_transaction import PaymentTransaction
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------
@@ -292,9 +295,10 @@ def test_cash_with_payment_source_routes_to_bank_sub_account(api_client):
         assert "1100" not in lines
 
 
-def test_cash_without_payment_source_routes_to_1100(api_client):
+def test_cash_without_payment_source_routes_to_1101(api_client):
     """FR5: cash/card transactions without payment_source keep their existing
-    behavior (1100). Only transfers get the un-allocated fallback."""
+    behavior but now route to 1101 (Cash in Drawer) per DG-330 Phase 1.
+    Only transfers get the un-allocated fallback."""
     order = _create_order(api_client)
     ref = order["orderRef"]
     txn = _create_txn(
@@ -303,7 +307,7 @@ def test_cash_without_payment_source_routes_to_1100(api_client):
     txn_id = int(txn["id"])
     with get_db() as conn:
         lines = _journal_line_amounts(conn, txn_id)
-        assert lines["1100"]["debit"] == 50000.0
+        assert lines["1101"]["debit"] == 50000.0
         assert "1290" not in lines
 
 
@@ -330,9 +334,15 @@ def test_unknown_payment_source_treated_as_unallocated(api_client):
 
 def test_expense_payment_source_mapping_unchanged():
     """Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE maps VCB labels to
-    their bank sub-accounts (1210/1220) per DG-285 FR1/FR2."""
+    their bank sub-accounts (1210/1220) per DG-285 FR1/FR2.
+
+    DG-330 Phase 1 split the legacy "Shop tiền mặt" (1100) into two sources:
+    "Tiền mặt tại quầy" (1101, drawer cash) and "Tiền mặt chủ sở hữu" (1102,
+    owner cash). The VCB and staff-advance mappings are unchanged.
+    """
     assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE == {
-        "Shop tiền mặt": "1100",
+        "Tiền mặt tại quầy": "1101",
+        "Tiền mặt chủ sở hữu": "1102",
         "TK Phượng VCB": "1210",
         "TK Ân VCB": "1220",
         "Nhân viên ứng trước": "2300",

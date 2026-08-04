@@ -8,6 +8,13 @@ import pytest
 from baker.db.schema import _normalize_phone, _pick_most_common_name
 
 
+# Phase 4.3 — all tests in this module are pure-logic unit tests for the
+# _normalize_phone() and _pick_most_common_name() helpers (no DB I/O, no
+# API client). Tagged `fast` so the CI fast-gate job (-m fast) picks them
+# up as part of the smoke tier.
+pytestmark = pytest.mark.fast
+
+
 # ---------------------------------------------------------------------------
 # _normalize_phone
 # ---------------------------------------------------------------------------

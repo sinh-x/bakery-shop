@@ -10,24 +10,27 @@ BakeryEvent _expenseEvent({
   String vendor = '',
   String paymentSource = 'Shop tiền mặt',
   List<Map<String, dynamic>> settlements = const [],
+  Map<String, dynamic> extraData = const {},
 }) {
+  final data = <String, dynamic>{
+    'amount_vnd': amount,
+    'category': 'Nguyên liệu',
+    'payment_method': paymentMethod,
+    'payment_source': paymentSource,
+    'vendor': vendor,
+    'note': '',
+    'paid_by_name': 'Lan',
+    'reimbursed': false,
+    'settlements': settlements,
+  };
+  data.addAll(extraData);
   return BakeryEvent(
     id: id,
     timestamp: DateTime.parse('2026-07-06T10:00:00Z'),
     type: expenseType,
     summary: 'Chi phí test',
     loggedBy: 'Lan',
-    data: <String, dynamic>{
-      'amount_vnd': amount,
-      'category': 'Nguyên liệu',
-      'payment_method': paymentMethod,
-      'payment_source': paymentSource,
-      'vendor': vendor,
-      'note': '',
-      'paid_by_name': 'Lan',
-      'reimbursed': false,
-      'settlements': settlements,
-    },
+    data: data,
   );
 }
 
@@ -169,6 +172,86 @@ void main() {
       final map = ExpenseEventMapper.toDataMap(payload);
 
       expect(map['payment_source'], 'Shop tiền mặt');
+    });
+  });
+
+  group('ExpenseEventMapper subcategory field (DG-302 Phase 3)', () {
+    test('toDataMap includes subcategory when non-empty', () {
+      const payload = ExpenseEventData(
+        amountVnd: 200000,
+        category: 'Nguyên liệu',
+        paymentMethod: 'Tiền mặt',
+        vendor: '',
+        note: '',
+        loggedBy: 'Lan',
+        paidByName: 'Lan',
+        subcategory: 'Trứng',
+      );
+
+      final map = ExpenseEventMapper.toDataMap(payload);
+
+      expect(map['subcategory'], 'Trứng');
+    });
+
+    test('toDataMap omits subcategory key when empty (FR6 backward compat)',
+        () {
+      const payload = ExpenseEventData(
+        amountVnd: 200000,
+        category: 'Nguyên liệu',
+        paymentMethod: 'Tiền mặt',
+        vendor: '',
+        note: '',
+        loggedBy: 'Lan',
+        paidByName: 'Lan',
+      );
+
+      final map = ExpenseEventMapper.toDataMap(payload);
+
+      expect(map.containsKey('subcategory'), isFalse);
+    });
+
+    test('fromEvent parses subcategory when present', () {
+      final event = _expenseEvent(
+        id: 10,
+        amount: 200000,
+        extraData: {'subcategory': 'Kem'},
+      );
+      final data = ExpenseEventMapper.fromEvent(event)!;
+
+      expect(data.subcategory, 'Kem');
+    });
+
+    test('fromEvent returns empty subcategory when key absent (FR6)', () {
+      final event = _expenseEvent(id: 11, amount: 200000);
+      final data = ExpenseEventMapper.fromEvent(event)!;
+
+      expect(data.subcategory, '');
+    });
+
+    test('matchesFilters filters by subcategory', () {
+      final eventWith = _expenseEvent(
+        id: 12,
+        amount: 200000,
+        extraData: {'subcategory': 'Trứng'},
+      );
+      final eventWithout = _expenseEvent(id: 13, amount: 200000);
+
+      expect(
+        ExpenseEventMapper.matchesFilters(eventWith, subcategory: 'Trứng'),
+        isTrue,
+      );
+      expect(
+        ExpenseEventMapper.matchesFilters(eventWithout, subcategory: 'Trứng'),
+        isFalse,
+      );
+    });
+
+    test('matchesFilters ignores empty subcategory filter', () {
+      final event = _expenseEvent(id: 14, amount: 200000);
+      expect(
+        ExpenseEventMapper.matchesFilters(event, subcategory: ''),
+        isTrue,
+      );
     });
   });
 }

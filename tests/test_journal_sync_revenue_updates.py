@@ -495,7 +495,7 @@ def test_bus_order_shipping_release_entry_created_ac4():
         assert _release_entry_count(conn, oid) == 1
         lines = _release_line_amounts(conn, oid)
         assert lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert lines["1100"]["credit"] == 25000.0
+        assert lines["1101"]["credit"] == 25000.0
 
 
 def test_bus_order_shipping_fee_zero_unchanged():
@@ -820,7 +820,7 @@ def test_v49_backfill_corrects_revenue_creates_hold_and_release():
         assert _release_entry_count(conn, oid) == 1
         release = _release_line_amounts(conn, oid)
         assert release[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert release["1100"]["credit"] == 25000.0
+        assert release["1101"]["credit"] == 25000.0
 
         _assert_double_entry_integrity_v49(conn)
         conn.commit()

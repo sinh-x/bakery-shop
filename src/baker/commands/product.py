@@ -4,14 +4,9 @@ from baker.db.connection import get_db
 from baker.formatters.tables import console
 from baker.code_gen import generate_code, get_category_prefix
 from baker.utils.time import InvalidEffectiveFrom, format_effective_from
+from baker.utils.db import escape_like as _escape_like
 
 from rich.table import Table
-
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 
 
 @click.group("product")

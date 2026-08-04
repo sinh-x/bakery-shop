@@ -4,7 +4,6 @@ import '../../../../data/api/customer_service.dart';
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
 import '../../../../shared/utils/order_helpers.dart';
-import '../../../../shared/widgets/vietnamese_labels.dart';
 import '../../../../shared/labels/customers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 

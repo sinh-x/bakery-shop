@@ -65,14 +65,16 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   }
 
   Future<void> _pickItemPhotos() async {
+    final item = widget.item;
     final files = await _picker.pickMultiImage(imageQuality: 85);
-    if (files.isEmpty || !mounted) return;
-    setState(() {
-      for (final f in files) {
-        widget.item.pendingPhotos.add(f);
-      }
-    });
-    widget.onStateChanged();
+    if (files.isEmpty) return;
+    for (final f in files) {
+      item.pendingPhotos.add(f);
+    }
+    if (mounted) {
+      setState(() {});
+      widget.onStateChanged();
+    }
   }
 
   void _updateManualPrice(String text) {

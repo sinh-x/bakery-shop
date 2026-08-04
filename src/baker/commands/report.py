@@ -25,6 +25,89 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import COGS_CODE, ORDER_REVENUE_CODE
+from baker.labels.report_labels import (
+    ACCOUNT_TYPE_LABELS,
+    COGS_STATUS_LABELS,
+    CASHFLOW_TITLE,
+    INCOME_STATEMENT_DUE_DATE_TITLE,
+    INCOME_STATEMENT_TITLE,
+    TRIAL_BALANCE_TITLE,
+    BALANCE_SHEET_TITLE,
+    GENERAL_LEDGER_TITLE,
+    ACCOUNT_LEDGER_TITLE,
+    EXPENSE_BY_CATEGORY_TITLE,
+    COGS_AUDIT_TITLE,
+    ORDER_STATUS_TITLE,
+    LBL_CODE,
+    LBL_ACCOUNT,
+    LBL_TYPE,
+    LBL_DEBIT,
+    LBL_CREDIT,
+    LBL_TOTALS,
+    LBL_REVENUE,
+    LBL_COGS_5900,
+    LBL_COGS_SHORT,
+    LBL_GROSS_PROFIT,
+    LBL_MARKUP_TRUNG_BAY,
+    LBL_OPERATING_EXPENSES,
+    LBL_NET_INCOME,
+    LBL_ASSETS,
+    LBL_LIABILITIES,
+    LBL_EQUITY,
+    LBL_TOTAL_ASSETS,
+    LBL_TOTAL_LIABILITIES_EQUITY,
+    LBL_CATEGORY,
+    LBL_TOTAL,
+    LBL_TOTAL_UPPER,
+    LBL_UNCATEGORIZED,
+    LBL_ORDER,
+    LBL_ORDER_REF,
+    LBL_RATIO,
+    LBL_STATUS,
+    LBL_DELIVERY_TYPE,
+    LBL_COUNT,
+    LBL_VALUE,
+    LBL_SUBTOTAL,
+    LBL_GRAND_TOTAL,
+    LBL_ORDERS,
+    LBL_DR,
+    LBL_CR,
+    LBL_PERIOD,
+    LBL_SOURCE,
+    LBL_BALANCE,
+    LBL_LOCKED,
+    LBL_NONE,
+    LBL_NO_ACTIVITY,
+    LBL_SUBTOTAL_UPPER,
+    LBL_OPENING_BALANCE,
+    LBL_CLOSING_BALANCE,
+    LBL_NET_CASH_FLOW,
+    LBL_TOTAL_INFLOWS,
+    LBL_TOTAL_OUTFLOWS,
+    LBL_NET_OPERATING_CASHFLOW,
+    LBL_NET_INVESTING_CASHFLOW,
+    LBL_NET_FINANCING_CASHFLOW,
+    LBL_OPERATING_ACTIVITIES,
+    LBL_CASH_FROM_CUSTOMERS,
+    LBL_CASH_PAID_SUPPLIERS,
+    LBL_INVESTING_ACTIVITIES,
+    LBL_FINANCING_ACTIVITIES,
+    LBL_PER_ACCOUNT_BREAKDOWN,
+    LBL_INFLOWS,
+    LBL_OUTFLOWS,
+    LBL_NET,
+    LBL_OPENING,
+    LBL_CLOSING,
+    LBL_RECONCILIATION_DETAIL,
+    ORDER_STATUS_LABELS,
+    MSG_NO_JOURNAL_ENTRIES,
+    MSG_NO_JOURNAL_LINES_ACCOUNT,
+    MSG_NO_EXPENSE_ENTRIES,
+    MSG_NO_ORDERS,
+    MSG_ALL_TIME,
+    LBL_RECONCILE_OK,
+    LBL_RECONCILE_MISMATCH,
+)
 from baker.models.order import OrderStatus
 from baker.utils.time import utc_to_local
 
@@ -35,8 +118,8 @@ DEBIT_NORMAL_TYPES = ("asset", "expense")
 # Statuses used by the COGS audit report (FR4 / AC4):
 #   ok         — COGS entry exists, no zero-cost items, ratio >= COGS_LOW_RATIO
 #   missing    — no order_cogs journal entry recorded for the order
-#   zero-cost  — order_cogs entry exists but some non-extra/non-gift order_items
-#                still have cost_at_sale = 0 (cost never resolved at delivery)
+#   zero-cost  — order_cogs entry exists but some non-gift order_items (incl.
+#                sold extras) still have cost_at_sale = 0 (cost never resolved)
 #   low        — COGS/revenue ratio below COGS_LOW_RATIO (baseline estimate is
 #                30%; a much lower ratio flags a likely mispriced or mis-costed
 #                order worth manual review)
@@ -75,17 +158,34 @@ def _balance_for_type(acc_type: str, debit: float, credit: float) -> float:
     return credit - debit
 
 
+def _fmt_date(date_str: Optional[str]) -> str:
+    """Convert a ``YYYY-MM-DD`` (or ``YYYY-MM-DDTHH:MM:SS``) value to ``DD/MM/YYYY``.
+
+    Returns the input unchanged when it is empty or does not match the
+    expected shape — used by ``_echo_header`` for the period display so
+    dates follow Vietnamese convention (FR6).
+    """
+    if not date_str:
+        return ""
+    core = date_str[:10] if len(date_str) >= 10 else date_str
+    try:
+        dt = datetime.strptime(core, "%Y-%m-%d")
+    except ValueError:
+        return date_str
+    return dt.strftime("%d/%m/%Y")
+
+
 def _echo_header(title: str, since: Optional[str], until: Optional[str]) -> None:
     click.echo(title)
     click.echo("=" * len(title))
-    period = "All time"
+    period = MSG_ALL_TIME
     if since and until:
-        period = f"{since} → {until}"
+        period = f"{_fmt_date(since)} → {_fmt_date(until)}"
     elif since:
-        period = f"since {since}"
+        period = f"từ {_fmt_date(since)}"
     elif until:
-        period = f"until {until}"
-    click.echo(f"Period: {period}")
+        period = f"đến {_fmt_date(until)}"
+    click.echo(f"{LBL_PERIOD} {period}")
     click.echo("")
 
 
@@ -109,7 +209,7 @@ def trial_balance_cmd(since, until):
     """All active accounts with debit/credit/balance totals for a date range."""
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Trial Balance", since, until)
+    _echo_header(TRIAL_BALANCE_TITLE, since, until)
 
     params: list = []
     where_clauses = []
@@ -141,24 +241,27 @@ def trial_balance_cmd(since, until):
         ).fetchall()
 
     if not rows:
-        click.echo("(no journal entries in range)")
+        click.echo(MSG_NO_JOURNAL_ENTRIES)
         return
 
     total_debit = 0.0
     total_credit = 0.0
-    click.echo(f"{'Code':<8}{'Account':<40}{'Type':<10}{'Debit':>14}{'Credit':>14}")
-    click.echo("-" * 86)
+    click.echo(
+        f"{LBL_CODE:<8}{LBL_ACCOUNT:<40}{LBL_TYPE:<14}{LBL_DEBIT:>14}{LBL_CREDIT:>14}"
+    )
+    click.echo("-" * 90)
     for r in rows:
         debit = float(r["total_debit"])
         credit = float(r["total_credit"])
         total_debit += debit
         total_credit += credit
+        type_label = ACCOUNT_TYPE_LABELS.get(r["type"], r["type"])
         click.echo(
-            f"{r['code']:<8}{r['name'][:39]:<40}{r['type']:<10}"
+            f"{r['code']:<8}{r['name'][:39]:<40}{type_label:<14}"
             f"{debit:>14,.2f}{credit:>14,.2f}"
         )
-    click.echo("-" * 86)
-    click.echo(f"{'TOTALS':<58}{total_debit:>14,.2f}{total_credit:>14,.2f}")
+    click.echo("-" * 90)
+    click.echo(f"{LBL_TOTALS:<62}{total_debit:>14,.2f}{total_credit:>14,.2f}")
 
 
 @report_cmd.command("income-statement")
@@ -176,9 +279,9 @@ def income_statement_cmd(since, until, date_basis):
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
     if date_basis == "due-date":
-        _echo_header("Income Statement (due-date basis)", since, until)
+        _echo_header(INCOME_STATEMENT_DUE_DATE_TITLE, since, until)
     else:
-        _echo_header("Income Statement", since, until)
+        _echo_header(INCOME_STATEMENT_TITLE, since, until)
 
     if date_basis == "due-date":
         _income_statement_due_date(since_b, until_b)
@@ -390,22 +493,22 @@ def _echo_income_statement_body(
     the period — an informational line, not part of the net income calculation
     (DG-296 Phase 5, FR7). It is shown only when non-zero.
     """
-    click.echo(f"{'Revenue':<40}{revenue:>20,.2f}")
+    click.echo(f"{LBL_REVENUE:<40}{revenue:>20,.2f}")
     cogs_ratio = (cogs_amount / revenue * 100.0) if revenue > 0 else 0.0
     click.echo(
-        f"{'Cost of Goods Sold (5900)':<40}{cogs_amount:>20,.2f}"
+        f"{LBL_COGS_5900:<40}{cogs_amount:>20,.2f}"
         f"  ({cogs_ratio:.1f}%)"
     )
-    click.echo(f"{'Gross Profit':<40}{(revenue - cogs_amount):>20,.2f}")
+    click.echo(f"{LBL_GROSS_PROFIT:<40}{(revenue - cogs_amount):>20,.2f}")
     if markup > 0:
         click.echo(
-            f"{'Markup (trung bay)':<40}{markup:>20,.2f}"
+            f"{LBL_MARKUP_TRUNG_BAY:<40}{markup:>20,.2f}"
         )
     click.echo("")
-    click.echo(f"{'Operating Expenses':<40}{operating_expenses:>20,.2f}")
+    click.echo(f"{LBL_OPERATING_EXPENSES:<40}{operating_expenses:>20,.2f}")
     click.echo("")
     net_income = revenue - cogs_amount - operating_expenses
-    click.echo(f"{'Net Income':<40}{net_income:>20,.2f}")
+    click.echo(f"{LBL_NET_INCOME:<40}{net_income:>20,.2f}")
 
 
 @report_cmd.command("balance-sheet")
@@ -413,7 +516,7 @@ def _echo_income_statement_body(
 def balance_sheet_cmd(until):
     """Assets, Liabilities, Equity snapshot as of the end date."""
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Balance Sheet", None, until)
+    _echo_header(BALANCE_SHEET_TITLE, None, until)
 
     with get_db() as conn:
         params: list = []
@@ -441,7 +544,7 @@ def balance_sheet_cmd(until):
             params,
         ).fetchall()
 
-    def section(title: str, acc_type: str) -> float:
+    def section(title: str, acc_type: str, total_label: str) -> float:
         click.echo(title)
         click.echo("-" * len(title))
         section_total = 0.0
@@ -453,16 +556,18 @@ def balance_sheet_cmd(until):
                 continue
             section_total += bal
             click.echo(f"  {r['code']:<8}{r['name'][:39]:<40}{bal:>14,.2f}")
-        click.echo(f"  {'Total ' + title:<48}{section_total:>14,.2f}")
+        click.echo(f"  {total_label:<48}{section_total:>14,.2f}")
         click.echo("")
         return section_total
 
-    total_assets = section("Assets", "asset")
-    total_liabilities = section("Liabilities", "liability")
-    total_equity = section("Equity", "equity")
+    total_assets = section(LBL_ASSETS, "asset", LBL_TOTAL_ASSETS)
+    total_liabilities = section(
+        LBL_LIABILITIES, "liability", f"{LBL_TOTAL} {LBL_LIABILITIES}",
+    )
+    total_equity = section(LBL_EQUITY, "equity", f"{LBL_TOTAL} {LBL_EQUITY}")
     click.echo("=" * 62)
-    click.echo(f"{'Total Assets':<48}{total_assets:>14,.2f}")
-    click.echo(f"{'Total Liabilities + Equity':<48}"
+    click.echo(f"{LBL_TOTAL_ASSETS:<48}{total_assets:>14,.2f}")
+    click.echo(f"{LBL_TOTAL_LIABILITIES_EQUITY:<48}"
                f"{(total_liabilities + total_equity):>14,.2f}")
 
 
@@ -473,7 +578,7 @@ def general_ledger_cmd(since, until):
     """All journal entries in a date range, human-readable with lines."""
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("General Ledger", since, until)
+    _echo_header(GENERAL_LEDGER_TITLE, since, until)
 
     with get_db() as conn:
         params: list = []
@@ -502,14 +607,14 @@ def general_ledger_cmd(since, until):
         ).fetchall()
 
         if not entries:
-            click.echo("(no journal entries in range)")
+            click.echo(MSG_NO_JOURNAL_ENTRIES)
             return
 
         for je in entries:
             click.echo(
                 f"#{je['id']}  {utc_to_local(je['transaction_date'])}  {je['description']}  "
-                f"[source={je['source_type']}:{je['source_id']}]"
-                + ("  (LOCKED)" if je["locked_at"] else "")
+                f"[{LBL_SOURCE}{je['source_type']}:{je['source_id']}]"
+                + (f"  ({LBL_LOCKED})" if je["locked_at"] else "")
             )
             lines = conn.execute(
                 """
@@ -526,9 +631,9 @@ def general_ledger_cmd(since, until):
                 debit = float(jl["debit"])
                 credit = float(jl["credit"])
                 if debit:
-                    click.echo(f"    DR  {jl['code']:<8}{jl['name'][:30]:<32}{debit:>14,.2f}  {jl['description']}")
+                    click.echo(f"    {LBL_DR}  {jl['code']:<8}{jl['name'][:30]:<32}{debit:>14,.2f}  {jl['description']}")
                 else:
-                    click.echo(f"    CR  {jl['code']:<8}{jl['name'][:30]:<32}{credit:>14,.2f}  {jl['description']}")
+                    click.echo(f"    {LBL_CR}  {jl['code']:<8}{jl['name'][:30]:<32}{credit:>14,.2f}  {jl['description']}")
             click.echo("")
 
 
@@ -549,7 +654,7 @@ def account_ledger_cmd(account_code, since, until):
         if account is None:
             raise click.UsageError(f"Account code '{code}' not found in chart of accounts.")
 
-        _echo_header(f"Account Ledger — {account['code']} {account['name']}", since, until)
+        _echo_header(f"{ACCOUNT_LEDGER_TITLE} — {account['code']} {account['name']}", since, until)
 
         params: list = [account["id"]]
         where_clauses = ["jl.account_id = ?"]
@@ -578,7 +683,7 @@ def account_ledger_cmd(account_code, since, until):
         ).fetchall()
 
         if not rows:
-            click.echo("(no journal lines for this account in range)")
+            click.echo(MSG_NO_JOURNAL_LINES_ACCOUNT)
             return
 
         running = 0.0
@@ -590,12 +695,12 @@ def account_ledger_cmd(account_code, since, until):
             else:
                 running += credit - debit
             if debit:
-                movement = f"DR {debit:>12,.2f}"
+                movement = f"{LBL_DR} {debit:>12,.2f}"
             else:
-                movement = f"CR {credit:>12,.2f}"
+                movement = f"{LBL_CR} {credit:>12,.2f}"
             click.echo(
                 f"{utc_to_local(r['transaction_date'])}  #{r['entry_id']:<6}{movement}  "
-                f"balance={running:>14,.2f}  {r['line_description']}"
+                f"{LBL_BALANCE}={running:>14,.2f}  {r['line_description']}"
             )
 
 
@@ -603,10 +708,19 @@ def account_ledger_cmd(account_code, since, until):
 @click.option("--since", help="From date (YYYY-MM-DD)")
 @click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
 def expense_by_category_cmd(since, until):
-    """Expense totals grouped by source event category for a date range."""
+    """Expense totals grouped by source event category for a date range.
+
+    When a parent category has subcategories (per the ``expense_categories``
+    table — DG-302), the report prints a breakdown by subcategory below the
+    parent row (FR3 / AC3). Expenses that carry a ``subcategory`` field in
+    ``events.data`` are bucketed under their subcategory; the parent row's
+    total still includes those subcategory amounts so column totals are
+    consistent. Expenses without a subcategory (legacy rows, FR6) are
+    attributed to the parent category directly.
+    """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Expense by Category", since, until)
+    _echo_header(EXPENSE_BY_CATEGORY_TITLE, since, until)
 
     with get_db() as conn:
         params: list = []
@@ -636,15 +750,40 @@ def expense_by_category_cmd(since, until):
         ).fetchall()
 
         if not rows:
-            click.echo("(no expense journal entries in range)")
+            click.echo(MSG_NO_EXPENSE_ENTRIES)
             return
 
-        # Aggregate by category from events.data JSON, falling back to the
-        # debited account name when the event/data is unavailable.
+        # Map subcategory name -> parent category name (DG-302 Phase 1).
+        # Only categories with children get a breakdown block (FR3).
+        parent_of: dict[str, str] = {}
+        children_of: dict[str, list[str]] = {}
+        cat_rows = conn.execute(
+            """
+            SELECT child.name AS child_name,
+                   parent.name AS parent_name
+            FROM expense_categories child
+            JOIN expense_categories parent ON parent.id = child.parent_id
+            """
+        ).fetchall()
+        for cr in cat_rows:
+            child = cr["child_name"]
+            parent = cr["parent_name"]
+            parent_of[child] = parent
+            children_of.setdefault(parent, []).append(child)
+        for parent in children_of:
+            children_of[parent].sort()
+
+        # Aggregate by category (and subcategory when present) from
+        # events.data JSON, falling back to the debited account name when
+        # the event/data is unavailable.
+        # totals[parent_category] = total (incl. all subcategories)
+        # sub_totals[parent_category][subcategory] = subtotal
         totals: dict[str, float] = {}
+        sub_totals: dict[str, dict[str, float]] = {}
         uncategorized = 0.0
         for r in rows:
             category = None
+            subcategory = None
             event_id = r["event_id"]
             if event_id is not None:
                 ev = conn.execute(
@@ -656,25 +795,58 @@ def expense_by_category_cmd(since, until):
                         cat = data.get("category")
                         if isinstance(cat, str) and cat:
                             category = cat
+                        sub = data.get("subcategory")
+                        if isinstance(sub, str) and sub:
+                            subcategory = sub
                     except (json.JSONDecodeError, TypeError):
                         pass
             if category:
-                totals[category] = totals.get(category, 0.0) + float(r["debit"])
+                # If the "category" itself is a subcategory name (legacy
+                # rows where subcategory was stored in category), normalize
+                # it back to the parent so it lands in the right bucket.
+                if category in parent_of:
+                    parent = parent_of[category]
+                    sub_totals.setdefault(parent, {})
+                    sub_totals[parent][category] = (
+                        sub_totals[parent].get(category, 0.0) + float(r["debit"])
+                    )
+                    totals[parent] = totals.get(parent, 0.0) + float(r["debit"])
+                else:
+                    totals[category] = totals.get(category, 0.0) + float(r["debit"])
+                    if subcategory:
+                        sub_totals.setdefault(category, {})
+                        sub_totals[category][subcategory] = (
+                            sub_totals[category].get(subcategory, 0.0)
+                            + float(r["debit"])
+                        )
             else:
                 uncategorized += float(r["debit"])
 
-        click.echo(f"{'Category':<32}{'Total':>20}")
+        click.echo(f"{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
         click.echo("-" * 52)
         grand_total = 0.0
         for category in sorted(totals):
             amount = totals[category]
             grand_total += amount
             click.echo(f"{category[:31]:<32}{amount:>20,.2f}")
+            # FR3 / AC3: subcategory breakdown for parent categories that
+            # have children defined in the expense_categories table.
+            subs = sub_totals.get(category, {})
+            if category in children_of:
+                for sub_name in children_of[category]:
+                    sub_amount = subs.get(sub_name, 0.0)
+                    click.echo(f"  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+                # Legacy/other subcategory values not in the seed tree.
+                known = set(children_of[category])
+                for sub_name in sorted(subs):
+                    if sub_name not in known:
+                        sub_amount = subs[sub_name]
+                        click.echo(f"  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
         if uncategorized:
             grand_total += uncategorized
-            click.echo(f"{'(uncategorized)':<32}{uncategorized:>20,.2f}")
+            click.echo(f"{LBL_UNCATEGORIZED:<32}{uncategorized:>20,.2f}")
         click.echo("-" * 52)
-        click.echo(f"{'TOTAL':<32}{grand_total:>20,.2f}")
+        click.echo(f"{LBL_TOTAL_UPPER:<32}{grand_total:>20,.2f}")
 
 
 @report_cmd.command("cogs-audit")
@@ -688,7 +860,7 @@ def cogs_audit_cmd(since, until):
 
       ok         — COGS entry exists, no zero-cost items, ratio in range
       missing    — no order_cogs journal entry recorded
-      zero-cost  — order has non-extra/non-gift items with cost_at_sale = 0
+      zero-cost  — order has non-gift items (incl. sold extras) with cost_at_sale = 0
       low        — COGS/revenue ratio below the baseline estimate threshold
 
     A summary line reports totals and the count of orders in each status.
@@ -697,13 +869,13 @@ def cogs_audit_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("COGS Audit", since, until)
+    _echo_header(COGS_AUDIT_TITLE, since, until)
 
     # Single-pass query joining orders → order_items → journal entries. We
     # gather, per order:
     #   - total revenue from `order` journal entries (4100 credit side)
     #   - total COGS from `order_cogs` journal entries (5900 debit side)
-    #   - count of non-extra/non-gift order_items with cost_at_sale = 0
+    #   - count of non-gift order_items (incl. sold extras) with cost_at_sale = 0
     #   - whether an order_cogs journal entry exists at all
     #
     # The query filters to delivered/completed orders only, scoped by the
@@ -748,12 +920,11 @@ def cogs_audit_cmd(since, until):
                    ) AS has_cogs_entry,
                    (
                      SELECT COUNT(*)
-                     FROM order_items oi
-                     WHERE oi.order_id = o.id
-                       AND oi.is_extra = 0
-                       AND oi.is_gift = 0
-                       AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
-                   ) AS zero_cost_items
+                    FROM order_items oi
+                      WHERE oi.order_id = o.id
+                        AND oi.is_gift = 0
+                        AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
+                    ) AS zero_cost_items
             FROM orders o
             WHERE {order_sql}
             ORDER BY o.id ASC
@@ -762,15 +933,15 @@ def cogs_audit_cmd(since, until):
         ).fetchall()
 
     if not rows:
-        click.echo("(no delivered/completed orders in range)")
+        click.echo(MSG_NO_ORDERS)
         return
 
     # Header
     click.echo(
-        f"{'Order':<10}{'Order Ref':<18}{'Revenue':>16}{'COGS':>16}"
-        f"{'Ratio':>10}{'Status':>14}"
+        f"{LBL_ORDER:<10}{LBL_ORDER_REF:<18}{LBL_REVENUE:>16}{LBL_COGS_SHORT:>16}"
+        f"{LBL_RATIO:>10}{LBL_STATUS:>16}"
     )
-    click.echo("-" * 84)
+    click.echo("-" * 86)
 
     totals = {status: 0 for status in COGS_STATUSES}
     total_revenue = 0.0
@@ -796,20 +967,23 @@ def cogs_audit_cmd(since, until):
         total_revenue += revenue
         total_cogs += cogs
 
+        status_label = COGS_STATUS_LABELS.get(status, status)
         click.echo(
             f"{r['order_id']:<10}{r['order_ref'][:17]:<18}"
-            f"{revenue:>16,.2f}{cogs:>16,.2f}{ratio*100:>9.1f}%{status:>14}"
+            f"{revenue:>16,.2f}{cogs:>16,.2f}{ratio*100:>9.1f}%{status_label:>16}"
         )
 
-    click.echo("-" * 84)
+    click.echo("-" * 86)
     overall_ratio = (total_cogs / total_revenue) if total_revenue > 0 else 0.0
     click.echo(
-        f"{'TOTAL':<28}{total_revenue:>16,.2f}{total_cogs:>16,.2f}"
+        f"{LBL_TOTAL_UPPER:<28}{total_revenue:>16,.2f}{total_cogs:>16,.2f}"
         f"{overall_ratio*100:>9.1f}%"
     )
     click.echo("")
-    summary_parts = [f"{status}={totals[status]}" for status in COGS_STATUSES]
-    click.echo(f"Orders: {len(rows)}  Status: {', '.join(summary_parts)}")
+    summary_parts = [
+        f"{COGS_STATUS_LABELS[status]}={totals[status]}" for status in COGS_STATUSES
+    ]
+    click.echo(f"{LBL_ORDERS} {len(rows)}  {LBL_STATUS}: {', '.join(summary_parts)}")
 
 
 # Order lifecycle statuses in canonical display order (FR2/FR6). All 7
@@ -845,7 +1019,7 @@ def order_status_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Order Status Report", since, until)
+    _echo_header(ORDER_STATUS_TITLE, since, until)
 
     params: list = []
     where_clauses: list = []
@@ -883,9 +1057,9 @@ def order_status_cmd(since, until):
         by_status[status][dtype] = (count, value)
 
     click.echo(
-        f"{'Status':<14}{'Delivery Type':<20}{'Count':>10}{'Value':>20}"
+        f"{LBL_STATUS:<16}{LBL_DELIVERY_TYPE:<22}{LBL_COUNT:>10}{LBL_VALUE:>20}"
     )
-    click.echo("-" * 64)
+    click.echo("-" * 68)
 
     grand_count = 0
     grand_value = 0.0
@@ -893,22 +1067,484 @@ def order_status_cmd(since, until):
         status_count = 0
         status_value = 0.0
         sub = by_status.get(status, {})
+        status_label = ORDER_STATUS_LABELS.get(status, status)
         # Sort delivery types with empty-string (NULL) first for stable output.
         for dtype in sorted(sub, key=lambda d: (d == "", d)):
             count, value = sub[dtype]
             status_count += count
             status_value += value
-            display_dt = dtype if dtype else "(none)"
+            display_dt = dtype if dtype else LBL_NONE
             click.echo(
-                f"{status:<14}{display_dt[:19]:<20}{count:>10,}{value:>20,.2f}"
+                f"{status_label:<16}{display_dt[:21]:<22}{count:>10,}{value:>20,.2f}"
             )
         if not sub:
-            click.echo(f"{status:<14}{'(none)':<20}{0:>10,}{0.0:>20,.2f}")
-        click.echo(f"{'  subtotal':<14}{'':<20}{status_count:>10,}{status_value:>20,.2f}")
-        click.echo("-" * 64)
+            click.echo(f"{status_label:<16}{LBL_NONE:<22}{0:>10,}{0.0:>20,.2f}")
+        click.echo(f"  {LBL_SUBTOTAL:<14}{'':<22}{status_count:>10,}{status_value:>20,.2f}")
+        click.echo("-" * 68)
         grand_count += status_count
         grand_value += status_value
 
     click.echo(
-        f"{'GRAND TOTAL':<34}{grand_count:>10,}{grand_value:>20,.2f}"
+        f"{LBL_GRAND_TOTAL:<38}{grand_count:>10,}{grand_value:>20,.2f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# cashflow (DG-300 Phase 1)
+# ---------------------------------------------------------------------------
+
+# Cash accounts tracked by the direct-method cashflow statement. Cash held in
+# 1200 (the parent bank account, used by the expense flow and owner-capital
+# transfers) is included alongside the DG-244 Phase 4 bank sub-accounts so the
+# report matches the cash-flow integrity check in accounting_validation.py.
+CASH_ACCOUNT_CODES = ("1100", "1101", "1102", "1200", "1210", "1220", "1290")
+
+# Fixed-asset account seeded by DG-300 Phase 1 — investing-activity cash flows
+# land on this account.
+FIXED_ASSETS_CODE = "1600"
+
+# Reconciliation tolerance (VND). Matches DEBIT_CREDIT_TOLERANCE used by the
+# accounting-validation cash-flow integrity check.
+CASHFLOW_RECONCILIATION_TOLERANCE = 0.01
+
+# source_type values that represent operating-activity cash inflows on cash
+# accounts. ``payment_transaction`` covers customer deposits/payments and
+# refunds (refunds credit cash → outflow, but they still belong to operating).
+OPERATING_INFLOW_SOURCE_TYPES = ("payment_transaction",)
+
+# source_type values that represent operating-activity cash outflows on cash
+# accounts. ``expense`` debits an expense/inventory account and credits a
+# cash account; ``expense_settlement`` debits Accounts Payable (2500) and
+# credits a cash account when a debt expense is paid off.
+# ``order_shipping_release`` releases a held bus shipping fee back to the bus
+# driver/supplier (DR 2200 / CR 1100) — crediting cash is an operating outflow,
+# i.e. cash paid to suppliers/services, so it belongs with the other outflows.
+OPERATING_OUTFLOW_SOURCE_TYPES = (
+    "expense",
+    "expense_settlement",
+    "order_shipping_release",
+)
+
+# source_type values that represent financing-activity cash movements.
+FINANCING_SOURCE_TYPES = ("owner_capital", "owner_draw")
+
+
+def _cash_account_placeholders(codes: tuple[str, ...]) -> str:
+    """Return a SQL ``IN (...)`` placeholder list for the given account codes."""
+    return ",".join("?" * len(codes))
+
+
+def _query_cash_period_activity(
+    conn, since_b: str | None, until_b: str | None,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Aggregate period cash-account movements grouped by ``source_type``.
+
+    Returns ``{source_type: {cash_account_code: {"inflow": float, "outflow": float}}}``.
+    Only journal lines whose account is one of ``CASH_ACCOUNT_CODES`` and whose
+    journal entry's ``transaction_date`` falls within ``[since_b, until_b]`` are
+    summed. Entries that also touch the fixed-asset account 1600 are excluded —
+    those are reported under investing activities to avoid double-counting.
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    # Exclude entries that touch the fixed-asset account — those are investing.
+    where_clauses.append(
+        "NOT EXISTS ("
+        " SELECT 1 FROM journal_lines jl2"
+        " JOIN accounts a2 ON a2.id = jl2.account_id"
+        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
+        ")"
+    )
+    params.append(FIXED_ASSETS_CODE)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT je.source_type AS source_type,
+               a.code         AS account_code,
+               COALESCE(SUM(jl.debit), 0)  AS inflow,
+               COALESCE(SUM(jl.credit), 0) AS outflow
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        GROUP BY je.source_type, a.code
+        """,
+        params,
+    ).fetchall()
+
+    activity: dict[str, dict[str, dict[str, float]]] = {}
+    for r in rows:
+        source_type = r["source_type"] or ""
+        code = r["account_code"]
+        activity.setdefault(source_type, {}).setdefault(
+            code, {"inflow": 0.0, "outflow": 0.0}
+        )
+        activity[source_type][code]["inflow"] += float(r["inflow"])
+        activity[source_type][code]["outflow"] += float(r["outflow"])
+    return activity
+
+
+def _query_investing_cash_activity(
+    conn, since_b: str | None, until_b: str | None,
+) -> tuple[float, float, dict[str, dict[str, float]]]:
+    """Investing-activity cash flows: cash-side movements of entries touching 1600.
+
+    A journal entry is treated as investing when at least one of its lines is
+    on the fixed-asset account 1600. The cash side of that entry (debit to a
+    cash account = inflow from disposal, credit from a cash account = outflow
+    for purchase) is reported here. Returns
+    ``(total_inflow, total_outflow, per_account)``.
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    where_clauses.append(
+        "EXISTS ("
+        " SELECT 1 FROM journal_lines jl2"
+        " JOIN accounts a2 ON a2.id = jl2.account_id"
+        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
+        ")"
+    )
+    params.append(FIXED_ASSETS_CODE)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT a.code         AS account_code,
+               COALESCE(SUM(jl.debit), 0)  AS inflow,
+               COALESCE(SUM(jl.credit), 0) AS outflow
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        GROUP BY a.code
+        """,
+        params,
+    ).fetchall()
+
+    total_in = 0.0
+    total_out = 0.0
+    per_account: dict[str, dict[str, float]] = {}
+    for r in rows:
+        code = r["account_code"]
+        inflow = float(r["inflow"])
+        outflow = float(r["outflow"])
+        total_in += inflow
+        total_out += outflow
+        per_account[code] = {"inflow": inflow, "outflow": outflow}
+    return total_in, total_out, per_account
+
+
+def _query_cash_account_names(conn) -> dict[str, str]:
+    """Return ``{code: name}`` for all cash accounts (DG-300 Phase 2)."""
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    rows = conn.execute(
+        f"""
+        SELECT a.code AS code, a.name AS name
+        FROM accounts a
+        WHERE a.code IN ({placeholders})
+        """,
+        list(CASH_ACCOUNT_CODES),
+    ).fetchall()
+    return {r["code"]: r["name"] for r in rows}
+
+
+def _query_cash_balance(
+    conn, until_b: str | None, *, inclusive: bool = False,
+) -> dict[str, float]:
+    """Cumulative cash-account balances (debit − credit).
+
+    When ``until_b`` is given and ``inclusive`` is False (the opening-balance
+    case), only entries with ``transaction_date < until_b`` are summed. When
+    ``inclusive`` is True (the closing-balance case), entries with
+    ``transaction_date <= until_b`` are summed. A ``None`` ``until_b`` means
+    "all time" (no upper bound).
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if until_b:
+        op = "<=" if inclusive else "<"
+        where_clauses.append(f"je.transaction_date {op} ?")
+        params.append(until_b)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT a.code AS account_code,
+               COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+        FROM accounts a
+        LEFT JOIN journal_lines jl ON jl.account_id = a.id
+        LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE {where_sql}
+        GROUP BY a.code
+        """,
+        params,
+    ).fetchall()
+    return {r["account_code"]: float(r["balance"]) for r in rows}
+
+
+def _sum_section(
+    activity: dict[str, dict[str, dict[str, float]]],
+    source_types: tuple[str, ...],
+) -> tuple[float, float, dict[str, dict[str, float]]]:
+    """Sum inflow/outflow across the given ``source_types``.
+
+    Returns ``(total_inflow, total_outflow, per_account)`` where
+    ``per_account`` is ``{cash_account_code: {"inflow": float, "outflow": float}}``.
+    """
+    total_in = 0.0
+    total_out = 0.0
+    per_account: dict[str, dict[str, float]] = {}
+    for st in source_types:
+        for code, mov in activity.get(st, {}).items():
+            inflow = mov["inflow"]
+            outflow = mov["outflow"]
+            total_in += inflow
+            total_out += outflow
+            per_account.setdefault(code, {"inflow": 0.0, "outflow": 0.0})
+            per_account[code]["inflow"] += inflow
+            per_account[code]["outflow"] += outflow
+    return total_in, total_out, per_account
+
+
+def _echo_cashflow_subsection(
+    title: str, per_account: dict[str, dict[str, float]],
+    total_inflow: float, total_outflow: float, indent: str = "  ",
+) -> None:
+    """Print a cashflow sub-section: title, per-account lines, subtotal."""
+    click.echo(f"{indent}{title}")
+    click.echo(f"{indent}{'-' * len(title)}")
+    if not per_account:
+        click.echo(f"{indent}{LBL_NO_ACTIVITY}")
+    else:
+        for code in sorted(per_account):
+            mov = per_account[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"{indent}  {code:<8}{mov['inflow']:>20,.2f}"
+                f"{mov['outflow']:>20,.2f}{net:>20,.2f}"
+            )
+    click.echo(
+        f"{indent}  {LBL_SUBTOTAL_UPPER:<8}{total_inflow:>20,.2f}"
+        f"{total_outflow:>20,.2f}{(total_inflow - total_outflow):>20,.2f}"
+    )
+    click.echo("")
+
+
+@report_cmd.command("cashflow")
+@click.option("--since", help="From date (YYYY-MM-DD)")
+@click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
+def cashflow_cmd(since, until):
+    """Direct-method cashflow statement for a date range.
+
+    Classifies cash movements on the bakery's cash accounts (1100, 1200,
+    1210, 1220, 1290) into operating, investing, and financing activities and
+    reconciles the net cash flow against the change in cash-account balances
+    for the period.
+
+    Operating activities are sub-sectioned into:
+      - Cash from customers (payment_transaction inflows + refunds)
+      - Cash paid to suppliers/employees (expense + expense_settlement outflows)
+
+    Investing activities capture cash flows on account 1600 (Tài sản cố định):
+    journal entries that touch account 1600 are reported here, and the cash
+    side of those entries is excluded from operating to avoid double-counting.
+
+    Financing activities capture owner_capital contributions and owner_draw
+    withdrawals on cash accounts.
+
+    The report is read-only (SELECT only). Journal sync must be current for
+    accurate numbers — run ``baker repair-payment-journal`` if totals look off.
+    """
+    since_b = _normalize_date(since)
+    until_b = _normalize_date(until, end_of_day=True)
+    # Reject an inverted range (--since later than --until) up front rather
+    # than emitting a confusing report with a [MISMATCH] reconciliation
+    # (DG-300 Phase 3, edge case #6). Same-day ranges are allowed: the
+    # normalized ``until_b`` carries a ``T23:59:59`` suffix so it always
+    # sorts after the bare ``since_b`` for the same calendar day.
+    if since_b and until_b and since_b > until_b:
+        raise click.BadParameter(
+            f"--since ({since}) must not be later than --until ({until}).",
+            param_hint="Use a date range where --since is on or before --until.",
+        )
+    _echo_header(CASHFLOW_TITLE, since, until)
+
+    with get_db() as conn:
+        # Opening balance: cumulative cash-account balances before --since.
+        # `_query_cash_balance` applies ``je.transaction_date < since_b`` so a
+        # None since_b means no opening bound (opening = 0 for all accounts).
+        if since_b:
+            opening_by_account = _query_cash_balance(conn, since_b, inclusive=False)
+        else:
+            # No --since ⇒ the period starts at the beginning of time, so the
+            # opening balance is zero by definition (there is nothing before
+            # the first entry). Querying with no upper bound would otherwise
+            # sum every entry ever recorded and produce a false [MISMATCH].
+            opening_by_account = {code: 0.0 for code in CASH_ACCOUNT_CODES}
+        # Closing balance: cumulative cash-account balances up to and including
+        # --until (inclusive upper bound). None until_b → all-time balance.
+        closing_by_account = _query_cash_balance(conn, until_b, inclusive=True)
+        # Period activity grouped by source_type (excludes 1600-touching entries).
+        period_activity = _query_cash_period_activity(conn, since_b, until_b)
+        # Investing activity: cash side of entries that touch account 1600.
+        investing_in, investing_out, investing_per = _query_investing_cash_activity(
+            conn, since_b, until_b
+        )
+        # Account names for the per-account breakdown table (DG-300 Phase 2).
+        account_names = _query_cash_account_names(conn)
+
+    # ---- Aggregate sections ----
+    cust_in, cust_out, cust_per = _sum_section(
+        period_activity, OPERATING_INFLOW_SOURCE_TYPES,
+    )
+    sup_in, sup_out, sup_per = _sum_section(
+        period_activity, OPERATING_OUTFLOW_SOURCE_TYPES,
+    )
+    oper_in = cust_in + sup_in
+    oper_out = cust_out + sup_out
+
+    fin_in, fin_out, fin_per = _sum_section(
+        period_activity, FINANCING_SOURCE_TYPES,
+    )
+
+    total_inflow = oper_in + investing_in + fin_in
+    total_outflow = oper_out + investing_out + fin_out
+    net_cash_flow = total_inflow - total_outflow
+
+    opening_total = sum(opening_by_account.values())
+    closing_total = sum(closing_by_account.values())
+
+    # ---- Per-account period activity (DG-300 Phase 2, FR6/AC6) ----
+    # Aggregate inflows/outflows across operating, investing, and financing
+    # sections for each cash account so the standalone breakdown table shows
+    # the total period movement per account.
+    per_account_activity: dict[str, dict[str, float]] = {}
+    for per in (cust_per, sup_per, investing_per, fin_per):
+        for code, mov in per.items():
+            per_account_activity.setdefault(
+                code, {"inflow": 0.0, "outflow": 0.0}
+            )
+            per_account_activity[code]["inflow"] += mov["inflow"]
+            per_account_activity[code]["outflow"] += mov["outflow"]
+
+    # ---- Print sections ----
+    click.echo(LBL_OPERATING_ACTIVITIES)
+    click.echo("=" * len(LBL_OPERATING_ACTIVITIES))
+    _echo_cashflow_subsection(
+        LBL_CASH_FROM_CUSTOMERS, cust_per, cust_in, cust_out, indent="  ",
+    )
+    _echo_cashflow_subsection(
+        LBL_CASH_PAID_SUPPLIERS, sup_per, sup_in, sup_out, indent="  ",
+    )
+    click.echo(
+        f"  {LBL_NET_OPERATING_CASHFLOW:<28}{oper_in:>20,.2f}"
+        f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"
+    )
+    click.echo("")
+
+    click.echo(LBL_INVESTING_ACTIVITIES)
+    click.echo("=" * len(LBL_INVESTING_ACTIVITIES))
+    if not investing_per:
+        click.echo(f"  {LBL_NO_ACTIVITY}")
+    else:
+        for code in sorted(investing_per):
+            mov = investing_per[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"  {code:<8}{mov['inflow']:>20,.2f}{mov['outflow']:>20,.2f}"
+                f"{net:>20,.2f}"
+            )
+    click.echo(
+        f"  {LBL_NET_INVESTING_CASHFLOW:<28}{investing_in:>20,.2f}"
+        f"{investing_out:>20,.2f}{(investing_in - investing_out):>20,.2f}"
+    )
+    click.echo("")
+
+    click.echo(LBL_FINANCING_ACTIVITIES)
+    click.echo("=" * len(LBL_FINANCING_ACTIVITIES))
+    if not fin_per:
+        click.echo(f"  {LBL_NO_ACTIVITY}")
+    else:
+        for code in sorted(fin_per):
+            mov = fin_per[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"  {code:<8}{mov['inflow']:>20,.2f}{mov['outflow']:>20,.2f}"
+                f"{net:>20,.2f}"
+            )
+    click.echo(
+        f"  {LBL_NET_FINANCING_CASHFLOW:<28}{fin_in:>20,.2f}"
+        f"{fin_out:>20,.2f}{(fin_in - fin_out):>20,.2f}"
+    )
+    click.echo("")
+
+    # ---- Reconciliation ----
+    click.echo("=" * 88)
+    click.echo(f"{LBL_TOTAL_INFLOWS:<48}{total_inflow:>20,.2f}")
+    click.echo(f"{LBL_TOTAL_OUTFLOWS:<48}{total_outflow:>20,.2f}")
+    click.echo(f"{LBL_NET_CASH_FLOW:<48}{net_cash_flow:>20,.2f}")
+    click.echo("")
+    click.echo(f"{LBL_OPENING_BALANCE:<48}{opening_total:>20,.2f}")
+    click.echo(f"{LBL_CLOSING_BALANCE:<48}{closing_total:>20,.2f}")
+    expected_change = closing_total - opening_total
+    imbalance = abs(net_cash_flow - expected_change)
+    status = LBL_RECONCILE_OK if imbalance <= CASHFLOW_RECONCILIATION_TOLERANCE else LBL_RECONCILE_MISMATCH
+    click.echo(
+        f"{LBL_RECONCILIATION_DETAIL:<48}{expected_change:>20,.2f}"
+        f"  [{status}]"
+    )
+    click.echo("")
+
+    # ---- Per-account breakdown (DG-300 Phase 2, FR6/AC6) ----
+    # Standalone table showing each cash account's inflows, outflows, net
+    # change, opening balance, and closing balance for the period. Aggregates
+    # across operating, investing, and financing activity.
+    click.echo(LBL_PER_ACCOUNT_BREAKDOWN)
+    click.echo("=" * len(LBL_PER_ACCOUNT_BREAKDOWN))
+    click.echo(
+        f"{LBL_CODE:<8}{LBL_ACCOUNT:<32}{LBL_INFLOWS:>14}{LBL_OUTFLOWS:>14}"
+        f"{LBL_NET:>14}{LBL_OPENING:>14}{LBL_CLOSING:>14}"
+    )
+    click.echo("-" * 110)
+    total_in = 0.0
+    total_out = 0.0
+    total_opening = 0.0
+    total_closing = 0.0
+    for code in CASH_ACCOUNT_CODES:
+        name = account_names.get(code, "")
+        mov = per_account_activity.get(code, {"inflow": 0.0, "outflow": 0.0})
+        inflow = mov["inflow"]
+        outflow = mov["outflow"]
+        net = inflow - outflow
+        opening = opening_by_account.get(code, 0.0)
+        closing = closing_by_account.get(code, 0.0)
+        total_in += inflow
+        total_out += outflow
+        total_opening += opening
+        total_closing += closing
+        click.echo(
+            f"{code:<8}{name[:31]:<32}{inflow:>14,.2f}{outflow:>14,.2f}"
+            f"{net:>14,.2f}{opening:>14,.2f}{closing:>14,.2f}"
+        )
+    click.echo("-" * 110)
+    click.echo(
+        f"{LBL_TOTAL_UPPER:<40}{total_in:>14,.2f}{total_out:>14,.2f}"
+        f"{(total_in - total_out):>14,.2f}{total_opening:>14,.2f}"
+        f"{total_closing:>14,.2f}"
     )

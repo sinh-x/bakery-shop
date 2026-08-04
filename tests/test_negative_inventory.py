@@ -143,7 +143,7 @@ def test_negative_sale_partial_deficit_consumes_fifo_first(api_client):
         assert available == 0
 
         # Net stock = available(0) - negative(2) = -2.
-        from baker.api.inventory_fifo import net_available_quantity
+        from baker.services.inventory_fifo import net_available_quantity
         assert net_available_quantity(conn, 1, chip_id) == -2
 
         assert _negative_balance_qty(conn, 1, chip_id) == 2

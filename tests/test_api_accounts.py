@@ -81,7 +81,7 @@ def _lines_for_entry(conn, entry_id: int):
     return JournalLine.list_for_entry(conn, entry_id)
 
 
-def _create_expense(client, amount=50000, category="Nguyên liệu", payment_source="Shop tiền mặt",
+def _create_expense(client, amount=50000, category="Nguyên liệu", payment_source="Tiền mặt tại quầy",
                     paid_by_name="Phượng", vendor="Chợ", note="ghi chu", summary="Chi phí test",
                     payment_method="Tiền mặt"):
     payload = {
@@ -161,10 +161,10 @@ def test_list_accounts_returns_hierarchy(api_client):
 
 
 def test_expense_creates_journal_entry(api_client):
-    """AC1: expense with payment_source='Shop tiền mặt', amount_vnd=50000 →
-    debit expense account, credit 1100."""
+    """AC1: expense with payment_source='Tiền mặt tại quầy', amount_vnd=50000 →
+    debit expense account, credit 1101."""
     ev = _create_expense(api_client, amount=50000, category="Nguyên liệu",
-                        payment_source="Shop tiền mặt")
+                        payment_source="Tiền mặt tại quầy")
     eid = int(ev["id"])
     with get_db() as conn:
         entries = _journal_for_source(conn, "expense", eid)
@@ -179,9 +179,9 @@ def test_expense_creates_journal_entry(api_client):
         # "Nguyên liệu" is an inventory-purchase category → debit Inventory (1300)
         inventory_acc = Account.get_by_id(conn, debit_line.account_id)
         assert inventory_acc.code == "1300"
-        # Credit should hit Cash on Hand (1100)
+        # Credit should hit Cash in Drawer (1101)
         cash_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert cash_acc.code == "1100"
+        assert cash_acc.code == "1101"
 
 
 def test_expense_staff_advance_creates_sub_account(api_client):
@@ -218,7 +218,7 @@ def test_expense_update_in_place_when_unlocked(api_client):
             "amount_vnd": 75000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "updated",
             "paid_by_name": "Phượng",
@@ -250,7 +250,7 @@ def test_expense_update_locked_creates_reversal_and_new(api_client):
             "amount_vnd": 90000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "updated",
             "paid_by_name": "Phượng",
@@ -327,7 +327,7 @@ def test_expense_non_expense_type_no_journal(api_client):
 
 def test_payment_deposit_creates_journal_entry(api_client):
     """AC2: payment_transaction type='deposit', amount=200000, method='cash' →
-    debit 1100, credit 2100."""
+    debit 1101, credit 2100."""
     order = _create_order(api_client)
     ref = order["orderRef"]
     txn = _create_txn(api_client, ref, amount=200000, type="deposit", method="cash")
@@ -341,7 +341,7 @@ def test_payment_deposit_creates_journal_entry(api_client):
         assert debit_line.debit == 200000.0
         assert credit_line.credit == 200000.0
         asset_acc = Account.get_by_id(conn, debit_line.account_id)
-        assert asset_acc.code == "1100"  # Cash on Hand
+        assert asset_acc.code == "1101"  # Cash in Drawer (sub-account of 1100)
         deposits_acc = Account.get_by_id(conn, credit_line.account_id)
         assert deposits_acc.code == "2100"  # Customer Deposits
 
@@ -382,7 +382,7 @@ def test_payment_refund_reverses_direction(api_client):
         deposits_acc = Account.get_by_id(conn, deposits_debit.account_id)
         asset_acc = Account.get_by_id(conn, asset_credit.account_id)
         assert deposits_acc.code == "2100"
-        assert asset_acc.code == "1100"
+        assert asset_acc.code == "1101"
 
 
 def test_payment_update_in_place_when_unlocked(api_client):
@@ -716,16 +716,22 @@ def test_delivered_order_multi_item_cogs_single_entry(api_client):
             f"expected exactly 1 order_cogs entry, got {len(cogs_entries)}"
         )
         lines = _lines_for_entry(conn, cogs_entries[0].id)
-        debit_line = next(l for l in lines if l.debit > 0)
-        credit_line = next(l for l in lines if l.credit > 0)
-        cogs_acc = Account.get_by_id(conn, debit_line.account_id)
-        inv_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert cogs_acc.code == "5900"
-        assert inv_acc.code == "1300"
+        debit_lines = [l for l in lines if l.debit > 0]
+        credit_lines = [l for l in lines if l.credit > 0]
+        # DG-297 Phase 2 (FR2): per-item DR 5900/CR 1300 line pairs — one pair
+        # per cost-bearing item (3 items here), each line describing the item.
+        assert len(debit_lines) == 3
+        assert len(credit_lines) == 3
+        for dl in debit_lines:
+            cogs_acc = Account.get_by_id(conn, dl.account_id)
+            assert cogs_acc.code == "5900"
+        for cl in credit_lines:
+            inv_acc = Account.get_by_id(conn, cl.account_id)
+            assert inv_acc.code == "1300"
         # Accumulated total: (10000×2) + (8000×3) + (6000×4) = 20000 + 24000 + 24000 = 68000
         expected_total = 10000 * 2 + 8000 * 3 + 6000 * 4
-        assert debit_line.debit == pytest.approx(expected_total)
-        assert credit_line.credit == pytest.approx(expected_total)
+        assert sum(l.debit for l in debit_lines) == pytest.approx(expected_total)
+        assert sum(l.credit for l in credit_lines) == pytest.approx(expected_total)
 
 
 def test_delivered_order_journal_idempotent(api_client):
@@ -846,17 +852,19 @@ def test_journal_entries_include_account_info(api_client):
 
 def test_balances_reflect_transactions(api_client):
     """AC4: balances computed correctly from journal_lines."""
-    # Expense 50000 cash, "Nguyên liệu" → debit 1300 (Inventory), credit 1100
+    # Expense 50000 cash, "Nguyên liệu" → debit 1300 (Inventory), credit 1101
+    # (DG-330: drawer cash 1101, not the legacy 1100 parent)
     _create_expense(api_client, amount=50000, category="Nguyên liệu",
-                    payment_source="Shop tiền mặt")
-    # Deposit 200000 cash → debit 1100, credit 2100
+                    payment_source="Tiền mặt tại quầy")
+    # Deposit 200000 cash → debit 1101 (DG-330: cash method now routes to
+    # drawer cash 1101, not 1100), credit 2100
     order = _create_order(api_client)
     _create_txn(api_client, order["orderRef"], amount=200000, type="deposit", method="cash")
     resp = api_client.get("/api/accounts/balances")
     assert resp.status_code == 200
     balances = {b["code"]: b for b in resp.json()}
-    # Cash on Hand (asset): debit 200000 (deposit) - credit 50000 (expense) = 150000
-    assert balances["1100"]["balance"] == 150000.0
+    # Cash in Drawer (1101, asset): debit 200000 (deposit) - credit 50000 (expense) = 150000
+    assert balances["1101"]["balance"] == 150000.0
     # 1300 inventory: debit 50000 - credit 0 = 50000
     assert balances["1300"]["balance"] == 50000.0
     # 2100 liability: credit 200000 - debit 0 = 200000
@@ -922,7 +930,7 @@ def test_journal_lock_skips_already_locked(api_client):
 
 
 def test_owner_capital_creates_journal_entry(api_client):
-    """FR12: owner capital in → debit Cash, credit Owner's Equity (3100)."""
+    """FR12: owner capital in → debit Cash in Drawer (1101), credit Owner's Equity (3100)."""
     resp = api_client.post("/api/accounts/owner-capital", json={"amount": 5000000, "method": "cash", "note": "vốn đầu"})
     assert resp.status_code == 201
     body = resp.json()
@@ -931,7 +939,7 @@ def test_owner_capital_creates_journal_entry(api_client):
         lines = _lines_for_entry(conn, int(body["id"]))
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
-        assert Account.get_by_id(conn, debit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, debit_line.account_id).code == "1101"
         assert Account.get_by_id(conn, credit_line.account_id).code == "3100"
         assert debit_line.debit == 5000000.0
 
@@ -947,7 +955,7 @@ def test_owner_capital_transfer_hits_bank_account(api_client):
 
 
 def test_owner_draw_creates_journal_entry(api_client):
-    """FR12: owner draw → debit Owner's Equity (3100), credit Cash."""
+    """FR12: owner draw → debit Owner's Equity (3100), credit Cash in Drawer (1101)."""
     resp = api_client.post("/api/accounts/owner-draw", json={"amount": 200000, "method": "cash"})
     assert resp.status_code == 201
     with get_db() as conn:
@@ -955,7 +963,7 @@ def test_owner_draw_creates_journal_entry(api_client):
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
         assert Account.get_by_id(conn, debit_line.account_id).code == "3100"
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1101"
         assert credit_line.credit == 200000.0
 
 
@@ -974,7 +982,7 @@ def test_staff_reimburse_creates_journal_entry(api_client):
         assert staff_acc.type == "liability"
         assert staff_acc.parent_id == _account_id(conn, "2300")
         assert staff_acc.name == "Lan"
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1101"
         assert debit_line.debit == 100000.0
 
 
@@ -1061,13 +1069,13 @@ def test_ac6_cash_expense_lifecycle_unchanged(api_client):
     - GET response shape carries no debt-only fields (creditor_name, settled,
       settlements, remaining, debt_status).
     - Edit re-syncs the single expense journal entry in place (unlocked),
-      debiting the expense account and crediting 1100 (Cash on Hand).
+      debiting the expense account and crediting 1101 (Cash in Drawer).
     - Delete removes the single unlocked expense journal entry.
     - No expense_settlement journal entries are ever created for a paid
       (non-debt) expense.
     """
     ev = _create_expense(api_client, amount=60000, category="Nguyên liệu",
-                        payment_source="Shop tiền mặt")
+                        payment_source="Tiền mặt tại quầy")
     eid = int(ev["id"])
 
     # 1. View — response shape unchanged, no debt fields.
@@ -1077,7 +1085,7 @@ def test_ac6_cash_expense_lifecycle_unchanged(api_client):
     assert body["type"] == "expense"
     data = body["data"]
     assert data["payment_method"] == "Tiền mặt"
-    assert data["payment_source"] == "Shop tiền mặt"
+    assert data["payment_source"] == "Tiền mặt tại quầy"
     assert data["amount_vnd"] == 60000
     # Debt-only fields must NOT be present on a paid expense.
     for debt_field in ("creditor_name", "settled", "settlements",
@@ -1096,13 +1104,13 @@ def test_ac6_cash_expense_lifecycle_unchanged(api_client):
         ).fetchall()
         assert len(settled_rows) == 0
 
-    # 2. Edit — in-place re-sync, still a single expense entry crediting 1100.
+    # 2. Edit — in-place re-sync, still a single expense entry crediting 1101.
     patch = api_client.patch(f"/api/events/{eid}", json={
         "data": {
             "amount_vnd": 80000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
-            "payment_source": "Shop tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
             "vendor": "Chợ",
             "note": "sửa tiền mặt",
             "paid_by_name": "Phượng",
@@ -1117,7 +1125,7 @@ def test_ac6_cash_expense_lifecycle_unchanged(api_client):
         credit_line = next(l for l in lines if l.credit > 0)
         assert debit_line.debit == 80000.0
         assert credit_line.credit == 80000.0
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1101"
         # Still no settlement journal.
         settled_rows = conn.execute(
             "SELECT 1 FROM journal_entries WHERE source_type = 'expense_settlement' "

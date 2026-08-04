@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../labels/orders.dart';
+import '../theme/bakery_theme.dart';
 
 /// Displays an in-app alert overlay with a system sound and haptic feedback.
 ///
@@ -56,7 +57,7 @@ class InAppAlert {
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(12),
-          color: Theme.of(ctx).colorScheme.errorContainer,
+          color: BakeryTheme.criticalAlertBackground,
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () {
@@ -67,7 +68,7 @@ class InAppAlert {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                  const Icon(Icons.warning_amber_rounded, color: BakeryTheme.criticalAlertForeground, size: 28),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -77,7 +78,7 @@ class InAppAlert {
                         const Text(
                           OrdersLabels.criticalAlertTitle,
                           style: TextStyle(
-                            color: Colors.white,
+                            color: BakeryTheme.criticalAlertForeground,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
@@ -86,7 +87,7 @@ class InAppAlert {
                         Text(
                           OrdersLabels.criticalAlertBody(count),
                           style: TextStyle(
-                            color: Colors.white.withAlpha(220),
+                            color: BakeryTheme.criticalAlertForeground.withAlpha(220),
                             fontSize: 13,
                           ),
                         ),
@@ -99,7 +100,7 @@ class InAppAlert {
                       onDismiss?.call();
                     },
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
+                      foregroundColor: BakeryTheme.criticalAlertForeground,
                     ),
                     child: const Text(OrdersLabels.criticalAlertDismiss),
                   ),

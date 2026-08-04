@@ -1,3 +1,4 @@
+import pytest
 import json
 
 from baker.db.connection import get_db
@@ -8,6 +9,8 @@ from baker.db.schema import (
     PRINT_LOG_AND_PRINTED_BY_SCHEMA,
     ensure_schema,
 )
+
+pytestmark = pytest.mark.critical
 
 
 def _migrate_to_version(conn, target_version: int) -> None:
@@ -449,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -468,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -484,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -957,21 +960,23 @@ def _seed_expense_event(
     *,
     amount_vnd=50000,
     category="Nguyên liệu",
-    payment_source="Shop tiền mặt",
+    payment_source="Tiền mặt tại quầy",
     paid_by_name="",
     summary="Test expense",
+    subcategory=None,
 ):
-    data = json.dumps(
-        {
-            "amount_vnd": amount_vnd,
-            "category": category,
-            "payment_method": "TM",
-            "payment_source": payment_source,
-            "vendor": "NCC A",
-            "note": "",
-            "paid_by_name": paid_by_name,
-        }
-    )
+    payload = {
+        "amount_vnd": amount_vnd,
+        "category": category,
+        "payment_method": "TM",
+        "payment_source": payment_source,
+        "vendor": "NCC A",
+        "note": "",
+        "paid_by_name": paid_by_name,
+    }
+    if subcategory is not None:
+        payload["subcategory"] = subcategory
+    data = json.dumps(payload)
     cursor = conn.execute(
         "INSERT INTO events (type, summary, data, logged_by, timestamp) "
         "VALUES ('expense', ?, ?, '', '2026-06-22T10:00:00+07:00')",
@@ -1081,7 +1086,7 @@ def test_v44_backfill_expenses():
             conn,
             amount_vnd=50000,
             category="Nguyên liệu",
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
             summary="Expense cash",
         )
         event_id_bank = _seed_expense_event(
@@ -1101,7 +1106,9 @@ def test_v44_backfill_expenses():
         ).fetchall()
         assert len(entries) == 2
 
-        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory purchase), credit 1100 (Cash)
+        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory
+        # purchase), credit 1101 (Cash in Drawer — DG-330 Phase 4.4 routes
+        # "Tiền mặt tại quầy" to 1101, not the legacy 1100)
         cash_entry = next(e for e in entries if e["source_id"] == event_id)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
@@ -1120,7 +1127,7 @@ def test_v44_backfill_expenses():
             "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
         ).fetchone()["code"]
         assert debit_acc == "1300"
-        assert credit_acc == "1100"
+        assert credit_acc == "1101"
 
         # Bank expense: credit 1210 (Phượng VCB sub-account) per DG-285 FR1/FR2
         bank_entry = next(e for e in entries if e["source_id"] == event_id_bank)
@@ -1181,6 +1188,72 @@ def test_v44_backfill_expense_staff_advance_creates_sub_account():
         _assert_double_entry_integrity(conn)
 
 
+def test_v86_backfill_expense_subcategory_debits_subcategory_account():
+    """DG-302 Phase 6 / FR4 / AC4: an expense event with
+    ``category=Nguyên liệu`` + ``subcategory=Trứng`` debits account 5110
+    (not Inventory 1300, not parent 5100) when the v44 backfill runs.
+    Verifies the subcategory-aware resolver in ``_backfill_expense_journal_entries``.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        event_id_trung = _seed_expense_event(
+            conn,
+            amount_vnd=50000,
+            category="Nguyên liệu",
+            subcategory="Trứng",
+            summary="Mua trứng",
+        )
+        event_id_kem = _seed_expense_event(
+            conn,
+            amount_vnd=30000,
+            category="Nguyên liệu",
+            subcategory="Kem",
+            summary="Mua kem",
+        )
+        # Legacy Nguyên liệu expense without subcategory — still debits Inventory.
+        event_id_legacy = _seed_expense_event(
+            conn,
+            amount_vnd=20000,
+            category="Nguyên liệu",
+            summary="Mua đường (legacy)",
+        )
+        # Bao bì subcategory — Hộp & đế → 5210.
+        event_id_hop = _seed_expense_event(
+            conn,
+            amount_vnd=15000,
+            category="Bao bì",
+            subcategory="Hộp & đế",
+            summary="Mua hộp",
+        )
+
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'expense' ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 4
+
+        def _debit_code(source_id):
+            entry = next(e for e in entries if e["source_id"] == source_id)
+            lines = conn.execute(
+                "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
+                (entry["id"],),
+            ).fetchall()
+            debit_line = next(l for l in lines if float(l["debit"]) > 0)
+            return conn.execute(
+                "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+            ).fetchone()["code"]
+
+        # Subcategory expenses debit the subcategory account, not Inventory.
+        assert _debit_code(event_id_trung) == "5110"
+        assert _debit_code(event_id_kem) == "5120"
+        assert _debit_code(event_id_hop) == "5210"
+        # Legacy Nguyên liệu expense (no subcategory) still debits Inventory (1300).
+        assert _debit_code(event_id_legacy) == "1300"
+        _assert_double_entry_integrity(conn)
+
+
 def test_v44_backfill_payments():
     with get_db() as conn:
         _migrate_to_version(conn, 43)
@@ -1209,7 +1282,7 @@ def test_v44_backfill_payments():
         ).fetchall()
         assert len(entries) == 3
 
-        # deposit cash: debit 1100, credit 2100
+        # deposit cash: debit 1101, credit 2100
         dep_entry = next(e for e in entries if e["source_id"] == pt_cash)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id=?",
@@ -1223,7 +1296,7 @@ def test_v44_backfill_payments():
         credit_acc = conn.execute(
             "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
         ).fetchone()["code"]
-        assert debit_acc == "1100"
+        assert debit_acc == "1101"
         assert credit_acc == "2100"
         assert float(debit_line["debit"]) == 200000
 
@@ -1239,7 +1312,7 @@ def test_v44_backfill_payments():
         ).fetchone()["code"]
         assert debit_acc == "1200"
 
-        # refund: debit 2100, credit 1100 (reversed)
+        # refund: debit 2100, credit 1101 (reversed)
         rf_entry = next(e for e in entries if e["source_id"] == pt_refund)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id=?",
@@ -1254,7 +1327,7 @@ def test_v44_backfill_payments():
             "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
         ).fetchone()["code"]
         assert debit_acc == "2100"
-        assert credit_acc == "1100"
+        assert credit_acc == "1101"
 
         _assert_double_entry_integrity(conn)
 
@@ -1581,12 +1654,16 @@ def test_v45_backfill_skips_non_delivered_orders():
         assert float(cost) == 0.0
 
 
-def test_v45_backfill_skips_extra_and_gift_items():
+def test_v45_backfill_includes_extras_skips_gifts():
+    """DG-297 Phase 1: _backfill_order_items_cost_at_sale() no longer excludes
+    extras (is_extra=1, is_gift=0). Phụ kiện extras get the 100% base_price
+    baseline; gift items (is_gift=1) are still skipped."""
     with get_db() as conn:
         _migrate_to_version(conn, 44)
         _, _, extra_item_id = _seed_order_with_item(
             conn,
             product_cost=5000,
+            product_category="phu_kien",
             base_price=10000,
             qty=1,
             status="delivered",
@@ -1610,7 +1687,10 @@ def test_v45_backfill_skips_extra_and_gift_items():
         gift_cost = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (gift_item_id,)
         ).fetchone()["cost_at_sale"]
-        assert float(extra_cost) == 0.0
+        # Phụ kiện baseline = 100% base_price = 10000 (extras now included).
+        assert float(extra_cost) == 10000.0
+        # Gifted items are still excluded (is_gift=1 filter retained) — their
+        # cost is handled by the order_gift_cogs journal entry at delivery time.
         assert float(gift_cost) == 0.0
 
 
@@ -3417,7 +3497,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
         _assert_users_role_check_constraint(conn)
 
 
@@ -3483,7 +3563,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3606,7 +3686,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3680,7 +3760,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3707,7 +3787,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 84
+        assert _migrated_version(conn) == 95
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4002,3 +4082,822 @@ def test_v77_skips_collision_on_duplicate_normalized_key():
         non_null = [r["staff_id"] for r in rows if r["staff_id"] is not None]
         # At most one user gets the staff_id (first-match-wins).
         assert len(non_null) <= 1
+
+
+def test_v87_registered_in_migration_chain():
+    """v87 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 87 in MIGRATIONS
+    assert (
+        MIGRATIONS[87]["description"]
+        == "Add latitude, longitude, google_maps_url, delivery_time_slot nullable columns to orders for door delivery schedule + GPS (DG-303 Phase 4.1)"
+    )
+    assert MIGRATIONS[87]["callable"].__name__ == "_migrate_v87_order_delivery_schedule_gps"
+
+
+def test_v87_adds_delivery_schedule_gps_columns_on_incremental_db():
+    """v87 adds the four new nullable columns to orders on an existing DB.
+
+    DG-303 Phase 4.1 / FR1, FR2, FR3 / NFR1 / AC7: columns are nullable and
+    existing orders keep NULL (no data migration). Verifies backward
+    compatibility by inserting an order before v87 and confirming it remains
+    intact with NULL new fields after migration.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 86)
+        # Insert a legacy order before the v87 migration runs.
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status, delivery_type) "
+            "VALUES ('LEGACY-1', 'Khách cũ', 'new', 'pickup')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 87)
+        assert _migrated_version(conn) == 87
+
+        columns = _schema_columns(conn, "orders")
+        for col in ("latitude", "longitude", "google_maps_url", "delivery_time_slot"):
+            assert col in columns, f"missing column {col}"
+        # All four new columns are nullable (notnull == 0).
+        assert columns["latitude"]["notnull"] == 0
+        assert columns["longitude"]["notnull"] == 0
+        assert columns["google_maps_url"]["notnull"] == 0
+        assert columns["delivery_time_slot"]["notnull"] == 0
+
+        # Legacy order retained with NULL new fields (NFR1 / AC7).
+        row = conn.execute(
+            "SELECT latitude, longitude, google_maps_url, delivery_time_slot, "
+            "customer_name, status FROM orders WHERE order_ref = 'LEGACY-1'"
+        ).fetchone()
+        assert row["latitude"] is None
+        assert row["longitude"] is None
+        assert row["google_maps_url"] is None
+        assert row["delivery_time_slot"] is None
+        assert row["customer_name"] == "Khách cũ"
+        assert row["status"] == "new"
+
+
+def test_v87_idempotent_on_already_migrated_db():
+    """Re-running v87 on a DB that already has the columns is a no-op."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        # Running the callable again must not raise (PRAGMA-guarded).
+        MIGRATIONS[87]["callable"](conn)
+        columns = _schema_columns(conn, "orders")
+        assert {"latitude", "longitude", "google_maps_url", "delivery_time_slot"} <= set(columns)
+
+
+def test_v87_persists_new_fields_on_door_delivery_order():
+    """New columns accept and store real values for a door delivery order."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status, delivery_type, "
+            "latitude, longitude, google_maps_url, delivery_time_slot) "
+            "VALUES ('DOOR-1', 'Khách giao tận nhà', 'new', 'door', "
+            "10.762622, 106.660172, 'https://maps.google.com/?q=10.762622,106.660172', '8:00')"
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT latitude, longitude, google_maps_url, delivery_time_slot, delivery_type "
+            "FROM orders WHERE order_ref = 'DOOR-1'"
+        ).fetchone()
+        assert row["latitude"] == 10.762622
+        assert row["longitude"] == 106.660172
+        assert row["google_maps_url"] == "https://maps.google.com/?q=10.762622,106.660172"
+        assert row["delivery_time_slot"] == "8:00"
+        assert row["delivery_type"] == "door"
+
+
+# ---------------------------------------------------------------------------
+# v88 — composite indexes on orders(status, due_date) and orders(customer_id, created_at)
+# (DG-308 Phase 4.4, FR-DB-2)
+# ---------------------------------------------------------------------------
+
+
+def test_v88_registered_in_migration_chain():
+    """v88 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 88 in MIGRATIONS
+    assert (
+        MIGRATIONS[88]["description"]
+        == "Add composite indexes on orders(status, due_date) and orders(customer_id, created_at) for common query patterns (DG-308 Phase 4.4)"
+    )
+    # v88 is a pure-SQL migration (no callable).
+    assert MIGRATIONS[88]["sql"]
+    assert "callable" not in MIGRATIONS[88]
+
+
+def test_v88_creates_composite_indexes_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has both composite indexes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 95
+
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes
+        assert "idx_orders_customer_id_created_at" in indexes
+
+
+def test_v88_creates_composite_indexes_on_existing_db():
+    """An existing DB migrated up to v87 gets the indexes when v88 runs."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 87)
+        assert _migrated_version(conn) == 87
+
+        indexes_before = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" not in indexes_before
+        assert "idx_orders_customer_id_created_at" not in indexes_before
+
+        _migrate_to_version(conn, 88)
+        assert _migrated_version(conn) == 88
+
+        indexes_after = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes_after
+        assert "idx_orders_customer_id_created_at" in indexes_after
+
+
+def test_v88_idempotent_on_already_migrated_db():
+    """Re-running v88 on a DB that already has the indexes is a no-op."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 88)
+        # Re-running the SQL (CREATE INDEX IF NOT EXISTS) must not raise.
+        conn.executescript(MIGRATIONS[88]["sql"])
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='orders'"
+            ).fetchall()
+        }
+        assert "idx_orders_status_due_date" in indexes
+        assert "idx_orders_customer_id_created_at" in indexes
+
+
+# ---------------------------------------------------------------------------
+# v91 — cash_drawer table + cash_drawer_id FK on payment_transactions & events
+# (DG-324 Phase 1, FR1/FR5/FR6/NFR1/NFR4)
+# ---------------------------------------------------------------------------
+
+
+def test_v91_registered_in_migration_chain():
+    """v91 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 91 in MIGRATIONS
+    assert (
+        MIGRATIONS[91]["description"]
+        == "Create cash_drawer table + add cash_drawer_id nullable FK columns to payment_transactions and events (DG-324 Phase 1)"
+    )
+    assert MIGRATIONS[91]["callable"].__name__ == "_migrate_v91_cash_drawer_schema"
+
+
+def test_v91_creates_cash_drawer_table_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the cash_drawer table with all
+    required columns stored as INTEGER (VND) per NFR1.
+
+    FR1: status (open/closed), opening_balance, timestamps.
+
+    DG-347 Phase 1 (v095) dropped the accumulator columns and added
+    ``closing_balance``; this test now asserts the post-v095 schema.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 95
+
+        cols = _schema_columns(conn, "cash_drawer")
+        expected = {
+            "id",
+            "opened_at",
+            "closed_at",
+            "status",
+            "opening_balance",
+            "closing_balance",
+            "counted_amount",
+            "discrepancy",
+        }
+        assert expected <= set(cols), f"missing columns: {expected - set(cols)}"
+
+        # opening_balance is INTEGER NOT NULL DEFAULT 0 (VND) per NFR1.
+        assert cols["opening_balance"]["type"] == "INTEGER"
+        assert cols["opening_balance"]["notnull"] == 1
+        assert cols["opening_balance"]["dflt_value"] == "0"
+
+        # closing_balance is INTEGER DEFAULT NULL (persisted at close time).
+        assert cols["closing_balance"]["type"] == "INTEGER"
+        assert cols["closing_balance"]["notnull"] == 0
+
+        # counted_amount / discrepancy are nullable (set only at close time).
+        assert cols["counted_amount"]["notnull"] == 0
+        assert cols["discrepancy"]["notnull"] == 0
+
+        # closed_at is nullable; opened_at is NOT NULL with a default.
+        assert cols["closed_at"]["notnull"] == 0
+        assert cols["opened_at"]["notnull"] == 1
+
+        # status defaults to 'open'.
+        assert cols["status"]["notnull"] == 1
+        assert cols["status"]["dflt_value"] == "'open'"
+
+        # Indexes support status / opened_at lookups (NFR2).
+        indexes = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='cash_drawer'"
+            ).fetchall()
+        }
+        assert "idx_cash_drawer_status" in indexes
+        assert "idx_cash_drawer_opened_at" in indexes
+
+        # DG-347 Phase 1: accumulator columns dropped by v095.
+        for dropped in (
+            "cash_sales", "tien_rut_in", "tien_rut_out",
+            "owner_in", "owner_out", "cash_expenses",
+        ):
+            assert dropped not in cols, f"{dropped} should have been dropped by v095"
+
+
+def test_v91_adds_cash_drawer_id_on_existing_db():
+    """An existing DB migrated up to v90 gets the two FK columns when v91 runs.
+
+    FR5/FR6: nullable INTEGER FK columns on payment_transactions and events.
+    Existing rows keep NULL (no data migration) — backward compatible.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 90)
+        # Insert a legacy payment_transaction before v91 runs.
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, status) "
+            "VALUES ('LEGACY-CD-1', 'Khách cũ', 'new')"
+        )
+        order_id = conn.execute(
+            "SELECT id FROM orders WHERE order_ref = 'LEGACY-CD-1'"
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method) "
+            "VALUES (?, 500000, 'deposit', 'cash')",
+            (order_id,),
+        )
+        conn.execute(
+            "INSERT INTO events (type, summary, data) VALUES ('note', 'legacy', '{}')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 91)
+        assert _migrated_version(conn) == 91
+
+        pt_cols = _schema_columns(conn, "payment_transactions")
+        assert "cash_drawer_id" in pt_cols
+        assert pt_cols["cash_drawer_id"]["type"] == "INTEGER"
+        assert pt_cols["cash_drawer_id"]["notnull"] == 0  # nullable
+
+        ev_cols = _schema_columns(conn, "events")
+        assert "cash_drawer_id" in ev_cols
+        assert ev_cols["cash_drawer_id"]["type"] == "INTEGER"
+        assert ev_cols["cash_drawer_id"]["notnull"] == 0  # nullable
+
+        # Legacy payment_transaction keeps NULL cash_drawer_id (FR5/AC4 compat).
+        pt_row = conn.execute(
+            "SELECT cash_drawer_id FROM payment_transactions WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        assert pt_row["cash_drawer_id"] is None
+
+
+def test_v91_idempotent_on_already_migrated_db():
+    """Re-running v91 on a DB that already has the table/columns is a no-op."""
+    from baker.db.schema import _migrate_v91_cash_drawer_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Re-running the callable must not raise (PRAGMA-guarded + IF NOT EXISTS).
+        _migrate_v91_cash_drawer_schema(conn)
+        cols = _schema_columns(conn, "cash_drawer")
+        assert "opening_balance" in cols
+        assert _migrated_version(conn) == 95
+
+
+def test_v91_cash_drawer_row_persists():
+    """A cash_drawer row can be inserted and read back with INTEGER balances.
+
+    DG-347 Phase 1 (v095) dropped the accumulator columns; the row now has
+    only opening_balance and closing_balance as balance columns.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opening_balance, status) VALUES (1000000, 'open')"
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT status, opening_balance, closing_balance, "
+            "counted_amount, discrepancy "
+            "FROM cash_drawer WHERE id = 1"
+        ).fetchone()
+        assert row["status"] == "open"
+        assert row["opening_balance"] == 1000000
+        assert row["closing_balance"] is None
+        assert row["counted_amount"] is None
+        assert row["discrepancy"] is None
+
+
+@pytest.mark.skip(
+    reason="DG-347 Phase 1 (v095) dropped cash_drawer_id from payment_transactions "
+           "and events; replaced by the cash_drawer_journal_entries join table"
+)
+def test_v91_cash_drawer_id_fk_references_cash_drawer():
+    """The cash_drawer_id columns reference cash_drawer(id) (logical FK).
+
+    SQLite enforces FK only when PRAGMA foreign_keys=ON; this test confirms the
+    REFERENCES clause is present in the column definition so the relationship
+    is documented and enforced when the app enables foreign keys.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        for table in ("payment_transactions", "events"):
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()["sql"]
+            assert "cash_drawer_id INTEGER DEFAULT NULL REFERENCES cash_drawer(id)" in sql, (
+                 f"{table}.cash_drawer_id must reference cash_drawer(id)"
+            )
+
+
+# ---------------------------------------------------------------------------
+# v92 — cash drawer sub-accounts 1101/1102 + 1100→1101 balance transfer
+# (DG-330 Phase 2, FR9/AC2/NFR1/NFR2)
+# ---------------------------------------------------------------------------
+
+
+def test_v92_registered_in_migration_chain():
+    """v92 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 92 in MIGRATIONS
+    assert (
+        MIGRATIONS[92]["description"]
+        == "Insert cash drawer sub-accounts 1101/1102 and transfer existing 1100 balance to 1101 (DG-330 Phase 2)"
+    )
+    assert MIGRATIONS[92]["callable"].__name__ == "_migrate_v92_cash_drawer_sub_accounts"
+
+
+def test_v92_inserts_1101_and_1102_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has accounts 1101 and 1102 as
+    sub-accounts of 1100 (FR1/FR2/AC1).
+
+    On a fresh DB the 1100 balance is zero, so no balance-transfer journal
+    entry is created (NFR1 — fresh DB is a no-op for the transfer branch).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 95
+
+        for code, name, acc_type, parent_code in (
+            ("1101", "Tiền mặt tại quầy", "asset", "1100"),
+            ("1102", "Tiền mặt chủ sở hữu", "asset", "1100"),
+        ):
+            row = conn.execute(
+                "SELECT a.name, a.type, p.code AS parent_code "
+                "FROM accounts a LEFT JOIN accounts p ON p.id = a.parent_id "
+                "WHERE a.code = ?",
+                (code,),
+            ).fetchone()
+            assert row is not None, f"account {code} must exist"
+            assert row["name"] == name
+            assert row["type"] == acc_type
+            assert row["parent_code"] == parent_code
+
+        # Fresh DB: no migration_balance_transfer entry should exist.
+        transfer = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()
+        assert transfer is None
+
+
+def test_v92_transfers_1100_balance_to_1101_on_existing_db():
+    """An existing DB with a non-zero 1100 balance gets a balanced journal
+    entry moving that balance to 1101 (FR9/AC2/NFR2).
+
+    Pre-populate 1100 with a positive balance by inserting a journal entry
+    (DR 1100, CR 3100) before v92 runs. After v92, 1101 should hold the
+    transferred amount and 1100 should be zero.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        # Seed chart of accounts already includes 1101/1102 after Phase 1
+        # constants update (they are in SEED_CHART_OF_ACCOUNTS), but on a DB
+        # migrated only up to v91 the seed has already run via earlier
+        # migrations. Ensure they exist for the transfer target.
+        from baker.db.schema import _seed_chart_of_accounts, _account_id_by_code
+
+        _seed_chart_of_accounts(conn)
+
+        cash_on_hand_id = _account_id_by_code(conn, "1100")
+        equity_id = _account_id_by_code(conn, "3100")
+        amount = 2_500_000.0
+        # Create a starting balance entry: DR 1100, CR 3100.
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "Seed: opening cash on hand",
+                "test_seed",
+                1,
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+        entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, cash_on_hand_id, amount, 0.0, "cash"),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, equity_id, 0.0, amount, "equity"),
+        )
+        conn.commit()
+
+        # Confirm 1100 balance before v92.
+        pre = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1100'
+            """
+        ).fetchone()["bal"]
+        assert pre == amount
+
+        # Run v92.
+        _migrate_to_version(conn, 92)
+        assert _migrated_version(conn) == 92
+
+        # 1101 should now hold `amount`, 1100 should be zero.
+        bal_1101 = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1101'
+            """
+        ).fetchone()["bal"]
+        bal_1100 = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = '1100'
+            """
+        ).fetchone()["bal"]
+        assert bal_1101 == amount
+        assert bal_1100 == 0.0
+
+        # The transfer entry must be recorded with source_type=migration_balance_transfer.
+        transfer = conn.execute(
+            "SELECT description FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()
+        assert transfer is not None
+        assert "v092" in transfer["description"]
+
+
+def test_v92_idempotent_on_already_migrated_db():
+    """Re-running v92 on a DB that already ran it is a no-op (NFR1).
+
+    The balance-transfer guard (source_type='migration_balance_transfer',
+    source_id=92) prevents duplicate transfer entries; the account INSERTs
+    use INSERT OR IGNORE.
+    """
+    from baker.db.schema import _migrate_v92_cash_drawer_sub_accounts
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Capture the journal_entries count after the first run.
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        # Re-running the callable must not raise and must not add a duplicate.
+        _migrate_v92_cash_drawer_sub_accounts(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        assert count_after_first == count_after_second
+        assert _migrated_version(conn) == 95
+
+
+def test_v92_balance_transfer_entry_is_balanced():
+    """The v092 balance-transfer journal entry has equal debit/credit totals
+    (NFR2 — _insert_journal_entry enforces this; this test guards against
+    accidental regression by computing the totals directly).
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        from baker.db.schema import _seed_chart_of_accounts, _account_id_by_code
+
+        _seed_chart_of_accounts(conn)
+        cash_on_hand_id = _account_id_by_code(conn, "1100")
+        equity_id = _account_id_by_code(conn, "3100")
+        amount = 1_800_000.0
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Seed: opening cash", "test_seed", 2, "2026-02-01T00:00:00Z"),
+        )
+        eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, cash_on_hand_id, amount, 0.0, "cash"),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, equity_id, 0.0, amount, "equity"),
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 92)
+
+        # Find the transfer entry and verify debit == credit.
+        transfer_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
+        ).fetchone()[0]
+        totals = conn.execute(
+            "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+            "FROM journal_lines WHERE journal_entry_id = ?",
+            (transfer_id,),
+        ).fetchone()
+        assert abs(totals["d"] - totals["c"]) < 0.005
+        assert totals["d"] == amount
+
+
+# ---------------------------------------------------------------------------
+# v93 — rename "quỹ" → "quầy" in journal_entries.description
+# (DG-337 Phase 5, FR7/NFR3)
+# ---------------------------------------------------------------------------
+
+
+def test_v93_registered_in_migration_chain():
+    """v93 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 93 in MIGRATIONS
+    assert (
+        MIGRATIONS[93]["description"]
+        == "Rename 'quỹ' → 'quầy' in journal_entries.description for terminology consistency (DG-337 Phase 5)"
+    )
+    assert (
+        MIGRATIONS[93]["callable"].__name__
+        == "_migrate_v93_rename_quy_to_quay_in_journal_entries"
+    )
+
+
+def test_v93_renames_quy_to_quay_on_existing_db():
+    """Historical journal_entries.description rows containing "quỹ" are
+    rewritten to "quầy" (FR7). Multiple occurrences within one description
+    are all replaced.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 92)
+        conn.executescript(
+            """
+            INSERT INTO journal_entries (description, source_type, source_id, created_at) VALUES
+              ('Mở quỹ tiền mặt', 'manual', 1001, '2026-01-01T00:00:00Z'),
+              ('Đóng quỹ cuối ca', 'manual', 1002, '2026-01-02T00:00:00Z'),
+              ('Không liên quan', 'manual', 1003, '2026-01-03T00:00:00Z'),
+              ('quỹ và quỹ cùng lúc', 'manual', 1004, '2026-01-04T00:00:00Z');
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 93)
+        assert _migrated_version(conn) == 93
+
+        quy_rows = conn.execute(
+            "SELECT id, description FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchall()
+        quay_rows = conn.execute(
+            "SELECT id, description FROM journal_entries WHERE description LIKE '%quầy%'"
+        ).fetchall()
+        assert quy_rows == []
+        quay_descs = {r["description"] for r in quay_rows}
+        assert "Mở quầy tiền mặt" in quay_descs
+        assert "Đóng quầy cuối ca" in quay_descs
+        assert "quầy và quầy cùng lúc" in quay_descs
+        assert "Không liên quan" in {r["description"] for r in conn.execute(
+            "SELECT description FROM journal_entries WHERE source_id = 1003"
+        ).fetchall()}
+
+
+def test_v93_idempotent_on_already_migrated_db():
+    """Re-running v93 on a DB that already ran it is a no-op (NFR3 — the
+    WHERE description LIKE '%quỹ%' clause matches zero rows once everything
+    has been rewritten).
+    """
+    from baker.db.schema import _migrate_v93_rename_quy_to_quay_in_journal_entries
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        count_before = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert count_before == 0
+        # Re-running the callable must not raise and must not change anything.
+        _migrate_v93_rename_quy_to_quay_in_journal_entries(conn)
+        count_after = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert count_after == 0
+        assert _migrated_version(conn) == 95
+
+
+def test_v93_no_op_on_fresh_db():
+    """A fresh DB has no "quỹ" descriptions, so v93 is a no-op (NFR3 — the
+    UPDATE matches zero rows, keeping the migration well under 5s).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 95
+        quy_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
+        ).fetchone()[0]
+        assert quy_count == 0
+
+
+# ---------------------------------------------------------------------------
+# v94 — add tien_rut_in / tien_rut_out columns to cash_drawer
+# (DG-341 Phase 4.1, FR1/FR2/NFR1/NFR2)
+# ---------------------------------------------------------------------------
+# Note: the requirements doc (2026-08-03-drawer-tien-rut-tracking.md) names
+# this migration v093, but v093 was already taken by DG-337 Phase 5. The
+# migration is therefore registered as v094, the next available version
+# number. The schema deliverable scope is otherwise unchanged.
+
+
+def test_v94_registered_in_migration_chain():
+    """v94 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 94 in MIGRATIONS
+    assert (
+        MIGRATIONS[94]["description"]
+        == "Add tien_rut_in/tien_rut_out INTEGER columns to cash_drawer for separate tien rut tracking (DG-341 Phase 4.1)"
+    )
+    assert (
+        MIGRATIONS[94]["callable"].__name__
+        == "_migrate_v94_cash_drawer_tien_rut_columns"
+    )
+
+
+def test_v94_adds_tien_rut_columns_to_existing_cash_drawer():
+    """Existing cash_drawer rows get the new columns with default 0 (NFR1 —
+    existing drawer data preserved).
+
+    DG-347 Phase 1 (v095) subsequently drops ``tien_rut_in``/``tien_rut_out``
+    along with the other accumulator columns, so this test verifies the v94
+    migration in isolation by migrating only up to v94 and inserting a drawer
+    using only the columns that exist at v91 (no accumulator columns in the
+    fresh-DB schema constant, so the INSERT uses just opening_balance).
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 91)
+        # Insert a drawer BEFORE v94 runs so we can prove the migration
+        # preserves existing data and defaults the new columns.
+        conn.executescript(
+            """
+            INSERT INTO cash_drawer (opened_at, status, opening_balance)
+            VALUES ('2026-01-01T00:00:00Z', 'closed', 1000000);
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 94)
+        assert _migrated_version(conn) == 94
+
+        cols = {r[1]: r for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+        assert "tien_rut_in" in cols
+        assert "tien_rut_out" in cols
+        # INTEGER NOT NULL DEFAULT 0 — PRAGMA table_info tuple is
+        # (cid, name, type, notnull, dflt_value, pk).
+        assert cols["tien_rut_in"][2] == "INTEGER"
+        assert cols["tien_rut_in"][3] == 1  # NOT NULL
+        assert cols["tien_rut_in"][4] == "0"  # DEFAULT 0
+        assert cols["tien_rut_out"][2] == "INTEGER"
+        assert cols["tien_rut_out"][3] == 1  # NOT NULL
+        assert cols["tien_rut_out"][4] == "0"  # DEFAULT 0
+
+        row = conn.execute(
+            "SELECT opening_balance, tien_rut_in, tien_rut_out "
+            "FROM cash_drawer WHERE opened_at = '2026-01-01T00:00:00Z'"
+        ).fetchone()
+        # Existing values preserved; new columns default to 0.
+        assert row["opening_balance"] == 1000000
+        assert row["tien_rut_in"] == 0
+        assert row["tien_rut_out"] == 0
+
+
+def test_v94_fresh_db_has_columns_in_schema():
+    """A fresh DB migrated only up to v94 has the two new columns in the
+    cash_drawer table (NFR2 — old clients ignore unknown keys; new columns
+    default to 0 so existing expected_balance computation is unchanged).
+
+    DG-347 Phase 1 (v095) drops ``tien_rut_in``/``tien_rut_out``, so this test
+    migrates only up to v94 (not the full ensure_schema) to verify the v94
+    deliverable in isolation.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 94)
+        assert _migrated_version(conn) == 94
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+        assert "tien_rut_in" in cols
+        assert "tien_rut_out" in cols
+        # A fresh drawer's expected balance is unchanged (zero tien rut totals).
+        conn.executescript(
+            """
+            INSERT INTO cash_drawer (opened_at, status, opening_balance)
+            VALUES ('2026-02-01T00:00:00Z', 'open', 0);
+            """
+        )
+        row = conn.execute(
+            "SELECT opening_balance + tien_rut_in - tien_rut_out AS expected "
+            "FROM cash_drawer WHERE opened_at = '2026-02-01T00:00:00Z'"
+        ).fetchone()
+        assert row["expected"] == 0
+
+
+def test_v94_idempotent_on_already_migrated_db():
+    """Re-running v94 on a DB that already ran it is a no-op (NFR1 —
+    _guard_add_column skips columns that already exist).
+
+    DG-347 Phase 1 (v095) drops the accumulator columns, so this test
+    migrates only up to v94 (not the full ensure_schema) to verify the v94
+    idempotency guarantee in isolation.
+    """
+    from baker.db.schema import _migrate_v94_cash_drawer_tien_rut_columns
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 94)
+        assert _migrated_version(conn) == 94
+        before = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v94_cash_drawer_tien_rut_columns(conn)
+        after = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
+        assert before == after
+        assert _migrated_version(conn) == 94
+
+
+def test_schema_all_matches_imported_symbols():
+    """Verify ``baker.db.schema.__all__`` entries match the symbols actually
+    importable from the package.
+
+    DG-308 CQ-4 — the 173-entry manual ``__all__`` barrel is fragile: adding a
+    migration requires 3 manual edits (define, import, __all__). This test
+    catches drift between the ``__all__`` list and the package's actual public
+    surface so a missing entry is detected before release.
+    """
+    import baker.db.schema as schema_mod
+    import types as _types
+
+    declared = set(getattr(schema_mod, "__all__", []))
+    # Resolve the actual public symbols: everything importable from the package
+    # that is not a dunder, not a submodule, and not a pytest-internal attr.
+    actual = {
+        name
+        for name in dir(schema_mod)
+        if not name.startswith("__")
+        and not name.startswith("_pytest")
+        and getattr(schema_mod, name) is not None
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+    # Private (underscore-prefixed) helpers ARE part of the documented public
+    # surface (migrations import them), so they are included in __all__ but
+    # excluded from dir() filtering above only when they start with "_". Add
+    # back the underscore-prefixed names that are actually importable and are
+    # not submodules.
+    actual |= {
+        name
+        for name in declared
+        if name.startswith("_")
+        and hasattr(schema_mod, name)
+        and not isinstance(getattr(schema_mod, name), _types.ModuleType)
+    }
+
+    missing_from_all = actual - declared
+    extra_in_all = declared - actual
+
+    assert not missing_from_all, (
+        f"Symbols importable from baker.db.schema but missing from __all__: "
+        f"{sorted(missing_from_all)}"
+    )
+    assert not extra_in_all, (
+        f"Symbols declared in __all__ but not importable from baker.db.schema: "
+        f"{sorted(extra_in_all)}"
+    )

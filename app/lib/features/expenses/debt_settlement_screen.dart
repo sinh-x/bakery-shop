@@ -57,7 +57,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceShopCash;
+  String _paymentSource = VN.paymentSourceDrawerCash;
   bool _loading = false;
   bool _submitting = false;
   String? _loadError;
@@ -265,7 +265,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
                     ? VN.debtSettlementPaymentSourceRequired
                     : null,
             onChanged: (value) =>
-                setState(() => _paymentSource = value ?? VN.paymentSourceShopCash),
+                setState(() => _paymentSource = value ?? VN.paymentSourceDrawerCash),
           ),
           const SizedBox(height: 12),
           TextFormField(

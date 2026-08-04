@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/event.dart';
 import '../../../providers/events_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'event_card_photo_count.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 enum _DateRange { today, week, month, all }
 
@@ -320,7 +321,7 @@ class _EventCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Time + logged by
+                // Time + logged by + photo count
                 Row(
                   children: [
                     Text(
@@ -338,6 +339,8 @@ class _EventCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(width: 6),
+                    EventCardPhotoCount(eventId: event.id),
                   ],
                 ),
                 const SizedBox(height: 2),

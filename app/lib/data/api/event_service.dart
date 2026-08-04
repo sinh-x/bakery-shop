@@ -55,6 +55,7 @@ class EventService {
     String? expensePaidByName,
     String? expenseSearch,
     String? expenseDebtStatus,
+    String? expenseSubcategory,
     int limit = 50,
   }) async {
     final params = <String, dynamic>{'limit': limit};
@@ -84,6 +85,9 @@ class EventService {
     }
     if (expenseDebtStatus != null && expenseDebtStatus.isNotEmpty) {
       params['debt_status'] = expenseDebtStatus;
+    }
+    if (expenseSubcategory != null && expenseSubcategory.isNotEmpty) {
+      params['expense_subcategory'] = expenseSubcategory;
     }
 
     final response = await _dio.get('/api/events', queryParameters: params);
@@ -123,6 +127,14 @@ class EventService {
     final list = response.data as List;
     return list
         .map((json) => BakeryEvent.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<EventPhoto>> getEventPhotos(int eventId) async {
+    final response = await _dio.get('/api/events/$eventId/photos');
+    final list = response.data as List;
+    return list
+        .map((json) => EventPhoto.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 

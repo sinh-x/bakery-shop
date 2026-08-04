@@ -15,6 +15,8 @@ to inspect the returned pre/post count dict.
 
 from __future__ import annotations
 
+import pytest
+
 from baker.db.connection import get_db
 from baker.db.schema import (
     MIGRATIONS,
@@ -23,6 +25,8 @@ from baker.db.schema import (
     _repair_null_customer_links,
     ensure_schema,
 )
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

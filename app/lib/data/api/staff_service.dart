@@ -29,8 +29,11 @@ class StaffService {
 
   StaffService(this._dio);
 
-  Future<List<StaffMember>> listStaff() async {
-    final response = await _dio.get('/api/staff');
+  Future<List<StaffMember>> listStaff({String? role}) async {
+    final response = await _dio.get(
+      '/api/staff',
+      queryParameters: role != null ? {'role': role} : null,
+    );
     final list = response.data as List;
     return list
         .map((json) => StaffMember.fromJson(json as Map<String, dynamic>))

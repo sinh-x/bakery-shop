@@ -1,4 +1,7 @@
+import pytest
 from unittest.mock import patch
+
+pytestmark = pytest.mark.critical
 
 
 def _create_order(client):

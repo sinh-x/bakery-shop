@@ -1,4 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: unnecessary_null_in_if_null_operators
 
 part of 'order.dart';
 
@@ -47,6 +48,12 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
           .toList() ??
       const [],
   completeness: json['completeness'] as String? ?? 'complete',
+  latitude: (json['latitude'] as num?)?.toDouble(),
+  longitude: (json['longitude'] as num?)?.toDouble(),
+  googleMapsUrl: json['googleMapsUrl'] as String?,
+  deliveryTimeSlot: json['deliveryTimeSlot'] as String?,
+  assignedStaffId: json['assignedStaffId'] as String? ?? null,
+  assignedStaffName: json['assignedStaffName'] as String? ?? '',
   createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
   updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
 );
@@ -81,6 +88,12 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'acknowledgedAt': instance.acknowledgedAt,
   'missingFields': instance.missingFields,
   'completeness': instance.completeness,
+  'latitude': instance.latitude,
+  'longitude': instance.longitude,
+  'googleMapsUrl': instance.googleMapsUrl,
+  'deliveryTimeSlot': instance.deliveryTimeSlot,
+  'assignedStaffId': instance.assignedStaffId,
+  'assignedStaffName': instance.assignedStaffName,
   'createdAt': timestampToJson(instance.createdAt),
   'updatedAt': timestampToJson(instance.updatedAt),
 };

@@ -202,6 +202,7 @@ def delete_transaction(ref: str, txn_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
         payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
+
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).

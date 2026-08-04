@@ -14,7 +14,7 @@ def get_db(db_path=None):
         from pathlib import Path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -35,7 +35,7 @@ def checkpoint_wal(db_path=None):
     if path == ":memory:":
         return
     try:
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(path, timeout=5.0)
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
         logger.info("WAL checkpoint completed for %s", path)

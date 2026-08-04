@@ -1,15 +1,30 @@
+import 'dart:io';
+
+import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
+import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/data/models/event_photo.dart';
+import 'package:bakery_app/data/models/expense_category.dart';
+import 'package:bakery_app/features/events/widgets/event_form_photo_section.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+
+// EXEMPT: 300-line screen threshold exceeded because photo upload lifecycle
+// (state, load-existing, post-submit upload) must live in the screen to keep
+// ExpenseFormCard under its widget limit. Pre-existing at 352 lines before
+// DG-326 Phase 3. Reviewed 2026-08-01.
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
   const ExpenseFormScreen({super.key, this.event});
@@ -28,17 +43,32 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   bool _loading = false;
   int? _editingId;
   String? _category;
+  String? _subcategory;
   String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceShopCash;
+  String _paymentSource = VN.paymentSourceDrawerCash;
   String? _staffName;
   String? _paidByName;
   late DateTime _eventDateTime;
+
+  /// Locally-picked photos awaiting upload after event create/update.
+  final _selectedPhotos = <XFile>[];
+
+  /// Photos already attached to the event being edited (edit mode only).
+  final _existingPhotos = <EventPhoto>[];
 
   bool get _editing => _editingId != null;
 
   @override
   void initState() {
     super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
     _eventDateTime = DateTime.now();
     final event = widget.event;
     if (event == null) {
@@ -51,12 +81,25 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (data == null) return;
     _amountCtrl.text = data.amountVnd.toString();
     _category = data.category;
+    _subcategory = data.subcategory.isNotEmpty ? data.subcategory : null;
     _paymentMethod = data.paymentMethod;
     _paymentSource = data.paymentSource;
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
     _staffName = data.loggedBy.isNotEmpty ? data.loggedBy : null;
     _paidByName = data.paidByName.isNotEmpty ? data.paidByName : null;
+    _loadExistingPhotos(event.id);
+  }
+
+  Future<void> _loadExistingPhotos(int eventId) async {
+    try {
+      final service = ref.read(eventServiceProvider);
+      final photos = await service.getEventPhotos(eventId);
+      if (mounted) setState(() => _existingPhotos.addAll(photos));
+    } catch (e) {
+      debugPrint('_loadExistingPhotos failed: $e');
+      // Non-fatal: edit form still works without existing photo display.
+    }
   }
 
   @override
@@ -80,6 +123,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           data: (names) => names,
         ) ??
         const <String>[];
+    final categoriesAsync = ref.watch(expenseCategoriesProvider);
+    final categoryTree = categoriesAsync.whenOrNull<List<ExpenseCategory>>(
+          data: (tree) => tree,
+        ) ??
+        const <ExpenseCategory>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -105,7 +153,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             eventDateTime: _eventDateTime,
             loading: _loading,
             editing: _editing,
-            onCategoryChanged: (value) => setState(() => _category = value),
+            categoryTree: categoryTree,
+            subcategory: _subcategory,
+            onSubcategoryChanged: (value) =>
+                setState(() => _subcategory = value),
+            onCategoryChanged: (value) => setState(() {
+              _category = value;
+              _subcategory = null;
+            }),
             onPaymentMethodChanged: (value) =>
                 setState(() => _paymentMethod = value ?? _paymentMethod),
             onPaymentSourceChanged: (value) =>
@@ -117,6 +172,20 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             onCancelEdit: () => context.pop(false),
             onSave: _save,
             amountValidator: _validateAmount,
+          ),
+          const SizedBox(height: 8),
+          EventFormPhotoSection(
+            existingPhotos: _existingPhotos,
+            selectedPhotos: _selectedPhotos,
+            baseUrl: ref.read(apiBaseUrlProvider),
+            onSelectionChanged: (files) => setState(() {
+              _selectedPhotos
+                ..clear()
+                ..addAll(files);
+            }),
+          ),
+          UploadProgressIndicator(
+            states: ref.watch(photoUploadNotifierProvider).states,
           ),
         ],
       ),
@@ -165,10 +234,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       note: _noteCtrl.text.trim(),
       loggedBy: loggedBy,
       paidByName: _paidByName ?? loggedBy,
+      subcategory: _subcategory ?? '',
     );
 
     setState(() => _loading = true);
     try {
+      final hasNewPhotos = _selectedPhotos.isNotEmpty;
+      final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_editing) {
         await ref
             .read(eventsProvider.notifier)
@@ -179,9 +251,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(_editingId!, upload);
+        }
         if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
-        await ref
+        final createdEvent = await ref
             .read(eventsProvider.notifier)
             .logEvent(
               summary: _summary(payload),
@@ -190,6 +265,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(createdEvent.id, upload);
+        }
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
       if (mounted) context.pop(true);
@@ -204,6 +282,27 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_save] before `context.pop(true)` so the screen does not dismiss until
+  /// every upload reaches a terminal state (FR3 — race condition fix).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(
+    int eventId,
+    PhotoUploadNotifier upload,
+  ) async {
+    final service = ref.read(eventServiceProvider);
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 

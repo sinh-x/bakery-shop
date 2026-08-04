@@ -156,6 +156,9 @@ class OrderDraft {
   final int currentStage;
   final String? selectedCategorySlug;
   final int? customerId;
+  final double? latitude;
+  final double? longitude;
+  final String? googleMapsUrl;
 
   OrderDraft({
     this.customerName = '',
@@ -176,6 +179,9 @@ class OrderDraft {
     this.currentStage = 1,
     this.selectedCategorySlug,
     this.customerId,
+    this.latitude,
+    this.longitude,
+    this.googleMapsUrl,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 

@@ -337,6 +337,20 @@ class Order:
     created_staff_name: str = ""
     work_ticket_printed_staff_name: str = ""
 
+    # DG-303 Phase 4.2 (FR1/FR2/FR3): door delivery GPS + schedule fields.
+    # Nullable — bus/pickup orders leave these NULL forever (NFR1, AC7).
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    google_maps_url: Optional[str] = None
+    delivery_time_slot: Optional[str] = None
+
+    # DG-310 Phase 3 (FR5/FR6/FR7): delivery staff claiming. ``assigned_staff_id``
+    # is the persisted logical FK to ``staff.id`` (NULL = unassigned). The display
+    # name is resolved via JOIN in ``Order.from_row`` — it is never stored on the
+    # orders row, so it stays in sync if the staff name changes.
+    assigned_staff_id: Optional[str] = None
+    assigned_staff_name: str = ""
+
     amount_paid = 0.0
 
     @staticmethod
@@ -371,13 +385,15 @@ class Order:
             """INSERT INTO orders (order_ref, customer_name, customer_phone, delivery_phone, items,
                total_price, status, due_date, due_time, delivery_type,
                delivery_address, notes, source, created_by, shipping_fee, public_order_code,
-               customer_id, created_at, updated_at, created_staff_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               customer_id, created_at, updated_at, created_staff_name,
+               latitude, longitude, google_maps_url, delivery_time_slot)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
               self.source, self.created_by, self.shipping_fee, self.public_order_code,
-              self.customer_id, now_utc(), now_utc(), self.created_staff_name),
+              self.customer_id, now_utc(), now_utc(), self.created_staff_name,
+              self.latitude, self.longitude, self.google_maps_url, self.delivery_time_slot),
         )
         self.id = cursor.lastrowid
 
@@ -428,7 +444,13 @@ class Order:
         return True
 
     @staticmethod
-    def from_row(row, conn, *, amount_paid: Optional[float] = None) -> "Order":
+    def from_row(
+        row,
+        conn,
+        *,
+        amount_paid: Optional[float] = None,
+        assigned_staff_name: Optional[str] = None,
+    ) -> "Order":
         """Build an ``Order`` from a DB row.
 
         ``conn`` is required (v80+ dropped the stored ``amount_paid`` column
@@ -444,6 +466,16 @@ class Order:
         via ``amount_paid=`` to avoid a duplicate query (DG-274 review-auto
         c1 / CQ-1, CQ-2). The value is cached on the returned ``Order``
         instance as ``order.amount_paid``.
+
+        ``assigned_staff_name`` (keyword-only, optional) — a precomputed
+        display name for ``row["assigned_staff_id"]``. When ``None`` (default),
+        the name is resolved with a per-order ``SELECT name FROM staff`` query
+        (N+1). Callers that already JOINed staff into the row (e.g.
+        ``list_orders`` in ``api/orders.py`` via
+        ``LEFT JOIN staff ON staff.id = orders.assigned_staff_id``) should pass
+        it via ``assigned_staff_name=`` to skip the per-order query (DG-311
+        review-uat c1 / CQ-1). Pass an empty string for an unassigned order;
+        ``None`` means "no resolved name available, fall back to query".
         """
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
@@ -471,8 +503,32 @@ class Order:
             acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
             created_staff_name=row["created_staff_name"] if "created_staff_name" in row.keys() else "",
             work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"] if "work_ticket_printed_staff_name" in row.keys() else "",
+            latitude=row["latitude"] if "latitude" in row.keys() else None,
+            longitude=row["longitude"] if "longitude" in row.keys() else None,
+            google_maps_url=row["google_maps_url"] if "google_maps_url" in row.keys() else None,
+            delivery_time_slot=row["delivery_time_slot"] if "delivery_time_slot" in row.keys() else None,
         )
         order.amount_paid = amount_paid
+        order.assigned_staff_id = (
+            row["assigned_staff_id"] if "assigned_staff_id" in row.keys() else None
+        )
+        # Resolve the assigned staff display name via JOIN (DG-310 Phase 3).
+        # The name is not stored on the orders row so it stays in sync with
+        # staff.name changes. Only one lookup per order (NFR3).
+        # DG-311 review-uat c1 / CQ-1: when the caller already JOINed staff
+        # into the row and forwarded the resolved name via the
+        # ``assigned_staff_name`` keyword, skip the per-order SELECT to avoid
+        # an N+1 in list_orders. ``None`` means no resolved name was supplied;
+        # an empty string means the JOIN found no matching staff row (NULL FK
+        # or missing staff record).
+        if assigned_staff_name is not None:
+            order.assigned_staff_name = assigned_staff_name
+        elif order.assigned_staff_id is not None:
+            staff_row = conn.execute(
+                "SELECT name FROM staff WHERE id = ?",
+                (order.assigned_staff_id,),
+            ).fetchone()
+            order.assigned_staff_name = staff_row["name"] if staff_row else ""
         return order
 
     def compute_completeness(self) -> tuple[list[str], str]:
@@ -551,6 +607,12 @@ class Order:
             "workTicketPrintedStaffName": self.work_ticket_printed_staff_name,
             "acknowledgedAt": self.acknowledged_at,
             "createdStaffName": self.created_staff_name,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "googleMapsUrl": self.google_maps_url,
+            "deliveryTimeSlot": self.delivery_time_slot,
+            "assignedStaffId": self.assigned_staff_id,
+            "assignedStaffName": self.assigned_staff_name,
             "urgency": compute_urgency(
                 self.due_date,
                 self.due_time,

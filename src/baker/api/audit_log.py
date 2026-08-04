@@ -17,13 +17,9 @@ from fastapi import APIRouter, Depends, Query
 
 from baker.api.auth import RequireRole
 from baker.db.connection import get_db
+from baker.utils.db import row_to_dict as _row_to_dict
 
 router = APIRouter(prefix="/api/audit-log", tags=["audit-log"])
-
-
-def _row_to_dict(row) -> dict:
-    """Convert a sqlite3.Row to a dict."""
-    return dict(row)
 
 
 @router.get("")

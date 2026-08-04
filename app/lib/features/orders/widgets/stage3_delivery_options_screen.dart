@@ -74,6 +74,14 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
+  /// DG-303 Phase 4 / DG-306 Phase 1: the manual `deliveryTimeSlot` dropdown
+  /// was removed (DG-306 Phase 1 / FR2) — the slot is auto-derived from
+  /// `dueTime`. DG-306 Phase 3 / FR7: the Google Maps URL field was removed
+  /// from the create form — the URL is now managed via the Google Maps modal
+  /// on the order detail screen. DG-329 Phase 7 / FR9: the manual Lat/Long
+  /// text fields were removed from the wizard; stored coordinates are
+  /// preserved via the Google Maps modal on the order detail screen.
+
   void _updateDeliveryType(String type) {
     final notifier = ref.read(widget.orderStateProvider.notifier);
     final state = ref.read(widget.orderStateProvider);

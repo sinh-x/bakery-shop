@@ -28,6 +28,8 @@ from baker.api.receipts import (
     _wrap,
 )
 
+pytestmark = pytest.mark.critical
+
 
 class TestVNDFormatting:
     """Test Vietnamese currency formatting (shortened: divide by 1000, no suffix)."""

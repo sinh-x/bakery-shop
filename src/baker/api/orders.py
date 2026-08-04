@@ -1,21 +1,21 @@
 """Order management API routes."""
 
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
-from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
+from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.config import get_delivery_critical_threshold
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
     OrderItem,
+    OrderStatus,
     delivery_type_to_public_suffix,
     generate_public_order_code_candidate,
     is_backward_transition,
@@ -23,8 +23,14 @@ from baker.models.order import (
 )
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
-from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
-from baker.api.auth import resolve_actor, resolve_staff_name
+from baker.services.customer_resolver import (
+    WALK_IN_SHARED_CUSTOMER_NAME,
+    _get_or_create_walk_in_customer_id,
+    _resolve_customer_id_by_phone,
+    _resolve_or_create_customer_id,
+)
+from baker.services.order_stock import auto_decrement_stock
+from baker.api.auth import resolve_actor, resolve_staff_name, resolve_staff_record
 from baker.utils.time import now_utc
 
 
@@ -56,158 +62,12 @@ def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
     return (amount_paid >= float(row["total_price"]), amount_paid)
 
 
-def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
-    """Resolve a customer_id from a phone number via the ``customer_phones`` table.
-
-    DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
-    ``customer_phones`` (not just the primary), so an order with a secondary
-    phone still links to the owning customer. When several customers share the
-    same phone, the earliest-order-wins rule (consistent with v57) picks the
-    customer whose earliest order has the smallest created_at/id.
-
-    Falls back to the legacy ``customers.phone`` column when ``customer_phones``
-    has no match (e.g. pre-v58 databases or customers created before Phase 1).
-
-    DG-227 Phase 1 (FR1). When phone lookup returns nothing, falls back to a
-    name-based lookup via ``customers.search_name`` (case-insensitive,
-    diacritic-insensitive). Returns the first match ordered by id ASC.
-    Returns ``None`` when no customer matches.
-    """
-    from baker.db.schema import _normalize_phone
-
-    nphone = _normalize_phone(phone or "")
-    if not nphone:
-        return None
-
-    # Primary path: match against customer_phones.phone (any row, normalized).
-    # SQLite stores phones as free text; we normalize for comparison, so the
-    # query pulls candidate rows and resolves the winner in Python to apply the
-    # earliest-order-wins tiebreak consistently with v57.
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
-            (nphone,),
-        ).fetchall()
-    except sqlite3.OperationalError:
-        rows = []
-    if rows:
-        customer_ids = [r["customer_id"] for r in rows]
-        if len(customer_ids) == 1:
-            return customer_ids[0]
-        # FR8: multiple customers share the phone — earliest-order-wins. Pick
-        # the customer whose earliest order has the minimum created_at, then id.
-        placeholders = ",".join("?" for _ in customer_ids)
-        winner = conn.execute(
-            f"SELECT customer_id, MIN(created_at) AS first_at "
-            f"FROM orders WHERE customer_id IN ({placeholders}) "
-            f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
-            customer_ids,
-        ).fetchone()
-        if winner is not None:
-            return winner["customer_id"]
-        # No orders yet for any candidate — fall back to the lowest customer_id
-        # for deterministic behavior.
-        return min(customer_ids)
-
-    # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
-    # M-1: normalize the stored column at query time so legacy rows that still
-    # contain separators (dashes/dots/spaces) match the normalized search value.
-    # This mirrors _normalize_phone (strip spaces, dots, dashes) in SQL.
-    legacy = conn.execute(
-        "SELECT id FROM customers "
-        "WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '.', ''), '-', '') = ? "
-        "ORDER BY id ASC LIMIT 1",
-        (nphone,),
-    ).fetchone()
-    if legacy:
-        return legacy["id"]
-
-    # Tertiary path: name-based fallback (DG-227 FR1).
-    # Strip diacritics for case-insensitive, diacritic-insensitive matching
-    # against the pre-computed ``customers.search_name`` column.
-    if customer_name and customer_name.strip():
-        normalized_name = _strip_diacritics(customer_name.strip())
-        name_match = conn.execute(
-            "SELECT id FROM customers WHERE search_name = ? ORDER BY id ASC LIMIT 1",
-            (normalized_name,),
-        ).fetchone()
-        return name_match["id"] if name_match else None
-
-    return None
-
-
-# DG-252 Phase 1 (FR1/FR2/FR3) — the canonical shared walk-in customer name.
-# Reuses the v66 convention (``schema.py:_migrate_v66_repair_customer_links``)
-# so there is exactly one shared "Khách lẻ" record for all identity-less orders.
-WALK_IN_SHARED_CUSTOMER_NAME = "Khách lẻ"
-
-
-def _get_or_create_walk_in_customer_id(conn) -> int:
-    """Return the id of the single shared "Khách lẻ" walk-in customer.
-
-    DG-252 Phase 1 (FR2). Matches the v66 semantics at
-    ``schema.py:_migrate_v66_repair_customer_links``: exactly one shared record
-    (LOWERCASE comparison on ``customers.name``), never one-per-order. Creates
-    the row if it does not yet exist so the first identity-less order
-    materialises it.
-    """
-    existing = conn.execute(
-        "SELECT id FROM customers WHERE LOWER(name) = ? ORDER BY id ASC LIMIT 1",
-        (WALK_IN_SHARED_CUSTOMER_NAME.lower(),),
-    ).fetchone()
-    if existing is not None:
-        return existing["id"]
-    from baker.models.customer import Customer
-
-    cust = Customer(name=WALK_IN_SHARED_CUSTOMER_NAME, phone="")
-    return cust.save(conn)
-
-
-def _resolve_or_create_customer_id(
-    conn, phone: Optional[str], customer_name: Optional[str]
-) -> int:
-    """Guarantee a non-NULL ``customer_id`` for an order (DG-252 Phase 1).
-
-    Resolution chain (matches FR1/FR2/AC1):
-      1. ``phone``→``name`` resolution via ``_resolve_customer_id_by_phone``
-         (existing phone-then-name lookup with earliest-order-wins tiebreak).
-      2. Auto-create a server-side customer when step 1 returns ``None`` AND
-         the order carries a name and/or a phone (FR1).
-      3. Otherwise (no name AND no phone) link to the shared "Khách lẻ"
-         walk-in record via ``_get_or_create_walk_in_customer_id`` (FR2).
-
-    Always returns a positive integer customer id.
-    """
-    resolved = _resolve_customer_id_by_phone(conn, phone, customer_name=customer_name)
-    if resolved is not None:
-        return resolved
-
-    has_name = bool(customer_name and customer_name.strip())
-    has_phone = bool(phone and phone.strip())
-    if has_name or has_phone:
-        from baker.models.customer import Customer
-
-        name = customer_name.strip() if has_name else "Khách"
-        # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the new
-        # customer is visible to `/duplicates` (which joins on customer_phones)
-        # and so a later merge preserves its phone. Without this row the
-        # phone-only lives in the legacy `customers.phone` column, which the
-        # dedup finder and merge copy loop never consult.
-        phones = (
-            [{"phone": phone, "isPrimary": True}] if has_phone else []
-        )
-        cust = Customer(name=name, phone=phone or "", phones=phones)
-        return cust.save(conn)
-
-    return _get_or_create_walk_in_customer_id(conn)
-
-
 class OrderItemIn(BaseModel):
     productId: str = ""
-    productName: str
+    productName: str = Field(max_length=200)
     quantity: int = 1
     unitPrice: float = 0.0
-    notes: str = ""
+    notes: str = Field(default="", max_length=2000)
     isBirthday: bool = False
     age: Optional[int] = None
     isExtra: bool = False
@@ -247,41 +107,85 @@ class DepositIn(BaseModel):
     method: str = "cash"
 
 
+def _validate_google_maps_url(value: Optional[str]) -> Optional[str]:
+    """Validate googleMapsUrl is an https:// (or http://) URL when provided.
+
+    DG-303 review-auto SEC-2: prevents arbitrary javascript:/data:/file: URIs
+    from being stored and later launched by the Flutter client. Empty strings
+    are normalized to None so callers can rely on a truthy-or-None contract.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if not (lowered.startswith("https://") or lowered.startswith("http://")):
+        raise ValueError("googleMapsUrl must be an http(s) URL")
+    return stripped
+
+
 class OrderCreate(BaseModel):
-    customerName: str
-    customerPhone: str = ""
-    deliveryPhone: str = ""
+    customerName: str = Field(max_length=200)
+    customerPhone: str = Field(default="", max_length=20)
+    deliveryPhone: str = Field(default="", max_length=20)
     customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: str = "pickup"
-    deliveryAddress: str = ""
-    notes: str = ""
-    source: str = ""
+    deliveryAddress: str = Field(default="", max_length=1000)
+    notes: str = Field(default="", max_length=10000)
+    source: str = Field(default="", max_length=100)
     deposit: Optional[DepositIn] = None
-    createdBy: str = ""
+    createdBy: str = Field(default="", max_length=100)
     shippingFee: float = 0.0
     status: Optional[str] = None
     paymentMethod: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    # Pydantic Field bounds produce HTTP 422 on out-of-range values (NFR2).
+    # None is allowed so bus/pickup orders leave these unset.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
+
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_create(cls, v):
+        return _validate_google_maps_url(v)
 
 
 class OrderEdit(BaseModel):
-    customerName: Optional[str] = None
-    customerPhone: Optional[str] = None
-    deliveryPhone: Optional[str] = None
+    customerName: Optional[str] = Field(default=None, max_length=200)
+    customerPhone: Optional[str] = Field(default=None, max_length=20)
+    deliveryPhone: Optional[str] = Field(default=None, max_length=20)
     customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
     deliveryType: Optional[str] = None
-    deliveryAddress: Optional[str] = None
-    notes: Optional[str] = None
-    source: Optional[str] = None
+    deliveryAddress: Optional[str] = Field(default=None, max_length=1000)
+    notes: Optional[str] = Field(default=None, max_length=10000)
+    source: Optional[str] = Field(default=None, max_length=100)
     shippingFee: Optional[float] = None
-    changedBy: str = ""
+    changedBy: str = Field(default="", max_length=100)
     workTicketPrintedAt: Optional[str] = None
     publicCodeDateChangeDecision: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
+    # DG-304 Phase 2 (FR6/FR7): admin assignment via PATCH /api/orders/{ref}.
+    # Nullable — clearing the field unassigns the order. The column is TEXT
+    # (v089), so the value is stored as the staff id string.
+    assignedStaffId: Optional[str] = None
+
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_edit(cls, v):
+        return _validate_google_maps_url(v)
 
 
 class StatusTransition(BaseModel):
@@ -465,8 +369,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -480,8 +384,8 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
-                        AND created_at < ?
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -494,7 +398,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at >= ?
+                        AND orders.created_at >= ?
                     )
                 )"""
             )
@@ -507,7 +411,7 @@ def list_orders(
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND created_at < ?
+                        AND orders.created_at < ?
                     )
                 )"""
             )
@@ -522,7 +426,9 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
@@ -532,37 +438,50 @@ def list_orders(
                 # the live-computed amount_paid (stored column was dropped in
                 # v80). The cached amount_paid is forwarded to from_row so we
                 # don't re-query total_paid_excl_outflows for the rows we keep.
+                # DG-311 review-uat c1 / CQ-1: staff name is JOINed once here
+                # and forwarded to from_row to avoid an N+1 per-order SELECT.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+                f"{where} ORDER BY orders.id DESC",
                 params,
             ).fetchall()
             result = []
             for r in rows:
                 # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
                 # delivered+paid filter as the active_only branch above.
+                # DG-311 review-uat c1 / CQ-1: staff name JOINed above.
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                order = Order.from_row(r, conn, amount_paid=amount_paid)
+                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
+                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         rows = conn.execute(
-            f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT orders.*, s.name AS assigned_staff_name "
+            f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
+            f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
         return [
-            Order.from_row(r, conn).to_api_dict(threshold_minutes=threshold_minutes)
+            Order.from_row(
+                r,
+                conn,
+                assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
+            ).to_api_dict(threshold_minutes=threshold_minutes)
             for r in rows
         ]
 
@@ -607,6 +526,10 @@ def create_order(body: OrderCreate, request: Request):
             created_staff_name=created_staff_name,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
+            latitude=body.latitude,
+            longitude=body.longitude,
+            google_maps_url=body.googleMapsUrl,
+            delivery_time_slot=body.deliveryTimeSlot,
         )
         order.calculate_total()
         order.save(conn)
@@ -810,6 +733,11 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             "source": "source",
             "shippingFee": "shipping_fee",
             "workTicketPrintedAt": "work_ticket_printed_at",
+            "latitude": "latitude",
+            "longitude": "longitude",
+            "googleMapsUrl": "google_maps_url",
+            "deliveryTimeSlot": "delivery_time_slot",
+            "assignedStaffId": "assigned_staff_id",
         }
 
         new_due_date = data.get("dueDate", row["due_date"])
@@ -1042,10 +970,13 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
-    # Shared journal-sync helpers used by multiple branches below (DG-269
-    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
-    # conditional branch.
-    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+    # DG-308 Phase 5 (FR-ARCH-3): status-machine side effects (stock, journal
+    # sync, item cascade, extras sync) are orchestrated by
+    # services.order_lifecycle. The handler keeps HTTP validation/rejection.
+    from baker.services.order_lifecycle import (
+        apply_post_update_side_effects,
+        apply_pre_update_side_effects,
+    )
 
     with get_db() as conn:
         row = conn.execute(
@@ -1084,24 +1015,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                     rejection_detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order is confirmed
-        # (POS already handles this in create_order for status=delivered)
-        if body.status == "confirmed":
-            auto_decrement_stock(conn, row["id"], row["order_ref"])
-
-        accounting_sync_warning = None
-
-        if body.status == "cancelled":
-            restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal
-            sync_status = run_journal_sync(
-                _sync_cancelled_order_journal,
-                conn, row["id"],
-                log_label=f"cancelled order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
+        # Pre-update side effects (stock decrement/restore + cancellation
+        # journal sync) must run before Order.update_status.
+        prior_warning = apply_pre_update_side_effects(
+            conn, row["id"], row["order_ref"], body.status
+        )
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -1115,67 +1033,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
 
-        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
-        if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal
-            sync_status = run_journal_sync(
-                _sync_delivered_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"delivered order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # When transitioning TO completed, reconcile 2100 deposits into revenue
-        # and clear 1500 AR (DG-269 Phase 3).
-        if body.status == "completed" and row["status"] != "completed":
-            from baker.services.journal_sync import _sync_completed_order_journal
-            sync_status = run_journal_sync(
-                _sync_completed_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"completed order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
-        if body.status == "confirmed":
-            conn.execute(
-                "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
-                (row["id"],),
-            )
-
-        # Auto-sync main items (non-extra, non-gift) on terminal order transitions (DG-280 Phase 1).
-        # Skip cancelled items so they remain cancelled (AC5) and skip items already at the target
-        # status to avoid redundant updates (AC4). WorkItemStatus has no 'completed' value, so a
-        # completed order maps main items to 'delivered' (FR2).
-        if body.status == "delivered":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "completed":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "cancelled":
-            conn.execute(
-                "UPDATE order_items SET status = 'cancelled' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled'",
-                (row["id"],),
-            )
-
-        # Auto-sync extras/gifts to match the new order status (F4, F5)
-        from baker.api.work_items import sync_extras_to_order_status
-        sync_extras_to_order_status(conn, row["id"], body.status)
+        # Post-update side effects (delivered/completed journal sync, item
+        # cascade, extras sync) run after the status row is updated.
+        accounting_sync_warning = apply_post_update_side_effects(
+            conn, row["id"], row["order_ref"], row["status"], body.status, prior_warning
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
@@ -1251,6 +1113,150 @@ def update_payment(ref: str, body: PaymentUpdate, request: Request):
                 conn, row["id"], "payment", "amount",
                 old_value="", new_value=str(body.amountPaid), changed_by=resolve_actor(request, body.changedBy),
             )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+
+
+# ---------------------------------------------------------------------------
+# Delivery staff claiming — assign / unassign (DG-310 Phase 3, FR5/FR6)
+#
+# ``POST /api/orders/{ref}/assign``    — any linked staff member claims a
+#   non-terminal delivery order. Single-assignee is enforced
+#   via a check-and-set UPDATE (race-safe under SQLite's serializable writes):
+#   the UPDATE only matches rows where ``assigned_staff_id IS NULL``, so a
+#   concurrent claim by staff B sees 0 affected rows and is rejected (AC10).
+# ``POST /api/orders/{ref}/unassign``  — the assigned staff (or an admin)
+#   releases the claim by setting ``assigned_staff_id`` back to NULL (FR6).
+#
+# Both endpoints return the updated order via ``_order_detail`` so the
+# response carries ``assignedStaffName`` for the client (FR7, AC6/AC8). The
+# order lifecycle service is untouched — status transitions are unchanged.
+# ---------------------------------------------------------------------------
+
+# Terminal statuses: a delivery order cannot be claimed once it has reached a
+# final state (delivered / completed / cancelled).
+_TERMINAL_STATUSES = {
+    OrderStatus.DELIVERED.value,
+    OrderStatus.COMPLETED.value,
+    OrderStatus.CANCELLED.value,
+}
+
+
+@router.post("/{ref}/assign")
+def assign_order(ref: str, request: Request):
+    """Gán đơn hàng giao cho nhân viên đang đăng nhập (FR5, AC6, AC10).
+
+    Resolves the acting staff from the JWT via ``resolve_staff_record``.
+    The staff must be a linked staff member and the order must be
+    non-terminal and not already claimed. Single-assignee is enforced by the
+    conditional UPDATE (``assigned_staff_id IS NULL``).
+    """
+    staff = resolve_staff_record(request)
+    if staff is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Không xác định được nhân viên từ phiên đăng nhập.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["status"] in _TERMINAL_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể nhận đơn đã hoàn thành hoặc đã hủy.",
+            )
+
+        if row["assigned_staff_id"] is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Đơn hàng đã được nhân viên khác nhận.",
+            )
+
+        # Race-safe check-and-set: only update rows that are still unclaimed.
+        # Under SQLite's serializable write isolation a concurrent assign sees
+        # 0 affected rows here and is rejected below (AC10, NFR3 < 500ms).
+        cursor = conn.execute(
+            "UPDATE orders SET assigned_staff_id = ?, updated_at = ? "
+            "WHERE id = ? AND assigned_staff_id IS NULL",
+            (str(staff["staff_id"]), now_utc(), row["id"]),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Đơn hàng đã được nhân viên khác nhận.",
+            )
+
+        _log_order_history(
+            conn,
+            row["id"],
+            "assign",
+            "assigned_staff_id",
+            old_value="",
+            new_value=str(staff["staff_id"]),
+            changed_by=resolve_actor(request, staff["name"]),
+        )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+
+
+@router.post("/{ref}/unassign")
+def unassign_order(ref: str, request: Request):
+    """Hủy gán đơn hàng giao (FR6, AC8).
+
+    Releases the claim on a delivery order. Only the assigned staff or an
+    admin may unclaim. Sets ``assigned_staff_id`` back to NULL.
+    """
+    staff = resolve_staff_record(request)
+    if staff is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Không xác định được nhân viên từ phiên đăng nhập.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["assigned_staff_id"] is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Đơn hàng chưa được gán cho ai.",
+            )
+
+        # Only the assigned staff or an admin may unclaim (FR6).
+        is_admin = getattr(request.state, "auth_role", None) == "admin"
+        if not is_admin and str(staff["staff_id"]) != str(row["assigned_staff_id"]):
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ nhân viên đã nhận đơn hoặc quản lý mới được hủy gán.",
+            )
+
+        conn.execute(
+            "UPDATE orders SET assigned_staff_id = NULL, updated_at = ? WHERE id = ?",
+            (now_utc(), row["id"]),
+        )
+
+        _log_order_history(
+            conn,
+            row["id"],
+            "unassign",
+            "assigned_staff_id",
+            old_value=str(row["assigned_staff_id"]),
+            new_value="",
+            changed_by=resolve_actor(request, staff["name"]),
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

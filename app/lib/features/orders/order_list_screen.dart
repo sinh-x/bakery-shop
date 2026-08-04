@@ -552,7 +552,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           const CakeQueueContent(),
 
           // ── Tab 2: Delivery ────────────────────────────────────────
-          const DeliveryContent(),
+          DeliveryContent(tabController: _tabController),
         ],
       ),
     );

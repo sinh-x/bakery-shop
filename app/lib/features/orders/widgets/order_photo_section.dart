@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
+import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 // ── Predefined tag definitions ─────────────────────────────────────────────────
@@ -94,29 +96,50 @@ class OrderPhotoSection extends ConsumerStatefulWidget {
 }
 
 class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
-  bool _uploading = false;
   final _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
+  }
 
   Future<void> _pickAndUpload() async {
     final files = await _picker.pickMultiImage(imageQuality: 85);
     if (files.isEmpty || !mounted) return;
 
-    setState(() => _uploading = true);
-    try {
-      for (final xfile in files) {
-        await ref
-            .read(orderPhotosProvider(widget.orderRef).notifier)
-            .upload(xfile, workItemId: widget.workItemId);
-      }
-      if (mounted) {
+    final notifier = ref.read(orderPhotosProvider(widget.orderRef).notifier);
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final workItemId = widget.workItemId;
+    await upload.uploadAll(
+      files,
+      (file) => notifier.upload(file, workItemId: workItemId),
+    );
+    if (mounted) {
+      final batch = ref.read(photoUploadNotifierProvider);
+      if (batch.hasErrors) {
+        final firstError = batch.items
+            .firstWhere(
+              (i) => i.state.status == PhotoUploadStatus.error,
+              orElse: () => batch.items.first,
+            )
+            .state.errorMessage;
+        showTopSnackBar(
+          context,
+          firstError == null || firstError.isEmpty
+              ? VN.apiError
+              : '${VN.apiError}: $firstError',
+        );
+      } else {
         showTopSnackBar(context, VN.orderPhotoAdded);
       }
-    } catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
-      }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
     }
   }
 
@@ -178,6 +201,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
   @override
   Widget build(BuildContext context) {
     final photosAsync = ref.watch(orderPhotosProvider(widget.orderRef));
+    final uploadState = ref.watch(photoUploadNotifierProvider);
     final theme = Theme.of(context);
 
     return Column(
@@ -193,7 +217,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
                 color: theme.colorScheme.primary,
               ),
             ),
-            if (_uploading)
+            if (uploadState.isUploading)
               const Padding(
                 padding: EdgeInsets.all(8),
                 child: SizedBox(
@@ -212,6 +236,9 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
               ),
           ],
         ),
+
+        // ── Per-photo upload progress / error states (FR1/FR2/FR4) ─────
+        UploadProgressIndicator(states: uploadState.states),
 
         // ── Photo list ─────────────────────────────────────────────────
         photosAsync.when(

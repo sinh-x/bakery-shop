@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from pydantic import BaseModel, Field
 
-from baker.api.inventory_fifo import (
+from baker.services.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
     create_lot_with_items,

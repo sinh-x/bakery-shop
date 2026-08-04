@@ -5,11 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+// EXEMPT: 300-line screen threshold exceeded because the event form owns
+// type/tag selection, photo upload lifecycle, and submit flow in one screen
+// to keep EventFormPhotoSection under its widget limit. Pre-existing at 435
+// lines before DG-333 Phase 4 (race-condition fix reduced to 423). Reviewed
+// 2026-08-02.
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
+import '../../data/models/event_photo.dart';
 import '../../providers/events_provider.dart';
+import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import '../../shared/widgets/upload_progress_indicator.dart';
+import 'widgets/event_form_photo_section.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+
+import '../../data/api/api_client.dart' show apiBaseUrlProvider;
 
 class _EventType {
   const _EventType(this.value, this.label, this.icon);
@@ -64,10 +75,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   final _customTags = <String>[];
   bool _showCustomTagField = false;
   bool _saving = false;
-  bool _uploading = false;
 
-  final _picker = ImagePicker();
   final _selectedPhotos = <XFile>[];
+  final _existingPhotos = <EventPhoto>[];
 
   bool get _isEditing => widget.event != null;
   bool get _isOrderLinked => widget.orderId != null;
@@ -75,6 +85,14 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   @override
   void initState() {
     super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
     final e = widget.event;
     _summaryCtrl = TextEditingController(text: e?.summary ?? '');
     _selectedType = e?.type ?? 'note';
@@ -86,6 +104,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           _customTags.add(tag);
         }
       }
+      _loadExistingPhotos(e.id);
+    }
+  }
+
+  Future<void> _loadExistingPhotos(int eventId) async {
+    try {
+      final service = ref.read(eventServiceProvider);
+      final photos = await service.getEventPhotos(eventId);
+      if (mounted) setState(() => _existingPhotos.addAll(photos));
+    } catch (e) {
+      debugPrint('_loadExistingPhotos failed: $e');
+      // Non-fatal: edit form still works without existing photo display.
     }
   }
 
@@ -96,13 +126,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     super.dispose();
   }
 
-  Future<void> _pickPhotos() async {
-    final files = await _picker.pickMultiImage(imageQuality: 85);
-    if (files.isNotEmpty) {
-      setState(() => _selectedPhotos.addAll(files));
-    }
-  }
-
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
@@ -110,6 +133,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     setState(() => _saving = true);
     try {
       final loggedBy = ref.read(loggedByProvider);
+      final hasNewPhotos = _selectedPhotos.isNotEmpty;
+      final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_isEditing) {
         await ref
             .read(eventsProvider.notifier)
@@ -120,12 +145,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               tags: _selectedTags.toList(),
               loggedBy: loggedBy,
             );
-        if (mounted) {
-          showTopSnackBar(context, VN.eventUpdated);
-          context.pop();
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(widget.event!.id, upload);
         }
+        if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
-        await ref
+        final createdEvent = await ref
             .read(eventsProvider.notifier)
             .logEvent(
               summary: summary,
@@ -135,32 +160,41 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               orderId: widget.orderId,
             );
 
-        if (_selectedPhotos.isNotEmpty && mounted) {
-          setState(() => _uploading = true);
-          final eventList = ref.read(eventsProvider).value ?? [];
-          if (eventList.isNotEmpty) {
-            final createdEvent = eventList.first;
-            final service = ref.read(eventServiceProvider);
-            for (final xfile in _selectedPhotos) {
-              await service.uploadEventPhoto(
-                createdEvent.id,
-                File(xfile.path),
-              );
-            }
-          }
+        if (hasNewPhotos && mounted) {
+          await _uploadPhotos(createdEvent.id, upload);
         }
-
-        if (mounted) {
-          showTopSnackBar(context, VN.eventLogged);
-          context.pop();
-        }
+        if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
+      if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_submit] before `context.pop()` so the screen does not dismiss until
+  /// every upload reaches a terminal state (FR3 — race condition fix).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(
+    int eventId,
+    PhotoUploadNotifier upload,
+  ) async {
+    final service = ref.read(eventServiceProvider);
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 
@@ -344,79 +378,18 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          if (!_isEditing) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                VN.eventPhotos,
-                style: theme.textTheme.titleSmall,
-              ),
-            ),
-            if (_selectedPhotos.isNotEmpty)
-              SizedBox(
-                height: 80,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _selectedPhotos.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            File(_selectedPhotos[index].path),
-                            width: 70,
-                            height: 70,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: -8,
-                          right: -8,
-                          child: GestureDetector(
-                            onTap: () => setState(() {
-                              _selectedPhotos.removeAt(index);
-                            }),
-                            child: const CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Colors.black54,
-                              child: Icon(Icons.close, size: 14, color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _uploading ? null : _pickPhotos,
-                  icon: const Icon(Icons.add_a_photo, size: 18),
-                  label: const Text(VN.addEventPhoto),
-                ),
-                if (_uploading) ...[
-                  const SizedBox(width: 12),
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    VN.uploadingPhotos,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
+          EventFormPhotoSection(
+            existingPhotos: _existingPhotos,
+            selectedPhotos: _selectedPhotos,
+            baseUrl: ref.read(apiBaseUrlProvider),
+            onSelectionChanged: (files) =>
+                setState(() => _selectedPhotos
+                  ..clear()
+                  ..addAll(files)),
+          ),
+          UploadProgressIndicator(
+            states: ref.watch(photoUploadNotifierProvider).states,
+          ),
           Row(
             children: [
               const Icon(Icons.person_outline, size: 18),

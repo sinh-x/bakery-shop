@@ -1,10 +1,14 @@
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
+import 'package:bakery_app/providers/photo_upload_provider.dart';
+import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +16,56 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/login_screen_test_helpers.dart';
+
+/// Dio interceptor that short-circuits all backend calls with empty/safe
+/// responses so the expense form and history card never make real network
+/// calls (which would leave pending timers in tests). Event photo GETs
+/// return an empty list (DG-326 Phase 3); other GETs return empty
+/// lists/objects so providers fall back to hardcoded defaults.
+class _EmptyPhotosInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.path.contains('/photos') && options.method == 'GET') {
+      handler.resolve(
+        Response<List<dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const <dynamic>[],
+        ),
+      );
+      return;
+    }
+    // Short-circuit any other GET so providers fall back to hardcoded
+    // defaults without leaving pending Dio timeout timers.
+    if (options.method == 'GET') {
+      handler.resolve(
+        Response<List<dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const <dynamic>[],
+        ),
+      );
+      return;
+    }
+    handler.next(options);
+  }
+}
+
+/// Builds a [ProviderContainer] with the overrides needed by the expense
+/// edit form (shared prefs + dio + event service with empty-photo stub).
+Future<ProviderContainer> _expenseFormContainer() async {
+  SharedPreferences.setMockInitialValues(<String, Object>{});
+  final prefs = await SharedPreferences.getInstance();
+  final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+    ..interceptors.add(_EmptyPhotosInterceptor());
+  return ProviderContainer(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      dioProvider.overrideWithValue(dio),
+      eventServiceProvider.overrideWithValue(EventService(dio)),
+    ],
+  );
+}
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -21,7 +75,7 @@ BakeryEvent _expenseEvent({
   required String staff,
   String vendor = '',
   String note = '',
-  String paymentSource = 'Shop tiền mặt',
+  String paymentSource = VN.paymentSourceDrawerCash,
   String paidByName = '',
   String loggedBy = '',
   bool reimbursed = false,
@@ -59,6 +113,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? loggedBy,
   String? searchText,
   String? debtStatus,
+  String? subcategory,
 }) async => const [];
 
 void main() {
@@ -84,6 +139,7 @@ void main() {
               loggedBy,
               searchText,
               debtStatus,
+              subcategory,
             }) async {
               capturedSince = since;
                   capturedUntil = until;
@@ -172,6 +228,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -184,8 +241,13 @@ void main() {
       initialLocation: '/expenses',
     );
 
+    final container = await _expenseFormContainer();
+    addTearDown(container.dispose);
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -216,8 +278,11 @@ void main() {
         },
       );
 
+      final container = await _expenseFormContainer();
+      addTearDown(container.dispose);
       await tester.pumpWidget(
-        ProviderScope(
+        UncontrolledProviderScope(
+          container: container,
           child: MaterialApp(home: ExpenseFormScreen(event: legacyExpense)),
         ),
       );
@@ -262,6 +327,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -298,6 +364,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   loads += 1;
                   return const [];
@@ -361,6 +428,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => events,
           ),
         ),
@@ -434,6 +502,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedCategory = category;
                   capturedPaidByName = paidByName;
@@ -486,6 +555,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedCategory = category;
                   return events;
@@ -550,6 +620,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -593,6 +664,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -616,7 +688,7 @@ void main() {
         amount: 120000,
         category: VN.expenseCategoryIngredient,
         paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourceShopCash,
+        paymentSource: VN.paymentSourceDrawerCash,
         staff: 'Lan',
         reimbursed: false,
       );
@@ -637,6 +709,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -680,6 +753,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -707,7 +781,7 @@ void main() {
       (widget) =>
           widget is FilterChip &&
           widget.label is Text &&
-          (widget.label as Text).data == VN.paymentSourceShopCash,
+          (widget.label as Text).data == VN.paymentSourceDrawerCash,
     );
     await tester.dragUntilVisible(
       paymentSourceChips,
@@ -720,6 +794,9 @@ void main() {
   testWidgets('selecting payment source chip reloads with filter', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     String? capturedPaymentSource;
     final events = [
       _expenseEvent(
@@ -748,6 +825,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedPaymentSource = paymentSource;
                   return events;
@@ -776,6 +854,9 @@ void main() {
   });
 
   testWidgets('clear filters resets payment source chip', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final events = [
       _expenseEvent(
         id: 1,
@@ -803,6 +884,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => events,
           ),
         ),
@@ -847,7 +929,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
-    expect(find.text(VN.paymentSourceShopCash), findsOneWidget);
+    expect(find.text(VN.paymentSourceDrawerCash), findsOneWidget);
   });
 
   testWidgets('history card shows logged_by and paid_by roles', (
@@ -866,7 +948,7 @@ void main() {
         'amount_vnd': 120000,
         'category': VN.expenseCategoryIngredient,
         'payment_method': VN.methodCash,
-        'payment_source': VN.paymentSourceShopCash,
+        'payment_source': VN.paymentSourceDrawerCash,
         'vendor': '',
         'note': '',
         'staff_name': 'Lan',
@@ -891,6 +973,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -932,6 +1015,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -1029,6 +1113,12 @@ void main() {
     await tester.tap(find.text(VN.expenseCategoryIngredient).last);
     await tester.pumpAndSettle();
 
+    // Select subcategory (required when category has children — DG-302).
+    await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text(VN.expenseSaveAction));
     await tester.pumpAndSettle();
 
@@ -1065,6 +1155,12 @@ void main() {
       await tester.tap(find.text(VN.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
+      // Select subcategory (required when category has children — DG-302).
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text(VN.expenseSaveAction));
       await tester.pumpAndSettle();
 
@@ -1098,6 +1194,12 @@ void main() {
     await tester.tap(find.byType(DropdownButtonFormField<String>).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    // Select subcategory (required when category has children — DG-302).
+    await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(VN.expenseSaveAction));
@@ -1137,6 +1239,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1194,6 +1297,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1247,6 +1351,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1300,6 +1405,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1359,6 +1465,9 @@ void main() {
   testWidgets(
     'form screen shows vendor required validation when Nợ selected and vendor empty',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       SharedPreferences.setMockInitialValues({
       'auth_token': kTestAdminToken,
       'auth_username': 'Lan',
@@ -1383,8 +1492,15 @@ void main() {
       await tester.tap(find.text(VN.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
-      // Select Nợ.
+      // Select subcategory (required when category has children — DG-302).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.pumpAndSettle();
+
+      // Select Nợ (payment method dropdown — index 2 now that subcategory
+      // dropdown is rendered between category and payment method).
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(2));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.methodDebt).last);
       await tester.pumpAndSettle();
@@ -1452,6 +1568,7 @@ void main() {
                 loggedBy,
                 searchText,
                 debtStatus,
+                subcategory,
               }) async {
                 capturedDebtStatus = debtStatus;
                 return const [];
@@ -1503,4 +1620,72 @@ void main() {
       expect(tapped, isTrue);
     },
   );
+
+  // DG-333 Phase 5.6-c1-fix (M3): photo-upload integration. The expense
+  // form mounts an UploadProgressIndicator fed by the shared
+  // PhotoUploadNotifier. We seed the provider with an in-progress batch
+  // (bypassing ImagePicker) and verify the indicator renders a visible
+  // count summary on the form.
+  testWidgets(
+    'expense form renders UploadProgressIndicator with seeded upload state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auth_token': kTestAdminToken,
+        'auth_username': 'Lan',
+        'auth_role': 'staff',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_EmptyPhotosInterceptor());
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          dioProvider.overrideWithValue(dio),
+          eventServiceProvider.overrideWithValue(EventService(dio)),
+          photoUploadNotifierProvider
+              .overrideWith(_SeededUploadNotifier.new),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Use pump (not pumpAndSettle) — the indicator itself has no pending
+      // animations once both seeded photos are terminal, but pump avoids
+      // settling any background timers from the form's async loads.
+      await tester.pump();
+
+      expect(find.byType(UploadProgressIndicator, skipOffstage: false),
+          findsOneWidget);
+      expect(find.text(VN.photoUploadComplete(2), skipOffstage: false),
+          findsOneWidget);
+    },
+  );
+}
+
+/// Notifier that emits a fixed terminal batch (2 successes) so the
+/// ExpenseFormScreen's watched [UploadProgressIndicator] renders a visible
+/// completion summary without driving a real upload. `reset()` is
+/// overridden to a no-op so the screen's initState microtask reset does not
+/// clear the seeded state (DG-333 Phase 5.6-c1-fix m2/M3).
+class _SeededUploadNotifier extends PhotoUploadNotifier {
+  @override
+  PhotoUploadBatchState build() => const PhotoUploadBatchState([
+        PhotoUploadItem(
+          fileName: 'a.jpg',
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+        PhotoUploadItem(
+          fileName: 'b.jpg',
+          state: PhotoUploadState(status: PhotoUploadStatus.success),
+        ),
+      ]);
+
+  @override
+  void reset() {}
 }

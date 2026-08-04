@@ -22,6 +22,8 @@ from baker.api.auth import _pwd_ctx, _reset_auth_state
 from baker.config import JWT_SECRET
 from baker.db.connection import get_db
 
+pytestmark = pytest.mark.critical
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -687,3 +689,285 @@ def test_login_populates_session_staff_id(api_client):
         ).fetchone()
         assert session is not None
         assert session["staff_id"] == staff_id
+
+
+# ---------------------------------------------------------------------------
+# DG-319 Phase 1 — Password change endpoint (PUT /api/auth/password)
+#
+# AC1: valid JWT + correct old + matching new/confirm → 200, password
+#      updated, all sessions revoked, user can login with new password.
+# AC2: valid JWT + incorrect old password → 401 with VN error message.
+# AC5: no JWT (unauthenticated) → 401.
+# FR4: new_password != confirm_password → 422.
+# ---------------------------------------------------------------------------
+
+
+def test_password_change_success_updates_and_revokes_sessions(auth_client):
+    """AC1: valid JWT + correct old + matching new/confirm → 200, password
+    updated, sessions revoked, user can login with new password."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwchange", password="oldpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "oldpass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # The caller's session should have been revoked.
+    payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT revoked_at FROM sessions WHERE jti = ?",
+            (payload["jti"],),
+        ).fetchone()
+        assert row is not None
+        assert row["revoked_at"] is not None
+
+    # The old password no longer works; the new password does.
+    old_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "pwchange", "password": "oldpass123"},
+    )
+    assert old_resp.status_code == 401
+
+    new_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "pwchange", "password": "newpass456"},
+    )
+    assert new_resp.status_code == 200
+
+
+def test_password_change_wrong_old_password_returns_401(auth_client):
+    """AC2: valid JWT + incorrect old password → 401 with VN error message."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwwrongold", password="realpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "wrongoldpass",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 401
+    # VN error message pattern (same as login endpoint, FR2).
+    assert "mật khẩu" in resp.json()["detail"].lower()
+
+
+def test_password_change_no_jwt_returns_401(auth_client):
+    """AC5: no JWT (unauthenticated) → 401."""
+    # Seed a user so the 401 is from auth, not a missing-user 401.
+    with get_db() as conn:
+        _create_test_user(conn, "pwuser", "pass123")
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "pass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+    )
+    assert resp.status_code == 401
+
+
+def test_password_change_mismatch_confirm_returns_422(auth_client):
+    """FR4: new_password != confirm_password → 422 (server-side validation)."""
+    token = _seed_user_and_get_token(
+        auth_client, username="pwmismatch", password="realpass123"
+    )
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "realpass123",
+            "new_password": "newpass456",
+            "confirm_password": "different789",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+    assert "khớp" in resp.json()["detail"].lower()
+
+
+def test_password_change_does_not_revoke_other_users_sessions(auth_client):
+    """AC1 variant: revoking user A's sessions does not revoke user B's."""
+    token_a = _seed_user_and_get_token(
+        auth_client, username="usera", password="passA123"
+    )
+    token_b = _seed_user_and_get_token(
+        auth_client, username="userb", password="passB123"
+    )
+    payload_b = jwt.decode(token_b, JWT_SECRET, algorithms=["HS256"])
+
+    # User A changes their password.
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "passA123",
+            "new_password": "newA456",
+            "confirm_password": "newA456",
+        },
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # User B's session should still be active.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT revoked_at FROM sessions WHERE jti = ?",
+            (payload_b["jti"],),
+        ).fetchone()
+        assert row is not None
+        assert row["revoked_at"] is None
+
+
+def test_password_change_clears_force_password_change_flag(auth_client):
+    """FR10/AC8: a successful password change clears force_password_change.
+
+    Without this, a forced-change user would be re-prompted on every login
+    (infinite loop). The flag must be cleared atomically with the new hash.
+    """
+    token = _seed_user_and_get_token(
+        auth_client, username="forceclear", password="oldpass123"
+    )
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'forceclear'"
+        )
+        conn.commit()
+
+    resp = auth_client.put(
+        "/api/auth/password",
+        json={
+            "old_password": "oldpass123",
+            "new_password": "newpass456",
+            "confirm_password": "newpass456",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Flag must be cleared on the user row.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT force_password_change FROM users WHERE username = 'forceclear'"
+        ).fetchone()
+        assert row is not None
+        assert bool(row["force_password_change"]) is False
+
+    # Re-login with the new password should report force_password_change=false.
+    new_resp = auth_client.post(
+        "/api/auth/login",
+        json={"username": "forceclear", "password": "newpass456"},
+    )
+    assert new_resp.status_code == 200
+    assert new_resp.json()["force_password_change"] is False
+
+
+#
+# When a user logs in, the login response includes force_password_change: true
+# when the flag is set on the user row (via admin `baker user set-password
+# --force-change`). The client uses this to route to /change-password.
+# ---------------------------------------------------------------------------
+
+
+def test_login_returns_force_password_change_false_by_default(api_client):
+    """FR8: default users have force_password_change=false in the response."""
+    with get_db() as conn:
+        _create_test_user(conn, "normaluser", "pass123")
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "normaluser", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is False
+
+
+def test_login_returns_force_password_change_true_when_flag_set(api_client):
+    """FR8/AC7: when force_password_change=1 on the user, the login response
+    reports force_password_change: true."""
+    with get_db() as conn:
+        _create_test_user(conn, "forceduser", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'forceduser'"
+        )
+        conn.commit()
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "forceduser", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+
+def test_login_force_password_change_persists_until_cleared(api_client):
+    """FR8: the flag remains true on subsequent logins until cleared (FR10 is
+    a separate phase — login here only reports, does not clear)."""
+    with get_db() as conn:
+        _create_test_user(conn, "stickyflag", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'stickyflag'"
+        )
+        conn.commit()
+
+    # First login — flag is true.
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "stickyflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+    # Second login — flag is still true (login does not clear it).
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "stickyflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+
+def test_login_force_password_change_reflects_clearing(api_client):
+    """FR8: after the flag is cleared (e.g. via password change), the login
+    response reports force_password_change: false."""
+    with get_db() as conn:
+        _create_test_user(conn, "clearflag", "pass123")
+        conn.execute(
+            "UPDATE users SET force_password_change = 1 WHERE username = 'clearflag'"
+        )
+        conn.commit()
+
+    # While flag is set — response is true.
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "clearflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is True
+
+    # Clear the flag (simulates a successful forced change in a later phase).
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET force_password_change = 0 WHERE username = 'clearflag'"
+        )
+        conn.commit()
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "clearflag", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["force_password_change"] is False

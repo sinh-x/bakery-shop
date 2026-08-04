@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'category_form.dart';
 
 class CategoryManagementScreen extends ConsumerWidget {

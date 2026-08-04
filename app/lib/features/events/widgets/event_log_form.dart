@@ -1,8 +1,21 @@
+import 'dart:io';
+
+// EXEMPT: 300-line widget threshold exceeded because the quick-log form owns
+// summary/type/tag selection, photo upload lifecycle, and submit flow in one
+// inline widget to keep QuickLogPhotoPicker under its own widget limit.
+// Pre-existing at 295 lines before DG-333 Phase 5; race-condition fix added
+// the _uploadPhotos helper + UploadProgressIndicator and grew it to 342.
+// Reviewed 2026-08-02.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../data/api/event_service.dart';
 import '../../../providers/events_provider.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import '../../../providers/photo_upload_provider.dart';
+import '../../../shared/widgets/upload_progress_indicator.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'quick_log_photo_picker.dart';
 
 class _EventType {
   const _EventType(this.value, this.label, this.icon);
@@ -51,8 +64,22 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   String _selectedType = 'note';
   final _selectedTags = <String>{};
   final _customTags = <String>[];
+  final _selectedPhotos = <XFile>[];
   bool _showCustomTagField = false;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Clear any stale upload state from a previous screen navigation
+    // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
+    // screens that share the global photoUploadNotifierProvider. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(
+      () => ref.read(photoUploadNotifierProvider.notifier).reset(),
+    );
+  }
 
   @override
   void dispose() {
@@ -69,12 +96,15 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     setState(() => _saving = true);
     try {
       final loggedBy = ref.read(loggedByProvider);
-      await ref.read(eventsProvider.notifier).logEvent(
+      final createdEvent = await ref.read(eventsProvider.notifier).logEvent(
             summary: summary,
             type: _selectedType,
             tags: _selectedTags.toList(),
             loggedBy: loggedBy,
           );
+      if (_selectedPhotos.isNotEmpty && mounted) {
+        await _uploadPhotos(createdEvent.id);
+      }
       if (mounted) {
         showTopSnackBar(context, VN.eventLogged);
         _reset();
@@ -84,7 +114,28 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  /// Upload locally-picked photos to [eventId] via the shared
+  /// [PhotoUploadNotifier] (FR4) so per-photo progress and error states are
+  /// surfaced through the [UploadProgressIndicator] (FR1/FR2). Awaited by
+  /// [_submit] before `_reset()` runs so the form is not cleared until every
+  /// upload reaches a terminal state (FR3 — race condition fix, AC5).
+  /// Remaining photos continue after a failure; a snack bar is shown only when
+  /// any photo errored.
+  Future<void> _uploadPhotos(int eventId) async {
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final service = ref.read(eventServiceProvider);
+    await upload.uploadAll(
+      _selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+    );
+    if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
+      showTopSnackBar(context, VN.eventPhotosUploadFailed);
     }
   }
 
@@ -95,6 +146,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
       _selectedTags.clear();
       _customTags.clear();
       _showCustomTagField = false;
+      _selectedPhotos.clear();
     });
     _summaryFocus.requestFocus();
   }
@@ -244,6 +296,20 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                 onPressed: () => setState(() => _showCustomTagField = true),
               ),
           ],
+        ),
+        const SizedBox(height: 12),
+
+        // Photo picker — compact; uploads after event creation (NFR1)
+        QuickLogPhotoPicker(
+          selectedPhotos: _selectedPhotos,
+          onSelectionChanged: (files) => setState(() {
+            _selectedPhotos
+              ..clear()
+              ..addAll(files);
+          }),
+        ),
+        UploadProgressIndicator(
+          states: ref.watch(photoUploadNotifierProvider).states,
         ),
         const SizedBox(height: 12),
 

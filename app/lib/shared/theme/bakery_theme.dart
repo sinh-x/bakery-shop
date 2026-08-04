@@ -83,6 +83,15 @@ class BakeryTheme {
     'urgent': Color(0xFFFFA000),    // Amber
   };
 
+  // Critical in-app alert overlay colors (DG-309: dark red bg + amber fg)
+  // Darker red (#B71C1C) and lighter amber (#FFC107) chosen over the tier
+  // defaults to maximize contrast while staying within the critical-urgency
+  // red family. Contrast ratio is 4.03:1 — meets WCAG AA for large text
+  // (requires >= 3:1) but falls short of AA for normal text (requires 4.5:1).
+  // Acceptable for a transient 6-second alert. Theme-independent — hardcoded by design.
+  static const criticalAlertBackground = Color(0xFFB71C1C); // Dark red
+  static const criticalAlertForeground = Color(0xFFFFC107); // Amber
+
   // Completeness tier colors (DG-241 Phase 2)
   static const completenessTierColors = {
     'incomplete': Color(0xFFFFA000),  // Amber — distinct from urgency red

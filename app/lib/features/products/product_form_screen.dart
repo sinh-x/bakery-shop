@@ -16,9 +16,11 @@ import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
+import '../../providers/photo_upload_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import '../../shared/widgets/upload_progress_indicator.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
 import 'widgets/catalog_tag_edit_sheet.dart';
@@ -1364,10 +1366,7 @@ class _CatalogGallerySection extends ConsumerStatefulWidget {
 
 class _CatalogGallerySectionState
     extends ConsumerState<_CatalogGallerySection> {
-  bool _uploading = false;
   bool _promoting = false;
-  int _uploadTotal = 0;
-  int _uploadDone = 0;
 
   Future<void> _pickAndUpload() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -1393,64 +1392,52 @@ class _CatalogGallerySectionState
     if (source == null) return;
 
     final picker = ImagePicker();
+    final catalogNotifier = ref.read(
+      catalogProvider(widget.productId).notifier,
+    );
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    upload.reset();
 
     if (source == ImageSource.gallery) {
       // Multi-select from gallery
       final files = await picker.pickMultiImage();
       if (files.isEmpty) return;
 
-      setState(() {
-        _uploading = true;
-        _uploadTotal = files.length;
-        _uploadDone = 0;
-      });
-      int failed = 0;
-      for (final file in files) {
-        try {
-          await ref
-              .read(catalogProvider(widget.productId).notifier)
-              .addPhoto(file);
-          if (mounted) setState(() => _uploadDone++);
-        } on DioException {
-          failed++;
-        } catch (_) {
-          failed++;
-        }
-      }
-      if (mounted) {
-        final added = files.length - failed;
-        showTopSnackBar(
-          context,
-          failed == 0
-              ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
-              : 'Đã thêm $added ảnh, $failed ảnh lỗi',
-        );
-      }
+      await upload.uploadAll(
+        files,
+        catalogNotifier.addPhoto,
+      );
+      if (!mounted) return;
+      final batch = ref.read(photoUploadNotifierProvider);
+      final added = batch.completedCount;
+      final failed = batch.failedCount;
+      showTopSnackBar(
+        context,
+        failed == 0
+            ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
+            : 'Đã thêm $added ảnh, $failed ảnh lỗi',
+      );
     } else {
       // Camera: single photo only
       final file = await picker.pickImage(source: source);
       if (file == null) return;
 
-      setState(() {
-        _uploading = true;
-        _uploadTotal = 1;
-        _uploadDone = 0;
-      });
-      try {
-        await ref
-            .read(catalogProvider(widget.productId).notifier)
-            .addPhoto(file);
-        if (mounted) {
-          showTopSnackBar(context, VN.catalogPhotoAdded);
-        }
-      } on DioException catch (e) {
-        if (mounted) {
-          showTopSnackBar(context, e.message ?? VN.apiError);
-        }
+      await upload.uploadAll(
+        [file],
+        catalogNotifier.addPhoto,
+      );
+      if (!mounted) return;
+      final batch = ref.read(photoUploadNotifierProvider);
+      if (batch.hasErrors) {
+        final err = batch.items.firstWhere(
+          (i) => i.state.status == PhotoUploadStatus.error,
+          orElse: () => batch.items.first,
+        );
+        showTopSnackBar(context, err.state.errorMessage ?? VN.apiError);
+      } else {
+        showTopSnackBar(context, VN.catalogPhotoAdded);
       }
     }
-
-    if (mounted) setState(() => _uploading = false);
   }
 
   Future<void> _confirmDelete(CatalogPhoto photo) async {
@@ -1529,6 +1516,7 @@ class _CatalogGallerySectionState
     final catalogAsync = ref.watch(catalogProvider(widget.productId));
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final theme = Theme.of(context);
+    final uploadState = ref.watch(photoUploadNotifierProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1539,24 +1527,18 @@ class _CatalogGallerySectionState
           child: Row(
             children: [
               Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_uploading || _promoting) ...[
+              if (_promoting) ...[
                 const SizedBox(width: 12),
                 const SizedBox(
                   height: 16,
                   width: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                if (_uploadTotal > 1) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    '$_uploadDone/$_uploadTotal',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
               ],
             ],
           ),
         ),
+        UploadProgressIndicator(states: uploadState.states),
         catalogAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, st) => Text(
@@ -1587,7 +1569,7 @@ class _CatalogGallerySectionState
                 itemBuilder: (ctx, index) {
                   if (index == photos.length) {
                     return _AddPhotoCard(
-                      uploading: _uploading,
+                      uploading: uploadState.isUploading,
                       onTap: _pickAndUpload,
                     );
                   }

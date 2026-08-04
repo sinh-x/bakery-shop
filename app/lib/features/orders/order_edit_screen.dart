@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
@@ -49,6 +50,20 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
+  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
+  // manual `deliveryTimeSlot` state was removed (DG-306 Phase 1 / FR2) — the
+  // slot is auto-derived from `_dueTime` at submit time via `deriveTimeSlot`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL field was removed from the
+  // edit form — the URL is now managed via the Google Maps modal on the
+  // order detail screen. The existing URL is preserved at save time by
+  // passing the loaded order's `googleMapsUrl` back to the backend.
+  // DG-329 Phase 7 / FR9: the manual Lat/Long text fields were removed from
+  // the edit wizard. The loaded order's stored coordinates are preserved
+  // verbatim at save time (no user editing in the wizard); coordinates are
+  // managed via the Google Maps modal on the order detail screen.
+  double? _existingLatitude;
+  double? _existingLongitude;
+  String? _existingGoogleMapsUrl;
   // FR9: single-state customer model (was tri-state: _selectedCustomer +
   // _linkedCustomerId + _customerTouched). The existing linked customer is
   // loaded from `order.customerId` into `_selectedCustomer` on open.
@@ -57,6 +72,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   // the user touched the customer selection. Not customer state.
   bool _customerTouched = false;
   int _currentStage = 1;
+
+  // DG-304 Phase 5: admin staff assignment state for the delivery stage
+  // dropdown (FR8/AC5). `_assignedStaffTouched` gates whether the value is
+  // sent on save (incl. null to unassign — FR6), mirroring `customerTouched`.
+  String? _assignedStaffId;
+  bool _assignedStaffTouched = false;
 
   /// FR2/FR3: the delivery phone syncs with the customer phone until the user
   /// manually makes them differ; once diverged it stays independent for the
@@ -146,6 +167,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             _deliveryPhoneCtrl.text.trim().isNotEmpty;
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);
+    // DG-303 Phase 4: prefill GPS + time slot fields from the existing order.
+    // DG-329 Phase 7 / FR9: Lat/Long are no longer editable in the wizard;
+    // preserve the stored values verbatim for save.
+    _existingLatitude = order.latitude;
+    _existingLongitude = order.longitude;
+    _existingGoogleMapsUrl = order.googleMapsUrl;
+    // DG-304 Phase 5: prefill the staff assignment from the existing order so
+    // the dropdown shows the current assignee (FR8/AC5).
+    _assignedStaffId = order.assignedStaffId;
     _initializing = false;
   }
 
@@ -265,6 +295,17 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
+            latitude: _existingLatitude,
+            longitude: _existingLongitude,
+            googleMapsUrl: _existingGoogleMapsUrl,
+            // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
+            deliveryTimeSlot: _dueTime != null
+                ? deriveTimeSlot(_formatTime(_dueTime!))
+                : null,
+            // DG-304 Phase 5: admin staff assignment (FR8/AC5). Only sent when
+            // the admin touched the dropdown; null clears the assignment.
+            assignedStaffId: _assignedStaffId,
+            assignedStaffTouched: _assignedStaffTouched,
           );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
@@ -302,6 +343,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         shippingFee: _shippingFee,
         notes: _notesCtrl.text,
         source: _source,
+        latitude: _existingLatitude,
+        longitude: _existingLongitude,
+        googleMapsUrl: _existingGoogleMapsUrl,
       );
 
   void _onCustomerSelected(Customer? c) {
@@ -321,6 +365,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         _selectedCustomer = null;
         _customerTouched = true;
       }
+    });
+  }
+
+  /// DG-304 Phase 5: admin selects a delivery staff member (or clears to
+  /// unassign) in the wizard delivery stage dropdown (FR8/FR6/AC5).
+  void _onAssignedStaffChanged(String? staffId) {
+    setState(() {
+      _assignedStaffId = staffId;
+      _assignedStaffTouched = true;
     });
   }
 
@@ -414,6 +467,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),
                         onContinue: () => _goToStage(4),
+                        // DG-304 Phase 5: staff assignment dropdown state.
+                        assignedStaffId: _assignedStaffId,
+                        onAssignedStaffChanged: _onAssignedStaffChanged,
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

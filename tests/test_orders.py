@@ -1,8 +1,11 @@
+import pytest
 from click.testing import CliRunner
 from baker.cli import app
 
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
+
+pytestmark = pytest.mark.critical
 
 
 runner = CliRunner()

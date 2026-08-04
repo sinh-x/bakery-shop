@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/accounts_tab.dart';
 import 'widgets/journal_tab.dart';
 import 'widgets/balances_tab.dart';

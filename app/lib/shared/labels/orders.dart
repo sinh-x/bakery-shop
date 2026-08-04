@@ -181,4 +181,148 @@ class OrdersLabels {
 
   // Phone dialer launch failure (DG-283 review cycle 1 — CQ-1)
   static const cannotOpenDialer = 'Không mở được trình quay số.';
+
+  // Delivery schedule + GPS (DG-303 Phase 4) — door delivery only
+  static const latitudeLabel = 'Vĩ độ';
+  static const longitudeLabel = 'Kinh độ';
+  static const googleMapsUrlLabel = 'Liên kết Google Maps';
+  static const deliveryTimeSlotLabel = 'Khung giờ giao';
+  static const gpsCoordinatesLabel = 'Tọa độ GPS';
+  static const openMap = 'Mở bản đồ';
+  static const cannotOpenMap = 'Không mở được bản đồ.';
+  static const latitudeInvalid = 'Vĩ độ phải từ -90 đến 90';
+  static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
+
+  /// Predefined 1-hour delivery time slots (FR3): "6:00" … "21:00".
+  static const deliveryTimeSlots = <String>[
+    '6:00',
+    '7:00',
+    '8:00',
+    '9:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+  ];
+
+  // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.
+  static const deliverySwitchToList = 'Chuyển sang danh sách';
+  static const deliverySwitchToWeek = 'Chuyển sang tuần';
+  static const deliverySwitchToDay = 'Chuyển sang ngày';
+  static const deliveryCalendarNoSlot = 'Chưa có khung giờ';
+
+  // Delivery week calendar view (DG-306 Phase 2) — FR3, FR5, AC1–AC3.
+  static const deliveryWeekToday = 'Hôm nay';
+  static const deliveryWeekPrevTooltip = 'Tuần trước';
+  static const deliveryWeekNextTooltip = 'Tuần sau';
+  static const deliveryWeekUnscheduled = 'Chưa có giờ';
+
+  // Delivery day calendar view — day navigation.
+  static const deliveryDayToday = 'Hôm nay';
+  static const deliveryDayPrevTooltip = 'Ngày trước';
+  static const deliveryDayNextTooltip = 'Ngày sau';
+
+  // Delivery calendar time-slot count badge + compact layout (DG-329
+  // Phase 4 / FR5 / AC4). Shown next to a slot label when the slot has 3+
+  // orders, e.g. "15:00 (3 đơn)".
+  static String deliverySlotCountBadge(int count) => '$count đơn';
+
+  /// Minimum readable width (in logical pixels) of a compact order chip in
+  /// the calendar time-slot row (NFR2). Below this width chips become too
+  /// narrow to display the customer name and staff line legibly.
+  static const double compactOrderChipMinWidth = 120.0;
+
+  /// Maximum number of compact order chips rendered per row in a calendar
+  /// time-slot row on screens ≥ 480px wide (NFR2). On narrower screens the
+  /// slot falls back to a vertically scrollable list.
+  static const int compactOrderChipsPerRow = 4;
+
+  /// Screen-width threshold (in logical pixels) at or above which the
+  /// calendar time-slot row renders the compact `Wrap` layout. Below this
+  /// width the slot falls back to a scrollable single-column list.
+  static const double compactLayoutMinScreenWidth = 480.0;
+
+  // Delivery staff claiming UI (DG-310 Phase 4) — FR5/FR6/FR7.
+  static const deliveryClaimButton = 'Nhận giao';
+  static const deliveryUnclaimButton = 'Trả đơn';
+  static const deliveryClaimedBy = 'Đã nhận';
+  static const deliveryUnassigned = 'Chưa có nhân viên giao hàng';
+  static const deliveryStaffLabel = 'Nhân viên giao hàng';
+  static const deliveryClaimFailed = 'Không nhận được đơn hàng.';
+  static const deliveryUnclaimFailed = 'Không trả được đơn hàng.';
+  static const deliveryClaimSuccess = 'Đã nhận giao';
+  static const deliveryUnclaimSuccess = 'Đã trả đơn';
+
+  // Delivery staff filter + workload summary (DG-304 Phase 3) — FR2/FR3/FR5.
+  static const staffFilterAll = 'Tất cả nhân viên';
+  static const staffFilterLabel = 'Lọc theo nhân viên';
+  static const workloadSummaryTitle = 'Khối lượng công việc hôm nay';
+  static const workloadSummaryEmpty = 'Không có đơn giao đang xử lý';
+  static const workloadUnassigned = 'Chưa gán';
+  static String workloadStaffCount(String staffName, int count) =>
+      '$staffName: $count đơn';
+
+  // Staff assignment dropdown (DG-304 Phase 5) — FR8/FR9/FR10/AC5/AC6.
+  static const assignStaffLabel = 'Nhân viên giao hàng';
+  static const assignStaffUnassign = 'Chưa gán';
+  static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
+  static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
+  static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
+  /// Display label for an inactive (deactivated) staff member in the
+  /// assignment dropdown. Shows the real name followed by the "(đã ngưng)"
+  /// suffix only when the staff record exists but is deactivated (DG-329
+  /// Phase 2 / FR3 / AC2).
+  static String assignStaffInactive(String staffName) => '$staffName (đã ngưng)';
+
+  /// Fallback label for an assigned staff member whose record is missing
+  /// entirely from the staff list (e.g. deleted). Shows "NV #`<id>`" without
+  /// the misleading "(đã ngưng)" suffix (DG-329 Phase 2 / FR3 / AC2).
+  static String assignStaffMissing(String staffId) => 'NV #$staffId';
+
+  /// Formats a single day label as "T2, 29/07".
+  static String deliveryDayLabel(DateTime d) {
+    final weekday = deliveryWeekdayHeaders[d.weekday - 1];
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    return '$weekday, $day/$month';
+  }
+
+  // Google Maps modal (DG-306 Phase 3) — FR6, AC6.
+  static const googleMapsContextMenuLabel = 'Google Maps';
+  static const googleMapsModalTitle = 'Liên kết Google Maps';
+  static const googleMapsModalHint =
+      'Dán liên kết Google Maps cho địa chỉ giao hàng.';
+  static const googleMapsModalEmpty = 'Chưa có liên kết Google Maps.';
+  static const googleMapsModalOpenMap = 'Mở bản đồ';
+  static const googleMapsModalSave = 'Lưu';
+  static const googleMapsModalClear = 'Xoá liên kết';
+  static const googleMapsModalSaved = 'Đã lưu liên kết Google Maps.';
+  static const googleMapsModalCleared = 'Đã xoá liên kết Google Maps.';
+
+  /// Short Vietnamese weekday headers (Mon–Sun), aligned to DateTime.weekday
+  /// (Mon=1..Sun=7 → index 0..6).
+  static const deliveryWeekdayHeaders = <String>[
+    'T2',
+    'T3',
+    'T4',
+    'T5',
+    'T6',
+    'T7',
+    'CN',
+  ];
+
+  /// Formats a week range as `dd/MM – dd/MM` (the visible week label).
+  static String deliveryWeekRangeLabel(DateTime start, DateTime end) {
+    String fmt(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    return '${fmt(start)} – ${fmt(end)}';
+  }
 }

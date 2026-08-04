@@ -6,7 +6,10 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
+import '../../../shared/utils/launch_external_url.dart';
+import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
+import 'delivery_claim_actions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class DeliveryOrderCard extends ConsumerWidget {
@@ -151,6 +154,32 @@ class DeliveryOrderCard extends ConsumerWidget {
                   ),
                 ),
               ],
+              if (_hasGpsOrMap(order)) ...[
+                const SizedBox(height: 4),
+                _buildGpsMapRow(context, theme),
+              ],
+              // DG-306 Phase 1 / FR1: auto-derive the slot from `dueTime`
+              // (the stored `deliveryTimeSlot` DB column is ignored).
+              if (deriveTimeSlot(order.dueTime) case final slot?) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: theme.colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${OrdersLabels.deliveryTimeSlotLabel} $slot',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (order.dueDate != null) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -216,6 +245,8 @@ class DeliveryOrderCard extends ConsumerWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 4),
+              DeliveryClaimActions(order: order),
             ],
           ),
         ),
@@ -226,5 +257,75 @@ class DeliveryOrderCard extends ConsumerWidget {
   String _formatDue(String? dueDate, String? dueTime) {
     if (dueDate == null) return '';
     return dueTime != null ? '$dueDate $dueTime' : dueDate;
+  }
+
+  /// Whether the order exposes any GPS/map data worth rendering (AC3).
+  bool _hasGpsOrMap(Order order) {
+    final hasCoords = order.latitude != null && order.longitude != null;
+    final hasMapUrl =
+        order.googleMapsUrl != null && order.googleMapsUrl!.trim().isNotEmpty;
+    return hasCoords || hasMapUrl;
+  }
+
+  /// GPS coordinates + tappable map link row (AC3). Reuses the
+  /// `url_launcher` + `canLaunchUrl` + snackbar-on-failure pattern from
+  /// `order_detail_screen.dart::_launchMapUrl`.
+  Widget _buildGpsMapRow(BuildContext context, ThemeData theme) {
+    final coords = (order.latitude != null && order.longitude != null)
+        ? '${order.latitude!.toStringAsFixed(5)}, ${order.longitude!.toStringAsFixed(5)}'
+        : null;
+    final mapUrl = order.googleMapsUrl;
+    final hasMapUrl = mapUrl != null && mapUrl.trim().isNotEmpty;
+
+    return Row(
+      children: [
+        Icon(
+          Icons.location_on_outlined,
+          size: 14,
+          color: theme.colorScheme.tertiary,
+        ),
+        const SizedBox(width: 4),
+        if (coords != null)
+          Expanded(
+            child: Text(
+              coords,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: Text(
+              OrdersLabels.googleMapsUrlLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        if (hasMapUrl) ...[
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: () => launchExternalUrl(context, mapUrl),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                OrdersLabels.openMap,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.tertiary,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

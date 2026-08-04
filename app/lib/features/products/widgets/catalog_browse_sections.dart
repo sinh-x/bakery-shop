@@ -5,7 +5,7 @@ import '../../../data/models/catalog_browse_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/models/category.dart' as models;
 import '../../../providers/categories_provider.dart';
-import '../../../shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'catalog_photo_browse_card.dart';
 
 class CatalogBrowseBulkActions extends StatelessWidget {

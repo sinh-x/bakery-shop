@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
+
 from baker.db.connection import get_db
 
 # DG-029 Phase 5.6-c3 / CQ-2: shared auth test helpers (_create_test_user,
@@ -18,6 +20,8 @@ from baker.db.connection import get_db
 # tests/conftest.py — both auto-discovered by pytest, so no duplicate
 # definitions remain in this module.
 from tests.auth_helpers import _auth_headers, _seed_user
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

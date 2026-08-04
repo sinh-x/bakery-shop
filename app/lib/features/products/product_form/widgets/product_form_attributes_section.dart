@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ProductFormAttributesSection extends StatelessWidget {
   const ProductFormAttributesSection({

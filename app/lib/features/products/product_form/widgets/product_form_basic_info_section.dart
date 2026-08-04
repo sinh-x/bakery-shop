@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../data/models/category.dart';
-import '../../../../shared/labels/products.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ProductFormBasicInfoSection extends StatelessWidget {
   const ProductFormBasicInfoSection({
