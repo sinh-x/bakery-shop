@@ -54,13 +54,10 @@ Map<String, dynamic> _drawerJson({
   String id = '1',
   String status = 'open',
   int openingBalance = 1000000,
-  int cashSales = 0,
-  int ownerIn = 0,
-  int ownerOut = 0,
-  int cashExpenses = 0,
   int expectedBalance = 1000000,
   int? countedAmount,
   int? discrepancy,
+  int? closingBalance,
 }) =>
     {
       'id': id,
@@ -68,13 +65,10 @@ Map<String, dynamic> _drawerJson({
       'closedAt': null,
       'status': status,
       'openingBalance': openingBalance,
-      'cashSales': cashSales,
-      'ownerIn': ownerIn,
-      'ownerOut': ownerOut,
-      'cashExpenses': cashExpenses,
       'countedAmount': countedAmount,
       'discrepancy': discrepancy,
       'expectedBalance': expectedBalance,
+      'closingBalance': closingBalance,
     };
 
 ProviderContainer _containerWith(Map<String, dynamic>? active,
@@ -116,10 +110,6 @@ void main() {
     final container = _containerWith(
       _drawerJson(
         openingBalance: 1000000,
-        cashSales: 500000,
-        ownerIn: 200000,
-        ownerOut: 100000,
-        cashExpenses: 50000,
         expectedBalance: 1550000,
       ),
     );
@@ -552,10 +542,6 @@ class _CarryOverInterceptor extends Interceptor {
             'closedAt': null,
             'status': 'open',
             'openingBalance': body['openingBalance'] as int? ?? 1550000,
-            'cashSales': 0,
-            'ownerIn': 0,
-            'ownerOut': 0,
-            'cashExpenses': 0,
             'countedAmount': null,
             'discrepancy': null,
             'expectedBalance': body['openingBalance'] as int? ?? 1550000,

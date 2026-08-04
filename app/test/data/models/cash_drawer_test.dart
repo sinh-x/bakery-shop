@@ -6,8 +6,7 @@ Map<String, dynamic> _drawerJson({
   String? closedAt,
   int? countedAmount,
   int? discrepancy,
-  int? tienRutIn,
-  int? tienRutOut,
+  int? closingBalance,
   Map<String, dynamic>? journalEntry,
 }) {
   final json = <String, dynamic>{
@@ -16,28 +15,17 @@ Map<String, dynamic> _drawerJson({
     'closedAt': closedAt,
     'status': status,
     'openingBalance': 1000000,
-    'cashSales': 500000,
-    'ownerIn': 200000,
-    'ownerOut': 100000,
-    'cashExpenses': 50000,
     'countedAmount': countedAmount,
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
+    'closingBalance': closingBalance,
+    'journalEntry': journalEntry,
   };
-  if (tienRutIn != null) {
-    json['tienRutIn'] = tienRutIn;
-  }
-  if (tienRutOut != null) {
-    json['tienRutOut'] = tienRutOut;
-  }
-  if (journalEntry != null) {
-    json['journalEntry'] = journalEntry;
-  }
   return json;
 }
 
 void main() {
-  group('CashDrawer (DG-324 Phase 4)', () {
+  group('CashDrawer (DG-324 Phase 4 / DG-347 Phase 5)', () {
     test('fromJson parses open drawer with all balance fields', () {
       final drawer = CashDrawer.fromJson(_drawerJson());
 
@@ -48,22 +36,21 @@ void main() {
       expect(drawer.openedAt, DateTime.parse('2026-08-01T00:00:00Z'));
       expect(drawer.closedAt, isNull);
       expect(drawer.openingBalance, 1000000);
-      expect(drawer.cashSales, 500000);
-      expect(drawer.ownerIn, 200000);
-      expect(drawer.ownerOut, 100000);
-      expect(drawer.cashExpenses, 50000);
       expect(drawer.expectedBalance, 1550000);
       expect(drawer.countedAmount, isNull);
       expect(drawer.discrepancy, isNull);
+      expect(drawer.closingBalance, isNull);
       expect(drawer.journalEntry, isNull);
     });
 
-    test('fromJson parses closed drawer with counted amount + discrepancy', () {
+    test('fromJson parses closed drawer with counted amount + discrepancy',
+        () {
       final drawer = CashDrawer.fromJson(_drawerJson(
         status: 'closed',
         closedAt: '2026-08-01T23:59:00Z',
         countedAmount: 1540000,
         discrepancy: -10000,
+        closingBalance: 1540000,
       ));
 
       expect(drawer.isClosed, isTrue);
@@ -72,6 +59,7 @@ void main() {
       expect(drawer.countedAmount, 1540000);
       expect(drawer.discrepancy, -10000);
       expect(drawer.discrepancyValue, -10000);
+      expect(drawer.closingBalance, 1540000);
     });
 
     test('discrepancyValue defaults to 0 when discrepancy is null', () {
@@ -99,24 +87,22 @@ void main() {
         closedAt: '2026-08-01T23:59:00Z',
         countedAmount: 1550000,
         discrepancy: 0,
+        closingBalance: 1550000,
       ));
       final roundTripped = CashDrawer.fromJson(original.toJson());
 
       expect(roundTripped.id, original.id);
       expect(roundTripped.status, original.status);
       expect(roundTripped.openingBalance, original.openingBalance);
-      expect(roundTripped.cashSales, original.cashSales);
-      expect(roundTripped.ownerIn, original.ownerIn);
-      expect(roundTripped.ownerOut, original.ownerOut);
-      expect(roundTripped.cashExpenses, original.cashExpenses);
       expect(roundTripped.expectedBalance, original.expectedBalance);
       expect(roundTripped.countedAmount, original.countedAmount);
       expect(roundTripped.discrepancy, original.discrepancy);
+      expect(roundTripped.closingBalance, original.closingBalance);
       expect(roundTripped.openedAt?.toUtc(), original.openedAt?.toUtc());
       expect(roundTripped.closedAt?.toUtc(), original.closedAt?.toUtc());
     });
 
-    test('toJson omits journalEntry when null and includes it when set', () {
+    test('toJson Omits journalEntry when null and includes it when set', () {
       final without = CashDrawer.fromJson(_drawerJson()).toJson();
       expect(without.containsKey('journalEntry'), isFalse);
 
@@ -150,55 +136,27 @@ void main() {
       });
 
       expect(drawer.openingBalance, 0);
-      expect(drawer.cashSales, 0);
-      expect(drawer.ownerIn, 0);
-      expect(drawer.ownerOut, 0);
-      expect(drawer.cashExpenses, 0);
       expect(drawer.expectedBalance, 0);
-    });
-  });
-
-  group('CashDrawer tien rut fields (DG-341 Phase 4.4)', () {
-    test('fromJson parses tienRutIn and tienRutOut when present', () {
-      final drawer = CashDrawer.fromJson(_drawerJson(
-        tienRutIn: 300000,
-        tienRutOut: 100000,
-      ));
-
-      expect(drawer.tienRutIn, 300000);
-      expect(drawer.tienRutOut, 100000);
+      expect(drawer.closingBalance, isNull);
     });
 
-    test('fromJson defaults tienRutIn/tienRutOut to 0 when missing (NFR2)', () {
-      // Old backend responses without these fields must not crash and
-      // should default to 0 for backward compatibility.
-      final drawer = CashDrawer.fromJson(_drawerJson());
+    test(
+        'DG-347 Phase 5: fromJson ignores legacy accumulator fields '
+        'when present in cached/older responses (NFR1)', () {
+      // Older cached responses may still carry the removed fields. They
+      // must be ignored without crashing and must not surface on the model.
+      final drawer = CashDrawer.fromJson({
+        ..._drawerJson(),
+        'cashSales': 500000,
+        'ownerIn': 200000,
+        'ownerOut': 100000,
+        'cashExpenses': 50000,
+        'tienRutIn': 300000,
+        'tienRutOut': 100000,
+      });
 
-      expect(drawer.tienRutIn, 0);
-      expect(drawer.tienRutOut, 0);
-    });
-
-    test('toJson round-trips tienRutIn and tienRutOut', () {
-      final original = CashDrawer.fromJson(_drawerJson(
-        tienRutIn: 500000,
-        tienRutOut: 200000,
-      ));
-      final roundTripped = CashDrawer.fromJson(original.toJson());
-
-      expect(roundTripped.tienRutIn, 500000);
-      expect(roundTripped.tienRutOut, 200000);
-    });
-
-    test('toJson includes tienRutIn and tienRutOut keys', () {
-      final json = CashDrawer.fromJson(_drawerJson(
-        tienRutIn: 750000,
-        tienRutOut: 250000,
-      )).toJson();
-
-      expect(json.containsKey('tienRutIn'), isTrue);
-      expect(json.containsKey('tienRutOut'), isTrue);
-      expect(json['tienRutIn'], 750000);
-      expect(json['tienRutOut'], 250000);
+      expect(drawer.openingBalance, 1000000);
+      expect(drawer.expectedBalance, 1550000);
     });
   });
 

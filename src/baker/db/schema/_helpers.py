@@ -195,6 +195,7 @@ def _insert_journal_entry(
     source_id,
     lines: list[tuple[int, float, float, str]],
     transaction_date: str | None = None,
+    drawer_id: int | None = None,
 ) -> int:
     """Create a journal entry with its lines.
 
@@ -207,6 +208,12 @@ def _insert_journal_entry(
     The audit-only ``created_at`` column is set explicitly via
     ``now_utc()`` — the same pattern used by Event.save(), Order.save(),
     PaymentTransaction.save(), etc.
+
+    `drawer_id` (DG-347 Phase 2, FR4): when provided, the new journal entry is
+    linked to the given cash drawer via the ``cash_drawer_journal_entries``
+    join table so per-drawer balance derivation (``expected_balance``) can
+    filter 1101 journal lines by drawer. ``INSERT OR IGNORE`` makes the link
+    idempotent.
     """
     total_debit = sum(d for _, d, _, _ in lines)
     total_credit = sum(c for _, _, c, _ in lines)
@@ -249,6 +256,14 @@ def _insert_journal_entry(
             "(journal_entry_id, account_id, debit, credit, description) "
             "VALUES (?, ?, ?, ?, ?)",
             (entry_id, account_id, float(debit), float(credit), line_desc),
+        )
+    # DG-347 Phase 2 (FR4): link the journal entry to its cash drawer via the
+    # join table so expected_balance() can filter 1101 lines per drawer.
+    if drawer_id is not None:
+        conn.execute(
+            "INSERT OR IGNORE INTO cash_drawer_journal_entries "
+            "(cash_drawer_id, journal_entry_id) VALUES (?, ?)",
+            (int(drawer_id), entry_id),
         )
     return entry_id
 

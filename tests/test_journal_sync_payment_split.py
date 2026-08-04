@@ -120,8 +120,8 @@ def test_bus_order_deposit_splits_credit_to_2100_and_2200():
         )
 
         lines = _payment_line_amounts(conn, txn_id)
-        assert lines["1100"]["debit"] == 100000.0
-        assert lines["1100"]["credit"] == 0.0
+        assert lines["1101"]["debit"] == 100000.0
+        assert lines["1101"]["credit"] == 0.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 75000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["debit"] == 0.0
         assert lines[BUS_SHIPPING_HELD_CODE]["credit"] == 25000.0
@@ -152,7 +152,7 @@ def test_bus_order_shipping_fee_zero_no_split():
 
         lines = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in lines
-        assert lines["1100"]["debit"] == 100000.0
+        assert lines["1101"]["debit"] == 100000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
 
 
@@ -174,7 +174,7 @@ def test_pickup_order_no_split():
 
         lines = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in lines
-        assert lines["1100"]["debit"] == 100000.0
+        assert lines["1101"]["debit"] == 100000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
 
 
@@ -196,7 +196,7 @@ def test_door_order_no_split():
 
         lines = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in lines
-        assert lines["1100"]["debit"] == 100000.0
+        assert lines["1101"]["debit"] == 100000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
 
 
@@ -220,7 +220,7 @@ def test_multiple_payments_first_covers_shipping_second_all_to_2100():
         lines1 = _payment_line_amounts(conn, txn1)
         assert lines1[BUS_SHIPPING_HELD_CODE]["credit"] == 20000.0
         assert lines1[CUSTOMER_DEPOSITS_CODE]["credit"] == 0.0
-        assert lines1["1100"]["debit"] == 20000.0
+        assert lines1["1101"]["debit"] == 20000.0
 
         txn2 = _insert_payment(conn, order_id=oid, amount=80000, ptype="deposit")
         _sync_payment_journal(conn, txn2, 80000, "deposit", "cash", order_id=oid)
@@ -229,7 +229,7 @@ def test_multiple_payments_first_covers_shipping_second_all_to_2100():
         assert lines2[BUS_SHIPPING_HELD_CODE]["credit"] == 5000.0
         # Remainder = 80000 - 5000 = 75000 → 2100
         assert lines2[CUSTOMER_DEPOSITS_CODE]["credit"] == 75000.0
-        assert lines2["1100"]["debit"] == 80000.0
+        assert lines2["1101"]["debit"] == 80000.0
 
 
 def test_third_payment_after_shipping_covered_all_to_2100():
@@ -284,7 +284,7 @@ def test_bus_order_outflow_no_2200_split():
         # Outflow: debit 2100 30000, credit 1100 30000 — no 2200 line.
         assert BUS_SHIPPING_HELD_CODE not in lines2
         assert lines2[CUSTOMER_DEPOSITS_CODE]["debit"] == 30000.0
-        assert lines2["1100"]["credit"] == 30000.0
+        assert lines2["1101"]["credit"] == 30000.0
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ def test_tien_rut_credits_2400_not_debits_2100():
         # 1100 debited 300000, 2400 credited 300000, 2100 untouched.
         assert TIEN_RUT_HELD_CODE in lines
         assert lines[TIEN_RUT_HELD_CODE]["credit"] == 300000.0
-        assert lines["1100"]["debit"] == 300000.0
+        assert lines["1101"]["debit"] == 300000.0
         assert CUSTOMER_DEPOSITS_CODE not in lines
 
 
@@ -337,7 +337,7 @@ def test_tien_rut_on_bus_order_credits_2400_no_2200_split():
         lines = _payment_line_amounts(conn, txn_rut)
         assert BUS_SHIPPING_HELD_CODE not in lines
         assert lines[TIEN_RUT_HELD_CODE]["credit"] == 30000.0
-        assert lines["1100"]["debit"] == 30000.0
+        assert lines["1101"]["debit"] == 30000.0
 
 
 def test_refund_still_debits_2100_not_2400():
@@ -354,7 +354,7 @@ def test_refund_still_debits_2100_not_2400():
 
         lines = _payment_line_amounts(conn, txn_ref)
         assert lines[CUSTOMER_DEPOSITS_CODE]["debit"] == 200000.0
-        assert lines["1100"]["credit"] == 200000.0
+        assert lines["1101"]["credit"] == 200000.0
         assert TIEN_RUT_HELD_CODE not in lines
 
 
@@ -388,7 +388,7 @@ def test_payment_update_re_syncs_split_correctly():
         # Shipping still 25000 (unchanged), product = 80000 - 25000 = 55000.
         assert lines_after[BUS_SHIPPING_HELD_CODE]["credit"] == 25000.0
         assert lines_after[CUSTOMER_DEPOSITS_CODE]["credit"] == 55000.0
-        assert lines_after["1100"]["debit"] == 80000.0
+        assert lines_after["1101"]["debit"] == 80000.0
         # Only one entry (updated in place, not duplicated).
         assert _payment_entry_count(conn, txn_id) == 1
 
@@ -412,7 +412,7 @@ def test_payment_update_amount_below_shipping_all_to_2200():
         lines = _payment_line_amounts(conn, txn_id)
         assert lines[BUS_SHIPPING_HELD_CODE]["credit"] == 20000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 0.0
-        assert lines["1100"]["debit"] == 20000.0
+        assert lines["1101"]["debit"] == 20000.0
         assert _payment_entry_count(conn, txn_id) == 1
 
 
@@ -435,7 +435,7 @@ def test_no_order_id_no_split_backwards_compatible():
 
         lines = _payment_line_amounts(conn, txn_id)
         assert BUS_SHIPPING_HELD_CODE not in lines
-        assert lines["1100"]["debit"] == 100000.0
+        assert lines["1101"]["debit"] == 100000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
 
 

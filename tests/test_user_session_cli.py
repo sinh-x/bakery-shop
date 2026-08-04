@@ -336,16 +336,16 @@ def test_user_set_role_nonexistent_user():
 
 def test_user_list_all_includes_inactive():
     """FR10: `baker user list --all` includes deactivated users."""
-    runner.invoke(app, ["user", "create", "DeactivateMe", "--role", "staff"])
-    runner.invoke(app, ["user", "deactivate", "DeactivateMe"])
+    runner.invoke(app, ["user", "create", "DeacMe", "--role", "staff"])
+    runner.invoke(app, ["user", "deactivate", "DeacMe"])
 
     # Without --all the deactivated user is hidden.
     result = runner.invoke(app, ["user", "list"])
-    assert "deactivateme" not in result.output
+    assert "deacme" not in result.output
 
     # With --all the deactivated user appears.
     result = runner.invoke(app, ["user", "list", "--all"])
-    assert "deactivateme" in result.output
+    assert "deacme" in result.output
 
 
 # ---------------------------------------------------------------------------

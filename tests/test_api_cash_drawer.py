@@ -15,7 +15,20 @@ Covers:
 import pytest
 
 from baker.db.connection import get_db
+from baker.db.schema import _account_id_by_code, _insert_journal_entry
+from baker.db.schema import ensure_schema
 from baker.models.cash_drawer import CashDrawer
+
+# DG-347 Phase 3 removed the _sync_drawer_tien_rut_out call site and the
+# tien_rut_out accumulator column from cash_drawer. These delivery tests
+# assert on drawer.tien_rut_out, which is no longer updated (drawer balances
+# derive from 1101 journal lines). Retained for historical context; skipped
+# because the column they assert on no longer exists.
+_PHASE3_SKIP = pytest.mark.skip(
+    reason="DG-347 Phase 3: _sync_drawer_tien_rut_out removed; "
+           "tien_rut_out accumulator column dropped; drawer balances derive "
+           "from 1101 journal lines"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -55,10 +68,6 @@ def test_open_drawer_creates_drawer_and_journal_entry(api_client):
     body = resp.json()
     assert body["status"] == "open"
     assert body["openingBalance"] == 1_000_000
-    assert body["cashSales"] == 0
-    assert body["ownerIn"] == 0
-    assert body["ownerOut"] == 0
-    assert body["cashExpenses"] == 0
     assert body["expectedBalance"] == 1_000_000
     # AC3: journal entry debit 1101 (Cash in Drawer), credit 3100 (equity)
     je = body["journalEntry"]
@@ -79,6 +88,7 @@ def test_open_drawer_rejects_negative_balance(api_client):
     assert resp.status_code == 422
 
 
+
 def test_open_second_drawer_blocked_while_active(api_client):
     r1 = api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
     assert r1.status_code == 201
@@ -92,12 +102,12 @@ def test_open_second_drawer_blocked_while_active(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_cash_in_increases_owner_in_and_creates_journal(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000, "note": "bổ sung"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 200_000
     assert body["expectedBalance"] == 1_200_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_in"
@@ -112,6 +122,7 @@ def test_cash_in_increases_owner_in_and_creates_journal(api_client):
         assert _account_id(conn, "3100") == int(credit_line["accountId"])
 
 
+
 def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     """FR3a: cash-in source=owner → DR 1101 (Cash in Drawer), CR 1102 (Owner's Cash)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -121,7 +132,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 300_000
+    assert body["expectedBalance"] == 1_300_000
     je = body["journalEntry"]
     lines = je["lines"]
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -129,6 +140,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1101") == int(debit_line["accountId"])
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
 
 
 def test_cash_in_from_employee_debits_1101_credits_23xx(api_client):
@@ -181,12 +193,12 @@ def test_cash_in_rejects_zero_or_negative(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_cash_out_increases_owner_out_and_creates_journal(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerOut"] == 100_000
     assert body["expectedBalance"] == 900_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_out"
@@ -199,6 +211,7 @@ def test_cash_out_increases_owner_out_and_creates_journal(api_client):
         # AC4: default destination=owner → DR 1102 (Owner's Cash), CR 1101 (Cash in Drawer)
         assert _account_id(conn, "1102") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
@@ -216,6 +229,7 @@ def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1102") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_cash_out_to_employee_debits_23xx_credits_1101(api_client):
@@ -262,6 +276,7 @@ def test_cash_out_requires_active_drawer(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_close_drawer_with_shortage_records_discrepancy(api_client):
     """Close with shortage: first call returns 409 shortageProposal,
     second call with confirmed flag creates DR 3100 / CR 1101."""
@@ -301,6 +316,7 @@ def test_close_drawer_with_shortage_records_discrepancy(api_client):
     with get_db() as conn:
         assert _account_id(conn, "3100") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_close_drawer_with_surplus_records_discrepancy(api_client):
@@ -344,16 +360,28 @@ def test_close_drawer_with_surplus_records_discrepancy(api_client):
 
 def _open_with_expected(api_client, *, opening: int, expected: int) -> None:
     """Open a drawer and adjust its expected balance to the target by
-    setting cash_sales directly on the DB row (bypasses auto-link)."""
+    inserting an additional 1101 journal entry linked to the drawer via
+    the join table (replaces the legacy direct cash_sales column update)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
     if expected != opening:
+        delta = expected - opening
         with get_db() as conn:
             drawer = CashDrawer.get_active(conn)
             assert drawer is not None
-            conn.execute(
-                "UPDATE cash_drawer SET cash_sales = ? WHERE id = ?",
-                (expected - opening, drawer.id),
+            cash_acct = _account_id(conn, "1101")
+            equity_acct = _account_id(conn, "3100")
+            _insert_journal_entry(
+                conn,
+                description=f"Test adjustment: {delta}",
+                source_type="cash_drawer_test_adjust",
+                source_id=None,
+                lines=[
+                    (cash_acct, float(delta), 0.0, "test"),
+                    (equity_acct, 0.0, float(delta), "test"),
+                ],
+                drawer_id=drawer.id,
             )
+
 
 
 def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
@@ -373,6 +401,7 @@ def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
     assert proposal["expectedBalance"] == 2_000_000
     assert proposal["countedAmount"] == 3_000_000
     assert proposal["surplus"] == 1_000_000
+
 
 
 def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
@@ -401,6 +430,7 @@ def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1101") == int(debit_line["accountId"])
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
 
 
 def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
@@ -450,6 +480,7 @@ def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
     assert float(inv_line["credit"]) == 500_000.0
 
 
+
 def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     """AC4: close with shortage and shortageSource set but shortageConfirmed
     false → 409 with shortageProposal {expectedBalance, countedAmount, shortage}.
@@ -467,6 +498,7 @@ def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     assert proposal["expectedBalance"] == 2_000_000
     assert proposal["countedAmount"] == 1_500_000
     assert proposal["shortage"] == 500_000
+
 
 
 def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
@@ -496,6 +528,7 @@ def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
+
 def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
     """AC6: close shortage with shortageConfirmed + shortageSource=equity_loss
     → DR 3100 (Equity) / CR 1101 (Cash in Drawer); discrepancy stored."""
@@ -523,6 +556,7 @@ def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
+
 def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     """AC7: zero discrepancy close → no journal entry, no confirmation flags
     needed. Drawer closes normally."""
@@ -537,6 +571,7 @@ def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     assert "journalEntry" not in body
     assert "surplusJournalEntry" not in body
     assert "shortageJournalEntry" not in body
+
 
 
 def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client):
@@ -555,6 +590,7 @@ def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client)
     assert p["expectedBalance"] == 1_000_000
     assert p["countedAmount"] == 1_100_000
     assert p["surplus"] == 100_000
+
 
 
 def test_close_shortage_old_client_without_flags_backward_compat_nfr2(api_client):
@@ -597,6 +633,7 @@ def test_status_returns_accounting_balance_when_no_active_drawer(api_client):
     assert isinstance(body["accountingBalance1101"], int)
 
 
+
 def test_status_returns_active_drawer(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.get("/api/cash-drawer/status")
@@ -604,6 +641,7 @@ def test_status_returns_active_drawer(api_client):
     body = resp.json()
     assert body["status"] == "open"
     assert body["expectedBalance"] == 1_000_000
+
 
 
 def test_status_after_close_returns_previous_counted_amount(api_client):
@@ -619,31 +657,41 @@ def test_status_after_close_returns_previous_counted_amount(api_client):
     assert body["previousCloseCountedAmount"] == 1_000_000
 
 
-def test_expected_balance_formula_ac6(api_client):
-    """AC6: opening=1M, cash_sales=500K, owner_in=200K, owner_out=100K,
-    cash_expenses=50K → expected_balance=1,550,000.
 
-    cash_sales and cash_expenses are populated by Phase 3 (auto-link), so
-    here we set them directly on the DB row to verify the formula in
-    isolation.
+def test_expected_balance_formula_ac6(api_client):
+    """AC6/FR1: opening=1M, +500K test adjustment → expected_balance=1,500,000.
+
+    The legacy accumulator formula (cash_sales + owner_in - owner_out -
+    cash_expenses + tien_rut_in - tien_rut_out) is now replaced by the sum of
+    1101 journal lines linked to the drawer via the join table, so we inject
+    a 500K 1101 journal entry to verify the journal-derived balance.
     """
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
-        conn.execute(
-            "UPDATE cash_drawer SET cash_sales = 500000, owner_in = 200000, "
-            "owner_out = 100000, cash_expenses = 50000 WHERE id = ?",
-            (drawer.id,),
+        cash_acct = _account_id(conn, "1101")
+        equity_acct = _account_id(conn, "3100")
+        _insert_journal_entry(
+            conn,
+            description="Test +500K",
+            source_type="cash_drawer_test_adjust",
+            source_id=None,
+            lines=[
+                (cash_acct, 500_000.0, 0.0, "test"),
+                (equity_acct, 0.0, 500_000.0, "test"),
+            ],
+            drawer_id=drawer.id,
         )
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
-    assert resp.json()["expectedBalance"] == 1_550_000
+    assert resp.json()["expectedBalance"] == 1_500_000
 
 
 # ---------------------------------------------------------------------------
 # GET /history (FR10)
 # ---------------------------------------------------------------------------
+
 
 
 def test_history_returns_paginated_list(api_client):
@@ -666,6 +714,7 @@ def test_history_returns_paginated_list(api_client):
     assert body["items"][0]["openingBalance"] in (1_000_000, 500_000)
 
 
+
 def test_history_supports_pagination(api_client):
     for i in range(3):
         opening = 100_000 * (i + 1)
@@ -681,7 +730,16 @@ def test_history_supports_pagination(api_client):
             payload["unidentifiedSaleConfirmed"] = True
         open_resp = api_client.post("/api/cash-drawer/open", json=payload)
         assert open_resp.status_code in (200, 201), open_resp.text
-        api_client.post("/api/cash-drawer/close", json={"countedAmount": opening})
+        # Close with the journal-derived expected balance so no confirmation
+        # gate triggers (DG-347 Phase 2: expected_balance is per-drawer 1101
+        # sum, which may differ from opening_balance when carry-over journals
+        # only the delta).
+        status = api_client.get("/api/cash-drawer/status").json()
+        counted = status["expectedBalance"]
+        close_resp = api_client.post(
+            "/api/cash-drawer/close", json={"countedAmount": counted}
+        )
+        assert close_resp.status_code == 200, close_resp.text
 
     resp = api_client.get("/api/cash-drawer/history?limit=2&offset=0")
     assert resp.status_code == 200
@@ -692,6 +750,7 @@ def test_history_supports_pagination(api_client):
     resp2 = api_client.get("/api/cash-drawer/history?limit=2&offset=2")
     assert resp2.json()["total"] == 3
     assert len(resp2.json()["items"]) == 1
+
 
 
 def test_history_supports_date_range_filter(api_client):
@@ -713,6 +772,7 @@ def test_history_supports_date_range_filter(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_all_drawer_journal_entries_are_balanced(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
@@ -730,6 +790,7 @@ def test_all_drawer_journal_entries_are_balanced(api_client):
             assert abs(debit - credit) < 0.005, (
                 f"unbalanced {source_type}: debit={debit} credit={credit}"
             )
+
 
 
 def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
@@ -768,15 +829,21 @@ def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
 
 
 def test_cash_drawer_expected_balance_model():
-    d = CashDrawer(
+    """Unit-level: expected_balance() without a conn falls back to
+    opening_balance for open drawers and closing_balance for closed drawers.
+    The full journal-derived balance is exercised via the API tests below."""
+    d_open = CashDrawer(
         opened_at="2026-08-01T00:00:00Z",
         opening_balance=1_000_000,
-        cash_sales=500_000,
-        owner_in=200_000,
-        owner_out=100_000,
-        cash_expenses=50_000,
     )
-    assert d.expected_balance() == 1_550_000
+    assert d_open.expected_balance() == 1_000_000
+    d_closed = CashDrawer(
+        opened_at="2026-08-01T00:00:00Z",
+        opening_balance=1_000_000,
+        status="closed",
+        closing_balance=1_550_000,
+    )
+    assert d_closed.expected_balance() == 1_550_000
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +888,8 @@ def _advance_to_delivered(client, ref):
         assert resp.status_code == 200, resp.text
 
 
+
+@_PHASE3_SKIP
 def test_tien_rut_out_increases_on_delivery_ac2(api_client):
     """AC2: Given an open drawer with ``tienRutIn`` = 500,000, when the order
     is delivered, then ``tienRutOut`` = 500,000 and ``expectedBalance``
@@ -851,6 +920,8 @@ def test_tien_rut_out_increases_on_delivery_ac2(api_client):
     assert status_after["expectedBalance"] == expected_before - 500000
 
 
+
+@_PHASE3_SKIP
 def test_tien_rut_delivery_skips_closed_drawer_ac7(api_client):
     """AC7: Given an order with tien rut is delivered and the linked drawer is
     already closed, the delivery does not modify the closed drawer (no crash,
@@ -899,6 +970,8 @@ def test_tien_rut_delivery_no_active_drawer_no_error(api_client):
     assert status["activeDrawer"] is None
 
 
+
+@_PHASE3_SKIP
 def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
     """An invalidated tien_rut payment must not contribute to tien_rut_out at
     delivery (the inflow was already reversed from tien_rut_in on invalidate).
@@ -920,3 +993,109 @@ def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
     status_after = api_client.get("/api/cash-drawer/status").json()
     # The invalidated payment is excluded → tien_rut_out stays 0.
     assert status_after["tienRutOut"] == 0
+
+
+# ---------------------------------------------------------------------------
+# DG-347 Phase 1 — Schema migration verification (AC3, AC4, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _cash_drawer_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+
+
+def _payment_transactions_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()}
+
+
+def _events_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()}
+
+
+def test_v095_closing_balance_column_exists(api_client):
+    """AC3: closing_balance column exists on cash_drawer after migration."""
+    with get_db() as conn:
+        cols = _cash_drawer_columns(conn)
+    assert "closing_balance" in cols, f"closing_balance missing; got {sorted(cols)}"
+
+
+def test_v095_accumulator_columns_dropped(api_client):
+    """AC3: accumulator columns do not exist on cash_drawer after migration."""
+    with get_db() as conn:
+        cols = _cash_drawer_columns(conn)
+    for col in ("cash_sales", "tien_rut_in", "tien_rut_out",
+                "owner_in", "owner_out", "cash_expenses"):
+        assert col not in cols, f"{col} should have been dropped; got {sorted(cols)}"
+
+
+def test_v095_join_table_exists_with_unique_constraint(api_client):
+    """AC4: cash_drawer_journal_entries table exists with both columns and a
+    unique constraint on the pair."""
+    with get_db() as conn:
+        # Table exists.
+        row = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' "
+            "AND name='cash_drawer_journal_entries'"
+        ).fetchone()
+        assert row is not None, "cash_drawer_journal_entries table missing"
+        # Both columns exist.
+        cols = {
+            r[1] for r in conn.execute(
+                "PRAGMA table_info(cash_drawer_journal_entries)"
+            ).fetchall()
+        }
+        assert "cash_drawer_id" in cols, f"cash_drawer_id missing; got {sorted(cols)}"
+        assert "journal_entry_id" in cols, f"journal_entry_id missing; got {sorted(cols)}"
+        # Unique constraint on the pair exists. The table-level UNIQUE(...) is
+        # declared in the CREATE TABLE sql and backed by an auto-index whose
+        # sql is NULL — so check the table sql text and the auto-index name.
+        table_sql = row["sql"] or ""
+        assert "UNIQUE(cash_drawer_id, journal_entry_id)" in table_sql, (
+            f"UNIQUE(cash_drawer_id, journal_entry_id) not in table sql: {table_sql}"
+        )
+        # The auto-index for a table-level UNIQUE has a name like
+        # sqlite_autoindex_cash_drawer_journal_entries_1.
+        auto_idx = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='cash_drawer_journal_entries' "
+            "AND name LIKE 'sqlite_autoindex_%'"
+        ).fetchone()
+        assert auto_idx is not None, "no sqlite_autoindex for the UNIQUE constraint"
+
+
+def test_v095_cash_drawer_id_dropped_from_payment_transactions(api_client):
+    """AC5: cash_drawer_id column does not exist on payment_transactions."""
+    with get_db() as conn:
+        cols = _payment_transactions_columns(conn)
+    assert "cash_drawer_id" not in cols, (
+        f"cash_drawer_id should have been dropped; got {sorted(cols)}"
+    )
+
+
+def test_v095_cash_drawer_id_dropped_from_events(api_client):
+    """AC5: cash_drawer_id column does not exist on events."""
+    with get_db() as conn:
+        cols = _events_columns(conn)
+    assert "cash_drawer_id" not in cols, (
+        f"cash_drawer_id should have been dropped; got {sorted(cols)}"
+    )
+
+
+def test_v095_migration_idempotent_on_rerun(api_client):
+    """NFR2: re-running v095 on an already-migrated DB is a no-op.
+
+    Applies ensure_schema again on the same connection and verifies the
+    schema is unchanged (no error, same columns).
+    """
+    with get_db() as conn:
+        before_cd = _cash_drawer_columns(conn)
+        before_pt = _payment_transactions_columns(conn)
+        before_ev = _events_columns(conn)
+        # Re-applying should be a no-op (schema_version already at 95).
+        ensure_schema(conn)
+        after_cd = _cash_drawer_columns(conn)
+        after_pt = _payment_transactions_columns(conn)
+        after_ev = _events_columns(conn)
+    assert before_cd == after_cd
+    assert before_pt == after_pt
+    assert before_ev == after_ev

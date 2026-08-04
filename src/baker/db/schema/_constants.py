@@ -766,18 +766,24 @@ CREATE TABLE IF NOT EXISTS cash_drawer (
     closed_at       TEXT,
     status          TEXT NOT NULL DEFAULT 'open',
     opening_balance INTEGER NOT NULL DEFAULT 0,
-    cash_sales      INTEGER NOT NULL DEFAULT 0,
-    tien_rut_in     INTEGER NOT NULL DEFAULT 0,
-    tien_rut_out    INTEGER NOT NULL DEFAULT 0,
-    owner_in        INTEGER NOT NULL DEFAULT 0,
-    owner_out       INTEGER NOT NULL DEFAULT 0,
-    cash_expenses   INTEGER NOT NULL DEFAULT 0,
+    closing_balance INTEGER DEFAULT NULL,
     counted_amount  INTEGER,
     discrepancy     INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_opened_at ON cash_drawer(opened_at);
+"""
+
+CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cash_drawer_journal_entries (
+    cash_drawer_id   INTEGER NOT NULL REFERENCES cash_drawer(id),
+    journal_entry_id INTEGER NOT NULL REFERENCES journal_entries(id),
+    UNIQUE(cash_drawer_id, journal_entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cdje_drawer ON cash_drawer_journal_entries(cash_drawer_id);
+CREATE INDEX IF NOT EXISTS idx_cdje_journal ON cash_drawer_journal_entries(journal_entry_id);
 """
 
 SEED_EXPENSE_CATEGORIES = [
@@ -1268,6 +1274,7 @@ __all__ = [
     'EXPENSE_CATEGORIES_SCHEMA',
     'SEED_EXPENSE_CATEGORIES',
     'CASH_DRAWER_SCHEMA',
+    'CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA',
     'SEED_CHART_OF_ACCOUNTS',
     'EXPENSE_CATEGORY_TO_ACCOUNT_CODE',
     'INVENTORY_PURCHASE_CATEGORIES',

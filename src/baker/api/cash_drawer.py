@@ -62,23 +62,45 @@ COGS_CODE = "5900"  # Giá vốn hàng bán
 INVENTORY_CODE = "1300"  # Hàng tồn kho
 
 
-def _get_account_balance(conn, account_code: str) -> float:
+def _get_account_balance(
+    conn, account_code: str, drawer_id: int | None = None
+) -> float:
     """Return the current balance for an account from journal lines.
 
     Asset/Expense accounts: balance = SUM(debit) - SUM(credit).
+
+    When ``drawer_id`` is provided (DG-347 Phase 2, FR1/AC1), the journal lines
+    are filtered via the ``cash_drawer_journal_entries`` join table so only
+    lines linked to that drawer contribute to the balance.
     """
-    row = conn.execute(
-        """
-        SELECT a.type,
-               COALESCE(SUM(jl.debit), 0) AS total_debit,
-               COALESCE(SUM(jl.credit), 0) AS total_credit
-        FROM accounts a
-        LEFT JOIN journal_lines jl ON jl.account_id = a.id
-        WHERE a.code = ?
-        GROUP BY a.id
-        """,
-        (account_code,),
-    ).fetchone()
+    if drawer_id is not None:
+        row = conn.execute(
+            """
+            SELECT a.type,
+                   COALESCE(SUM(jl.debit), 0) AS total_debit,
+                   COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM accounts a
+            JOIN journal_lines jl ON jl.account_id = a.id
+            JOIN cash_drawer_journal_entries cdje
+                 ON cdje.journal_entry_id = jl.journal_entry_id
+            WHERE a.code = ? AND cdje.cash_drawer_id = ?
+            GROUP BY a.id
+            """,
+            (account_code, drawer_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT a.type,
+                   COALESCE(SUM(jl.debit), 0) AS total_debit,
+                   COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM accounts a
+            LEFT JOIN journal_lines jl ON jl.account_id = a.id
+            WHERE a.code = ?
+            GROUP BY a.id
+            """,
+            (account_code,),
+        ).fetchone()
     if row is None:
         return 0.0
     debit = float(row["total_debit"])
@@ -221,10 +243,14 @@ def _create_drawer_journal_entry(
     debit_account_id: int,
     credit_account_id: int,
     amount: int,
+    drawer_id: int | None = None,
 ) -> dict:
     """Insert a balanced double-entry journal entry for a drawer operation.
 
     NFR3: enforced by ``_insert_journal_entry`` (raises on debit != credit).
+    When ``drawer_id`` is provided (DG-347 Phase 2, FR4), the entry is linked
+    to the drawer via the ``cash_drawer_journal_entries`` join table so its
+    1101 lines contribute to that drawer's ``expected_balance``.
     Returns the API dict of the created entry (with lines).
     """
     amt = float(amount)
@@ -239,6 +265,7 @@ def _create_drawer_journal_entry(
         source_id=None,
         lines=lines,
         transaction_date=now_utc(),
+        drawer_id=drawer_id,
     )
     entry = JournalEntry.from_row(
         conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
@@ -326,7 +353,7 @@ def open_drawer(body: OpenDrawerRequest):
         carry_over_from = None
         if stale:
             latest = stale[-1]
-            proposed = latest.expected_balance()
+            proposed = latest.expected_balance(conn)
             # Override the accounting reference with the drawer's expected
             # balance when a stale drawer exists (they should be in sync per
             # NFR4, but the drawer is the authoritative source on carry-over).
@@ -457,6 +484,7 @@ def open_drawer(body: OpenDrawerRequest):
                 debit_account_id=accounts["owner_cash"],
                 credit_account_id=accounts["cash_drawer"],
                 amount=excess,
+                drawer_id=drawer.id,
             )
             journal = None
         elif reference_balance > 0 and opening > reference_balance:
@@ -478,6 +506,7 @@ def open_drawer(body: OpenDrawerRequest):
                     debit_account_id=accounts["cash_drawer"],
                     credit_account_id=accounts["equity"],
                     amount=delta,
+                    drawer_id=drawer.id,
                 )
             else:
                 journal = None
@@ -495,6 +524,7 @@ def open_drawer(body: OpenDrawerRequest):
                 debit_account_id=accounts["cash_drawer"],
                 credit_account_id=accounts["equity"],
                 amount=opening,
+                drawer_id=drawer.id,
             )
         # DG-330: unidentified sale — when opening balance exceeds the
         # accounting 1101 balance and the owner confirms stock reconciliation
@@ -525,6 +555,7 @@ def open_drawer(body: OpenDrawerRequest):
                 source_id=None,
                 lines=sale_lines,
                 transaction_date=now_utc(),
+                drawer_id=drawer.id,
             )
             sale_entry = JournalEntry.from_row(
                 conn.execute(
@@ -550,8 +581,9 @@ def open_drawer(body: OpenDrawerRequest):
                 debit_account_id=accounts["cash_drawer"],
                 credit_account_id=accounts["equity"],
                 amount=excess,
+                drawer_id=drawer.id,
             )
-        result = drawer.to_api_dict()
+        result = drawer.to_api_dict(conn)
         if journal is not None:
             result["journalEntry"] = journal
         if carry_over_from is not None:
@@ -587,7 +619,6 @@ def cash_in(body: CashInRequest):
         _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
-        drawer.add_owner_in(conn, body.amount)
         desc = f"Cho thêm tiền vào quầy: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
@@ -605,8 +636,9 @@ def cash_in(body: CashInRequest):
             debit_account_id=accounts["cash_drawer"],
             credit_account_id=credit_account_id,
             amount=body.amount,
+            drawer_id=drawer.id,
         )
-        result = drawer.to_api_dict()
+        result = drawer.to_api_dict(conn)
         result["journalEntry"] = journal
         return result
 
@@ -632,7 +664,6 @@ def cash_out(body: CashOutRequest):
         _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
-        drawer.add_owner_out(conn, body.amount)
         desc = f"Lấy tiền khỏi quầy: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
@@ -648,8 +679,9 @@ def cash_out(body: CashOutRequest):
             debit_account_id=debit_account_id,
             credit_account_id=accounts["cash_drawer"],
             amount=body.amount,
+            drawer_id=drawer.id,
         )
-        result = drawer.to_api_dict()
+        result = drawer.to_api_dict(conn)
         result["journalEntry"] = journal
         return result
 
@@ -678,7 +710,7 @@ def close_drawer(body: CloseDrawerRequest):
         _auto_close_stale_drawers(conn)
         drawer = _require_active_drawer(conn)
         accounts = _cash_and_equity_accounts(conn)
-        expected = drawer.expected_balance()
+        expected = drawer.expected_balance(conn)
         discrepancy = drawer.close(conn, counted_amount=body.countedAmount)
         journal = None
         surplus_result = None
@@ -722,6 +754,7 @@ def close_drawer(body: CloseDrawerRequest):
                         debit_account_id=accounts["cash_drawer"],
                         credit_account_id=accounts["owner_cash"],
                         amount=discrepancy,
+                        drawer_id=drawer.id,
                     )
                 elif body.surplusSource == "unidentified_sale":
                     cogs = int(discrepancy * 0.5)
@@ -744,6 +777,7 @@ def close_drawer(body: CloseDrawerRequest):
                         source_id=None,
                         lines=lines,
                         transaction_date=now_utc(),
+                        drawer_id=drawer.id,
                     )
                     entry = JournalEntry.from_row(
                         conn.execute(
@@ -792,6 +826,7 @@ def close_drawer(body: CloseDrawerRequest):
                         debit_account_id=accounts["owner_cash"],
                         credit_account_id=accounts["cash_drawer"],
                         amount=amt,
+                        drawer_id=drawer.id,
                     )
                 elif body.shortageSource == "equity_loss":
                     journal = _create_drawer_journal_entry(
@@ -801,9 +836,10 @@ def close_drawer(body: CloseDrawerRequest):
                         debit_account_id=accounts["equity"],
                         credit_account_id=accounts["cash_drawer"],
                         amount=amt,
+                        drawer_id=drawer.id,
                     )
         # Zero discrepancy: no journal entry, no confirmation required (FR8).
-        result = drawer.to_api_dict()
+        result = drawer.to_api_dict(conn)
         if journal is not None:
             result["journalEntry"] = journal
         if surplus_result is not None:
@@ -824,14 +860,15 @@ def drawer_status():
     """
     with get_db() as conn:
         _auto_close_stale_drawers(conn)
-        # Phase 4.1 F1/F7: surface the 1101 journal balance so the client
-        # can display it alongside the computed expected balance. The two
-        # may diverge only transiently between a mutation and the next read,
-        # but showing both supports reconciliation (DG-331 review phase 4.1).
-        accounting_balance_1101 = int(_get_account_balance(conn, CASH_DRAWER_ASSET_CODE))
         drawer = CashDrawer.get_active(conn)
+        # DG-347 Phase 4 (FR11/AC10): accountingBalance1101 is the global 1101
+        # balance (unchanged). expectedBalance is derived per-drawer via the
+        # join table (open) or from closing_balance (closed) by the model. For
+        # an open single-active drawer both values are equal because all 1101
+        # journal lines are linked to that drawer.
+        accounting_balance_1101 = int(_get_account_balance(conn, CASH_DRAWER_ASSET_CODE))
         if drawer:
-            result = drawer.to_api_dict()
+            result = drawer.to_api_dict(conn)
             result["accountingBalance1101"] = accounting_balance_1101
             return result
         recent = CashDrawer.get_most_recent_closed(conn)
@@ -866,7 +903,7 @@ def drawer_history(
             "total": total,
             "limit": limit,
             "offset": offset,
-            "items": [d.to_api_dict() for d in drawers],
+            "items": [d.to_api_dict(conn) for d in drawers],
         }
 
 

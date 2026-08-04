@@ -142,7 +142,7 @@ def test_bus_order_full_lifecycle_journal_entries():
         # 1. Deposit payment of 125000.
         txn_id = _pay(conn, order_id=oid, amount=125000)
         payment_lines = _entry_lines(conn, "payment_transaction", txn_id)
-        assert payment_lines["1100"]["debit"] == 125000.0
+        assert payment_lines["1101"]["debit"] == 125000.0
         assert payment_lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
         assert payment_lines[BUS_SHIPPING_HELD_CODE]["credit"] == 25000.0
         _assert_balanced(payment_lines)
@@ -178,7 +178,7 @@ def test_bus_order_full_lifecycle_journal_entries():
         assert _entry_count(conn, "order_shipping_release", oid) == 1
         release_lines = _entry_lines(conn, "order_shipping_release", oid)
         assert release_lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert release_lines["1100"]["credit"] == 25000.0
+        assert release_lines["1101"]["credit"] == 25000.0
         _assert_balanced(release_lines)
 
         # 5. Re-sync must not duplicate any entries.
@@ -215,7 +215,7 @@ def _run_non_bus_regression(order_ref: str, delivery_type: str) -> None:
         assert BUS_SHIPPING_HELD_CODE not in lines, (
             f"{delivery_type} payment must not involve 2200"
         )
-        assert lines["1100"]["debit"] == 125000.0
+        assert lines["1101"]["debit"] == 125000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 125000.0
         _assert_balanced(lines)
 

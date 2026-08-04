@@ -1219,7 +1219,7 @@ def test_ar_entries_skips_order_with_deposit_style_revenue_je_order_id():
 
 
 def _insert_expense_event(conn, *, category: str, amount: float = 10000,
-                          payment_source: str = "Shop tiền mặt") -> int:
+                          payment_source: str = "Tiền mặt tại quầy") -> int:
     """Insert an expense event and return its id."""
     import json
 
@@ -1276,11 +1276,11 @@ def test_inventory_all_backfills_missing():
         ensure_schema(conn)
         eid1 = _insert_expense_event(
             conn, category="Nguyên liệu", amount=500000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         eid2 = _insert_expense_event(
             conn, category="Bao bì", amount=200000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         assert eid1 > 0
         assert eid2 > 0
@@ -1302,7 +1302,7 @@ def test_inventory_all_idempotent():
         ensure_schema(conn)
         _insert_expense_event(
             conn, category="Nguyên liệu", amount=300000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result1 = _invoke(["repair-inventory", "--all"])
@@ -1322,7 +1322,7 @@ def test_inventory_event_id_backfills():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Nguyên liệu", amount=150000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result = _invoke(["repair-inventory", "--event-id", str(eid)])
@@ -1349,7 +1349,7 @@ def test_inventory_dry_run_does_not_mutate():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Bao bì", amount=250000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         je_before = conn.execute(
             "SELECT COUNT(*) AS c FROM journal_entries"
@@ -1375,7 +1375,7 @@ def test_inventory_dry_run_event_id():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Nguyên liệu", amount=100000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result = _invoke(
@@ -1397,7 +1397,7 @@ def test_inventory_excludes_non_inventory_categories():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Vận chuyển", amount=100000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result = _invoke(["repair-inventory", "--all"])
@@ -1414,11 +1414,11 @@ def test_inventory_mixed_categories_only_backfills_inventory():
         ensure_schema(conn)
         eid1 = _insert_expense_event(
             conn, category="Nguyên liệu", amount=300000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         eid2 = _insert_expense_event(
             conn, category="Vận chuyển", amount=50000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result = _invoke(["repair-inventory", "--all"])
@@ -1441,7 +1441,7 @@ def test_inventory_skips_deleted_events():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Nguyên liệu", amount=400000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         conn.execute(
             "UPDATE events SET deleted_at = datetime('now') WHERE id = ?",
@@ -1465,7 +1465,7 @@ def test_inventory_vn_labels():
         ensure_schema(conn)
         _insert_expense_event(
             conn, category="Bao bì", amount=350000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     result = _invoke(["repair-inventory", "--all"])
@@ -1490,7 +1490,7 @@ def test_process_inventory_backfill_service_level():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Nguyên liệu", amount=150000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         events = _expense_events_needing_inventory_backfill(conn, event_id=eid)
         assert len(events) == 1
@@ -1515,7 +1515,7 @@ def test_process_inventory_backfill_dry_run():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Bao bì", amount=200000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
         events = _expense_events_needing_inventory_backfill(conn, event_id=eid)
         assert len(events) == 1
@@ -1533,7 +1533,7 @@ def test_inventory_backfill_creates_1300_debit():
         ensure_schema(conn)
         eid = _insert_expense_event(
             conn, category="Nguyên liệu", amount=500000,
-            payment_source="Shop tiền mặt",
+            payment_source="Tiền mặt tại quầy",
         )
 
     _invoke(["repair-inventory", "--all"])
@@ -1772,8 +1772,8 @@ def test_repair_backfills_reconciliation_payment_journal_entry(api_client):
             f"payment entry backfilled: {after['payment_transaction']}"
         )
         lines = _journal_line_codes(conn, after["payment_transaction"][0])
-        # Cash method → asset account 1100 (Cash on Hand).
-        asset_line = next(l for l in lines if l[0] == "1100")
+        # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
+        asset_line = next(l for l in lines if l[0] == "1101")
         deposits_line = next(l for l in lines if l[0] == "2100")
         # 2 units × 12000 = 24000 inflow.
         assert asset_line[1] == 24000.0, asset_line

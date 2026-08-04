@@ -59,6 +59,7 @@ from ._constants import (  # noqa: F401
     EXPENSE_CATEGORIES_SCHEMA,
     SEED_EXPENSE_CATEGORIES,
     CASH_DRAWER_SCHEMA,
+    CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA,
     SEED_CHART_OF_ACCOUNTS,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -191,6 +192,7 @@ from .migrations.v091 import _migrate_v91_cash_drawer_schema  # noqa: F401
 from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts  # noqa: F401
 from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries  # noqa: F401
 from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns  # noqa: F401
+from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -202,6 +204,7 @@ __all__ = [
     'BLANKS_SCHEMA',
     'BUS_SHIPPING_HELD_CODE',
     'CASH_DRAWER_SCHEMA',
+    'CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA',
     'CATALOG_PHOTO_TAGS_SCHEMA',
     'CHECKLIST_SCHEMA',
     'COGS_CODE',
@@ -360,6 +363,7 @@ __all__ = [
     '_migrate_v92_cash_drawer_sub_accounts',
     '_migrate_v93_rename_quy_to_quay_in_journal_entries',
     '_migrate_v94_cash_drawer_tien_rut_columns',
+    '_migrate_v95_cash_drawer_journal_balance',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

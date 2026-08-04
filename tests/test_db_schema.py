@@ -452,7 +452,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +471,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +487,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3497,7 +3497,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
         _assert_users_role_check_constraint(conn)
 
 
@@ -3563,7 +3563,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3686,7 +3686,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3760,7 +3760,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3787,7 +3787,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4190,7 +4190,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         indexes = {
             r["name"]
@@ -4267,10 +4267,13 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     required columns stored as INTEGER (VND) per NFR1.
 
     FR1: status (open/closed), opening_balance, timestamps.
+
+    DG-347 Phase 1 (v095) dropped the accumulator columns and added
+    ``closing_balance``; this test now asserts the post-v095 schema.
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4279,26 +4282,20 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
             "closed_at",
             "status",
             "opening_balance",
-            "cash_sales",
-            "owner_in",
-            "owner_out",
-            "cash_expenses",
+            "closing_balance",
             "counted_amount",
             "discrepancy",
         }
         assert expected <= set(cols), f"missing columns: {expected - set(cols)}"
 
-        # Balance-affecting fields are INTEGER (VND) per NFR1.
-        for col in (
-            "opening_balance",
-            "cash_sales",
-            "owner_in",
-            "owner_out",
-            "cash_expenses",
-        ):
-            assert cols[col]["type"] == "INTEGER", f"{col} must be INTEGER"
-            assert cols[col]["notnull"] == 1, f"{col} must be NOT NULL"
-            assert cols[col]["dflt_value"] == "0", f"{col} must default to 0"
+        # opening_balance is INTEGER NOT NULL DEFAULT 0 (VND) per NFR1.
+        assert cols["opening_balance"]["type"] == "INTEGER"
+        assert cols["opening_balance"]["notnull"] == 1
+        assert cols["opening_balance"]["dflt_value"] == "0"
+
+        # closing_balance is INTEGER DEFAULT NULL (persisted at close time).
+        assert cols["closing_balance"]["type"] == "INTEGER"
+        assert cols["closing_balance"]["notnull"] == 0
 
         # counted_amount / discrepancy are nullable (set only at close time).
         assert cols["counted_amount"]["notnull"] == 0
@@ -4321,6 +4318,13 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
         }
         assert "idx_cash_drawer_status" in indexes
         assert "idx_cash_drawer_opened_at" in indexes
+
+        # DG-347 Phase 1: accumulator columns dropped by v095.
+        for dropped in (
+            "cash_sales", "tien_rut_in", "tien_rut_out",
+            "owner_in", "owner_out", "cash_expenses",
+        ):
+            assert dropped not in cols, f"{dropped} should have been dropped by v095"
 
 
 def test_v91_adds_cash_drawer_id_on_existing_db():
@@ -4380,11 +4384,15 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
 
 def test_v91_cash_drawer_row_persists():
-    """A cash_drawer row can be inserted and read back with INTEGER balances."""
+    """A cash_drawer row can be inserted and read back with INTEGER balances.
+
+    DG-347 Phase 1 (v095) dropped the accumulator columns; the row now has
+    only opening_balance and closing_balance as balance columns.
+    """
     with get_db() as conn:
         ensure_schema(conn)
         conn.execute(
@@ -4392,20 +4400,21 @@ def test_v91_cash_drawer_row_persists():
         )
         conn.commit()
         row = conn.execute(
-            "SELECT status, opening_balance, cash_sales, owner_in, owner_out, "
-            "cash_expenses, counted_amount, discrepancy "
+            "SELECT status, opening_balance, closing_balance, "
+            "counted_amount, discrepancy "
             "FROM cash_drawer WHERE id = 1"
         ).fetchone()
         assert row["status"] == "open"
         assert row["opening_balance"] == 1000000
-        assert row["cash_sales"] == 0
-        assert row["owner_in"] == 0
-        assert row["owner_out"] == 0
-        assert row["cash_expenses"] == 0
+        assert row["closing_balance"] is None
         assert row["counted_amount"] is None
         assert row["discrepancy"] is None
 
 
+@pytest.mark.skip(
+    reason="DG-347 Phase 1 (v095) dropped cash_drawer_id from payment_transactions "
+           "and events; replaced by the cash_drawer_journal_entries join table"
+)
 def test_v91_cash_drawer_id_fk_references_cash_drawer():
     """The cash_drawer_id columns reference cash_drawer(id) (logical FK).
 
@@ -4450,7 +4459,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4584,7 +4593,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4709,7 +4718,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4718,7 +4727,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 94
+        assert _migrated_version(conn) == 95
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4751,15 +4760,21 @@ def test_v94_registered_in_migration_chain():
 def test_v94_adds_tien_rut_columns_to_existing_cash_drawer():
     """Existing cash_drawer rows get the new columns with default 0 (NFR1 —
     existing drawer data preserved).
+
+    DG-347 Phase 1 (v095) subsequently drops ``tien_rut_in``/``tien_rut_out``
+    along with the other accumulator columns, so this test verifies the v94
+    migration in isolation by migrating only up to v94 and inserting a drawer
+    using only the columns that exist at v91 (no accumulator columns in the
+    fresh-DB schema constant, so the INSERT uses just opening_balance).
     """
     with get_db() as conn:
         _migrate_to_version(conn, 91)
-        # Insert a drawer BEFORE the new columns exist so we can prove the
-        # migration preserves existing data and defaults the new columns.
+        # Insert a drawer BEFORE v94 runs so we can prove the migration
+        # preserves existing data and defaults the new columns.
         conn.executescript(
             """
-            INSERT INTO cash_drawer (opened_at, status, opening_balance, cash_sales, owner_in, owner_out, cash_expenses)
-            VALUES ('2026-01-01T00:00:00Z', 'closed', 1000000, 500000, 0, 0, 0);
+            INSERT INTO cash_drawer (opened_at, status, opening_balance)
+            VALUES ('2026-01-01T00:00:00Z', 'closed', 1000000);
             """
         )
         conn.commit()
@@ -4780,26 +4795,26 @@ def test_v94_adds_tien_rut_columns_to_existing_cash_drawer():
         assert cols["tien_rut_out"][4] == "0"  # DEFAULT 0
 
         row = conn.execute(
-            "SELECT opening_balance, cash_sales, tien_rut_in, tien_rut_out, owner_in, owner_out, cash_expenses "
+            "SELECT opening_balance, tien_rut_in, tien_rut_out "
             "FROM cash_drawer WHERE opened_at = '2026-01-01T00:00:00Z'"
         ).fetchone()
         # Existing values preserved; new columns default to 0.
         assert row["opening_balance"] == 1000000
-        assert row["cash_sales"] == 500000
         assert row["tien_rut_in"] == 0
         assert row["tien_rut_out"] == 0
-        assert row["owner_in"] == 0
-        assert row["owner_out"] == 0
-        assert row["cash_expenses"] == 0
 
 
 def test_v94_fresh_db_has_columns_in_schema():
-    """A fresh DB (ensure_schema from scratch) has the two new columns in the
+    """A fresh DB migrated only up to v94 has the two new columns in the
     cash_drawer table (NFR2 — old clients ignore unknown keys; new columns
     default to 0 so existing expected_balance computation is unchanged).
+
+    DG-347 Phase 1 (v095) drops ``tien_rut_in``/``tien_rut_out``, so this test
+    migrates only up to v94 (not the full ensure_schema) to verify the v94
+    deliverable in isolation.
     """
     with get_db() as conn:
-        ensure_schema(conn)
+        _migrate_to_version(conn, 94)
         assert _migrated_version(conn) == 94
         cols = {r[1] for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
         assert "tien_rut_in" in cols
@@ -4812,8 +4827,7 @@ def test_v94_fresh_db_has_columns_in_schema():
             """
         )
         row = conn.execute(
-            "SELECT opening_balance + cash_sales + tien_rut_in + owner_in "
-            "       - tien_rut_out - owner_out - cash_expenses AS expected "
+            "SELECT opening_balance + tien_rut_in - tien_rut_out AS expected "
             "FROM cash_drawer WHERE opened_at = '2026-02-01T00:00:00Z'"
         ).fetchone()
         assert row["expected"] == 0
@@ -4822,11 +4836,15 @@ def test_v94_fresh_db_has_columns_in_schema():
 def test_v94_idempotent_on_already_migrated_db():
     """Re-running v94 on a DB that already ran it is a no-op (NFR1 —
     _guard_add_column skips columns that already exist).
+
+    DG-347 Phase 1 (v095) drops the accumulator columns, so this test
+    migrates only up to v94 (not the full ensure_schema) to verify the v94
+    idempotency guarantee in isolation.
     """
     from baker.db.schema import _migrate_v94_cash_drawer_tien_rut_columns
 
     with get_db() as conn:
-        ensure_schema(conn)
+        _migrate_to_version(conn, 94)
         assert _migrated_version(conn) == 94
         before = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
         # Re-running the callable must not raise and must not change columns.

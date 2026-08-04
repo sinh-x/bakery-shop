@@ -221,7 +221,7 @@ def test_revenue_entry_and_tien_rut_return_at_delivery():
 
         ret = _tien_rut_return_entry(conn, oid)
         assert ret["lines"][TIEN_RUT_HELD_CODE]["debit"] == 300000.0
-        assert ret["lines"]["1100"]["credit"] == 300000.0
+        assert ret["lines"]["1101"]["credit"] == 300000.0
         _assert_double_entry_integrity(conn)
         conn.commit()
 
@@ -247,7 +247,7 @@ def test_revenue_entry_deposits_equal_tien_rut():
 
         ret = _tien_rut_return_entry(conn, oid)
         assert ret["lines"][TIEN_RUT_HELD_CODE]["debit"] == 500000.0
-        assert ret["lines"]["1100"]["credit"] == 500000.0
+        assert ret["lines"]["1101"]["credit"] == 500000.0
         _assert_double_entry_integrity(conn)
         conn.commit()
 
@@ -302,7 +302,7 @@ def test_revenue_entry_updates_when_tien_rut_added_after_delivery():
         assert rev["lines"][ORDER_REVENUE_CODE]["credit"] == 500000.0
         ret = _tien_rut_return_entry(conn, oid)
         assert ret["lines"][TIEN_RUT_HELD_CODE]["debit"] == 300000.0
-        assert ret["lines"]["1100"]["credit"] == 300000.0
+        assert ret["lines"]["1101"]["credit"] == 300000.0
         _assert_double_entry_integrity(conn)
         conn.commit()
 

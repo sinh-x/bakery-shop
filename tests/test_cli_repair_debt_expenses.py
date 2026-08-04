@@ -21,6 +21,7 @@ import json
 
 import click
 import click.testing
+import pytest
 
 from baker.cli import app
 from baker.commands.repair import (
