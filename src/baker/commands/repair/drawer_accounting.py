@@ -53,12 +53,13 @@ def repair_drawer_accounting_cmd(dry_run):
 
     1. Sửa bút toán JE#5975 (auto-transfer lần mở quầy đầu tiên):
        cập nhật số tiền chuyển từ 313,405,500 thành 330,501,500 để tính
-       cả 62 bút toán backdate (tạo 2026-08-03 23:57 với transaction_date
-       tháng 6-7/2026) không được tính trong lần transfer đầu tiên.
+       cả 62 bút toán backdate (tạo 2026-08-03 23:57 với
+       ``transaction_date`` tháng 6-7/2026) không được tính trong lần
+       transfer đầu tiên.
 
     2. Backfill cash_drawer_journal_entries: liên kết các bút toán 1101
-       với drawer dựa trên created_at (không dùng transaction_date để
-       tránh các bút toán backdate bị gán sai drawer).
+       với drawer dựa trên ``created_at`` — xem ``_backfill`` cho chi tiết
+       về time-window matching.
 
     3. Tính lại closing_balance cho các drawer đã đóng từ các dòng đã
        liên kết.

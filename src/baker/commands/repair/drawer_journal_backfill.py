@@ -51,8 +51,8 @@ def repair_drawer_journal_backfill_cmd(dry_run):
     kết với drawer, khiến expected_balance() trả về 0.
 
     Lệnh này:
-    1. Liên kết các bút toán 1101 với drawer dựa trên created_at (không dùng
-       transaction_date để tránh các bút toán backdate bị gán sai drawer).
+    1. Liên kết các bút toán 1101 với drawer dựa trên ``created_at`` — xem
+       ``_backfill`` cho chi tiết về time-window matching.
     2. Tính lại closing_balance cho các drawer đã đóng từ các dòng đã liên kết.
     3. Các bút toán backdate (tạo sau khi tất cả drawer đã đóng) được giữ
        nguyên không liên kết — đúng vì chúng thuộc về giai đoạn trước drawer.

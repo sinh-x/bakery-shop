@@ -748,3 +748,82 @@ def test_journal_backfill_does_not_touch_je5975(use_memory_db):
     with get_db() as conn:
         # JE#5975 amount unchanged — the backfill command does not repair it.
         assert _je5975_amount(conn) == 313405500
+
+
+# ---------------------------------------------------------------------------
+# CQ-1 (DG-351 review remediation) — unlinked-breakdown invariant
+#
+# count_unlinked_total() must apply the same _EXCLUDED_SOURCE_TYPES filter as
+# count_unlinked_outside_any_drawer(); otherwise the breakdown invariant
+# ``total = outside + within`` is violated and ``within`` (category b) is
+# inflated by the count of excluded-source_type entries, masking a fully
+# successful backfill as "still has unlinked-within entries".
+# ---------------------------------------------------------------------------
+
+
+def test_unlinked_breakdown_invariant_with_excluded_source_types(use_memory_db):
+    """CQ-1: ``unlinked_breakdown()`` honours ``total = outside + within`` even
+    when ``migration_balance_transfer`` / ``cash_drawer_auto_transfer`` entries
+    are present. Before the fix, ``count_unlinked_total`` omitted the
+    ``source_type NOT IN (...)`` filter that ``count_unlinked_outside_any_drawer``
+    applied, so ``total`` counted the excluded entries while ``outside`` did
+    not — yielding ``within > 0`` even after a fully successful backfill.
+    """
+    from baker.commands.repair import _backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # A closed drawer window.
+        drawer_id = _insert_drawer(
+            conn,
+            opened_at="2026-07-01T08:00:00Z",
+            closed_at="2026-07-01T20:00:00Z",
+            opening_balance=1_000_000,
+            status="closed",
+        )
+        # A normal linkable 1101 entry inside the drawer window.
+        _insert_1101_entry(
+            conn,
+            amount=500_000,
+            source_type="cash_drawer_test_adjust",
+            created_at="2026-07-01T12:00:00Z",
+        )
+        # An excluded cash_drawer_auto_transfer entry inside the drawer
+        # window — must not be linked and must not be counted in the
+        # breakdown.
+        _insert_1101_entry(
+            conn,
+            amount=300_000,
+            source_type="cash_drawer_auto_transfer",
+            created_at="2026-07-01T13:00:00Z",
+        )
+        # An excluded migration_balance_transfer entry OUTSIDE the drawer
+        # window (orphaned) — must not be counted in the breakdown either.
+        _insert_1101_entry(
+            conn,
+            amount=400_000,
+            source_type="migration_balance_transfer",
+            created_at="2026-06-15T12:00:00Z",
+        )
+        conn.commit()
+
+    # Run the backfill so the normal linkable entry is linked; the two
+    # excluded entries remain unlinked but must NOT inflate the breakdown.
+    result = _invoke(["repair-drawer-journal-backfill"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        outside, within, total = _backfill.unlinked_breakdown(conn)
+        # The invariant must hold.
+        assert total == outside + within, (
+            f"breakdown invariant violated: total={total}, "
+            f"outside={outside}, within={within}"
+        )
+        # After a successful backfill there are no unlinked-within entries.
+        assert within == 0, (
+            f"expected within == 0 after successful backfill, got {within}; "
+            "excluded source_types likely leaked into count_unlinked_total()"
+        )
+        # ``outside`` may be 0 here too (the orphaned migration entry is
+        # excluded), so ``total`` must also be 0.
+        assert total == 0

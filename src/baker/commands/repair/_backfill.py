@@ -53,11 +53,12 @@ def _select_unlinked_1101_entries(conn, drawer_id: int, opened_at, closed_at):
     """Return 1101 journal entries in a drawer's window not yet linked to it.
 
     Mirrors the closed-drawer variant: ``opened_at <= created_at <= closed_at``.
-    Excludes ``migration_balance_transfer`` and ``cash_drawer_auto_transfer``
-    source_types (FR5) and entries already linked to this drawer.
+    Excludes ``_EXCLUDED_SOURCE_TYPES`` source_types (FR5) and entries already
+    linked to this drawer.
     """
+    placeholders = ", ".join("?" for _ in _EXCLUDED_SOURCE_TYPES)
     return conn.execute(
-        """
+        f"""
         SELECT je.id, jl.debit, jl.credit
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_entry_id
@@ -65,10 +66,7 @@ def _select_unlinked_1101_entries(conn, drawer_id: int, opened_at, closed_at):
         WHERE a.code = '1101'
           AND je.created_at >= ?
           AND je.created_at <= ?
-          AND je.source_type NOT IN (
-              'migration_balance_transfer',
-              'cash_drawer_auto_transfer'
-          )
+          AND je.source_type NOT IN ({placeholders})
           AND je.id NOT IN (
               SELECT journal_entry_id
               FROM cash_drawer_journal_entries
@@ -76,7 +74,7 @@ def _select_unlinked_1101_entries(conn, drawer_id: int, opened_at, closed_at):
           )
         ORDER BY je.created_at
         """,
-        (opened_at, closed_at, drawer_id),
+        (opened_at, closed_at, *_EXCLUDED_SOURCE_TYPES, drawer_id),
     ).fetchall()
 
 
@@ -87,18 +85,16 @@ def _select_unlinked_1101_entries_open(conn, drawer_id: int, opened_at):
     Same source_type exclusions and already-linked exclusion as the closed
     variant.
     """
+    placeholders = ", ".join("?" for _ in _EXCLUDED_SOURCE_TYPES)
     return conn.execute(
-        """
+        f"""
         SELECT je.id, jl.debit, jl.credit
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_entry_id
         JOIN accounts a ON a.id = jl.account_id
         WHERE a.code = '1101'
           AND je.created_at >= ?
-          AND je.source_type NOT IN (
-              'migration_balance_transfer',
-              'cash_drawer_auto_transfer'
-          )
+          AND je.source_type NOT IN ({placeholders})
           AND je.id NOT IN (
               SELECT journal_entry_id
               FROM cash_drawer_journal_entries
@@ -106,7 +102,7 @@ def _select_unlinked_1101_entries_open(conn, drawer_id: int, opened_at):
           )
         ORDER BY je.created_at
         """,
-        (opened_at, drawer_id),
+        (opened_at, *_EXCLUDED_SOURCE_TYPES, drawer_id),
     ).fetchall()
 
 
@@ -213,22 +209,19 @@ def count_unlinked_outside_any_drawer(conn) -> int:
 
     Category (a) in the orphaned-entry breakdown: entries not in
     cash_drawer_journal_entries whose ``created_at`` does not fall in any
-    drawer's ``[opened_at, closed_at]`` window. Excludes the
-    ``migration_balance_transfer`` / ``cash_drawer_auto_transfer`` source_types
-    so the breakdown reflects the entries the backfill step could plausibly
-    link.
+    drawer's ``[opened_at, closed_at]`` window. Excludes
+    ``_EXCLUDED_SOURCE_TYPES`` so the breakdown reflects the entries the
+    backfill step could plausibly link.
     """
+    placeholders = ", ".join("?" for _ in _EXCLUDED_SOURCE_TYPES)
     return conn.execute(
-        """
+        f"""
         SELECT COUNT(*) as cnt
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_entry_id
         JOIN accounts a ON a.id = jl.account_id
         WHERE a.code = '1101'
-          AND je.source_type NOT IN (
-              'migration_balance_transfer',
-              'cash_drawer_auto_transfer'
-          )
+          AND je.source_type NOT IN ({placeholders})
           AND je.id NOT IN (
               SELECT journal_entry_id
               FROM cash_drawer_journal_entries
@@ -240,7 +233,8 @@ def count_unlinked_outside_any_drawer(conn) -> int:
                 AND (d.closed_at IS NULL
                      OR je.created_at <= d.closed_at)
           )
-        """
+        """,
+        tuple(_EXCLUDED_SOURCE_TYPES),
     ).fetchone()["cnt"]
 
 
@@ -249,18 +243,29 @@ def count_unlinked_total(conn) -> int:
 
     This is the total unlinked count (categories (a) + (b)); the breakdown's
     "within a drawer window but unlinked" figure is ``total - outside``.
+
+    Applies the same ``_EXCLUDED_SOURCE_TYPES`` filter as
+    ``count_unlinked_outside_any_drawer`` so the breakdown invariant
+    ``total = outside + within`` holds. Without this filter, ``total`` would
+    include ``migration_balance_transfer`` / ``cash_drawer_auto_transfer``
+    entries that ``outside`` excludes, skewing ``within = total - outside``
+    and producing a non-zero "within" count even after a fully successful
+    backfill.
     """
+    placeholders = ", ".join("?" for _ in _EXCLUDED_SOURCE_TYPES)
     return conn.execute(
-        """
+        f"""
         SELECT COUNT(*) as cnt
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_entry_id
         JOIN accounts a ON a.id = jl.account_id
         WHERE a.code = '1101'
+          AND je.source_type NOT IN ({placeholders})
           AND je.id NOT IN (
               SELECT journal_entry_id FROM cash_drawer_journal_entries
           )
-        """
+        """,
+        tuple(_EXCLUDED_SOURCE_TYPES),
     ).fetchone()["cnt"]
 
 
