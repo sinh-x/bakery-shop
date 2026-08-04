@@ -616,6 +616,74 @@ def test_close_drawer_requires_active_drawer(api_client):
     assert resp.status_code == 409
 
 
+def test_closing_balance_equals_expected_balance(api_client):
+    """Regression test DG-350: closing_balance matches the journal-derived
+    expected_balance (SUM of all linked 1101 journal lines) for a closed
+    drawer.
+
+    opening 500,000 (DR 1101) + cash-in 200,000 (DR 1101) − cash-out 50,000
+    (CR 1101) = 650,000 expected balance. The close endpoint persists
+    closing_balance = expected_balance at close time; this test verifies the
+    persisted value equals the 1101 journal sum computed independently.
+    """
+    # 1. Open drawer
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    assert resp.status_code in (200, 201), resp.text
+
+    # 2. Create linked 1101 entries via cash-in and cash-out
+    ci = api_client.post(
+        "/api/cash-drawer/cash-in",
+        json={"amount": 200_000, "source": "owner", "method": "cash"},
+    )
+    assert ci.status_code == 200, ci.text
+    co = api_client.post(
+        "/api/cash-drawer/cash-out",
+        json={"amount": 50_000, "destination": "owner", "method": "cash"},
+    )
+    assert co.status_code == 200, co.text
+
+    # 3. Close the drawer (counted == expected → no confirmation gate)
+    resp = api_client.post("/api/cash-drawer/close", json={"countedAmount": 650_000})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "closed"
+
+    # 4. Get drawer_id from history
+    hist_resp = api_client.get("/api/cash-drawer/history?limit=1")
+    assert hist_resp.status_code == 200
+    items = hist_resp.json()["items"]
+    assert len(items) >= 1
+    drawer_id = int(items[0]["id"])
+
+    # 5. Assert closing_balance == journal-derived 1101 sum (the formula
+    #    used by expected_balance() for open drawers). For closed drawers
+    #    expected_balance() short-circuits to closing_balance, so compute
+    #    the journal sum directly to make this a meaningful regression check.
+    with get_db() as conn:
+        drawer = CashDrawer.get_by_id(conn, drawer_id)
+        assert drawer is not None
+        assert drawer.status == "closed"
+        assert drawer.closing_balance == 650_000
+
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_id,),
+        ).fetchone()
+        journal_sum = int(row["balance"])
+
+    assert drawer.closing_balance == journal_sum, (
+        f"closing_balance {drawer.closing_balance} != "
+        f"journal-derived 1101 sum {journal_sum}"
+    )
+    # Also verify via the API history response.
+    assert int(items[0]["closingBalance"]) == journal_sum
+
+
 # ---------------------------------------------------------------------------
 # GET /status (FR4, AC6)
 # ---------------------------------------------------------------------------
