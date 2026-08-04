@@ -139,6 +139,7 @@ def repair_drawer_accounting_cmd(dry_run):
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
                           AND je.created_at >= ?
+                          AND je.created_at <= ?
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
@@ -146,7 +147,7 @@ def repair_drawer_accounting_cmd(dry_run):
                           )
                         ORDER BY je.created_at
                         """,
-                        (opened, drawer_id),
+                        (opened, closed, drawer_id),
                     ).fetchall()
                 else:
                     entries = conn.execute(
