@@ -478,7 +478,12 @@ def test_bus_order_revenue_excludes_shipping_fee_ac3():
 
 
 def test_bus_order_shipping_release_entry_created_ac4():
-    """AC4: shipping_fee=25000 held in 2200 → release entry debit 2200/credit 1100."""
+    """AC4: shipping_fee=25000 held in 2200 → release entry debit 2200/credit 1102.
+
+    With no open drawer covering the delivery timestamp, the drawer-aware
+    routing (FR3/FR4, aligned with the repair command) credits 1102 (Owner's
+    Cash) rather than 1101 (Cash in Drawer).
+    """
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -495,7 +500,7 @@ def test_bus_order_shipping_release_entry_created_ac4():
         assert _release_entry_count(conn, oid) == 1
         lines = _release_line_amounts(conn, oid)
         assert lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert lines["1101"]["credit"] == 25000.0
+        assert lines["1102"]["credit"] == 25000.0
 
 
 def test_bus_order_shipping_fee_zero_unchanged():
@@ -816,11 +821,12 @@ def test_v49_backfill_corrects_revenue_creates_hold_and_release():
         assert hold[CUSTOMER_DEPOSITS_CODE]["debit"] == 25000.0
         assert hold[BUS_SHIPPING_HELD_CODE]["credit"] == 25000.0
 
-        # Release entry: debit 2200 25000, credit 1100 25000.
+        # Release entry: debit 2200 25000, credit 1102 25000 (no open drawer
+        # covering delivery → Owner's Cash per drawer-aware routing FR4).
         assert _release_entry_count(conn, oid) == 1
         release = _release_line_amounts(conn, oid)
         assert release[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert release["1101"]["credit"] == 25000.0
+        assert release["1102"]["credit"] == 25000.0
 
         _assert_double_entry_integrity_v49(conn)
         conn.commit()
