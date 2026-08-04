@@ -145,6 +145,13 @@ def repair_drawer_accounting_cmd(dry_run):
                               'cash_drawer_auto_transfer'
                           )
                           AND je.id NOT IN (
+                              SELECT DISTINCT jl2.journal_entry_id
+                              FROM journal_lines jl2
+                              JOIN accounts a2
+                                   ON a2.id = jl2.account_id
+                              WHERE a2.code = '2400'
+                          )
+                          AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
                               WHERE cash_drawer_id = ?
@@ -166,6 +173,13 @@ def repair_drawer_accounting_cmd(dry_run):
                           AND je.source_type NOT IN (
                               'migration_balance_transfer',
                               'cash_drawer_auto_transfer'
+                          )
+                          AND je.id NOT IN (
+                              SELECT DISTINCT jl2.journal_entry_id
+                              FROM journal_lines jl2
+                              JOIN accounts a2
+                                   ON a2.id = jl2.account_id
+                              WHERE a2.code = '2400'
                           )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
