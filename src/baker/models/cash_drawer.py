@@ -26,17 +26,21 @@ class CashDrawer:
     counted_amount: Optional[int] = None
     discrepancy: Optional[int] = None
     closing_balance: Optional[int] = None
+    counted_opening_balance: Optional[int] = None
     id: Optional[int] = None
 
     def expected_balance(self, conn=None) -> int:
-        """FR1: derive the expected balance.
+        """FR3: derive the expected balance.
 
         For closed drawers with a persisted ``closing_balance``, return it
         directly (no journal query). For open drawers, when a ``conn`` is
-        provided, sum the 1101 (Cash in Drawer) journal lines linked to this
-        drawer via the ``cash_drawer_journal_entries`` join table. Without a
-        ``conn`` (e.g. tests that construct the model directly), fall back to
-        ``opening_balance`` so the method never raises.
+        provided, return ``opening_balance + SUM(1101 debit - credit)`` over
+        the journal lines linked to this drawer via the
+        ``cash_drawer_journal_entries`` join table. ``opening_balance`` holds
+        the 1101 accounting balance at open time (FR1), so the linked-entry sum
+        captures only the activity that occurred during this drawer session.
+        Without a ``conn`` (e.g. tests that construct the model directly), fall
+        back to ``opening_balance`` so the method never raises.
         """
         if self.status == "closed" and self.closing_balance is not None:
             return self.closing_balance
@@ -52,13 +56,18 @@ class CashDrawer:
             """,
             (self.id,),
         ).fetchone()
-        return int(row["balance"])
+        return int(self.opening_balance) + int(row["balance"])
 
     def save(self, conn) -> int:
         cursor = conn.execute(
             "INSERT INTO cash_drawer "
-            "(opened_at, opening_balance, status) VALUES (?, ?, 'open')",
-            (self.opened_at, int(self.opening_balance)),
+            "(opened_at, opening_balance, counted_opening_balance, status) "
+            "VALUES (?, ?, ?, 'open')",
+            (
+                self.opened_at,
+                int(self.opening_balance),
+                int(self.counted_opening_balance) if self.counted_opening_balance is not None else None,
+            ),
         )
         self.id = cursor.lastrowid
         self.status = "open"
@@ -79,6 +88,11 @@ class CashDrawer:
                 if row["closing_balance"] is not None
                 else None
             ),
+            counted_opening_balance=(
+                int(row["counted_opening_balance"])
+                if row["counted_opening_balance"] is not None
+                else None
+            ),
         )
 
     def to_api_dict(self, conn=None) -> dict:
@@ -88,6 +102,7 @@ class CashDrawer:
             "closedAt": self.closed_at,
             "status": self.status,
             "openingBalance": self.opening_balance,
+            "countedOpeningBalance": self.counted_opening_balance,
             "countedAmount": self.counted_amount,
             "discrepancy": self.discrepancy,
             "closingBalance": self.closing_balance,

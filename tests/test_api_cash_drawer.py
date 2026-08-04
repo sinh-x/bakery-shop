@@ -914,6 +914,109 @@ def test_cash_drawer_expected_balance_model():
     assert d_closed.expected_balance() == 1_550_000
 
 
+def test_expected_balance_formula_opening_plus_linked_1101_sum(use_memory_db):
+    """DG-354 Phase 2 (FR3, AC1/AC2/AC3 partial — model only):
+
+    expected_balance() = opening_balance + SUM(1101 debit - credit) over the
+    journal lines linked to this drawer via ``cash_drawer_journal_entries``.
+    Phase 2 changes the model formula; Phase 3 wires the API to store the 1101
+    accounting balance as ``opening_balance`` so the API-level AC1/AC2/AC3
+    integration tests pass. This test verifies the model formula directly.
+    """
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash_acct = _account_id(conn, "1101")
+        equity_acct = _account_id(conn, "3100")
+
+        # AC1: opening_balance=1,000,000, no linked entries → expected = 1,000,000
+        drawer = CashDrawer(
+            opened_at=now_utc(),
+            opening_balance=1_000_000,
+            counted_opening_balance=1_000_000,
+        )
+        drawer.save(conn)
+        assert drawer.expected_balance(conn) == 1_000_000
+
+        # AC2: linked cash sale of 200,000 (DR 1101 / CR 3100) → expected = 1,200,000
+        _insert_journal_entry(
+            conn,
+            description="Cash sale 200,000",
+            source_type="cash_sale",
+            source_id=None,
+            lines=[
+                (cash_acct, 200_000.0, 0.0, "cash sale"),
+                (equity_acct, 0.0, 200_000.0, "cash sale"),
+            ],
+            drawer_id=drawer.id,
+        )
+        assert drawer.expected_balance(conn) == 1_200_000
+
+        # AC3: linked cash expense of 100,000 (DR 3100 / CR 1101) → expected = 1,100,000
+        _insert_journal_entry(
+            conn,
+            description="Cash expense 100,000",
+            source_type="cash_expense",
+            source_id=None,
+            lines=[
+                (equity_acct, 100_000.0, 0.0, "cash expense"),
+                (cash_acct, 0.0, 100_000.0, "cash expense"),
+            ],
+            drawer_id=drawer.id,
+        )
+        assert drawer.expected_balance(conn) == 1_100_000
+
+        # Unlinked 1101 entry does NOT affect this drawer's expected_balance.
+        _insert_journal_entry(
+            conn,
+            description="Unlinked 1101 entry 500,000",
+            source_type="other_drawer",
+            source_id=None,
+            lines=[
+                (cash_acct, 500_000.0, 0.0, "unlinked"),
+                (equity_acct, 0.0, 500_000.0, "unlinked"),
+            ],
+            drawer_id=None,
+        )
+        assert drawer.expected_balance(conn) == 1_100_000
+
+
+def test_counted_opening_balance_round_trip(use_memory_db):
+    """DG-354 Phase 2 (FR2): counted_opening_balance persists through
+    save()/from_row()/to_api_dict() and stays nullable for backward
+    compatibility."""
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        drawer = CashDrawer(
+            opened_at=now_utc(),
+            opening_balance=1_000_000,
+            counted_opening_balance=950_000,
+        )
+        drawer.save(conn)
+        fetched = CashDrawer.get_by_id(conn, drawer.id)
+        assert fetched is not None
+        assert fetched.opening_balance == 1_000_000
+        assert fetched.counted_opening_balance == 950_000
+
+        api = fetched.to_api_dict(conn)
+        assert api["countedOpeningBalance"] == 950_000
+        assert api["openingBalance"] == 1_000_000
+
+        # Backward-compat: a drawer saved without counted_opening_balance
+        # round-trips as None (no crash, nullable field).
+        drawer2 = CashDrawer(opened_at=now_utc(), opening_balance=500_000)
+        drawer2.save(conn)
+        fetched2 = CashDrawer.get_by_id(conn, drawer2.id)
+        assert fetched2 is not None
+        assert fetched2.counted_opening_balance is None
+        assert fetched2.to_api_dict(conn)["countedOpeningBalance"] is None
+
+
 # ---------------------------------------------------------------------------
 # DG-341 Phase 3 — tien rut delivery lifecycle (FR3, NFR3, AC2, AC7)
 # ---------------------------------------------------------------------------
