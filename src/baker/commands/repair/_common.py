@@ -7,20 +7,24 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
     ACCOUNTS_RECEIVABLE_CODE,
+    BUS_SHIPPING_HELD_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
+    PAYMENT_METHOD_TO_ASSET_CODE,
     REVENUE_UPDATE_TOLERANCE,
     TIEN_RUT_HELD_CODE,
     TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE,
     UNALLOCATED_BANK_CODE,
     _account_id_by_code,
     _ensure_ap_vendor_sub_account,
+    _insert_journal_entry,
 )
 from baker.formatters import format_vnd_amount
 from baker.utils.time import now_utc
+from baker.models.cash_drawer import CashDrawer
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     STAFF_ADVANCE_PAYMENT_SOURCE,
@@ -28,7 +32,9 @@ from baker.services.journal_sync import (
     _TIEN_RUT_RETURN_PREFIX,
     _compute_order_cogs_total,
     _delete_journal_entry_cascade,
+    _find_journal_entry,
     _find_order_entry_by_prefix,
+    _held_shipping_for_order,
     _held_tien_rut_for_order,
     _is_expense_journallable,
     _is_locked,
@@ -51,6 +57,18 @@ logger = logging.getLogger(__name__)
 DELIVERED_STATUSES = ("delivered", "completed")
 
 MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
+
+# Owner's Cash (sub-account of 1100) — used by the shipping-release repair
+# when no open drawer covers the order's delivery timestamp (FR4). Mirrors the
+# 1102 routing used elsewhere in the codebase (api/cash_drawer.py).
+OWNER_CASH_CODE = "1102"
+
+# Shipping-release repair action labels (Vietnamese) — extends _ACTION_LABELS
+# with the backfill vocabulary used by _print_shipping_release_report.
+SHIPPING_RELEASE_ACTION_LABELS = {
+    "backfilled": "đã tạo",
+    "will-backfill": "sẽ tạo",
+}
 
 _ACTION_LABELS = {
     "repaired": "đã sửa",
@@ -103,6 +121,8 @@ def _order_ref(conn, order_id: int) -> str:
 __all__ = [
     'ACCOUNTS_PAYABLE_CODE',
     'ACCOUNTS_RECEIVABLE_CODE',
+    'BUS_SHIPPING_HELD_CODE',
+    'CashDrawer',
     'CUSTOMER_DEPOSITS_CODE',
     'DELIVERED_STATUSES',
     'EXPENSE_CATEGORY_TO_ACCOUNT_CODE',
@@ -110,8 +130,11 @@ __all__ = [
     'EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE',
     'INVENTORY_PURCHASE_CATEGORIES',
     'MISMATCH_TOLERANCE',
+    'OWNER_CASH_CODE',
+    'PAYMENT_METHOD_TO_ASSET_CODE',
     'PaymentTransaction',
     'REVENUE_UPDATE_TOLERANCE',
+    'SHIPPING_RELEASE_ACTION_LABELS',
     'STAFF_ADVANCE_PAYMENT_SOURCE',
     'TIEN_RUT_HELD_CODE',
     'TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE',
@@ -123,8 +146,11 @@ __all__ = [
     '_compute_order_cogs_total',
     '_delete_journal_entry_cascade',
     '_ensure_ap_vendor_sub_account',
+    '_find_journal_entry',
     '_find_order_entry_by_prefix',
+    '_held_shipping_for_order',
     '_held_tien_rut_for_order',
+    '_insert_journal_entry',
     '_is_expense_journallable',
     '_is_locked',
     '_order_cogs_entry',
