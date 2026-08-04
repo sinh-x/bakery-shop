@@ -1,6 +1,43 @@
-"""Repair command module: repair_drawer_accounting_cmd (DG-348 + DG-349)."""
+"""Repair command module: repair_drawer_accounting_cmd (DG-348 + DG-349).
+
+The backfill step (Step 2) and the unlinked-entry breakdown are shared with
+``repair-drawer-journal-backfill`` via ``_backfill`` (DG-351 Phase 4.4). This
+module keeps only the JE#5975 correction (Step 1) and the final summary, which
+are specific to the unified ``repair-drawer-accounting`` command.
+
+Orphaned Entry Gap (Phase 4.2 documentation)
+===========================================
+Journal entries created BETWEEN auto-close of one drawer and the next
+drawer's open() have drawer_id=None and cannot be linked by the
+time-window matching logic below. The time-window matcher uses
+opened_at <= created_at <= closed_at; an entry whose created_at falls
+in the gap between closed_at of the previous drawer and opened_at of
+the next drawer matches no drawer.
+
+Two categories of unlinked entries exist:
+  (a) "outside any drawer window" — created_at falls before the first
+      drawer opened_at, after the last drawer closed_at, or between two
+      drawer periods (the auto-close → next-open gap). These are the
+      orphaned entries. They are correctly left unlinked; the repair
+      command cannot retroactively assign them without a business
+      decision on which drawer should absorb them.
+  (b) "within a drawer window but unlinked" — created_at falls inside
+      a drawer's [opened_at, closed_at] window but the entry is not in
+      cash_drawer_journal_entries. This is the set the backfill step
+      links; after a successful repair, category (b) should be empty.
+
+The unlinked count reported in the summary below includes BOTH
+categories. The repair command does not silently drop orphaned entries;
+they remain visible in the unlinked count for manual review. A separate
+follow-up ticket may decide whether to retroactively assign orphaned
+entries to a drawer or to treat them as pre-drawer activity.
+
+See AC6 (drawer-accounting-audit requirements doc) for the orphaned
+entry acceptance criterion.
+"""
 
 from ._common import *  # noqa: F401,F403
+from . import _backfill
 
 TARGET_AMOUNT = 330501500
 JE_ID = 5975
@@ -16,17 +53,22 @@ def repair_drawer_accounting_cmd(dry_run):
 
     1. Sửa bút toán JE#5975 (auto-transfer lần mở quầy đầu tiên):
        cập nhật số tiền chuyển từ 313,405,500 thành 330,501,500 để tính
-       cả 62 bút toán backdate (tạo 2026-08-03 23:57 với transaction_date
-       tháng 6-7/2026) không được tính trong lần transfer đầu tiên.
+       cả 62 bút toán backdate (tạo 2026-08-03 23:57 với
+       ``transaction_date`` tháng 6-7/2026) không được tính trong lần
+       transfer đầu tiên.
 
     2. Backfill cash_drawer_journal_entries: liên kết các bút toán 1101
-       với drawer dựa trên created_at (không dùng transaction_date để
-       tránh các bút toán backdate bị gán sai drawer).
+       với drawer dựa trên ``created_at`` — xem ``_backfill`` cho chi tiết
+       về time-window matching.
 
     3. Tính lại closing_balance cho các drawer đã đóng từ các dòng đã
        liên kết.
 
     Idempotent: chạy lại không gây thay đổi nếu dữ liệu đã đúng.
+
+    Orphaned entries: bút toán tạo giữa auto-close và lần mở tiếp theo
+    có drawer_id=None và không khớp time-window nào — xem module docstring
+    để biết chi tiết. Chúng vẫn được đếm trong unlinked count.
     """
     try:
         with get_db() as conn:
@@ -112,143 +154,10 @@ def repair_drawer_accounting_cmd(dry_run):
             click.echo("Bước 2: Backfill cash_drawer_journal_entries")
             click.echo("=" * 60)
 
-            drawers = conn.execute(
-                "SELECT * FROM cash_drawer ORDER BY id"
-            ).fetchall()
-
-            if not drawers:
-                click.echo("Không có cash drawer nào trong CSDL.")
-                return
-
-            total_linked = 0
-            closing_updates = []
-
-            for drawer in drawers:
-                drawer_id = drawer["id"]
-                opened = drawer["opened_at"]
-                closed = drawer["closed_at"]
-                status = drawer["status"]
-
-                if closed:
-                    entries = conn.execute(
-                        """
-                        SELECT je.id, jl.debit, jl.credit
-                        FROM journal_lines jl
-                        JOIN journal_entries je
-                             ON je.id = jl.journal_entry_id
-                        JOIN accounts a ON a.id = jl.account_id
-                        WHERE a.code = '1101'
-                          AND je.transaction_date >= ?
-                          AND je.transaction_date <= ?
-                          AND je.source_type NOT IN (
-                              'migration_balance_transfer',
-                              'cash_drawer_auto_transfer'
-                          )
-                          AND je.id NOT IN (
-                              SELECT journal_entry_id
-                              FROM cash_drawer_journal_entries
-                              WHERE cash_drawer_id = ?
-                          )
-                        ORDER BY je.transaction_date
-                        """,
-                        (opened, closed, drawer_id),
-                    ).fetchall()
-                else:
-                    entries = conn.execute(
-                        """
-                        SELECT je.id, jl.debit, jl.credit
-                        FROM journal_lines jl
-                        JOIN journal_entries je
-                             ON je.id = jl.journal_entry_id
-                        JOIN accounts a ON a.id = jl.account_id
-                        WHERE a.code = '1101'
-                          AND je.transaction_date >= ?
-                          AND je.source_type NOT IN (
-                              'migration_balance_transfer',
-                              'cash_drawer_auto_transfer'
-                          )
-                          AND je.id NOT IN (
-                              SELECT journal_entry_id
-                              FROM cash_drawer_journal_entries
-                              WHERE cash_drawer_id = ?
-                          )
-                        ORDER BY je.transaction_date
-                        """,
-                        (opened, drawer_id),
-                    ).fetchall()
-
-                if not entries:
-                    continue
-
-                net = sum(r["debit"] - r["credit"] for r in entries)
-
-                click.echo(
-                    f"Drawer #{drawer_id} ({status}): "
-                    f"{opened} → {closed or 'đang mở'}"
-                )
-                click.echo(f"  {len(entries)} bút toán 1101 cần liên kết")
-                click.echo(f"  Tổng net: {net:+,.0f}")
-
-                if not dry_run:
-                    for e in entries:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO "
-                            "cash_drawer_journal_entries "
-                            "(cash_drawer_id, journal_entry_id) "
-                            "VALUES (?, ?)",
-                            (drawer_id, e["id"]),
-                        )
-                    total_linked += len(entries)
-
-                    if status == "closed":
-                        new_closing = drawer["opening_balance"] + net
-                        old_closing = drawer["closing_balance"]
-                        if new_closing != old_closing:
-                            conn.execute(
-                                "UPDATE cash_drawer SET closing_balance = ? "
-                                "WHERE id = ?",
-                                (new_closing, drawer_id),
-                            )
-                            closing_updates.append({
-                                "drawer_id": drawer_id,
-                                "old": old_closing,
-                                "new": new_closing,
-                            })
-                            click.echo(
-                                f"  closing_balance: {old_closing:,.0f} → "
-                                f"{new_closing:,.0f}"
-                            )
-                else:
-                    total_linked += len(entries)
-                    if status == "closed":
-                        new_closing = drawer["opening_balance"] + net
-                        old_closing = drawer["closing_balance"]
-                        if new_closing != old_closing:
-                            closing_updates.append({
-                                "drawer_id": drawer_id,
-                                "old": old_closing,
-                                "new": new_closing,
-                            })
-                            click.echo(
-                                f"  [DRY RUN] closing_balance: "
-                                f"{old_closing:,.0f} → {new_closing:,.0f}"
-                            )
-
-                click.echo()
-
-            unlinked = conn.execute(
-                """
-                SELECT COUNT(*) as cnt
-                FROM journal_lines jl
-                JOIN journal_entries je ON je.id = jl.journal_entry_id
-                JOIN accounts a ON a.id = jl.account_id
-                WHERE a.code = '1101'
-                  AND je.id NOT IN (
-                      SELECT journal_entry_id
-                      FROM cash_drawer_journal_entries
-                  )
-                """
-            ).fetchone()["cnt"]
+            total_linked, closing_updates = _backfill.run_drawer_backfill(
+                conn, dry_run=dry_run
+            )
+            outside, within, unlinked = _backfill.unlinked_breakdown(conn)
 
             # ── Step 3: Summary ──
             click.echo("=" * 60)
@@ -297,6 +206,8 @@ def repair_drawer_accounting_cmd(dry_run):
                     "WHERE a.code = '1101'"
                 ).fetchone()[0]
                 click.echo(f"Số dư 1101 sau khi sửa: {new_balance:,.0f}")
+
+            _backfill.print_unlinked_breakdown(outside, within)
 
     except SystemExit:
         raise

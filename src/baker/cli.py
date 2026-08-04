@@ -42,7 +42,7 @@ from baker.commands.session import session_cmd
 from baker.commands.validate import validate_accounts_cmd
 from baker.commands.report import report_cmd
 from baker.commands.pipeline import pipeline_cmd
-from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd, repair_cancelled_orders_cmd, repair_debt_expenses_cmd, repair_unallocated_transfers_cmd, repair_delivered_dates_cmd, repair_bank_account_1200_cmd, repair_drawer_accounting_cmd
+from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd, repair_cancelled_orders_cmd, repair_debt_expenses_cmd, repair_unallocated_transfers_cmd, repair_delivered_dates_cmd, repair_bank_account_1200_cmd, repair_drawer_accounting_cmd, repair_drawer_journal_backfill_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -77,3 +77,4 @@ app.add_command(repair_unallocated_transfers_cmd, "repair-unallocated-transfers"
 app.add_command(repair_delivered_dates_cmd, "repair-delivered-dates")
 app.add_command(repair_bank_account_1200_cmd, "repair-bank-account-1200")
 app.add_command(repair_drawer_accounting_cmd, "repair-drawer-accounting")
+app.add_command(repair_drawer_journal_backfill_cmd, "repair-drawer-journal-backfill")
