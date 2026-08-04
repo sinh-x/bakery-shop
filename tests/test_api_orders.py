@@ -922,6 +922,280 @@ def test_edit_order_delivered_reverses_and_re_deducts_stock(api_client):
         assert available["c"] == 4
 
 
+def _journal_entries_for_source(conn, source_type: str, source_id: int):
+    return conn.execute(
+        "SELECT id, description FROM journal_entries "
+        "WHERE source_type = ? AND source_id = ? ORDER BY id",
+        (source_type, source_id),
+    ).fetchall()
+
+
+def _journal_line_totals(conn, entry_id: int, account_code: str) -> float:
+    row = conn.execute(
+        """SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net
+           FROM journal_lines jl
+           JOIN accounts a ON a.id = jl.account_id
+           WHERE jl.journal_entry_id = ? AND a.code = ?""",
+        (entry_id, account_code),
+    ).fetchone()
+    return float(row["net"])
+
+
+def test_edit_order_delivered_reverses_and_recreates_cogs(api_client):
+    """FR6/AC4: editing items on a delivered order reverses the existing
+    ``order_cogs`` journal entry and creates a new one reflecting the new
+    items/prices."""
+    # Create a product with an explicit cost_history so COGS is non-zero.
+    resp = api_client.post(
+        "/api/products",
+        json={"name": "Bánh COGS", "category": "cake", "base_price": 100000, "cost": 0},
+    )
+    assert resp.status_code == 201
+    pid = int(resp.json()["id"])
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (pid, 40000, "2020-01-01T00:00:00Z"),
+        )
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": str(pid),
+                "productName": "Bánh COGS",
+                "quantity": 2,
+                "unitPrice": 100000,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original COGS entry: cost 40000 × qty 2 = 80000.
+        entries = _journal_entries_for_source(conn, "order_cogs", order_id)
+        assert len(entries) == 1
+        original_cogs_id = entries[0]["id"]
+        original_net = _journal_line_totals(conn, original_cogs_id, "5900")
+        assert original_net == 80000.0
+
+    # Edit items: change quantity to 1 → new COGS should be 40000.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {
+                    "productId": str(pid),
+                    "productName": "Bánh COGS",
+                    "quantity": 1,
+                    "unitPrice": 100000,
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # The old COGS entry should be gone (unlocked → deleted) and a new
+        # one created with the updated total.
+        entries = _journal_entries_for_source(conn, "order_cogs", order_id)
+        assert len(entries) == 1, "exactly one order_cogs entry after edit"
+        new_entry_id = entries[0]["id"]
+        assert new_entry_id != original_cogs_id, "old entry must be replaced"
+        new_net = _journal_line_totals(conn, new_entry_id, "5900")
+        assert new_net == 40000.0, "new COGS must reflect updated quantity"
+
+
+def test_edit_order_delivered_reconciles_revenue_on_total_change(api_client):
+    """FR7/AC5: editing items causing a total_price change on a delivered
+    order reverses/re-creates the revenue journal entry to reflect the new
+    total."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh doanh thu", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original revenue entry should exist for the delivered+paid order.
+        rev_entries = conn.execute(
+            "SELECT id, description FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ? "
+            "AND description LIKE 'Order revenue%' ORDER BY id",
+            (order_id,),
+        ).fetchall()
+        assert len(rev_entries) == 1
+        original_rev_id = rev_entries[0]["id"]
+
+    # Edit items: change unitPrice to 250000 → total_price changes.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {"productName": "Bánh doanh thu", "quantity": 1, "unitPrice": 250000, "productId": "BKS-16"}
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Revenue entry should be reconciled to the new total (250000).
+        # _reconcile_order_revenue_entry reverses/replaces the stale entry
+        # when amounts diverge beyond REVENUE_UPDATE_TOLERANCE.
+        rev_entries = conn.execute(
+            "SELECT id, description FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ? "
+            "AND description LIKE 'Order revenue%' ORDER BY id",
+            (order_id,),
+        ).fetchall()
+        # Either the original entry was replaced, or a reversal + new entry
+        # exists. At minimum a non-stale entry reflecting 250000 must exist.
+        assert len(rev_entries) >= 1
+        # Find an entry whose 2100 debit (or 4100 credit) equals 250000.
+        deposit_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        assert float(deposit_credit["c"]) == 250000.0
+
+
+def test_edit_order_delivered_shipping_fee_change_reconciles_revenue(api_client):
+    """FR7/AC5: editing only the shipping fee on a delivered order (which
+    changes total_price) reconciles the revenue entry without touching COGS
+    (COGS only depends on items)."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh ship", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=20000,
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original total = 100000 + 20000 = 120000, paid via cash →
+        # revenue entry credits 4100 with the deposit balance.
+        rev_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        original_credit = float(rev_credit["c"])
+        # No COGS for BKS-16 (no cost_history) but the entry count is what
+        # matters here — confirm no order_cogs entry to begin with.
+        cogs_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+
+    # Edit only the shipping fee (no items change) → total changes.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"shippingFee": 50000},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Revenue entry should be reconciled to reflect the new deposit
+        # balance (shipping fee is held in 2200 for bus orders only; for
+        # POS cash orders the full total is the deposit, so 4100 credit
+        # should now be 100000 + 50000 = 150000).
+        rev_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        new_credit = float(rev_credit["c"])
+        assert new_credit != original_credit, "revenue must change after total_price change"
+        # COGS count must be unchanged (no items changed).
+        cogs_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        assert cogs_after == cogs_before
+
+
+def test_edit_order_confirmed_skips_journal_adjustment(api_client):
+    """FR6/FR7 scope guard: editing a confirmed (not delivered/completed)
+    order does NOT trigger COGS/revenue journal adjustment — those entries
+    are only created at delivery/completion."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh confirmed", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+
+    with get_db() as conn:
+        rev_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        cogs_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {"productName": "Bánh confirmed", "quantity": 2, "unitPrice": 100000, "productId": "BKS-16"}
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rev_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        cogs_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        assert rev_after == rev_before, "revenue entries untouched on confirmed order"
+        assert cogs_after == cogs_before, "COGS entries untouched on confirmed order"
+
+
 def test_edit_order_empty_body(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]

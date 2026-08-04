@@ -1015,6 +1015,57 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     row["id"], row["order_ref"],
                 )
 
+        # DG-342 Phase 5 (FR6, FR7, FR10, NFR1, NFR3, AC4, AC5): when items
+        # or prices change on a delivered/completed order, the existing COGS
+        # journal entries (``order_cogs`` + ``order_gift_cogs``) must be
+        # reversed and re-created to reflect the new items/prices, and the
+        # revenue journal entries reconciled to the new total. Both
+        # ``_sync_order_cogs_entry`` and ``_sync_order_gift_cogs_entry`` are
+        # idempotent (skip when an entry already exists), so the old entries
+        # must be removed first — mirroring the ``_sync_cancelled_order_journal``
+        # pattern via ``_replace_order_entry`` (delete when unlocked, reverse
+        # when locked). ``_reconcile_order_revenue_entry`` already handles
+        # update detection via ``REVENUE_UPDATE_TOLERANCE`` (reverse-and-recreate
+        # when amounts diverge), so it is called directly. All journal
+        # mutations run within this same ``get_db()`` transaction (NFR3);
+        # journal errors are logged but never crash the order update (NFR1,
+        # mirroring the ``run_journal_sync`` fire-and-forget pattern).
+        is_delivered_or_completed = row["status"] in (
+            OrderStatus.DELIVERED.value,
+            OrderStatus.COMPLETED.value,
+        )
+        if is_delivered_or_completed and (items_changed or shipping_fee_changed):
+            try:
+                from baker.services.journal_sync import (
+                    _find_journal_entry,
+                    _reconcile_order_revenue_entry,
+                    _sync_order_gift_cogs_entry,
+                    _sync_order_cogs_entry,
+                )
+                from baker.services.journal_sync.order import _replace_order_entry
+                # Reverse/delete the old COGS entries so the idempotent
+                # re-creation below produces entries reflecting the new
+                # items/prices (FR6/AC4). COGS only depends on items, so
+                # this runs only when items changed.
+                if items_changed:
+                    for cogs_source_type in ("order_cogs", "order_gift_cogs"):
+                        old_cogs_id = _find_journal_entry(conn, cogs_source_type, row["id"])
+                        if old_cogs_id is not None:
+                            _replace_order_entry(conn, old_cogs_id, respect_locks=True)
+                    _sync_order_cogs_entry(conn, row["id"], row["order_ref"])
+                    _sync_order_gift_cogs_entry(conn, row["id"], row["order_ref"])
+                # Reconcile revenue entries to the new total_price (FR7/AC5)
+                # — handles reverse-and-recreate via REVENUE_UPDATE_TOLERANCE.
+                # Runs on any total_price change (items or shipping fee).
+                _reconcile_order_revenue_entry(
+                    conn, row["id"], row["order_ref"], respect_locks=True
+                )
+            except Exception:
+                logger.exception(
+                    "edit_order COGS/revenue journal adjustment failed for order %s (%s)",
+                    row["id"], row["order_ref"],
+                )
+
         # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
         if "workTicketPrintedAt" in data:
             printed_val = data["workTicketPrintedAt"]
