@@ -53,6 +53,10 @@ def repair_drawer_journal_backfill_cmd(dry_run):
                         WHERE a.code = '1101'
                           AND je.created_at >= ?
                           AND je.created_at <= ?
+                          AND je.source_type NOT IN (
+                              'migration_balance_transfer',
+                              'cash_drawer_auto_transfer'
+                          )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
@@ -71,6 +75,10 @@ def repair_drawer_journal_backfill_cmd(dry_run):
                         JOIN accounts a ON a.id = jl.account_id
                         WHERE a.code = '1101'
                           AND je.created_at >= ?
+                          AND je.source_type NOT IN (
+                              'migration_balance_transfer',
+                              'cash_drawer_auto_transfer'
+                          )
                           AND je.id NOT IN (
                               SELECT journal_entry_id
                               FROM cash_drawer_journal_entries
