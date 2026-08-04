@@ -1064,6 +1064,215 @@ def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
 
 
 # ---------------------------------------------------------------------------
+# DG-351 Phase 4.6 — Cross-drawer tien rut (AC5)
+# ---------------------------------------------------------------------------
+
+
+def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
+    """AC5: Given a tien rut deposit recorded against drawer A and a return at
+    delivery recorded against drawer B, when both drawers close, then drawer
+    A's closing_balance includes the deposit (DR 1101), drawer B's
+    closing_balance includes the return (CR 1101), and neither drawer's
+    linked journal entries include the other drawer's entry.
+
+    Flow:
+      1. Open drawer A (opening_balance = 1,000,000; reference 1101 balance
+         is 0 → a ``cash_drawer_open`` entry DR 1101 / CR 3100 for 1,000,000
+         is created and linked to drawer A).
+      2. Create an order with a tien_rut work item (cash_amount = 500,000).
+      3. Record a cash tien_rut payment → DR 1101 / CR 2400 linked to drawer A.
+         Drawer A expected_balance = 1,000,000 + 500,000 = 1,500,000.
+      4. Close drawer A (counted == expected) → closing_balance = 1,500,000.
+         The 1101 reference balance is now 1,500,000.
+      5. Open drawer B with opening_balance = 2,000,000 (above the 1,500,000
+         reference) and ``ownerCapitalConfirmed`` so a
+         ``cash_drawer_owner_capital`` entry DR 1101 / CR 3100 for the 500,000
+         delta is created and linked to drawer B. Drawer B's 1101 net starts
+         at 500,000.
+      6. Deliver the order → tien_rut return entry DR 2400 / CR 1101 (500,000)
+         linked to drawer B. Drawer B expected_balance = 500,000 − 500,000 = 0.
+      7. Close drawer B (counted == expected = 0) → closing_balance = 0.
+      8. Assert each drawer's linked 1101 journal entries exclude the other
+         drawer's entry (source_types disjoint, journal_entry_id sets disjoint).
+    """
+    # 1. Open drawer A.
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    drawer_a_open = resp.json()
+    drawer_a_id = int(drawer_a_open["id"])
+
+    # 2. Create an order with a tien_rut work item.
+    order = _create_order_with_tien_rut(api_client, cash_amount=500_000)
+    ref = order["orderRef"]
+
+    # 3. Record a cash tien_rut payment (deposit inflow) → DR 1101 / CR 2400
+    #    linked to drawer A (the active drawer).
+    _create_txn(api_client, ref, amount=500_000, type="tien_rut", method="cash")
+
+    # Drawer A expected_balance now includes the 500,000 deposit.
+    status_a = api_client.get("/api/cash-drawer/status").json()
+    assert status_a["id"] == str(drawer_a_id)
+    assert status_a["expectedBalance"] == 1_500_000
+
+    # 4. Close drawer A (counted == expected → no confirmation gate).
+    close_a = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_500_000}
+    )
+    assert close_a.status_code == 200, close_a.text
+    close_a_body = close_a.json()
+    assert close_a_body["status"] == "closed"
+    assert close_a_body["closingBalance"] == 1_500_000
+
+    # 5. Open drawer B with opening_balance = 2,000,000 (above the 1,500,000
+    #    1101 reference balance) and ownerCapitalConfirmed so a 500,000 delta
+    #    entry (DR 1101 / CR 3100) is created and linked to drawer B. This
+    #    gives drawer B a positive 1101 starting net so the return entry keeps
+    #    expected_balance non-negative (close requires countedAmount >= 0).
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 2_000_000, "ownerCapitalConfirmed": True},
+    )
+    assert resp.status_code == 201, resp.text
+    drawer_b_open = resp.json()
+    drawer_b_id = int(drawer_b_open["id"])
+    assert drawer_b_id != drawer_a_id
+
+    # 6. Deliver the order → the tien_rut return entry (DR 2400 / CR 1101) is
+    #    linked to the active drawer (drawer B).
+    _advance_to_delivered(api_client, ref)
+
+    # Drawer B expected_balance = 500,000 (owner capital delta) − 500,000
+    # (tien_rut return CR 1101) = 0.
+    status_b = api_client.get("/api/cash-drawer/status").json()
+    assert status_b["id"] == str(drawer_b_id)
+    assert status_b["expectedBalance"] == 0
+
+    # 7. Close drawer B (counted == expected = 0 → no confirmation gate).
+    close_b = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 0}
+    )
+    assert close_b.status_code == 200, close_b.text
+    close_b_body = close_b.json()
+    assert close_b_body["status"] == "closed"
+    assert close_b_body["closingBalance"] == 0
+
+    # 8. Verify each drawer's linked 1101 journal entries exclude the other
+    #    drawer's entry. The tien_rut deposit entry (source_type =
+    #    'payment_transaction') must be linked only to drawer A; the tien_rut
+    #    return entry (source_type = 'order') must be linked only to drawer B.
+    with get_db() as conn:
+        # Drawer A: linked 1101 net = opening (1,000,000) + deposit (500,000)
+        # = 1,500,000. The return entry (CR 1101) is NOT linked to drawer A.
+        row_a = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_a_id,),
+        ).fetchone()
+        drawer_a_1101_net = int(row_a["balance"])
+
+        # Drawer B: linked 1101 net = owner capital delta (500,000) + return
+        # (-500,000) = 0. The deposit entry (DR 1101) is NOT linked to drawer B.
+        row_b = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_b_id,),
+        ).fetchone()
+        drawer_b_1101_net = int(row_b["balance"])
+
+        # Drawer A includes its opening (1,000,000) and the deposit (500,000),
+        # and excludes the return.
+        assert drawer_a_1101_net == 1_500_000, (
+            f"drawer A 1101 net expected 1,500,000 (opening + deposit, no return), "
+            f"got {drawer_a_1101_net}"
+        )
+        # Drawer B includes the owner capital delta (500,000) and the return
+        # (-500,000), and excludes the deposit.
+        assert drawer_b_1101_net == 0, (
+            f"drawer B 1101 net expected 0 (owner capital delta + return, no deposit), "
+            f"got {drawer_b_1101_net}"
+        )
+
+        # Verify closing_balance equals the journal-derived expected_balance
+        # for each drawer (FR1: close() persists closing_balance =
+        # expected_balance).
+        drawer_a = CashDrawer.get_by_id(conn, drawer_a_id)
+        drawer_b = CashDrawer.get_by_id(conn, drawer_b_id)
+        assert drawer_a.closing_balance == drawer_a_1101_net
+        assert drawer_b.closing_balance == drawer_b_1101_net
+
+        # Verify the journal_entry_id sets linked to each drawer are disjoint
+        # — no journal entry is linked to both drawers (cross-drawer
+        # isolation).
+        a_entries = {
+            r["journal_entry_id"]
+            for r in conn.execute(
+                "SELECT journal_entry_id FROM cash_drawer_journal_entries "
+                "WHERE cash_drawer_id = ?",
+                (drawer_a_id,),
+            ).fetchall()
+        }
+        b_entries = {
+            r["journal_entry_id"]
+            for r in conn.execute(
+                "SELECT journal_entry_id FROM cash_drawer_journal_entries "
+                "WHERE cash_drawer_id = ?",
+                (drawer_b_id,),
+            ).fetchall()
+        }
+        assert a_entries.isdisjoint(b_entries), (
+            "drawers A and B share a linked journal_entry_id — cross-drawer "
+            "isolation broken"
+        )
+
+        # Verify the tien_rut deposit entry is linked to drawer A (not B), and
+        # the tien_rut return entry is linked to drawer B (not A). The deposit
+        # entry has source_type 'payment_transaction'; the return entry has
+        # source_type 'order' with a 'Tien rut return:' description prefix.
+        deposit_row = conn.execute(
+            """
+            SELECT cdje.cash_drawer_id AS drawer_id
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_entries je ON je.id = cdje.journal_entry_id
+            WHERE je.source_type = 'payment_transaction'
+              AND je.description LIKE '%tien_rut%'
+            """,
+        ).fetchone()
+        return_row = conn.execute(
+            """
+            SELECT cdje.cash_drawer_id AS drawer_id
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_entries je ON je.id = cdje.journal_entry_id
+            WHERE je.source_type = 'order'
+              AND je.description LIKE 'Tien rut return:%'
+            """,
+        ).fetchone()
+        assert deposit_row is not None, (
+            "tien_rut deposit entry not found / not linked to any drawer"
+        )
+        assert int(deposit_row["drawer_id"]) == drawer_a_id, (
+            f"tien_rut deposit entry linked to drawer "
+            f"{deposit_row['drawer_id']}, expected drawer A ({drawer_a_id})"
+        )
+        assert return_row is not None, (
+            "tien_rut return entry not found / not linked to any drawer"
+        )
+        assert int(return_row["drawer_id"]) == drawer_b_id, (
+            f"tien_rut return entry linked to drawer "
+            f"{return_row['drawer_id']}, expected drawer B ({drawer_b_id})"
+        )
+
+
+# ---------------------------------------------------------------------------
 # DG-347 Phase 1 — Schema migration verification (AC3, AC4, AC5)
 # ---------------------------------------------------------------------------
 
