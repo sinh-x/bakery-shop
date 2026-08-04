@@ -632,6 +632,72 @@ def test_edit_order_confirmed_reverses_and_re_deducts_stock(api_client):
         assert available["c"] == 4
 
 
+def test_edit_order_returns_warning_when_stock_reversal_fails(api_client):
+    """CQ-4/OPS-1: when ``reverse_order_stock_for_edit`` raises, the edit
+    must still succeed (NFR1) and surface ``accountingSyncWarning ==
+    "journal_sync_failed"`` on the response (mirroring the ``cancel_order``
+    pattern in ``test_cancel_order_returns_warning_when_journal_sync_fails``).
+    """
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "EditWarn", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+    assert resp.status_code == 200
+
+    from baker.api import orders as orders_mod
+    original = orders_mod.reverse_order_stock_for_edit
+
+    def _failing_reversal(*args, **kwargs):
+        raise RuntimeError("simulated stock reversal failure")
+
+    try:
+        orders_mod.reverse_order_stock_for_edit = _failing_reversal
+
+        resp = api_client.patch(
+            f"/api/orders/{ref}",
+            json={
+                "items": [
+                    {
+                        "productId": "1",
+                        "productName": "Bánh kem",
+                        "quantity": 1,
+                        "unitPrice": 12000,
+                        "priceChipId": chip_id,
+                        "attributes": {"useInventory": "true"},
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json().get("accountingSyncWarning") == "journal_sync_failed"
+    finally:
+        orders_mod.reverse_order_stock_for_edit = original
+
+
 def test_edit_order_confirmed_re_deducts_for_different_product(api_client):
     """FR5/AC3: editing items to swap the product reverses the old sale and
     deducts for the new product's stock."""
