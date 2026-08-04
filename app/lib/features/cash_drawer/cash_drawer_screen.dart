@@ -35,6 +35,19 @@ class _CashDrawerMutationNotifier extends Notifier<bool> {
       await action();
       ref.invalidate(cashDrawerStatusProvider);
       ref.invalidate(cashDrawerHistoryProvider);
+      // CQ-1: invalidate the active drawer's first transaction page so the
+      // "Chi tiết giao dịch" tab shows fresh data immediately after a
+      // cash-in / cash-out / close mutation instead of waiting for the 30s
+      // poll cycle.
+      final activeDrawer = ref.read(cashDrawerStatusProvider).value;
+      final activeDrawerId = activeDrawer == null
+          ? null
+          : int.tryParse(activeDrawer.id);
+      if (activeDrawerId != null) {
+        ref.invalidate(cashDrawerTransactionsProvider(
+          CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+        ));
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMessage)),
