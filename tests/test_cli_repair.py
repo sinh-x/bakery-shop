@@ -2001,6 +2001,50 @@ def test_shipping_release_backfills_missing_entry_credit_1102_no_drawer():
         assert lines["1102"]["credit"] == 25000.0
 
 
+def test_shipping_release_credit_1102_when_delivery_predates_drawer():
+    """AC5 boundary: an open drawer exists but the order's delivery timestamp
+    predates ``drawer.opened_at`` → credit 1102 (Owner's Cash), not 1101.
+
+    Covers the second branch of ``_resolve_shipping_release_asset_account``
+    (FR4): ``delivery_ts is not None and delivery_ts >= drawer.opened_at``
+    is False because ``delivery_ts < drawer.opened_at``, so the release is
+    routed to 1102 with no drawer link. Mirrors the AC5 no-drawer case but
+    exercises the explicit predate comparison.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Open drawer opened AFTER the delivery event.
+        _insert_cash_drawer(conn, opened_at="2026-07-16T00:00:00Z", opening_balance=0)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-PREDATE", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Seed a delivered event BEFORE the drawer opened_at.
+        conn.execute(
+            "INSERT INTO events (type, order_id, timestamp, data, summary, staff_name) "
+            "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
+            (oid, f'{{"order_ref": "ORD-BUS-REL-PREDATE", "to_status": "delivered"}}'),
+        )
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-PREDATE" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 25000.0
+        # FR4: delivery predates drawer → credit 1102 (Owner's Cash), not 1101.
+        assert lines["1102"]["credit"] == 25000.0
+        assert "1101" not in lines
+
+
 def test_shipping_release_skips_existing_matching_entry_idempotent():
     """AC6: bus order already has a matching order_shipping_release → skipped."""
     with get_db() as conn:

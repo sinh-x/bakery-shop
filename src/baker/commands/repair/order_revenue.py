@@ -29,12 +29,6 @@ def _order_revenue_2100_debit(conn, order_id: int):
         return None, 0.0
     return int(row["entry_id"]), float(row["debit_2100"])
 
-def _order_ref(conn, order_id: int) -> str:
-    row = conn.execute(
-        "SELECT order_ref FROM orders WHERE id = ?", (order_id,)
-    ).fetchone()
-    return row["order_ref"] if row else f"#{order_id}"
-
 def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Evaluate and optionally repair one order's revenue entry.
 
