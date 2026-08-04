@@ -1,4 +1,35 @@
-"""Repair command module: repair_drawer_journal_backfill_cmd (DG-349)."""
+"""Repair command module: repair_drawer_journal_backfill_cmd (DG-349).
+
+Orphaned Entry Gap (Phase 4.2 documentation)
+============================================
+Journal entries created BETWEEN auto-close of one drawer and the next
+drawer's open() have drawer_id=None and cannot be linked by the
+time-window matching logic below. The time-window matcher uses
+opened_at <= created_at <= closed_at; an entry whose created_at falls
+in the gap between closed_at of the previous drawer and opened_at of
+the next drawer matches no drawer.
+
+Two categories of unlinked entries exist:
+  (a) "outside any drawer window" — created_at falls before the first
+      drawer opened_at, after the last drawer closed_at, or between two
+      drawer periods (the auto-close → next-open gap). These are the
+      orphaned entries. They are correctly left unlinked; the repair
+      command cannot retroactively assign them without a business
+      decision on which drawer should absorb them.
+  (b) "within a drawer window but unlinked" — created_at falls inside
+      a drawer's [opened_at, closed_at] window but the entry is not in
+      cash_drawer_journal_entries. This is the set the backfill step
+      links; after a successful repair, category (b) should be empty.
+
+The unlinked count reported in the summary below includes BOTH
+categories. The repair command does not silently drop orphaned entries;
+they remain visible in the unlinked count for manual review. A separate
+follow-up ticket may decide whether to retroactively assign orphaned
+entries to a drawer or to treat them as pre-drawer activity.
+
+See AC6 (drawer-accounting-audit requirements doc) for the orphaned
+entry acceptance criterion.
+"""
 
 from ._common import *  # noqa: F401,F403
 
@@ -21,6 +52,10 @@ def repair_drawer_journal_backfill_cmd(dry_run):
        nguyên không liên kết — đúng vì chúng thuộc về giai đoạn trước drawer.
 
     Idempotent: INSERT OR IGNORE đảm bảo không trùng lặp.
+
+    Orphaned entries: bút toán tạo giữa auto-close và lần mở tiếp theo
+    có drawer_id=None và không khớp time-window nào — xem module docstring
+    để biết chi tiết. Chúng vẫn được đếm trong unlinked count.
     """
     try:
         with get_db() as conn:
@@ -146,6 +181,41 @@ def repair_drawer_journal_backfill_cmd(dry_run):
 
                 click.echo()
 
+            # Unlinked count broken down by category:
+            #   (a) outside any drawer window — orphaned entries (gap
+            #       between auto-close and next open, or pre-drawer /
+            #       post-last-drawer activity). These cannot be linked
+            #       by time-window matching and are left for manual
+            #       review.
+            #   (b) within a drawer window but not yet linked — these
+            #       are the entries the backfill step above should have
+            #       linked; after a successful repair this category is
+            #       expected to be empty.
+            unlinked_outside = conn.execute(
+                """
+                SELECT COUNT(*) as cnt
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.journal_entry_id
+                JOIN accounts a ON a.id = jl.account_id
+                WHERE a.code = '1101'
+                  AND je.source_type NOT IN (
+                      'migration_balance_transfer',
+                      'cash_drawer_auto_transfer'
+                  )
+                  AND je.id NOT IN (
+                      SELECT journal_entry_id
+                      FROM cash_drawer_journal_entries
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM cash_drawer d
+                      WHERE d.opened_at IS NOT NULL
+                        AND je.created_at >= d.opened_at
+                        AND (d.closed_at IS NULL
+                             OR je.created_at <= d.closed_at)
+                  )
+                """
+            ).fetchone()["cnt"]
+
             # Count remaining unlinked entries
             unlinked = conn.execute(
                 """
@@ -159,6 +229,8 @@ def repair_drawer_journal_backfill_cmd(dry_run):
                   )
                 """
             ).fetchone()["cnt"]
+
+            unlinked_within = unlinked - unlinked_outside
 
             if dry_run:
                 click.echo(
@@ -188,6 +260,19 @@ def repair_drawer_journal_backfill_cmd(dry_run):
                             f"  Drawer #{u['drawer_id']}: "
                             f"{u['old']:,.0f} → {u['new']:,.0f}"
                         )
+
+            # Breakdown of unlinked entries by category (Phase 4.2):
+            #   (a) outside any drawer window — orphaned entries (gap
+            #       between auto-close and next open, pre-drawer, or
+            #       post-last-drawer). Cannot be linked by time-window
+            #       matching; left for manual review.
+            #   (b) within a drawer window but not yet linked — should
+            #       be empty after a successful repair.
+            click.echo(
+                f"  Trong đó: {unlinked_outside} ngoài mọi drawer window "
+                f"(orphaned — không gán được), "
+                f"{unlinked_within} trong drawer window nhưng chưa liên kết."
+            )
 
     except SystemExit:
         raise
