@@ -167,8 +167,10 @@ def test_cash_payment_links_to_active_drawer_ac4(api_client):
 def test_transfer_payment_not_linked(api_client):
     """Bank transfers do not touch 1101 — the drawer's expected_balance is
     unchanged (the journal entry may still be linked via the join table, but
-    it carries no 1101 line). The drawer-open JE contributes opening_balance
-    to 1101, so the net 1101 balance equals opening_balance."""
+    it carries no 1101 line). The drawer-open JE contributes
+    counted_opening_balance to 1101, so the net 1101 balance equals
+    counted_opening_balance (and expected_balance = opening_balance +
+    counted_opening_balance = 0 + counted_opening_balance)."""
     _open_drawer(api_client)
     order = _create_order(api_client)
     txn = _create_txn(api_client, order["orderRef"], amount=100_000,
@@ -177,15 +179,16 @@ def test_transfer_payment_not_linked(api_client):
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
         # Transfer debits 1200 (or a 12xx sub-account), never 1101. The only
-        # 1101 contribution is the drawer-open DR 1101 / CR 3100 entry.
-        assert _drawer_1101_net(conn, drawer.id) == drawer.opening_balance
-        assert drawer.expected_balance(conn) == drawer.opening_balance
+        # 1101 contribution is the drawer-open DR 1101 / CR 3100 entry, which
+        # books the full counted_opening_balance.
+        assert _drawer_1101_net(conn, drawer.id) == drawer.counted_opening_balance
+        assert drawer.expected_balance(conn) == drawer.counted_opening_balance
 
 
 def test_card_payment_not_linked(api_client):
     """Card payments do not touch 1101 — the drawer's expected_balance is
-    unchanged. The drawer-open JE contributes opening_balance to 1101, so the
-    net 1101 balance equals opening_balance."""
+    unchanged. The drawer-open JE contributes counted_opening_balance to 1101,
+    so the net 1101 balance equals counted_opening_balance."""
     _open_drawer(api_client)
     order = _create_order(api_client)
     txn = _create_txn(api_client, order["orderRef"], amount=100_000,
@@ -194,8 +197,8 @@ def test_card_payment_not_linked(api_client):
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
         # Card debits 1100, never 1101. Only the drawer-open entry contributes.
-        assert _drawer_1101_net(conn, drawer.id) == drawer.opening_balance
-        assert drawer.expected_balance(conn) == drawer.opening_balance
+        assert _drawer_1101_net(conn, drawer.id) == drawer.counted_opening_balance
+        assert drawer.expected_balance(conn) == drawer.counted_opening_balance
 
 
 def test_cash_payment_without_active_drawer_not_linked(api_client):
@@ -363,8 +366,9 @@ def test_cash_expense_links_to_active_drawer_ac5(api_client):
 def test_bank_expense_not_linked(api_client):
     """Expenses paid from a bank source (TK Phượng VCB → 1210) do not touch
     1101 — the drawer's expected_balance is unchanged. The drawer-open JE
-    contributes opening_balance to 1101, so the net 1101 balance equals
-    opening_balance."""
+    contributes counted_opening_balance to 1101, so the net 1101 balance
+    equals counted_opening_balance (and expected_balance = opening_balance +
+    counted_opening_balance = 0 + counted_opening_balance)."""
     _open_drawer(api_client)
     ev = _create_expense(api_client, amount=50_000,
                          payment_source="TK Phượng VCB")
@@ -373,14 +377,15 @@ def test_bank_expense_not_linked(api_client):
         assert drawer is not None
         # Bank expense credits 1210, never 1101. Only the drawer-open entry
         # contributes to 1101.
-        assert _drawer_1101_net(conn, drawer.id) == drawer.opening_balance
-        assert drawer.expected_balance(conn) == drawer.opening_balance
+        assert _drawer_1101_net(conn, drawer.id) == drawer.counted_opening_balance
+        assert drawer.expected_balance(conn) == drawer.counted_opening_balance
 
 
 def test_debt_expense_not_linked(api_client):
     """Debt expenses credit Accounts Payable (2500), not 1101 — the drawer's
     expected_balance is unchanged. The drawer-open JE contributes
-    opening_balance to 1101, so the net 1101 balance equals opening_balance."""
+    counted_opening_balance to 1101, so the net 1101 balance equals
+    counted_opening_balance."""
     _open_drawer(api_client)
     resp = api_client.post("/api/events", json={
         "summary": "Mua nợ nguyên liệu",
@@ -401,8 +406,8 @@ def test_debt_expense_not_linked(api_client):
         assert drawer is not None
         # Debt expense credits 2500, never 1101. Only the drawer-open entry
         # contributes to 1101.
-        assert _drawer_1101_net(conn, drawer.id) == drawer.opening_balance
-        assert drawer.expected_balance(conn) == drawer.opening_balance
+        assert _drawer_1101_net(conn, drawer.id) == drawer.counted_opening_balance
+        assert drawer.expected_balance(conn) == drawer.counted_opening_balance
 
 
 def test_cash_expense_without_active_drawer_not_linked(api_client):

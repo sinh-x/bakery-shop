@@ -459,7 +459,18 @@ def open_drawer(body: OpenDrawerRequest):
                     )
 
         accounts = _cash_and_equity_accounts(conn)
-        drawer = CashDrawer(opened_at=now_utc(), opening_balance=opening)
+        # DG-354 Phase 3 (FR1/FR2): opening_balance stores the 1101 accounting
+        # reference at open time (not the user input); counted_opening_balance
+        # stores the user's physical cash count. The open journal entry books
+        # the delta (or full opening when reference==0) linked to this drawer.
+        # expected_balance() = opening_balance + SUM(linked 1101) then equals
+        # the user's requested amount because the linked open entry bridges the
+        # gap between the 1101 reference and the counted opening balance.
+        drawer = CashDrawer(
+            opened_at=now_utc(),
+            opening_balance=int(reference_balance),
+            counted_opening_balance=opening,
+        )
         drawer.save(conn)
 
         # DG-330: 1101 already reflects prior activity (reference_balance).

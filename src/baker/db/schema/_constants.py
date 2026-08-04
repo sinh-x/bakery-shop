@@ -761,14 +761,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_name_parent
 
 CASH_DRAWER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cash_drawer (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    opened_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
-    closed_at       TEXT,
-    status          TEXT NOT NULL DEFAULT 'open',
-    opening_balance INTEGER NOT NULL DEFAULT 0,
-    closing_balance INTEGER DEFAULT NULL,
-    counted_amount  INTEGER,
-    discrepancy     INTEGER
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    opened_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    closed_at               TEXT,
+    status                  TEXT NOT NULL DEFAULT 'open',
+    opening_balance         INTEGER NOT NULL DEFAULT 0,
+    counted_opening_balance INTEGER DEFAULT NULL,
+    closing_balance         INTEGER DEFAULT NULL,
+    counted_amount          INTEGER,
+    discrepancy             INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
