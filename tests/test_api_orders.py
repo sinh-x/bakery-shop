@@ -430,6 +430,822 @@ def test_edit_order_items_recalculates_total(api_client):
     assert len(resp.json()["items"]) == 1
 
 
+# --- DG-342 Phase 3: status guard (FR8/AC6) + order_items table sync (FR9/AC7) ---
+
+
+def test_edit_order_cancelled_returns_422(api_client):
+    """FR8/AC6: editing a cancelled order returns HTTP 422."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Transition to cancelled via the status endpoint.
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "khách hủy", "changedBy": "test"},
+    )
+    assert resp.status_code == 200
+    # Now any edit attempt must be blocked.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"customerName": "Tên mới"})
+    assert resp.status_code == 422
+    assert "đã hủy" in resp.json()["detail"]
+
+
+def test_edit_order_items_syncs_order_items_table(api_client):
+    """FR9/AC7: editing items syncs the order_items table within the same
+    transaction so workItems reflect the new items."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Initially one work item row.
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    first_id = work_items[0]["id"]
+
+    # Replace with two new items.
+    new_items = [
+        {"productName": "Bánh mì", "quantity": 2, "unitPrice": 15000},
+        {"productName": "Bánh kem nhỏ", "quantity": 1, "unitPrice": 80000},
+    ]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    # order_items table should now have 2 rows matching the new items.
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 2
+    assert work_items[0]["productName"] == "Bánh mì"
+    assert work_items[0]["quantity"] == 2
+    assert work_items[0]["unitPrice"] == 15000
+    assert work_items[1]["productName"] == "Bánh kem nhỏ"
+    assert work_items[1]["quantity"] == 1
+    assert work_items[1]["unitPrice"] == 80000
+
+
+def test_edit_order_items_preserves_existing_work_item_id(api_client):
+    """FR9: when the item count stays the same, the order_items rows are
+    updated in-place so photo/blank links survive (work item id is stable)."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    original_id = work_items[0]["id"]
+
+    # Edit the single item's price/quantity, keep count at 1.
+    new_items = [{"productName": "Bánh kem", "quantity": 3, "unitPrice": 250000, "productId": "BKS-16"}]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["id"] == original_id
+    assert work_items[0]["quantity"] == 3
+    assert work_items[0]["unitPrice"] == 250000
+
+
+def test_edit_order_items_shrinking_deletes_surplus_rows(api_client):
+    """FR9: removing items deletes the surplus order_items rows."""
+    created = _create_order(api_client, items=[
+        {"productName": "A", "quantity": 1, "unitPrice": 10000},
+        {"productName": "B", "quantity": 1, "unitPrice": 20000},
+        {"productName": "C", "quantity": 1, "unitPrice": 30000},
+    ])
+    ref = created["orderRef"]
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 3
+
+    # Shrink to a single item.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": [
+        {"productName": "A", "quantity": 1, "unitPrice": 10000},
+    ]})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["productName"] == "A"
+
+
+def test_edit_order_items_with_assigned_price_syncs_table(api_client):
+    """FR9: assignedPrice from the items JSON is persisted to the
+    order_items.assigned_price column."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    new_items = [{"productName": "Bánh trưng bày", "quantity": 1, "unitPrice": 120000, "assignedPrice": 100000}]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"items": new_items})
+    assert resp.status_code == 200
+
+    work_items = api_client.get(f"/api/orders/{ref}/items").json()
+    assert len(work_items) == 1
+    assert work_items[0]["assignedPrice"] == 100000
+
+
+# --- DG-342 Phase 4: stock reversal + re-deduction on item changes (FR5, AC3) ---
+
+
+def test_edit_order_confirmed_reverses_and_re_deducts_stock(api_client):
+    """FR5/AC3: editing items on a confirmed order reverses the old sale
+    (un-consumes FIFO items, deletes the old sale movement) and re-deducts
+    for the new items within the same transaction."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "EditReverse", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    # Confirm to trigger the initial stock deduction (2 units).
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sale = conn.execute(
+            "SELECT id FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sale is not None
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 3  # 5 restocked - 2 sold
+
+    # Edit the order items: change quantity from 2 to 1.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {
+                    "productId": "1",
+                    "productName": "Bánh kem",
+                    "quantity": 1,
+                    "unitPrice": 12000,
+                    "priceChipId": chip_id,
+                    "attributes": {"useInventory": "true"},
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Exactly one sale movement exists for the order (old deleted, new created).
+        sales = conn.execute(
+            "SELECT id, quantity FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchall()
+        assert len(sales) == 1
+        assert sales[0]["quantity"] == -1
+
+        # No leftover restore_sale or negative_sale movements.
+        leftovers = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type IN ('restore_sale', 'negative_sale')",
+            (ref,),
+        ).fetchone()
+        assert leftovers["c"] == 0
+
+        # Available stock reflects the new sale (5 - 1 = 4).
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 4
+
+
+def test_edit_order_returns_warning_when_stock_reversal_fails(api_client):
+    """CQ-4/OPS-1: when ``reverse_order_stock_for_edit`` raises, the edit
+    must still succeed (NFR1) and surface ``accountingSyncWarning ==
+    "journal_sync_failed"`` on the response (mirroring the ``cancel_order``
+    pattern in ``test_cancel_order_returns_warning_when_journal_sync_fails``).
+    """
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "EditWarn", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+    assert resp.status_code == 200
+
+    from baker.api import orders as orders_mod
+    original = orders_mod.reverse_order_stock_for_edit
+
+    def _failing_reversal(*args, **kwargs):
+        raise RuntimeError("simulated stock reversal failure")
+
+    try:
+        orders_mod.reverse_order_stock_for_edit = _failing_reversal
+
+        resp = api_client.patch(
+            f"/api/orders/{ref}",
+            json={
+                "items": [
+                    {
+                        "productId": "1",
+                        "productName": "Bánh kem",
+                        "quantity": 1,
+                        "unitPrice": 12000,
+                        "priceChipId": chip_id,
+                        "attributes": {"useInventory": "true"},
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json().get("accountingSyncWarning") == "journal_sync_failed"
+    finally:
+        orders_mod.reverse_order_stock_for_edit = original
+
+
+def test_edit_order_confirmed_re_deducts_for_different_product(api_client):
+    """FR5/AC3: editing items to swap the product reverses the old sale and
+    deducts for the new product's stock."""
+    _ensure_trung_bay(1)
+    _ensure_trung_bay(2)
+    chip1 = _create_chip(api_client, 1, "P1Chip", 12000)
+    chip2 = _create_chip(api_client, 2, "P2Chip", 20000)
+
+    api_client.post("/api/products/1/stock/restock", json={"quantity": 5, "price_chip_id": chip1})
+    api_client.post("/api/products/2/stock/restock", json={"quantity": 5, "price_chip_id": chip2})
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem 1",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip1,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+
+    with get_db() as conn:
+        avail1 = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip1,),
+        ).fetchone()
+        assert avail1["c"] == 3
+
+    # Swap to product 2, quantity 1.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {
+                    "productId": "2",
+                    "productName": "Bánh kem 2",
+                    "quantity": 1,
+                    "unitPrice": 20000,
+                    "priceChipId": chip2,
+                    "attributes": {"useInventory": "true"},
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Product 1 fully restored (5 available).
+        avail1 = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip1,),
+        ).fetchone()
+        assert avail1["c"] == 5
+
+        # Product 2: 5 - 1 = 4 available.
+        avail2 = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 2 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip2,),
+        ).fetchone()
+        assert avail2["c"] == 4
+
+        # Exactly one sale movement, for product 2.
+        sales = conn.execute(
+            "SELECT product_id, quantity FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchall()
+        assert len(sales) == 1
+        assert sales[0]["product_id"] == 2
+        assert sales[0]["quantity"] == -1
+
+
+def test_edit_order_new_status_skips_stock_reversal(api_client):
+    """FR5/NFR2: editing items on a `new` order (not yet confirmed) does not
+    trigger stock reversal/re-deduction because no sale movement exists."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "NewSkip", 12000)
+    api_client.post("/api/products/1/stock/restock", json={"quantity": 5, "price_chip_id": chip_id})
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    # No status transition — order stays `new`, no sale movement.
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {
+                    "productId": "1",
+                    "productName": "Bánh kem",
+                    "quantity": 1,
+                    "unitPrice": 12000,
+                    "priceChipId": chip_id,
+                    "attributes": {"useInventory": "true"},
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 0
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 5
+
+
+def test_edit_order_stock_reversal_is_idempotent(api_client):
+    """NFR2: editing items twice on a confirmed order does not double-restore
+    or double-deduct. The second edit reverses the first edit's sale and
+    re-deducts for the latest items, leaving exactly one sale movement."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "IdemEdit", 12000)
+    api_client.post("/api/products/1/stock/restock", json={"quantity": 5, "price_chip_id": chip_id})
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+
+    # First edit: quantity 2.
+    api_client.patch(
+        f"/api/orders/{ref}",
+        json={"items": [{
+            "productId": "1", "productName": "Bánh kem", "quantity": 2,
+            "unitPrice": 12000, "priceChipId": chip_id,
+            "attributes": {"useInventory": "true"},
+        }]},
+    )
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(quantity), 0) AS q FROM stock_movements "
+            "WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+        assert sales["q"] == -2
+
+    # Second edit: quantity 3.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"items": [{
+            "productId": "1", "productName": "Bánh kem", "quantity": 3,
+            "unitPrice": 12000, "priceChipId": chip_id,
+            "attributes": {"useInventory": "true"},
+        }]},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(quantity), 0) AS q FROM stock_movements "
+            "WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+        assert sales["q"] == -3
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 2  # 5 - 3
+
+
+def test_edit_order_delivered_reverses_and_re_deducts_stock(api_client):
+    """FR5/AC3: editing items on a delivered order also reverses and
+    re-deducts stock (confirmed+ scope includes delivered)."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "DeliveredEdit", 12000)
+    api_client.post("/api/products/1/stock/restock", json={"quantity": 5, "price_chip_id": chip_id})
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 3
+
+    # Edit to quantity 1.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"items": [{
+            "productId": "1", "productName": "Bánh kem", "quantity": 1,
+            "unitPrice": 12000, "priceChipId": chip_id,
+        }]},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT quantity FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchall()
+        assert len(sales) == 1
+        assert sales[0]["quantity"] == -1
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 4
+
+
+def _journal_entries_for_source(conn, source_type: str, source_id: int):
+    return conn.execute(
+        "SELECT id, description FROM journal_entries "
+        "WHERE source_type = ? AND source_id = ? ORDER BY id",
+        (source_type, source_id),
+    ).fetchall()
+
+
+def _journal_line_totals(conn, entry_id: int, account_code: str) -> float:
+    row = conn.execute(
+        """SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net
+           FROM journal_lines jl
+           JOIN accounts a ON a.id = jl.account_id
+           WHERE jl.journal_entry_id = ? AND a.code = ?""",
+        (entry_id, account_code),
+    ).fetchone()
+    return float(row["net"])
+
+
+def test_edit_order_delivered_reverses_and_recreates_cogs(api_client):
+    """FR6/AC4: editing items on a delivered order reverses the existing
+    ``order_cogs`` journal entry and creates a new one reflecting the new
+    items/prices."""
+    # Create a product with an explicit cost_history so COGS is non-zero.
+    resp = api_client.post(
+        "/api/products",
+        json={"name": "Bánh COGS", "category": "cake", "base_price": 100000, "cost": 0},
+    )
+    assert resp.status_code == 201
+    pid = int(resp.json()["id"])
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (pid, 40000, "2020-01-01T00:00:00Z"),
+        )
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": str(pid),
+                "productName": "Bánh COGS",
+                "quantity": 2,
+                "unitPrice": 100000,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original COGS entry: cost 40000 × qty 2 = 80000.
+        entries = _journal_entries_for_source(conn, "order_cogs", order_id)
+        assert len(entries) == 1
+        original_cogs_id = entries[0]["id"]
+        original_net = _journal_line_totals(conn, original_cogs_id, "5900")
+        assert original_net == 80000.0
+
+    # Edit items: change quantity to 1 → new COGS should be 40000.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {
+                    "productId": str(pid),
+                    "productName": "Bánh COGS",
+                    "quantity": 1,
+                    "unitPrice": 100000,
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # The old COGS entry should be gone (unlocked → deleted) and a new
+        # one created with the updated total.
+        entries = _journal_entries_for_source(conn, "order_cogs", order_id)
+        assert len(entries) == 1, "exactly one order_cogs entry after edit"
+        new_entry_id = entries[0]["id"]
+        assert new_entry_id != original_cogs_id, "old entry must be replaced"
+        new_net = _journal_line_totals(conn, new_entry_id, "5900")
+        assert new_net == 40000.0, "new COGS must reflect updated quantity"
+
+
+def test_edit_order_delivered_reconciles_revenue_on_total_change(api_client):
+    """FR7/AC5: editing items causing a total_price change on a delivered
+    order reverses/re-creates the revenue journal entry to reflect the new
+    total."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh doanh thu", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original revenue entry should exist for the delivered+paid order.
+        rev_entries = conn.execute(
+            "SELECT id, description FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ? "
+            "AND description LIKE 'Order revenue%' ORDER BY id",
+            (order_id,),
+        ).fetchall()
+        assert len(rev_entries) == 1
+        original_rev_id = rev_entries[0]["id"]
+
+    # Edit items: change unitPrice to 250000 → total_price changes.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {"productName": "Bánh doanh thu", "quantity": 1, "unitPrice": 250000, "productId": "BKS-16"}
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Revenue entry should be reconciled to the new total (250000).
+        # _reconcile_order_revenue_entry reverses/replaces the stale entry
+        # when amounts diverge beyond REVENUE_UPDATE_TOLERANCE.
+        rev_entries = conn.execute(
+            "SELECT id, description FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ? "
+            "AND description LIKE 'Order revenue%' ORDER BY id",
+            (order_id,),
+        ).fetchall()
+        # Either the original entry was replaced, or a reversal + new entry
+        # exists. At minimum a non-stale entry reflecting 250000 must exist.
+        assert len(rev_entries) >= 1
+        # Find an entry whose 2100 debit (or 4100 credit) equals 250000.
+        deposit_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        assert float(deposit_credit["c"]) == 250000.0
+
+
+def test_edit_order_delivered_shipping_fee_change_reconciles_revenue(api_client):
+    """FR7/AC5: editing only the shipping fee on a delivered order (which
+    changes total_price) reconciles the revenue entry without touching COGS
+    (COGS only depends on items)."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh ship", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=20000,
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Original total = 100000 + 20000 = 120000, paid via cash →
+        # revenue entry credits 4100 with the deposit balance.
+        rev_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        original_credit = float(rev_credit["c"])
+        # No COGS for BKS-16 (no cost_history) but the entry count is what
+        # matters here — confirm no order_cogs entry to begin with.
+        cogs_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+
+    # Edit only the shipping fee (no items change) → total changes.
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"shippingFee": 50000},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # Revenue entry should be reconciled to reflect the new deposit
+        # balance (shipping fee is held in 2200 for bus orders only; for
+        # POS cash orders the full total is the deposit, so 4100 credit
+        # should now be 100000 + 50000 = 150000).
+        rev_credit = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS c
+               FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE je.source_type = 'order' AND je.source_id = ?
+                 AND a.code = '4100' AND je.description LIKE 'Order revenue%'
+                 AND (je.description NOT LIKE 'Reversal:%')""",
+            (order_id,),
+        ).fetchone()
+        new_credit = float(rev_credit["c"])
+        assert new_credit != original_credit, "revenue must change after total_price change"
+        # COGS count must be unchanged (no items changed).
+        cogs_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        assert cogs_after == cogs_before
+
+
+def test_edit_order_confirmed_skips_journal_adjustment(api_client):
+    """FR6/FR7 scope guard: editing a confirmed (not delivered/completed)
+    order does NOT trigger COGS/revenue journal adjustment — those entries
+    are only created at delivery/completion."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bánh confirmed", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+
+    with get_db() as conn:
+        rev_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        cogs_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={
+            "items": [
+                {"productName": "Bánh confirmed", "quantity": 2, "unitPrice": 100000, "productId": "BKS-16"}
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rev_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        cogs_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        assert rev_after == rev_before, "revenue entries untouched on confirmed order"
+        assert cogs_after == cogs_before, "COGS entries untouched on confirmed order"
+
+
 def test_edit_order_empty_body(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]

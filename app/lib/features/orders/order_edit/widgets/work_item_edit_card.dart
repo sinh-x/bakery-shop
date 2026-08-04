@@ -45,6 +45,13 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   String _savedCashAmount = '';
   String _savedCashFee = '';
 
+  // Trưng bày markup UI state (DG-342 Phase 1 — FR1/FR2/AC1).
+  // Selling price is entered in thousands of đồng (",000đ" suffix); the floor
+  // warning shows when the entered value falls below the assigned (COGS
+  // anchor) price. On save the selling price is clamped to the assigned
+  // price so a unitPrice < assignedPrice row is never persisted.
+  String? _floorWarning;
+
   @override
   void initState() {
     super.initState();
@@ -53,8 +60,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     _ageCtrl = TextEditingController(
       text: widget.item.age != null ? '${widget.item.age}' : '',
     );
+    final isMarkup = _findProduct().isTrungBay;
     _priceCtrl = TextEditingController(
-      text: widget.item.unitPrice.toInt().toString(),
+      text: isMarkup
+          ? (widget.item.unitPrice / 1000).toInt().toString()
+          : widget.item.unitPrice.toInt().toString(),
     );
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
@@ -69,6 +79,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     _cashAmountFocus = FocusNode()..addListener(_onCashAmountFocusChange);
     _cashFeeFocus = FocusNode()..addListener(_onCashFeeFocusChange);
   }
+
+  /// Assigned (COGS anchor) price for trưng bày markup — the existing
+  /// `WorkItem.assignedPrice` if set, otherwise the product `basePrice`.
+  double get _assignedPrice =>
+      widget.item.assignedPrice ?? _findProduct()?.basePrice ?? 0;
 
   @override
   void dispose() {
@@ -90,10 +105,35 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   }
 
   void _onPriceFocusChange() {
-    if (!_priceFocus.hasFocus) {
+    if (_priceFocus.hasFocus) return;
+    if (_findProduct().isTrungBay) {
+      _commitMarkupPrice();
+    } else {
       final price = double.tryParse(_priceCtrl.text.trim());
       if (price != null) _editItem(unitPrice: price);
     }
+  }
+
+  /// Parses the thousands-input "Giá bán" field, enforces the floor warning,
+  /// and clamps the selling price to the assigned price on save (FR2/AC1).
+  /// A `unitPrice < assignedPrice` row is never persisted.
+  void _commitMarkupPrice() {
+    final text = _priceCtrl.text.trim();
+    final thousands = int.tryParse(text);
+    if (thousands == null) {
+      setState(() => _floorWarning = null);
+      return;
+    }
+    final selling = thousands.toDouble() * 1000;
+    final assigned = _assignedPrice;
+    final clamped = selling < assigned ? assigned : selling;
+    setState(() {
+      _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+      // Reflect the clamped value back into the thousands-input field so the
+      // displayed text matches what was persisted.
+      _priceCtrl.text = (clamped / 1000).toInt().toString();
+    });
+    _editItem(unitPrice: clamped);
   }
 
   void _onAgeFocusChange() {
@@ -130,6 +170,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   Future<void> _editItem({
     String? notes,
     double? unitPrice,
+    double? assignedPrice,
     bool? isBirthday,
     int? age,
     int? quantity,
@@ -145,6 +186,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
             widget.item.id,
             notes: notes,
             unitPrice: unitPrice,
+            assignedPrice: assignedPrice,
             isBirthday: isBirthday,
             age: age,
             quantity: quantity,
@@ -253,6 +295,56 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     return result;
   }
 
+  /// Renders the price chip [ChoiceChip] wrap for products with price chips,
+  /// mirroring the create-flow `ExpandableItemCard` pattern (DG-342 Phase 2,
+  /// FR3/AC2). Selecting a chip sets both the assigned (COGS anchor) price
+  /// and the selling price to the chip price, clears any floor warning, and
+  /// updates the price text field. For trung bay products the assigned
+  /// price is also sent to the backend so `order_items.assigned_price` is
+  /// persisted (FR4/AC8).
+  List<Widget> _buildPriceChipSection(ThemeData theme, Product? product) {
+    if (product == null || product.priceChips.isEmpty) return const [];
+    final isTrungBay = product.isTrungBay;
+    final selectedLabel =
+        widget.item.attributes['price_chip_label']?.toString();
+    return [
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: product.priceChips.map((chip) {
+          final isSelected = selectedLabel == chip.label;
+          final stockLabel =
+              chip.stockQty != null ? ' (${chip.stockQty})' : '';
+          return ChoiceChip(
+            label: Text(
+              '${chip.label} · ${formatVND(chip.price)}$stockLabel',
+            ),
+            selected: isSelected,
+            onSelected: (nowSelected) {
+              if (!nowSelected) return;
+              final next = Map<String, dynamic>.from(widget.item.attributes);
+              next['price_chip_label'] = chip.label;
+              setState(() {
+                _priceCtrl.text = isTrungBay
+                    ? (chip.price / 1000).toInt().toString()
+                    : chip.price.toInt().toString();
+                // Selecting a chip resets the floor warning because the
+                // selling price equals the assigned (COGS anchor) price.
+                _floorWarning = null;
+              });
+              _editItem(
+                unitPrice: chip.price,
+                assignedPrice: isTrungBay ? chip.price : null,
+                attributes: next,
+              );
+            },
+          );
+        }).toList(),
+      ),
+      const SizedBox(height: 8),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -359,17 +451,59 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextFormField(
-                    controller: _priceCtrl,
-                    focusNode: _priceFocus,
-                    decoration: const InputDecoration(
-                      labelText: VN.itemPrice,
-                      border: OutlineInputBorder(),
-                      suffixText: 'đ',
-                      isDense: true,
+                  // Price chip ChoiceChip wrap — DG-342 Phase 2 (FR3/AC2).
+                  // Mirrors the create-flow `ExpandableItemCard` pattern:
+                  // selecting a chip sets both assignedPrice and unitPrice,
+                  // clears the floor warning, and updates the price field.
+                  ..._buildPriceChipSection(theme, product),
+                  if (isTrungBay) ...[
+                    // "Giá gốc" — non-editable assigned price (COGS anchor).
+                    // DG-342 Phase 1 (edit order flow) — FR1/AC1.
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        '${VN.giaGoc}: ${formatVND(_assignedPrice)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    keyboardType: TextInputType.number,
-                  ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _priceCtrl,
+                      focusNode: _priceFocus,
+                      decoration: const InputDecoration(
+                        labelText: VN.giaBan,
+                        helperText: VN.markupThousandsHint,
+                        border: OutlineInputBorder(),
+                        suffixText: ',000đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    if (_floorWarning != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _floorWarning!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                  ] else
+                    TextFormField(
+                      controller: _priceCtrl,
+                      focusNode: _priceFocus,
+                      decoration: const InputDecoration(
+                        labelText: VN.itemPrice,
+                        border: OutlineInputBorder(),
+                        suffixText: 'đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
                   const SizedBox(height: 8),
                   if (isTrungBay) ...[
                     SwitchListTile.adaptive(

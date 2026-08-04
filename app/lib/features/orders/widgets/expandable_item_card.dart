@@ -78,9 +78,6 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   }
 
   void _updateManualPrice(String text) {
-    final selectedLabel = widget.item.attributes['price_chip_label']
-        ?.toString();
-
     if (_isTrungBayMarkup) {
       // Trưng bày markup flow (DG-296 Phase 4): the price field is in thousands
       // of đồng (same style as the POS chip picker). Selling price may be set
@@ -105,22 +102,6 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     } else {
       widget.item.customUnitPrice =
           double.tryParse(text.trim()) ?? widget.item.product.basePrice;
-    }
-
-    final manuallyClearPreset =
-        selectedLabel != null &&
-        !widget.item.product.priceChips.any(
-          (chip) =>
-              chip.label == selectedLabel &&
-              chip.price == widget.item.customUnitPrice,
-        );
-
-    if (manuallyClearPreset) {
-      widget.item.attributes.remove('price_chip_label');
-      widget.item.priceChipId = null;
-      if (mounted) {
-        showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
-      }
     }
 
     setState(() {});
@@ -227,8 +208,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       children: widget.item.product.priceChips.map((chip) {
                         final isSelected =
                             widget.item.attributes['price_chip_label'] ==
-                                chip.label &&
-                            widget.item.customUnitPrice == chip.price;
+                                chip.label;
                         final stockLabel = chip.stockQty != null
                             ? ' (${chip.stockQty})'
                             : '';
