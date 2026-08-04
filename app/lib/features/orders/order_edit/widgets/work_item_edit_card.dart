@@ -45,6 +45,13 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   String _savedCashAmount = '';
   String _savedCashFee = '';
 
+  // Trưng bày markup UI state (DG-342 Phase 1 — FR1/FR2/AC1).
+  // Selling price is entered in thousands of đồng (",000đ" suffix); the floor
+  // warning shows when the entered value falls below the assigned (COGS
+  // anchor) price. On save the selling price is clamped to the assigned
+  // price so a unitPrice < assignedPrice row is never persisted.
+  String? _floorWarning;
+
   @override
   void initState() {
     super.initState();
@@ -53,8 +60,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     _ageCtrl = TextEditingController(
       text: widget.item.age != null ? '${widget.item.age}' : '',
     );
+    final isMarkup = _findProduct().isTrungBay;
     _priceCtrl = TextEditingController(
-      text: widget.item.unitPrice.toInt().toString(),
+      text: isMarkup
+          ? (widget.item.unitPrice / 1000).toInt().toString()
+          : widget.item.unitPrice.toInt().toString(),
     );
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
@@ -69,6 +79,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     _cashAmountFocus = FocusNode()..addListener(_onCashAmountFocusChange);
     _cashFeeFocus = FocusNode()..addListener(_onCashFeeFocusChange);
   }
+
+  /// Assigned (COGS anchor) price for trưng bày markup — the existing
+  /// `WorkItem.assignedPrice` if set, otherwise the product `basePrice`.
+  double get _assignedPrice =>
+      widget.item.assignedPrice ?? _findProduct()?.basePrice ?? 0;
 
   @override
   void dispose() {
@@ -90,10 +105,35 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   }
 
   void _onPriceFocusChange() {
-    if (!_priceFocus.hasFocus) {
+    if (_priceFocus.hasFocus) return;
+    if (_findProduct().isTrungBay) {
+      _commitMarkupPrice();
+    } else {
       final price = double.tryParse(_priceCtrl.text.trim());
       if (price != null) _editItem(unitPrice: price);
     }
+  }
+
+  /// Parses the thousands-input "Giá bán" field, enforces the floor warning,
+  /// and clamps the selling price to the assigned price on save (FR2/AC1).
+  /// A `unitPrice < assignedPrice` row is never persisted.
+  void _commitMarkupPrice() {
+    final text = _priceCtrl.text.trim();
+    final thousands = int.tryParse(text);
+    if (thousands == null) {
+      setState(() => _floorWarning = null);
+      return;
+    }
+    final selling = thousands.toDouble() * 1000;
+    final assigned = _assignedPrice;
+    final clamped = selling < assigned ? assigned : selling;
+    setState(() {
+      _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+      // Reflect the clamped value back into the thousands-input field so the
+      // displayed text matches what was persisted.
+      _priceCtrl.text = (clamped / 1000).toInt().toString();
+    });
+    _editItem(unitPrice: clamped);
   }
 
   void _onAgeFocusChange() {
@@ -359,17 +399,54 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextFormField(
-                    controller: _priceCtrl,
-                    focusNode: _priceFocus,
-                    decoration: const InputDecoration(
-                      labelText: VN.itemPrice,
-                      border: OutlineInputBorder(),
-                      suffixText: 'đ',
-                      isDense: true,
+                  if (isTrungBay) ...[
+                    // "Giá gốc" — non-editable assigned price (COGS anchor).
+                    // DG-342 Phase 1 (edit order flow) — FR1/AC1.
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        '${VN.giaGoc}: ${formatVND(_assignedPrice)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    keyboardType: TextInputType.number,
-                  ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _priceCtrl,
+                      focusNode: _priceFocus,
+                      decoration: const InputDecoration(
+                        labelText: VN.giaBan,
+                        helperText: VN.markupThousandsHint,
+                        border: OutlineInputBorder(),
+                        suffixText: ',000đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    if (_floorWarning != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _floorWarning!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                  ] else
+                    TextFormField(
+                      controller: _priceCtrl,
+                      focusNode: _priceFocus,
+                      decoration: const InputDecoration(
+                        labelText: VN.itemPrice,
+                        border: OutlineInputBorder(),
+                        suffixText: 'đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
                   const SizedBox(height: 8),
                   if (isTrungBay) ...[
                     SwitchListTile.adaptive(
