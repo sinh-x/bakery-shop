@@ -21,6 +21,7 @@ from baker.models.order import (
     is_backward_transition,
     validate_transition,
 )
+from baker.models.order import _ORDER_STATUS_RANK
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.customer_resolver import (
@@ -29,7 +30,7 @@ from baker.services.customer_resolver import (
     _resolve_customer_id_by_phone,
     _resolve_or_create_customer_id,
 )
-from baker.services.order_stock import auto_decrement_stock
+from baker.services.order_stock import auto_decrement_stock, reverse_order_stock_for_edit
 from baker.api.auth import resolve_actor, resolve_staff_name, resolve_staff_record
 from baker.utils.time import now_utc
 
@@ -993,6 +994,26 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # work-item IDs, photo links, and blanks consistent (NFR3).
         if items_changed:
             _sync_order_items_table(conn, row["id"], items)
+
+        # DG-342 Phase 4 (FR5, FR10, NFR1, NFR2, NFR3, AC3): when items
+        # change on a confirmed+ order, reverse the old stock deductions
+        # (un-consume FIFO items, reverse negative_sale + its COGS journal,
+        # delete old sale/negative_sale movements) and re-deduct for the
+        # new items. Both steps run within this same ``get_db()``
+        # transaction so a failure rolls back the whole edit (NFR3). Stock
+        # errors are logged but never crash the order update (NFR1,
+        # mirroring the ``run_journal_sync`` fire-and-forget pattern).
+        if items_changed and _ORDER_STATUS_RANK.get(
+            OrderStatus(row["status"]), 0
+        ) >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]:
+            try:
+                reverse_order_stock_for_edit(conn, row["id"], row["order_ref"])
+                auto_decrement_stock(conn, row["id"], row["order_ref"])
+            except Exception:
+                logger.exception(
+                    "edit_order stock reversal/re-deduction failed for order %s (%s)",
+                    row["id"], row["order_ref"],
+                )
 
         # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
         if "workTicketPrintedAt" in data:
