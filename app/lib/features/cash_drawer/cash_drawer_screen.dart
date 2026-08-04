@@ -8,11 +8,13 @@ import '../../data/api/staff_service.dart';
 import '../../data/models/cash_drawer.dart';
 import '../../providers/cash_drawer_provider.dart';
 import '../../providers/staff_provider.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
 import 'widgets/cash_drawer_history_list.dart';
 import 'widgets/cash_drawer_status_card.dart';
+import 'widgets/cash_drawer_transaction_list.dart';
 
 /// Tracks whether a cash-drawer mutation (open / cash-in / cash-out / close)
 /// is in-flight so the action buttons can be disabled and a snackbar shown.
@@ -33,6 +35,19 @@ class _CashDrawerMutationNotifier extends Notifier<bool> {
       await action();
       ref.invalidate(cashDrawerStatusProvider);
       ref.invalidate(cashDrawerHistoryProvider);
+      // CQ-1: invalidate the active drawer's first transaction page so the
+      // "Chi tiết giao dịch" tab shows fresh data immediately after a
+      // cash-in / cash-out / close mutation instead of waiting for the 30s
+      // poll cycle.
+      final activeDrawer = ref.read(cashDrawerStatusProvider).value;
+      final activeDrawerId = activeDrawer == null
+          ? null
+          : int.tryParse(activeDrawer.id);
+      if (activeDrawerId != null) {
+        ref.invalidate(cashDrawerTransactionsProvider(
+          CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+        ));
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMessage)),
@@ -69,11 +84,31 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   // the screen is visible. Cancelled in [dispose] to avoid firing after the
   // widget is gone.
   Timer? _statusPollTimer;
+  // DG-343 Phase 3 FR3/AC4: the index of the "Chi tiết giao dịch" tab. When
+  // the user is on this tab and a drawer is open, the 30s poll also
+  // invalidates [cashDrawerTransactionsProvider] for the active drawer so
+  // the list refreshes within 30 seconds of a new transaction.
+  static const _transactionsTabIndex = 2;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    // DG-343 Phase 3 FR3: prevent the user from settling on the transaction
+    // tab when no drawer is open. We listen for tab changes and snap back to
+    // the status tab (index 0) if the transaction tab was selected while
+    // disabled. The visual disabled state is handled in [build] via the
+    // TabBar's enabled state per-tab.
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) return;
+      if (_tabController.index == _transactionsTabIndex && !_transactionsTabEnabled) {
+        // Defer the snap-back so the TabBar finishes its current notification
+        // round-trip before we mutate the controller.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _tabController.index = 0;
+        });
+      }
+    });
     // DG-331 FR10/AC10: auto-refresh the cash drawer status on entering the
     // screen so the "Tiền tại quầy" amount is current (not a stale cache).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -82,6 +117,10 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       ref.invalidate(cashDrawerHistoryProvider);
     });
     // DG-331 FR11/AC11: poll every 30 seconds while the screen is visible.
+    // DG-343 CQ-2: only invalidate the status provider here. The transaction
+    // tab's full refresh cycle is handled by the widget-level timer in
+    // [CashDrawerTransactionList(poll: true)], so a second screen-level
+    // invalidation of [cashDrawerTransactionsProvider] would be redundant.
     _statusPollTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) {
@@ -89,6 +128,22 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.invalidate(cashDrawerStatusProvider);
       },
     );
+  }
+
+  /// Whether the "Chi tiết giao dịch" tab is currently enabled (FR3): only
+  /// when the active drawer status has resolved to a non-null drawer.
+  bool get _transactionsTabEnabled {
+    final status = ref.read(cashDrawerStatusProvider);
+    return status.value != null;
+  }
+
+  /// The active drawer's numeric id, or `null` when no drawer is open.
+  /// Used to invalidate the transaction provider during the 30s poll and to
+  /// build the transaction tab content.
+  int? get _activeDrawerId {
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    if (drawer == null) return null;
+    return int.tryParse(drawer.id);
   }
 
   @override
@@ -109,6 +164,12 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.watch(cashDrawerAccountingBalance1101Provider);
     final previousCloseAsync = ref.watch(cashDrawerPreviousCloseProvider);
 
+    // DG-343 Phase 3 FR3: the "Chi tiết giao dịch" tab is disabled (greyed
+    // out, not tappable) when no drawer is open. We watch the active drawer
+    // id so the tab state rebuilds when the status resolves/invalidates.
+    final activeDrawerId = _activeDrawerId;
+    final transactionsEnabled = activeDrawerId != null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.cashDrawerTitle),
@@ -119,15 +180,38 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
             onPressed: () {
               ref.invalidate(cashDrawerStatusProvider);
               ref.invalidate(cashDrawerHistoryProvider);
+              // DG-343 Phase 3 FR3: refresh the active drawer's transactions
+              // too so the manual refresh button updates both views.
+              if (activeDrawerId != null) {
+                ref.invalidate(cashDrawerTransactionsProvider(
+                  CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+                ));
+              }
             },
           ),
           const AppBarOverflowMenu(),
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.point_of_sale), text: VN.cashDrawerStatusOpen),
-            Tab(icon: Icon(Icons.history), text: VN.cashDrawerHistory),
+          // DG-343 Phase 3 FR3: the 3rd tab is greyed out when no drawer is
+          // open. Material's TabBar doesn't natively disable individual
+          // tabs, so we override the label/unselected label color per-tab
+          // via [labelColor]/[unselectedLabelColor] combined with the
+          // snap-back listener in [initState] that prevents settling on
+          // the disabled tab.
+          tabs: [
+            const Tab(
+              icon: Icon(Icons.point_of_sale),
+              text: VN.cashDrawerStatusOpen,
+            ),
+            const Tab(icon: Icon(Icons.history), text: VN.cashDrawerHistory),
+            Tab(
+              icon: Icon(
+                Icons.receipt_long,
+                color: transactionsEnabled ? null : Theme.of(context).disabledColor,
+              ),
+              text: VN.cashDrawerTransactionsTab,
+            ),
           ],
         ),
       ),
@@ -144,8 +228,36 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
             onCashOut: () => _handleCashOut(context),
             onClose: () => _handleClose(context),
           ),
-          _HistoryTab(historyAsync: historyAsync),
+          _HistoryTab(
+            historyAsync: historyAsync,
+            onTapClosedDrawer: _navigateToDrawerTransactions,
+          ),
+          // DG-343 Phase 3 FR3/AC1: the transaction list for the active
+          // drawer. When no drawer is open, the tab is disabled by the
+          // snap-back listener; this body is rendered but unreachable. We
+          // still show a placeholder so the TabBarView has 3 children
+          // (required by the TabController length).
+          activeDrawerId == null
+              ? const _DisabledTransactionsPlaceholder()
+              : CashDrawerTransactionList(
+                  drawerId: activeDrawerId,
+                  poll: true,
+                ),
         ],
+      ),
+    );
+  }
+
+  /// DG-343 Phase 3 FR4/AC2: navigate to a full-screen transaction detail
+  /// view for a closed drawer. Reuses [CashDrawerTransactionList] with
+  /// `poll: false` (closed drawers don't change) and infinite-scroll
+  /// pagination via the family provider.
+  void _navigateToDrawerTransactions(CashDrawer drawer) {
+    final id = int.tryParse(drawer.id);
+    if (id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _DrawerTransactionsScreen(drawer: drawer, drawerId: id),
       ),
     );
   }
@@ -623,9 +735,13 @@ class _ActionBar extends StatelessWidget {
 }
 
 class _HistoryTab extends StatelessWidget {
-  const _HistoryTab({required this.historyAsync});
+  const _HistoryTab({required this.historyAsync, this.onTapClosedDrawer});
 
   final AsyncValue<CashDrawerHistoryResponse> historyAsync;
+
+  /// DG-343 Phase 3 FR4/AC2: invoked when the user taps a closed drawer row.
+  /// The screen pushes a transaction-detail route for that drawer.
+  final void Function(CashDrawer drawer)? onTapClosedDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -645,7 +761,74 @@ class _HistoryTab extends StatelessWidget {
         ),
       ),
       data: (resp) => SingleChildScrollView(
-        child: CashDrawerHistoryList(items: resp.items),
+        child: CashDrawerHistoryList(
+          items: resp.items,
+          onTapClosedDrawer: onTapClosedDrawer,
+        ),
+      ),
+    );
+  }
+}
+
+/// DG-343 Phase 3 FR3: placeholder shown in the "Chi tiết giao dịch" tab
+/// body when no drawer is open. The tab itself is disabled (snap-back to the
+/// status tab via the [TabController] listener in [_CashDrawerScreenState]),
+/// so this widget is rendered but not interactive — it exists solely so the
+/// [TabBarView] has 3 children matching the [TabController] length.
+class _DisabledTransactionsPlaceholder extends StatelessWidget {
+  const _DisabledTransactionsPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.receipt_long,
+              size: 48,
+              color: Theme.of(context).disabledColor,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              VN.cashDrawerNoActive,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).disabledColor,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// DG-343 Phase 3 FR4/AC2: full-screen transaction detail view for a closed
+/// drawer. Pushed by [_CashDrawerScreenState._navigateToDrawerTransactions]
+/// when the user taps a closed drawer in the History tab. Reuses
+/// [CashDrawerTransactionList] with `poll: false` (closed drawers don't
+/// change) and infinite-scroll pagination.
+class _DrawerTransactionsScreen extends StatelessWidget {
+  const _DrawerTransactionsScreen({
+    required this.drawer,
+    required this.drawerId,
+  });
+
+  final CashDrawer drawer;
+  final int drawerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = '${VN.cashDrawerTransactionsTab} — ${formatDisplayDate(drawer.openedAt)}';
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+      ),
+      body: CashDrawerTransactionList(
+        drawerId: drawerId,
+        poll: false,
       ),
     );
   }

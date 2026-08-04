@@ -1156,6 +1156,63 @@ class VN {
   static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quầy';
   static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quầy — điều chỉnh chênh lệch';
 
+  // ── Cash-drawer transaction history tab (DG-343 Phase 3) ────────────────
+  /// "Chi tiết giao dịch" — the 3rd tab on the cash drawer screen (FR3).
+  /// Shows the per-transaction detail list for the active or a closed drawer.
+  static const cashDrawerTransactionsTab = 'Chi tiết giao dịch';
+
+  /// Short transaction-type labels used in the per-transaction list (AC3).
+  /// These are intentionally shorter than the journal `source_type` labels
+  /// because each row already carries the amount, timestamp, and note — the
+  /// type label is a one-word chip, not a full sentence.
+  ///
+  /// Mapping (journal `source_type` → short VN label):
+  ///   cash_drawer_open          → Mở quầy
+  ///   cash_drawer_cash_in       → Nạp tiền
+  ///   cash_drawer_cash_out      → Rút tiền
+  ///   payment_transaction       → Bán hàng
+  ///   expense                   → Chi phí
+  ///   cash_drawer_close_adjust  → Đóng quầy
+  ///
+  /// `owner_capital`, `owner_draw`, and `staff_reimburse` flow through the
+  /// cash-in / cash-out source types in the drawer transaction list (the
+  /// backend links the underlying journal entry, not the capital/draw
+  /// adjustment), so they don't need a dedicated short label here. Unknown
+  /// source types fall back to the raw string so the row stays visible.
+  static const cashDrawerTxnTypeOpen = 'Mở quầy';
+  static const cashDrawerTxnTypeCashIn = 'Nạp tiền';
+  static const cashDrawerTxnTypeCashOut = 'Rút tiền';
+  static const cashDrawerTxnTypeSale = 'Bán hàng';
+  static const cashDrawerTxnTypeExpense = 'Chi phí';
+  static const cashDrawerTxnTypeClose = 'Đóng quầy';
+
+  /// Map a cash-drawer transaction `type` (journal `source_type`) to the
+  /// short Vietnamese label used in the transaction list rows (AC3).
+  ///
+  /// Falls back to [accountingSourceTypeLabel] (and then the raw
+  /// `sourceType`) so unknown source types remain visible rather than
+  /// blank. Kept separate from [accountingSourceTypeLabel] because the
+  /// transaction list uses the short chip-style labels above while the
+  /// journal filter uses the longer accounting-style labels.
+  static String cashDrawerTxnTypeLabel(String sourceType) {
+    switch (sourceType) {
+      case 'cash_drawer_open':
+        return cashDrawerTxnTypeOpen;
+      case 'cash_drawer_cash_in':
+        return cashDrawerTxnTypeCashIn;
+      case 'cash_drawer_cash_out':
+        return cashDrawerTxnTypeCashOut;
+      case 'payment_transaction':
+        return cashDrawerTxnTypeSale;
+      case 'expense':
+        return cashDrawerTxnTypeExpense;
+      case 'cash_drawer_close_adjust':
+        return cashDrawerTxnTypeClose;
+      default:
+        return accountingSourceTypeLabel(sourceType);
+    }
+  }
+
   /// Map a journal entry ``sourceType`` to a Vietnamese label.
   ///
   /// Falls back to the raw ``sourceType`` when no mapping exists so unknown

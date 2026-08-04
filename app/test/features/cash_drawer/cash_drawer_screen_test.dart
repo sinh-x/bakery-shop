@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/features/cash_drawer/cash_drawer_screen.dart';
+import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_transaction_list.dart';
 import 'package:bakery_app/providers/cash_drawer_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
@@ -13,11 +14,21 @@ import 'package:flutter_test/flutter_test.dart';
 /// Dio interceptor that serves the cash-drawer status + history endpoints
 /// with a configurable active drawer (or null for "no active drawer") and an
 /// empty history list. Mirrors the pattern in `cash_drawer_service_test.dart`.
+///
+/// DG-343 Phase 3: also serves the per-drawer transactions endpoint so the
+/// "Chi tiết giao dịch" tab and history tap navigation can be exercised.
 class _CashDrawerInterceptor extends Interceptor {
-  _CashDrawerInterceptor({this.activeDrawer, this.historyItems = const []});
+  _CashDrawerInterceptor({
+    this.activeDrawer,
+    this.historyItems = const [],
+    this.transactionItems = const [],
+    this.transactionTotal = 0,
+  });
 
   final Map<String, dynamic>? activeDrawer;
   final List<Map<String, dynamic>> historyItems;
+  final List<Map<String, dynamic>> transactionItems;
+  final int transactionTotal;
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -41,6 +52,25 @@ class _CashDrawerInterceptor extends Interceptor {
             'limit': 50,
             'offset': 0,
             'items': historyItems,
+          },
+        ),
+      );
+      return;
+    }
+    // DG-343 Phase 3: serve the per-drawer transactions endpoint for the
+    // active drawer and any closed drawer tapped in History.
+    if (options.path.startsWith('/api/cash-drawer/') &&
+        options.path.endsWith('/transactions') &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'total': transactionTotal,
+            'limit': options.queryParameters['limit'] ?? 50,
+            'offset': options.queryParameters['offset'] ?? 0,
+            'items': transactionItems,
           },
         ),
       );
@@ -72,13 +102,20 @@ Map<String, dynamic> _drawerJson({
     };
 
 ProviderContainer _containerWith(Map<String, dynamic>? active,
-        {List<Map<String, dynamic>> history = const []}) =>
+        {List<Map<String, dynamic>> history = const [],
+        List<Map<String, dynamic>> transactions = const [],
+        int transactionTotal = 0}) =>
     ProviderContainer(
       overrides: [
         dioProvider.overrideWithValue(
           Dio(BaseOptions(baseUrl: 'http://test'))
             ..interceptors.add(
-              _CashDrawerInterceptor(activeDrawer: active, historyItems: history),
+              _CashDrawerInterceptor(
+                activeDrawer: active,
+                historyItems: history,
+                transactionItems: transactions,
+                transactionTotal: transactionTotal,
+              ),
             ),
         ),
       ],
@@ -439,6 +476,144 @@ void main() {
     expect(interceptor.openCalls.length, 1);
     // No success snackbar.
     expect(find.text(VN.cashDrawerOpenSuccess), findsNothing);
+  });
+
+  // ── DG-343 Phase 3: "Chi tiết giao dịch" tab + history tap navigation ─────
+  testWidgets(
+      'FR3: renders the "Chi tiết giao dịch" tab as the 3rd tab',
+      (tester) async {
+    final container = _containerWith(_drawerJson());
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // All three tab labels are present in the TabBar.
+    expect(find.text(VN.cashDrawerStatusOpen), findsWidgets);
+    expect(find.text(VN.cashDrawerHistory), findsWidgets);
+    expect(find.text(VN.cashDrawerTransactionsTab), findsOneWidget);
+  });
+
+  testWidgets(
+      'FR3/AC1: transaction tab shows the active drawer transactions when a '
+      'drawer is open', (tester) async {
+    final container = _containerWith(
+      _drawerJson(id: '5', expectedBalance: 1000000),
+      transactions: [
+        {
+          'id': '1',
+          'type': 'cash_drawer_open',
+          'amount': 1000000,
+          'timestamp': '2026-08-04T08:00:00Z',
+          'note': 'Mở quầy sáng',
+        },
+        {
+          'id': '2',
+          'type': 'payment_transaction',
+          'amount': 75000,
+          'timestamp': '2026-08-04T09:30:00Z',
+          'note': 'Bán bánh mì',
+        },
+      ],
+      transactionTotal: 2,
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // Switch to the transaction tab (3rd tab).
+    await tester.tap(find.byIcon(Icons.receipt_long));
+    await tester.pumpAndSettle();
+
+    // The active drawer's transactions render with short type labels (AC3).
+    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
+    expect(find.text('Mở quầy sáng'), findsOneWidget);
+    expect(find.text('Bán bánh mì'), findsOneWidget);
+  });
+
+  testWidgets(
+      'FR3: transaction tab is disabled (greyed) when no drawer is open',
+      (tester) async {
+    final container = _containerWith(null);
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // The tab label is present.
+    final tabFinder = find.ancestor(
+      of: find.text(VN.cashDrawerTransactionsTab),
+      matching: find.byType(Tab),
+    );
+    expect(tabFinder, findsOneWidget);
+    // The tab icon uses the disabled color (no active drawer).
+    final icon = tester.widget<Icon>(
+      find.descendant(of: tabFinder, matching: find.byType(Icon)),
+    );
+    expect(icon.color, Theme.of(tester.element(tabFinder)).disabledColor);
+
+    // Tapping the disabled tab snaps back to the status tab rather than
+    // showing the transaction list. The placeholder must not surface the
+    // active-drawer transaction rows.
+    await tester.tap(tabFinder);
+    await tester.pumpAndSettle();
+    expect(find.byType(CashDrawerTransactionList), findsNothing);
+  });
+
+  testWidgets(
+      'FR4/AC2: tapping a closed drawer in History navigates to the '
+      'transaction detail screen', (tester) async {
+    final container = _containerWith(
+      null,
+      history: [
+        _drawerJson(
+          id: '7',
+          status: 'closed',
+          expectedBalance: 1550000,
+          countedAmount: 1540000,
+          discrepancy: -10000,
+        ),
+      ],
+      transactions: [
+        {
+          'id': '1',
+          'type': 'cash_drawer_open',
+          'amount': 1000000,
+          'timestamp': '2026-08-01T08:00:00Z',
+          'note': 'Mở quầy sáng',
+        },
+        {
+          'id': '2',
+          'type': 'cash_drawer_close_adjust',
+          'amount': -10000,
+          'timestamp': '2026-08-01T20:00:00Z',
+          'note': 'Đóng quầy tối',
+        },
+      ],
+      transactionTotal: 2,
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // Switch to the history tab.
+    await tester.tap(find.byIcon(Icons.history));
+    await tester.pumpAndSettle();
+
+    // Expand the closed drawer card to reveal the "Chi tiết giao dịch"
+    // affordance button (FR4/AC2).
+    await tester.tap(find.textContaining('01/08/2026'));
+    await tester.pumpAndSettle();
+
+    // Tap the "Chi tiết giao dịch" TextButton inside the expanded card to
+    // navigate to the transaction detail screen for this closed drawer.
+    await tester.tap(find.widgetWithText(TextButton, VN.cashDrawerTransactionsTab));
+    await tester.pumpAndSettle();
+
+    // The pushed screen shows the transaction list for drawer 7.
+    expect(find.byType(CashDrawerTransactionList), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
+    // The notes (distinct from the short type labels) are present.
+    expect(find.text('Mở quầy sáng'), findsOneWidget);
+    expect(find.text('Đóng quầy tối'), findsOneWidget);
+    // AppBar includes the openedAt date for the closed drawer.
+    expect(find.textContaining('01/08/2026'), findsWidgets);
   });
 }
 

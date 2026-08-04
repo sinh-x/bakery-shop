@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/cash_drawer.dart';
+import '../models/cash_drawer_transaction.dart';
 import 'api_client.dart';
 
 /// FR9 carry-over proposal returned by the backend when opening today's
@@ -424,6 +425,34 @@ class CashDrawerService {
       queryParameters: query,
     );
     return CashDrawerHistoryResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// DG-343 Phase 2 (FR1/FR2): paginated list of cash transactions for a
+  /// given drawer, ordered newest-first. Calls
+  /// `GET /api/cash-drawer/{drawer_id}/transactions` with `limit`/`offset`
+  /// query params. The backend joins journal entries linked to the drawer
+  /// via `cash_drawer_journal_entries` and aggregates their 1101 (Cash in
+  /// Drawer) lines into one signed row per entry.
+  ///
+  /// Each item carries `type` (journal `source_type`), `amount` (signed int,
+  /// +inflow/-outflow), `timestamp` (transaction_date fallback to
+  /// created_at), and `note` (journal description). Non-cash operations
+  /// (bank transfers, card payments) are excluded by the backend.
+  ///
+  /// Use [cashDrawerTransactionsProvider] for Riverpod caching; call this
+  /// directly only for one-off fetches or tests.
+  Future<CashDrawerTransactionResponse> getDrawerTransactions(
+    int drawerId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final response = await _dio.get(
+      '/api/cash-drawer/$drawerId/transactions',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    return CashDrawerTransactionResponse.fromJson(
       response.data as Map<String, dynamic>,
     );
   }

@@ -11,6 +11,7 @@ close time (FR7).
 Traceability: FR1, FR2, FR4, FR7, FR8, FR10, NFR1.
 """
 
+import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -217,3 +218,143 @@ class CashDrawer:
             (before_iso,),
         ).fetchall()
         return [CashDrawer.from_row(r) for r in rows]
+
+    @staticmethod
+    def get_transactions(
+        conn,
+        drawer_id: int,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Return a unified, paginated list of cash transactions for a drawer
+        (DG-343 Phase 1, FR1/FR2).
+
+        Each transaction item includes:
+            - ``type``: derived from the journal entry ``source_type``
+              (e.g. ``cash_drawer_open`` → "Mở quầy", ``payment_transaction`` →
+              "Bán hàng", ``expense`` → "Chi phí").
+            - ``amount``: signed net 1101 (Cash in Drawer) movement —
+              ``debit - credit`` for the 1101 line(s) of the linked journal
+              entry. Positive values are inflows (cash sales, cash-in, opening
+              balance, owner capital); negative values are outflows (cash-out,
+              cash expenses, close-adjust shortages, auto-transfer to owner).
+            - ``timestamp``: the journal entry ``transaction_date`` (the
+              business event date), falling back to ``created_at`` when NULL.
+            - ``note``: the journal entry ``description``.
+
+        The query joins ``journal_entries`` linked to the drawer via the
+        ``cash_drawer_journal_entries`` join table (DG-347 Phase 1) and
+        aggregates their 1101 journal lines so each linked entry collapses to
+        one row. Only linked entries that touch 1101 are returned — non-cash
+        operations (e.g. bank transfers, card payments) carry no 1101 line and
+        are excluded. Ordered newest-first by ``transaction_date`` then
+        ``journal_entries.id`` DESC. Paginated via ``limit``/``offset``.
+
+        Returns ``(items, total)`` where ``total`` is the total count of
+        matching linked entries (across all pages) for pagination UI.
+        """
+        # Aggregate 1101 lines per linked journal entry so each entry collapses
+        # to one transaction row with a single signed amount. Entries without a
+        # 1101 line are excluded by the inner WHERE clause.
+        #
+        # DG-343 Phase 4: LEFT JOIN payment_transactions → orders to fetch the
+        # order receiving code + customer name for `payment_transaction` rows,
+        # and LEFT JOIN events to fetch summary + staff_name + data for
+        # `expense` rows. These populate the `reference` and `reference_detail`
+        # fields returned to the UI so each transaction card can show its
+        # originating document (order ref or expense description).
+        rows = conn.execute(
+            """
+            SELECT je.id                AS je_id,
+                   je.source_type       AS source_type,
+                   je.description       AS description,
+                   je.transaction_date  AS transaction_date,
+                   je.created_at        AS created_at,
+                   COALESCE(SUM(jl1101.debit - jl1101.credit), 0) AS amount,
+                   o.order_ref          AS order_ref,
+                   o.customer_name      AS customer_name,
+                   e.summary           AS event_summary,
+                   e.staff_name         AS event_staff_name,
+                   e.data              AS event_data
+            FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje
+                 ON cdje.journal_entry_id = je.id
+            JOIN journal_lines jl1101
+                 ON jl1101.journal_entry_id = je.id
+            JOIN accounts a1101
+                 ON a1101.id = jl1101.account_id AND a1101.code = '1101'
+            LEFT JOIN payment_transactions pt
+                 ON je.source_type = 'payment_transaction' AND je.source_id = pt.id
+            LEFT JOIN orders o ON o.id = pt.order_id
+            LEFT JOIN events e
+                 ON je.source_type = 'expense' AND je.source_id = e.id
+            WHERE cdje.cash_drawer_id = ?
+            GROUP BY je.id, je.source_type, je.description,
+                     je.transaction_date, je.created_at,
+                     o.order_ref, o.customer_name,
+                     e.summary, e.staff_name, e.data
+            ORDER BY COALESCE(je.transaction_date, je.created_at) DESC,
+                     je.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (int(drawer_id), int(limit), int(offset)),
+        ).fetchall()
+        items = []
+        for row in rows:
+            source_type = row["source_type"]
+            reference = ""
+            reference_detail = ""
+            if source_type == "payment_transaction":
+                reference = row["order_ref"] or ""
+                reference_detail = row["customer_name"] or ""
+            elif source_type == "expense":
+                reference = row["event_summary"] or ""
+                staff_name = row["event_staff_name"] or ""
+                provider = ""
+                event_data_raw = row["event_data"]
+                if event_data_raw:
+                    try:
+                        event_data = json.loads(event_data_raw)
+                        if isinstance(event_data, dict):
+                            provider = (event_data.get("payment_source") or "").strip()
+                    except (ValueError, TypeError):
+                        provider = ""
+                # "staff_name — provider" (em dash) when both present; else
+                # whichever is non-empty.
+                parts = [p for p in (staff_name, provider) if p]
+                reference_detail = " — ".join(parts)
+            items.append(
+                {
+                    "id": str(row["je_id"]),
+                    "type": source_type,
+                    "amount": int(row["amount"]) if row["amount"] is not None else 0,
+                    "timestamp": (
+                        row["transaction_date"] if row["transaction_date"]
+                        else row["created_at"]
+                    ),
+                    "note": row["description"] or "",
+                    "reference": reference,
+                    "reference_detail": reference_detail,
+                }
+            )
+        total_row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM (
+                SELECT je.id
+                FROM journal_entries je
+                JOIN cash_drawer_journal_entries cdje
+                     ON cdje.journal_entry_id = je.id
+                JOIN journal_lines jl1101
+                     ON jl1101.journal_entry_id = je.id
+                JOIN accounts a1101
+                     ON a1101.id = jl1101.account_id AND a1101.code = '1101'
+                WHERE cdje.cash_drawer_id = ?
+                GROUP BY je.id
+            )
+            """,
+            (int(drawer_id),),
+        ).fetchone()
+        total = int(total_row["c"]) if total_row else 0
+        return items, total

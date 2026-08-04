@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/cash_drawer_service.dart';
 import '../data/models/cash_drawer.dart';
+import '../data/models/cash_drawer_transaction.dart';
 
 /// Filter parameters for the cash-drawer history query (FR10).
 class CashDrawerHistoryFilter {
@@ -85,6 +86,62 @@ final cashDrawerHistoryProvider =
   return service.getDrawerHistory(
     since: filter.since,
     until: filter.until,
+    limit: filter.limit,
+    offset: filter.offset,
+  );
+});
+
+/// Filter parameters for the cash-drawer transactions query (DG-343 Phase 2,
+/// FR1/FR2). Keyed on `drawerId` so distinct drawers cache independently,
+/// mirroring the [cashDrawerHistoryProvider] family pattern.
+class CashDrawerTransactionsFilter {
+  const CashDrawerTransactionsFilter({
+    required this.drawerId,
+    this.limit = 50,
+    this.offset = 0,
+  });
+
+  final int drawerId;
+  final int limit;
+  final int offset;
+
+  CashDrawerTransactionsFilter copyWith({
+    int? drawerId,
+    int? limit,
+    int? offset,
+  }) {
+    return CashDrawerTransactionsFilter(
+      drawerId: drawerId ?? this.drawerId,
+      limit: limit ?? this.limit,
+      offset: offset ?? this.offset,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CashDrawerTransactionsFilter &&
+          runtimeType == other.runtimeType &&
+          drawerId == other.drawerId &&
+          limit == other.limit &&
+          offset == other.offset;
+
+  @override
+  int get hashCode => Object.hash(drawerId, limit, offset);
+}
+
+/// DG-343 Phase 2 (FR1/FR2, AC1/AC2/AC4): paginated cash-drawer transaction
+/// list, keyed on [CashDrawerTransactionsFilter]. Uses
+/// `FutureProvider.family` so distinct (drawerId, limit, offset) pages cache
+/// independently, matching the [cashDrawerHistoryProvider] pattern. The UI
+/// (Phase 3) polls this provider for the active drawer on a 30s Timer to
+/// satisfy AC4, and loads further pages by reading the family with growing
+/// `offset` for infinite-scroll (AC2).
+final cashDrawerTransactionsProvider = FutureProvider.family<
+    CashDrawerTransactionResponse, CashDrawerTransactionsFilter>((ref, filter) async {
+  final service = ref.watch(cashDrawerServiceProvider);
+  return service.getDrawerTransactions(
+    filter.drawerId,
     limit: filter.limit,
     offset: filter.offset,
   );

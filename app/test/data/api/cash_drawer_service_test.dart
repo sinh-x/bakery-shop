@@ -370,4 +370,113 @@ void main() {
       expect(cashDrawerServiceProvider, isNotNull);
     });
   });
+
+  group('getDrawerTransactions (DG-343 Phase 2)', () {
+    test('GETs /{drawerId}/transactions with limit + offset query', () async {
+      String? capturedPath;
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedPath = options.path;
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'total': 2,
+                    'limit': 50,
+                    'offset': 0,
+                    'items': [
+                      {
+                        'id': '1',
+                        'type': 'cash_drawer_open',
+                        'amount': 1000000,
+                        'timestamp': '2026-08-01T08:00:00Z',
+                        'note': 'open',
+                      },
+                      {
+                        'id': '2',
+                        'type': 'payment_transaction',
+                        'amount': 50000,
+                        'timestamp': '2026-08-01T09:00:00Z',
+                        'note': 'sale',
+                      },
+                    ],
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      final resp = await service.getDrawerTransactions(
+        7,
+        limit: 50,
+        offset: 0,
+      );
+
+      expect(capturedPath, '/api/cash-drawer/7/transactions');
+      expect(capturedQuery!['limit'], 50);
+      expect(capturedQuery!['offset'], 0);
+      expect(resp.total, 2);
+      expect(resp.items, hasLength(2));
+      expect(resp.items.first.id, '1');
+      expect(resp.items.first.amount, 1000000);
+      expect(resp.items.last.type, 'payment_transaction');
+    });
+
+    test('uses default limit=50 offset=0 when omitted', () async {
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {'total': 0, 'limit': 50, 'offset': 0, 'items': []},
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.getDrawerTransactions(3);
+
+      expect(capturedQuery!['limit'], 50);
+      expect(capturedQuery!['offset'], 0);
+    });
+
+    test('passes custom pagination params through to the query', () async {
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {'total': 100, 'limit': 20, 'offset': 40, 'items': []},
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.getDrawerTransactions(11, limit: 20, offset: 40);
+
+      expect(capturedQuery!['limit'], 20);
+      expect(capturedQuery!['offset'], 40);
+    });
+  });
 }
