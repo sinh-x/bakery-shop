@@ -170,6 +170,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   Future<void> _editItem({
     String? notes,
     double? unitPrice,
+    double? assignedPrice,
     bool? isBirthday,
     int? age,
     int? quantity,
@@ -185,6 +186,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
             widget.item.id,
             notes: notes,
             unitPrice: unitPrice,
+            assignedPrice: assignedPrice,
             isBirthday: isBirthday,
             age: age,
             quantity: quantity,
@@ -293,6 +295,57 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     return result;
   }
 
+  /// Renders the price chip [ChoiceChip] wrap for products with price chips,
+  /// mirroring the create-flow `ExpandableItemCard` pattern (DG-342 Phase 2,
+  /// FR3/AC2). Selecting a chip sets both the assigned (COGS anchor) price
+  /// and the selling price to the chip price, clears any floor warning, and
+  /// updates the price text field. For trung bay products the assigned
+  /// price is also sent to the backend so `order_items.assigned_price` is
+  /// persisted (FR4/AC8).
+  List<Widget> _buildPriceChipSection(ThemeData theme, Product? product) {
+    if (product == null || product.priceChips.isEmpty) return const [];
+    final isTrungBay = product.isTrungBay;
+    final selectedLabel =
+        widget.item.attributes['price_chip_label']?.toString();
+    return [
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: product.priceChips.map((chip) {
+          final isSelected = selectedLabel == chip.label &&
+              widget.item.unitPrice == chip.price;
+          final stockLabel =
+              chip.stockQty != null ? ' (${chip.stockQty})' : '';
+          return ChoiceChip(
+            label: Text(
+              '${chip.label} · ${formatVND(chip.price)}$stockLabel',
+            ),
+            selected: isSelected,
+            onSelected: (isSelected) {
+              if (!isSelected) return;
+              final next = Map<String, dynamic>.from(widget.item.attributes);
+              next['price_chip_label'] = chip.label;
+              setState(() {
+                _priceCtrl.text = isTrungBay
+                    ? (chip.price / 1000).toInt().toString()
+                    : chip.price.toInt().toString();
+                // Selecting a chip resets the floor warning because the
+                // selling price equals the assigned (COGS anchor) price.
+                _floorWarning = null;
+              });
+              _editItem(
+                unitPrice: chip.price,
+                assignedPrice: isTrungBay ? chip.price : null,
+                attributes: next,
+              );
+            },
+          );
+        }).toList(),
+      ),
+      const SizedBox(height: 8),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -399,6 +452,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Price chip ChoiceChip wrap — DG-342 Phase 2 (FR3/AC2).
+                  // Mirrors the create-flow `ExpandableItemCard` pattern:
+                  // selecting a chip sets both assignedPrice and unitPrice,
+                  // clears the floor warning, and updates the price field.
+                  ..._buildPriceChipSection(theme, product),
                   if (isTrungBay) ...[
                     // "Giá gốc" — non-editable assigned price (COGS anchor).
                     // DG-342 Phase 1 (edit order flow) — FR1/AC1.
