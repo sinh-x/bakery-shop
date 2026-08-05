@@ -262,6 +262,20 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             ),
           ],
 
+          // ── Candle type (DG-340 Phase 3 — FR3/AC3) ────────────────
+          if (widget.item.attributes['candle_type'] != null &&
+              widget.item.attributes['candle_type'].toString().isNotEmpty &&
+              widget.item.attributes['candle_type'].toString() != 'khong_nen') ...[
+            const SizedBox(height: 6),
+            Text(
+              'Nến: ${VN.candleTypeLabel(widget.item.attributes['candle_type'].toString())}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.pink.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+
           // ── Cash info ──────────────────────────────────────────────
           if (widget.item.attributes['cash_amount'] != null &&
               widget.item.attributes['cash_amount'].toString().isNotEmpty &&
