@@ -6,6 +6,7 @@ import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/vnd_units.dart';
+import '../../../shared/widgets/vietnamese_labels.dart';
 import 'cake_detail_blank_section.dart';
 import 'order_photo_section.dart';
 
@@ -66,6 +67,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
   late TextEditingController _cashFeeCtrl;
   late bool _isBirthday;
   late bool _rutTien;
+  String? _candleType;
 
   static const int _defaultCashFee = 20000;
   static const int _cashFeeStep = 5000;
@@ -83,6 +85,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     _cashFeeCtrl = TextEditingController();
     _isBirthday = false;
     _rutTien = false;
+    _candleType = null;
   }
 
   @override
@@ -109,6 +112,11 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     _cashAmountCtrl.text = cashAmount;
     _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
     _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
+    final storedCandle = widget.item.attributes['candle_type']?.toString();
+    // AC1/AC7: default selection is "Không nến" (no candle). A stored
+    // candle_type takes precedence; absence falls back to the explicit
+    // "khong_nen" radio value so the group renders a default selection.
+    _candleType = storedCandle?.isNotEmpty == true ? storedCandle : 'khong_nen';
     setState(() => _editing = true);
   }
 
@@ -122,6 +130,11 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
         ? vndFromThousands(rawPrice)
         : widget.item.unitPrice;
     final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
+    final hasCandle =
+        _isBirthday && _candleType != null && _candleType != 'khong_nen';
+    // Determine whether candle_type changed relative to the stored value.
+    final storedCandle = widget.item.attributes['candle_type']?.toString();
+    final candleChanged = (hasCandle ? _candleType : null) != storedCandle;
     Map<String, dynamic>? attributes;
     if (_rutTien) {
       attributes = {
@@ -131,9 +144,20 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             ? _cashFeeCtrl.text.trim()
             : '$_defaultCashFee',
       };
+      if (hasCandle) {
+        attributes['candle_type'] = _candleType;
+      }
     } else if (widget.item.attributes.containsKey('rut_tien')) {
-      // F17: Toggle-off removes keys entirely
+      // F17: Toggle-off removes cash keys entirely (existing behavior).
       attributes = {};
+    } else if (candleChanged) {
+      // No rut_tien change: only patch candle_type, preserving everything else.
+      attributes = Map<String, dynamic>.from(widget.item.attributes);
+      if (hasCandle) {
+        attributes['candle_type'] = _candleType;
+      } else {
+        attributes.remove('candle_type');
+      }
     }
 
     try {
@@ -366,6 +390,44 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                 hintText: 'VD: 7',
                 border: OutlineInputBorder(),
                 isDense: true,
+              ),
+            ),
+            // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
+            // Shown only when is_birthday is checked. Default selection is
+            // "Không nến" (no candle); selecting a real type persists the
+            // value under `attributes['candle_type']` (FR2/AC7).
+            const SizedBox(height: 8),
+            const _SectionLabel(VN.candleTypeSectionLabel),
+            RadioGroup<String>(
+              groupValue: _candleType,
+              onChanged: (v) => setState(() => _candleType = v),
+              child: const Column(
+                children: [
+                  RadioListTile<String>(
+                    title: Text(VN.candleTypeNenSo),
+                    value: 'nen_so',
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: Text(VN.candleTypeNenXoan),
+                    value: 'nen_xoan',
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: Text(VN.candleTypeNenNho),
+                    value: 'nen_nho',
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: Text(VN.candleTypeKhongNen),
+                    value: 'khong_nen',
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
               ),
             ),
           ],

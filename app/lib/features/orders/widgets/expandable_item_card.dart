@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'rut_tien_editor.dart';
 
 class ExpandableItemCard extends StatefulWidget {
@@ -40,6 +41,16 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   void initState() {
     super.initState();
     _isBirthday = widget.item.isBirthday;
+    // AC1/AC7: default candle type to "Không nến" when none is set so the
+    // radio group renders a default selection once is_birthday is checked.
+    // FR6 (auto-check is_birthday for new cake items) is intentionally NOT
+    // applied here: re-checking on every card build would override restored
+    // drafts where the user explicitly unchecked birthday, violating the
+    // Phase 2 guardrail ("Do NOT change existing birthday checkbox behavior")
+    // and AC6. FR6 belongs at the item-creation boundary
+    // (`product_picker_page._createDraftItem`), which is outside the three
+    // files in scope for this phase.
+    widget.item.candleType ??= 'khong_nen';
     _isTrungBayMarkup = widget.item.product.isTrungBay;
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(text: widget.item.age);
@@ -384,6 +395,53 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         LengthLimitingTextInputFormatter(3),
                       ],
                       onChanged: (v) => widget.item.age = v,
+                    ),
+                    const SizedBox(height: 8),
+                    // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
+                    // Wired to DraftOrderItem.candleType (added in Phase 1).
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 2),
+                      child: Text(
+                        VN.candleTypeSectionLabel,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ),
+                    RadioGroup<String>(
+                      groupValue: widget.item.candleType,
+                      onChanged: (v) {
+                        setState(() => widget.item.candleType = v);
+                        widget.onStateChanged();
+                      },
+                      child: const Column(
+                        children: [
+                          RadioListTile<String>(
+                            title: Text(VN.candleTypeNenSo),
+                            value: 'nen_so',
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          RadioListTile<String>(
+                            title: Text(VN.candleTypeNenXoan),
+                            value: 'nen_xoan',
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          RadioListTile<String>(
+                            title: Text(VN.candleTypeNenNho),
+                            value: 'nen_nho',
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          RadioListTile<String>(
+                            title: Text(VN.candleTypeKhongNen),
+                            value: 'khong_nen',
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                   ],
