@@ -46,25 +46,24 @@ enum CarryOverDecision { accept, decline }
 /// Shows the open-drawer dialog (FR1 / AC1).
 ///
 /// Collects a starting balance and optional note. Returns the entered
-/// amount or `null` when cancelled. When [referenceBalance] is provided
-/// (non-zero), it is displayed as the 1101 accounting reference. When
+/// amount or `null` when cancelled. When [referenceBalance] is provided,
+/// it is displayed as the 1101 accounting reference at any value (negative,
+/// zero, or positive) — DG-360 Phase 2 removed the old `> 0` guard so the
+/// owner can reconcile against an over-drawn 1101 balance too. When
 /// [previousCloseCountedAmount] is provided (non-null), it is displayed as
 /// "Số dư sau khi đóng quầy lần trước" (DG-331 FR9 / AC8).
 ///
-/// Phase 4.1 F3: [referenceBalance] is now shown upfront (before any 409
+/// Phase 4.1 F3: [referenceBalance] is shown upfront (before any 409
 /// proposal) so the owner can reconcile against the 1101 journal balance
-/// immediately, not only after a transfer/excess proposal.
+/// immediately, not only after a surplus/shortage proposal.
 Future<CashDrawerDialogResult?> showOpenDrawerDialog(
   BuildContext context, {
   int referenceBalance = 0,
   int? previousCloseCountedAmount,
 }) {
-  final helpers = <String>[];
-  if (referenceBalance > 0) {
-    helpers.add(
-      '${VN.cashDrawerReferenceBalance}: ${formatVND(referenceBalance.toDouble())}',
-    );
-  }
+  final helpers = <String>[
+    '${VN.cashDrawerReferenceBalance}: ${formatVND(referenceBalance.toDouble())}',
+  ];
   if (previousCloseCountedAmount != null) {
     helpers.add(
       '${VN.cashDrawerPreviousCloseBalance}: '
@@ -77,7 +76,7 @@ Future<CashDrawerDialogResult?> showOpenDrawerDialog(
     amountLabel: VN.cashDrawerOpeningBalance,
     confirmLabel: VN.cashDrawerOpen,
     allowZero: false,
-    helper: helpers.isEmpty ? null : helpers.join('\n'),
+    helper: helpers.join('\n'),
   );
 }
 

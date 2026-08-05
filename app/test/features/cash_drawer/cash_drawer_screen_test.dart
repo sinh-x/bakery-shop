@@ -173,6 +173,13 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
+    // DG-360 Phase 2: the status card now always renders the 1101 reference
+    // row (even at 0), which makes the card one row taller and pushes the
+    // action bar below the default 600px viewport. Drag the list up to
+    // bring the cash-in button into view — same pattern as the close
+    // button test above.
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(VN.cashDrawerCashIn));
     await tester.pumpAndSettle();
 
@@ -186,6 +193,10 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
+    // DG-360 Phase 2: drag the list up so the cash-out button is tappable
+    // (see the cash-in test above for the reason).
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(VN.cashDrawerCashOut));
     await tester.pumpAndSettle();
 
@@ -307,27 +318,21 @@ void main() {
     await tester.tap(find.text(VN.cashDrawerCarryOverAccept));
     await tester.pumpAndSettle();
 
-    // The second open call must carry carryOverConfirmed: true. The other
-    // confirmation flags default to false and are sent because the open
-    // dialog's confirmation loop re-issues the full open body.
+    // The second open call must carry carryOverConfirmed: true. DG-360
+    // Phase 2: the open body now uses surplusConfirmed/shortageConfirmed
+    // (matching the close flow) — the obsolete transfer/excess flags are
+    // gone. The confirmation loop re-issues the open body with only the
+    // carryOverConfirmed flag set on the retry.
     expect(interceptor.openCalls, [
       {
         'openingBalance': 1550000,
         'note': '',
         'carryOverConfirmed': false,
-        'transferConfirmed': false,
-        'stockReconciliationConfirmed': false,
-        'unidentifiedSaleConfirmed': false,
-        'ownerCapitalConfirmed': false,
       },
       {
         'openingBalance': 1550000,
         'note': '',
         'carryOverConfirmed': true,
-        'transferConfirmed': false,
-        'stockReconciliationConfirmed': false,
-        'unidentifiedSaleConfirmed': false,
-        'ownerCapitalConfirmed': false,
       },
     ]);
     // Success snackbar appears.
@@ -631,6 +636,211 @@ void main() {
     // AppBar includes the openedAt date for the closed drawer.
     expect(find.textContaining('01/08/2026'), findsWidgets);
   });
+
+  // ── DG-360 Phase 2: 1101 reference at any value + surplus/shortage open flow
+  testWidgets(
+      'AC1: _EmptyActiveView renders the 1101 line at a negative value with '
+      'the error color (no longer hidden by the old `<= 0` guard)',
+      (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        cashDrawerStatusProvider.overrideWith((ref) async => null),
+        cashDrawerHistoryProvider(const CashDrawerHistoryFilter())
+            .overrideWith((ref) async => const CashDrawerHistoryResponse(
+                  total: 0,
+                  limit: 50,
+                  offset: 0,
+                  items: <CashDrawer>[],
+                )),
+        cashDrawerAccountingBalance1101Provider
+            .overrideWith((ref) async => -200000),
+        cashDrawerPreviousCloseProvider
+            .overrideWith((ref) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // The 1101 reference line is rendered with the negative value.
+    final refLine = find.textContaining(VN.cashDrawerReferenceBalance);
+    expect(refLine, findsOneWidget);
+    expect(find.textContaining('-200.000'), findsOneWidget);
+    // NFR1: the negative value uses the error color.
+    final errorColor = Theme.of(tester.element(refLine)).colorScheme.error;
+    final refText = tester.widget<Text>(refLine);
+    expect(refText.style?.color, errorColor);
+  });
+
+  testWidgets(
+      'AC2: _EmptyActiveView renders the 1101 line at zero (no longer hidden '
+      'by the old `<= 0` guard)', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        cashDrawerStatusProvider.overrideWith((ref) async => null),
+        cashDrawerHistoryProvider(const CashDrawerHistoryFilter())
+            .overrideWith((ref) async => const CashDrawerHistoryResponse(
+                  total: 0,
+                  limit: 50,
+                  offset: 0,
+                  items: <CashDrawer>[],
+                )),
+        cashDrawerAccountingBalance1101Provider.overrideWith((ref) async => 0),
+        cashDrawerPreviousCloseProvider
+            .overrideWith((ref) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    expect(find.textContaining(VN.cashDrawerReferenceBalance), findsOneWidget);
+    expect(find.textContaining('0'), findsWidgets);
+  });
+
+  testWidgets(
+      'AC6: CashDrawerStatusCard renders the 1101 line at a negative value '
+      'with the error color (no longer hidden by the old `> 0` guard)',
+      (tester) async {
+    // The default _containerWith interceptor serves status from
+    // `activeDrawer` without an `accountingBalance1101` field, so build a
+    // container that injects a negative 1101 balance directly.
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(
+              _CashDrawerInterceptor(
+                activeDrawer: <String, dynamic>{
+                  'id': '5',
+                  'openedAt': '2026-08-01T00:00:00Z',
+                  'closedAt': null,
+                  'status': 'open',
+                  'openingBalance': -200000,
+                  'countedAmount': null,
+                  'discrepancy': null,
+                  'expectedBalance': 500000,
+                  'accountingBalance1101': -200000,
+                },
+                historyItems: const <Map<String, dynamic>>[],
+                transactionItems: const <Map<String, dynamic>>[],
+                transactionTotal: 0,
+              ),
+            ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // The 1101 reference line is rendered inside the status card with the
+    // negative value and the error color (NFR1 via `_BalanceRow`).
+    final refRow = find.text(VN.cashDrawerReferenceBalance);
+    expect(refRow, findsOneWidget);
+    expect(find.textContaining('-200.000'), findsWidgets);
+    // The _BalanceRow value Text is rendered with colorScheme.error. Walk
+    // every Text widget in the tree and assert at least one whose data
+    // contains the negative value is styled with the error color.
+    final errorColor = Theme.of(tester.element(refRow)).colorScheme.error;
+    final hasErrorColoredNegative = tester
+        .widgetList<Text>(find.byType(Text))
+        .any((t) =>
+            t.data != null &&
+            t.data!.contains('-200.000') &&
+            t.style?.color == errorColor);
+    expect(hasErrorColoredNegative, isTrue);
+  });
+
+  testWidgets(
+      'DG-360 Phase 2 FR7: open flow surfaces the surplus proposal dialog on '
+      '409 surplusProposal and retries with surplusConfirmed + surplusSource',
+      (tester) async {
+    final interceptor = _OpenSurplusShortageInterceptor(
+      proposal: _OpenProposal.surplus,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(interceptor),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    // Tap "Mở quầy" → amount dialog.
+    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.pumpAndSettle();
+    // Enter an opening balance greater than the 1101 reference and confirm.
+    await tester.enterText(find.byType(TextFormField).first, '500000');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The first open returned 409 → surplus proposal dialog should appear.
+    // The dialog reuses showCloseSurplusDialog, so its title/question labels
+    // are the close surplus ones.
+    expect(find.text(VN.cashDrawerCloseSurplusTitle), findsOneWidget);
+    expect(find.text(VN.cashDrawerCloseSurplusQuestion), findsOneWidget);
+    expect(find.textContaining('700.000'), findsOneWidget);
+
+    // Accept the surplus as owner_cash.
+    await tester.tap(find.text(VN.cashDrawerCloseSurplusOwnerCash));
+    await tester.pumpAndSettle();
+
+    // The retry must carry surplusConfirmed + surplusSource=owner_cash.
+    expect(interceptor.openCalls.length, 2);
+    expect(interceptor.openCalls.last['surplusConfirmed'], true);
+    expect(interceptor.openCalls.last['surplusSource'], 'owner_cash');
+    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+  });
+
+  testWidgets(
+      'DG-360 Phase 2 FR7: open flow surfaces the shortage proposal dialog on '
+      '409 shortageProposal and retries with shortageConfirmed + shortageSource',
+      (tester) async {
+    final interceptor = _OpenSurplusShortageInterceptor(
+      proposal: _OpenProposal.shortage,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        dioProvider.overrideWithValue(
+          Dio(BaseOptions(baseUrl: 'http://test'))
+            ..interceptors.add(interceptor),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pump(tester, container);
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '100000');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The first open returned 409 → shortage proposal dialog should appear.
+    expect(find.text(VN.cashDrawerCloseShortageTitle), findsOneWidget);
+    expect(find.text(VN.cashDrawerCloseShortageQuestion), findsOneWidget);
+    expect(find.textContaining('400.000'), findsOneWidget);
+
+    // Accept the shortage as equity_loss.
+    await tester.tap(find.text(VN.cashDrawerCloseShortageEquityLoss));
+    await tester.pumpAndSettle();
+
+    expect(interceptor.openCalls.length, 2);
+    expect(interceptor.openCalls.last['shortageConfirmed'], true);
+    expect(interceptor.openCalls.last['shortageSource'], 'equity_loss');
+    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+  });
 }
 
 /// Dio interceptor that serves status/history GETs and implements the FR9
@@ -736,6 +946,135 @@ class _CarryOverInterceptor extends Interceptor {
             'countedAmount': null,
             'discrepancy': null,
             'expectedBalance': body['openingBalance'] as int? ?? 1550000,
+          },
+        ),
+      );
+      return;
+    }
+    handler.next(options);
+  }
+}
+
+/// DG-360 Phase 2: selects which 409 proposal the
+/// [_OpenSurplusShortageInterceptor] emits on the first POST /open.
+enum _OpenProposal { surplus, shortage }
+
+/// Dio interceptor that serves status/history GETs and implements the
+/// DG-360 Phase 2 surplus/shortage open flow: the first POST /open returns
+/// 409 with a `surplusProposal` or `shortageProposal`; subsequent POST /open
+/// calls return 201 with an open drawer. Captures every open request body in
+/// [openCalls] so tests can assert the confirmation flags + source on retry.
+class _OpenSurplusShortageInterceptor extends Interceptor {
+  _OpenSurplusShortageInterceptor({required this.proposal});
+
+  final _OpenProposal proposal;
+  final List<Map<String, dynamic>> openCalls = [];
+  bool _proposalSent = false;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.path == '/api/cash-drawer/status' && options.method == 'GET') {
+      // No active drawer; no previous close; 1101 reference is injected via
+      // the proposal body itself (the open dialog displays whatever the
+      // service returns — here 0, which still renders after the guard
+      // removal).
+      handler.resolve(
+        Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: <String, dynamic>{
+            'activeDrawer': null,
+            'previousCloseCountedAmount': null,
+            'accountingBalance1101': proposal == _OpenProposal.surplus
+                ? -200000
+                : 500000,
+          },
+        ),
+      );
+      return;
+    }
+    if (options.path == '/api/cash-drawer/history' && options.method == 'GET') {
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'total': 0,
+            'limit': 50,
+            'offset': 0,
+            'items': const <Map<String, dynamic>>[],
+          },
+        ),
+      );
+      return;
+    }
+    if (options.path == '/api/cash-drawer/open' && options.method == 'POST') {
+      final body = options.data is Map<String, dynamic>
+          ? Map<String, dynamic>.from(options.data as Map)
+          : <String, dynamic>{};
+      openCalls.add(body);
+      if (!_proposalSent) {
+        _proposalSent = true;
+        if (proposal == _OpenProposal.surplus) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 409,
+                data: {
+                  'detail': {
+                    'message':
+                        'Chênh lệch thỺ 700000 VND. Số dư kế toán 1101: '
+                        '-200000. Số tiền mở quầy: 500000.',
+                    'surplusProposal': {
+                      'referenceBalance': -200000,
+                      'openingBalance': 500000,
+                      'surplus': 700000,
+                    },
+                  },
+                },
+              ),
+            ),
+          );
+        } else {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 409,
+                data: {
+                  'detail': {
+                    'message':
+                        'Chênh lệch thiếu 400000 VND. Số dư kế toán 1101: '
+                        '500000. Số tiền mở quầy: 100000.',
+                    'shortageProposal': {
+                      'referenceBalance': 500000,
+                      'openingBalance': 100000,
+                      'shortage': 400000,
+                    },
+                  },
+                },
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 201,
+          data: {
+            'id': '9',
+            'openedAt': '2026-08-05T00:00:00Z',
+            'closedAt': null,
+            'status': 'open',
+            'openingBalance': body['openingBalance'] as int? ?? 0,
+            'countedAmount': null,
+            'discrepancy': null,
+            'expectedBalance': body['openingBalance'] as int? ?? 0,
           },
         ),
       );
