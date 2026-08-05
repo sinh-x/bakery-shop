@@ -320,11 +320,20 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     );
     if (result == null || !context.mounted) return;
 
+    // DG-360 Phase 2 FR7: the open flow now mirrors the close flow's
+    // surplus/shortage proposal pattern. The backend raises 409 with a
+    // `surplusProposal` (opening > 1101 reference) or `shortageProposal`
+    // (opening < 1101 reference); the service decodes these into
+    // [CloseSurplusProposalException]/[CloseShortageProposalException] so
+    // we can reuse the existing close confirmation dialogs. The old
+    // transfer/excess/unidentified-sale flags are gone — the backend's
+    // `OpenDrawerRequest` now accepts `surplusConfirmed`/`surplusSource`/
+    // `shortageConfirmed`/`shortageSource`, matching `CloseDrawerRequest`.
     bool carryOverConfirmed = false;
-    bool transferConfirmed = false;
-    bool stockReconciliationConfirmed = false;
-    bool unidentifiedSaleConfirmed = false;
-    bool ownerCapitalConfirmed = false;
+    bool surplusConfirmed = false;
+    String? surplusSource;
+    bool shortageConfirmed = false;
+    String? shortageSource;
 
     while (true) {
       try {
@@ -332,10 +341,10 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
               openingBalance: result.amount,
               note: result.note,
               carryOverConfirmed: carryOverConfirmed,
-              transferConfirmed: transferConfirmed,
-              stockReconciliationConfirmed: stockReconciliationConfirmed,
-              unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
-              ownerCapitalConfirmed: ownerCapitalConfirmed,
+              surplusConfirmed: surplusConfirmed,
+              surplusSource: surplusSource,
+              shortageConfirmed: shortageConfirmed,
+              shortageSource: shortageSource,
             );
         if (!context.mounted) return;
         _onOpenSuccess(context);
@@ -347,41 +356,38 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           carryOverAmount: e.amount,
         );
         if (decision == null || !context.mounted) return;
+        // CQ-4: the flag confirms awareness of the carry-over, not
+        // acceptance — sending `true` on both accept and decline avoids
+        // re-looping the 409 proposal.
         carryOverConfirmed = true;
-      } on TransferProposalException catch (e) {
+      } on CloseSurplusProposalException catch (e) {
         if (!context.mounted) return;
-        final decision = await showTransferConfirmationDialog(
+        final decision = await showCloseSurplusDialog(
           context,
-          referenceBalance: e.referenceBalance,
-          openingBalance: e.openingBalance,
-          excess: e.excess,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          surplus: e.surplus,
+          openFlow: true,
         );
         if (decision == null || !context.mounted) return;
-        transferConfirmed = true;
-        break;
-      } on ExcessProposalException catch (e) {
+        surplusConfirmed = true;
+        surplusSource = decision == CloseSurplusDecision.ownerCash
+            ? 'owner_cash'
+            : 'unidentified_sale';
+      } on CloseShortageProposalException catch (e) {
         if (!context.mounted) return;
-        final decision = await showStockReconciliationDialog(
+        final decision = await showCloseShortageDialog(
           context,
-          referenceBalance: e.referenceBalance,
-          openingBalance: e.openingBalance,
-          excess: e.excess,
+          expectedBalance: e.expectedBalance,
+          countedAmount: e.countedAmount,
+          shortage: e.shortage,
+          openFlow: true,
         );
         if (decision == null || !context.mounted) return;
-        if (decision == StockReconDecision.accept) {
-          stockReconciliationConfirmed = true;
-          final saleDecision = await showUnidentifiedSaleDialog(
-            context,
-            excess: e.excess,
-          );
-          if (saleDecision == null || !context.mounted) return;
-          if (saleDecision == UnidentifiedSaleDecision.accept) {
-            unidentifiedSaleConfirmed = true;
-          }
-        } else if (decision == StockReconDecision.ownerCapital) {
-          ownerCapitalConfirmed = true;
-        }
-        break;
+        shortageConfirmed = true;
+        shortageSource = decision == CloseShortageDecision.ownerWithdraw
+            ? 'owner_withdraw'
+            : 'equity_loss';
       } catch (e) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -390,34 +396,12 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         return;
       }
     }
-    // Re-issue the final call with confirmation flags (outside the loop
-    // for transfer/excess — these don't loop like carry-over).
-    try {
-      await ref.read(_mutationInProgressProvider.notifier).run(
-            context,
-            () => ref.read(cashDrawerServiceProvider).openDrawer(
-                  openingBalance: result.amount,
-                  note: result.note,
-                  carryOverConfirmed: carryOverConfirmed,
-                  transferConfirmed: transferConfirmed,
-                  stockReconciliationConfirmed: stockReconciliationConfirmed,
-                  unidentifiedSaleConfirmed: unidentifiedSaleConfirmed,
-                  ownerCapitalConfirmed: ownerCapitalConfirmed,
-                ),
-            VN.cashDrawerOpenSuccess,
-            ref,
-          );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${VN.apiError}: $e')),
-      );
-    }
   }
 
   void _onOpenSuccess(BuildContext context) {
     ref.invalidate(cashDrawerStatusProvider);
     ref.invalidate(cashDrawerHistoryProvider);
+    ref.invalidate(cashDrawerAccountingBalance1101Provider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(VN.cashDrawerOpenSuccess)),
@@ -511,6 +495,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         // Confirmed close succeeded — show success via the notifier pattern.
         ref.invalidate(cashDrawerStatusProvider);
         ref.invalidate(cashDrawerHistoryProvider);
+        ref.invalidate(cashDrawerAccountingBalance1101Provider);
+        ref.invalidate(cashDrawerPreviousCloseProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text(VN.cashDrawerCloseSuccess)),
@@ -662,11 +648,14 @@ class _EmptyActiveView extends StatelessWidget {
             const Icon(Icons.lock_open_outlined, size: 48),
             const SizedBox(height: 12),
             const Text(VN.cashDrawerNoActive),
-            // FR1/AC1: render the 1101 reference balance line only when the
-            // provider has resolved to a positive value. While loading, show
-            // a small inline placeholder so the line does not silently
-            // disappear on slow networks (PWA bug root cause). On error, the
-            // line is omitted rather than crashing the whole screen.
+            // FR1/AC1: render the 1101 reference balance line at any value
+            // (negative, zero, or positive) — DG-360 Phase 2 removed the old
+            // `<= 0` guard so an over-drawn 1101 balance is surfaced too.
+            // While loading, show a small inline placeholder so the line does
+            // not silently disappear on slow networks (PWA bug root cause).
+            // On error, the line is omitted rather than crashing the whole
+            // screen. NFR1: negative values render in `colorScheme.error`
+            // following the `_BalanceRow` pattern.
             accountingBalance1101Async.when(
               loading: () => const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -678,12 +667,16 @@ class _EmptyActiveView extends StatelessWidget {
               ),
               error: (_, _) => const SizedBox.shrink(),
               data: (balance1101) {
-                if (balance1101 <= 0) return const SizedBox.shrink();
+                final isNegative = balance1101 < 0;
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     '${VN.cashDrawerReferenceBalance}: ${formatVND(balance1101.toDouble())}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: isNegative
+                              ? Theme.of(context).colorScheme.error
+                              : null,
+                        ),
                   ),
                 );
               },

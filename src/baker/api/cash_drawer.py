@@ -123,31 +123,30 @@ class OpenDrawerRequest(BaseModel):
         description="Owner confirms the carried-over balance from the previous "
         "unclosed day (FR9). Required when a carry-over proposal is returned.",
     )
-    transferConfirmed: bool = Field(
+    # DG-360 Phase 1: surplus/shortage proposal fields (mirror CloseDrawerRequest).
+    # Replaces the old transferConfirmed/stockReconciliationConfirmed/
+    # unidentifiedSaleConfirmed/ownerCapitalConfirmed fields.
+    surplusConfirmed: bool = Field(
         False,
-        description="Owner confirms the difference between opening balance and "
-        "accounting 1101 balance should transfer to 1102 (owner's cash). "
-        "Required when openingBalance < 1101 reference balance.",
+        description="Owner confirmed the surplus nature (DG-360). "
+        "Required after a 409 surplusProposal when opening > 1101 reference.",
     )
-    stockReconciliationConfirmed: bool = Field(
-        False,
-        description="Owner confirms stock reconciliation is complete — the "
-        "extra cash above the accounting 1101 balance is legitimate from POS "
-        "sales. Required when openingBalance > 1101 reference balance.",
+    surplusSource: Optional[Literal["owner_cash", "unidentified_sale"]] = Field(
+        None,
+        description="Nature of the surplus: owner_cash → DR 1101/CR 1102; "
+        "unidentified_sale → DR 1101/CR 4100 + DR 5900/CR 1300 (50% COGS). "
+        "Required when surplusConfirmed is true.",
     )
-    unidentifiedSaleConfirmed: bool = Field(
+    shortageConfirmed: bool = Field(
         False,
-        description="Owner confirms the excess should be recorded as an "
-        "unidentified sale with 50% COGS markup. Creates journal entry "
-        "DR 1101 / CR 4100 (revenue) + DR 5900 / CR 1300 (50% COGS). "
-        "Only valid when stockReconciliationConfirmed is true.",
+        description="Owner confirmed the shortage nature (DG-360). "
+        "Required after a 409 shortageProposal when opening < 1101 reference.",
     )
-    ownerCapitalConfirmed: bool = Field(
-        False,
-        description="Owner confirms the excess is personal cash injected "
-        "into the shop (owner capital / equity). Creates journal entry "
-        "DR 1101 / CR 3100 for the excess. Only used when "
-        "openingBalance > 1101 reference balance.",
+    shortageSource: Optional[Literal["owner_withdraw", "equity_loss"]] = Field(
+        None,
+        description="Nature of the shortage: owner_withdraw → DR 1102/CR 1101; "
+        "equity_loss → DR 3100/CR 1101. "
+        "Required when shortageConfirmed is true.",
     )
 
 
@@ -392,71 +391,62 @@ def open_drawer(body: OpenDrawerRequest):
                 detail="Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.",
             )
 
-        # DG-330 confirmation gates for non-carry-over cases (or post-carry-over
-        # confirmed). Guards run when we have a reference balance to compare
-        # against and the user has not yet confirmed the specific gate.
-        # Carry-over confirmation (FR9) implies transfer consent — the owner
-        # already acknowledged the previous-day balance, so auto-transfer
-        # proceeds without an extra confirmation step.
-        if carry_over_from is None or body.carryOverConfirmed:
-            if reference_balance > 0:
-                if (opening < reference_balance and not body.transferConfirmed
-                        and carry_over_from is None):
-                    excess = int(reference_balance - opening)
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "message": (
-                                f"Số tiền mở quầy ({opening:,}) thấp hơn số dư "
-                                f"kế toán 1101 ({int(reference_balance):,}). "
-                                f"Chênh lệch {excess:,} sẽ chuyển vào "
-                                f"Tiền mặt chủ sở hữu (1102). Xác nhận?"
-                            ),
-                            "transferProposal": {
-                                "referenceBalance": int(reference_balance),
-                                "openingBalance": opening,
-                                "excess": excess,
-                            },
+        # DG-360 Phase 1: surplus/shortage proposal gates (replaces the old
+        # transfer/excess/unidentified-sale gates). These mirror the close
+        # drawer confirmation flow and run for ANY non-zero reference_balance
+        # (positive OR negative) so 1101 ≤ 0 is no longer skipped. The first
+        # open (reference_balance == 0) books the full counted opening without a
+        # proposal (FR6). Carry-over confirmation (FR9) implies consent — the
+        # owner already acknowledged the previous-day balance, so the proposal
+        # step is skipped and the delta is booked directly (defaults:
+        # surplus → equity injection, shortage → owner-withdraw).
+        if carry_over_from is None and reference_balance != 0:
+            delta = opening - int(reference_balance)
+            if delta > 0 and not body.surplusConfirmed:
+                logger.warning(
+                    "open_drawer surplus proposal: drawer=None "
+                    "reference=%s opening=%s surplus=%s",
+                    int(reference_balance), opening, delta,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            f"Chênh lệch thừa {delta:,} VND. "
+                            f"Số dư kế toán 1101: {int(reference_balance):,}. "
+                            f"Số tiền mở quầy: {opening:,}. "
+                            f"Chủ thêm tiền mặt hay doanh thu chưa xác định?"
+                        ),
+                        "surplusProposal": {
                             "referenceBalance": int(reference_balance),
+                            "openingBalance": opening,
+                            "surplus": delta,
                         },
-                    )
-                if opening > reference_balance and reference_balance > 0 and not body.stockReconciliationConfirmed and not body.ownerCapitalConfirmed and carry_over_from is None:
-                    excess = int(opening - reference_balance)
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "message": (
-                                f"Số tiền mở quầy ({opening:,}) cao hơn số dư "
-                                f"kế toán 1101 ({int(reference_balance):,}). "
-                                f"Chênh lệch {excess:,}. Xác nhận đã đối chiếu "
-                                f"kho hàng POS?"
-                            ),
-                            "excessProposal": {
-                                "referenceBalance": int(reference_balance),
-                                "openingBalance": opening,
-                                "excess": excess,
-                            },
+                    },
+                )
+            if delta < 0 and not body.shortageConfirmed:
+                amt = abs(delta)
+                logger.warning(
+                    "open_drawer shortage proposal: drawer=None "
+                    "reference=%s opening=%s shortage=%s",
+                    int(reference_balance), opening, amt,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            f"Chênh lệch thiếu {amt:,} VND. "
+                            f"Số dư kế toán 1101: {int(reference_balance):,}. "
+                            f"Số tiền mở quầy: {opening:,}. "
+                            f"Chủ rút tiền hay lỗ vốn chủ sở hữu?"
+                        ),
+                        "shortageProposal": {
                             "referenceBalance": int(reference_balance),
+                            "openingBalance": opening,
+                            "shortage": amt,
                         },
-                    )
-                if opening > reference_balance and reference_balance > 0 and body.stockReconciliationConfirmed and not body.unidentifiedSaleConfirmed and carry_over_from is None:
-                    excess = int(opening - reference_balance)
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "message": (
-                                f"Chênh lệch {excess:,} VND. Ghi nhận thành "
-                                f"doanh thu chưa xác định với 50% giá vốn?"
-                            ),
-                            "unidentifiedSaleProposal": {
-                                "referenceBalance": int(reference_balance),
-                                "openingBalance": opening,
-                                "excess": excess,
-                                "cogsPct": 50,
-                            },
-                            "referenceBalance": int(reference_balance),
-                        },
-                    )
+                    },
+                )
 
         accounts = _cash_and_equity_accounts(conn)
         # DG-354 Phase 3 (FR1/FR2): opening_balance stores the 1101 accounting
@@ -473,58 +463,18 @@ def open_drawer(body: OpenDrawerRequest):
         )
         drawer.save(conn)
 
-        # DG-330: 1101 already reflects prior activity (reference_balance).
-        # The open journal entry must only bridge the gap between the 1101
-        # reference and the requested opening balance, so that after the open
-        # the 1101 balance equals the drawer expected balance (NFR4).
+        # DG-360 Phase 1 (FR8): only book the delta between opening and
+        # reference_balance. When reference_balance == 0 (first open) the full
+        # counted opening is booked as DR 1101 / CR 3100. When reference_balance
+        # != 0 (positive OR negative) only the delta is booked:
         #
-        #   opening < reference  → auto-transfer the excess to 1102 (CR 1101)
-        #   opening > reference  → DR 1101 for the delta (owner capital / new cash)
-        #   opening == reference → no journal entry (1101 already at target)
-        #   reference == 0       → DR 1101 for full opening (first open)
-        auto_transfer = None
-        if reference_balance > 0 and opening < reference_balance:
-            excess = int(reference_balance - opening)
-            transfer_desc = (
-                f"Chuyển tiền thừa từ quầy sang tiền mặt chủ sở hữu: {excess}"
-            )
-            auto_transfer = _create_drawer_journal_entry(
-                conn,
-                source_type="cash_drawer_auto_transfer",
-                description=transfer_desc,
-                debit_account_id=accounts["owner_cash"],
-                credit_account_id=accounts["cash_drawer"],
-                amount=excess,
-                drawer_id=drawer.id,
-            )
-            journal = None
-        elif reference_balance > 0 and opening > reference_balance:
-            # When the owner confirmed unidentified sale or owner capital,
-            # the dedicated sections below create the 1101 side of the entry
-            # with the correct source_type and description. Otherwise, record
-            # the delta as a plain equity injection.
-            if not body.unidentifiedSaleConfirmed and not body.ownerCapitalConfirmed:
-                delta = int(opening - reference_balance)
-                desc = (
-                    f"Mở quầy tiền mặt: {opening} (chênh lệch tăng {delta})"
-                )
-                if body.note:
-                    desc += f" — {body.note}"
-                journal = _create_drawer_journal_entry(
-                    conn,
-                    source_type="cash_drawer_open",
-                    description=desc,
-                    debit_account_id=accounts["cash_drawer"],
-                    credit_account_id=accounts["equity"],
-                    amount=delta,
-                    drawer_id=drawer.id,
-                )
-            else:
-                journal = None
-        elif reference_balance > 0:
-            # opening == reference — no journal entry needed
-            journal = None
-        else:
+        #   delta > 0 (surplus)  → DR 1101 for delta; nature chosen by surplusSource
+        #   delta < 0 (shortage) → CR 1101 for |delta|; nature chosen by shortageSource
+        #   delta == 0           → no journal entry (1101 already at target)
+        journal = None
+        surplus_result = None
+        delta = opening - int(reference_balance)
+        if int(reference_balance) == 0:
             desc = f"Mở quầy tiền mặt: {opening}"
             if body.note:
                 desc += f" — {body.note}"
@@ -537,74 +487,114 @@ def open_drawer(body: OpenDrawerRequest):
                 amount=opening,
                 drawer_id=drawer.id,
             )
-        # DG-330: unidentified sale — when opening balance exceeds the
-        # accounting 1101 balance and the owner confirms stock reconciliation
-        # AND chooses to record as an unidentified sale. Creates a balanced
-        # journal entry: DR 1101 / CR 4100 (revenue) + DR 5900 / CR 1300
-        # (50% COGS). Uses source_type="unidentified_sale" for easy
-        # identification and future allocation.
-        unidentified_sale = None
-        if opening > reference_balance > 0 and body.unidentifiedSaleConfirmed:
-            excess = int(opening - reference_balance)
-            cogs = int(excess * 0.5)
-            revenue_acct = _account_id_by_code(conn, REVENUE_CODE)
-            cogs_acct = _account_id_by_code(conn, COGS_CODE)
-            inventory_acct = _account_id_by_code(conn, INVENTORY_CODE)
-            sale_desc = (
-                f"Doanh thu chưa xác định khi mở quầy (đã đối chiếu kho): {excess}"
+        elif delta > 0:
+            desc = (
+                f"Mở quầy tiền mặt: {opening} (chênh lệch tăng {delta})"
             )
-            sale_lines = [
-                (accounts["cash_drawer"], float(excess), 0.0, sale_desc),
-                (revenue_acct, 0.0, float(excess), sale_desc),
-                (cogs_acct, float(cogs), 0.0, f"Giá vốn 50%: {cogs}"),
-                (inventory_acct, 0.0, float(cogs), f"Giá vốn 50%: {cogs}"),
-            ]
-            sale_entry_id = _insert_journal_entry(
-                conn,
-                description=sale_desc,
-                source_type="unidentified_sale",
-                source_id=None,
-                lines=sale_lines,
-                transaction_date=now_utc(),
-                drawer_id=drawer.id,
+            if body.note:
+                desc += f" — {body.note}"
+            if body.surplusSource == "owner_cash":
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["cash_drawer"],
+                    credit_account_id=accounts["owner_cash"],
+                    amount=delta,
+                    drawer_id=drawer.id,
+                )
+            elif body.surplusSource == "unidentified_sale":
+                cogs = int(delta * 0.5)
+                revenue_acct = _account_id_by_code(conn, REVENUE_CODE)
+                cogs_acct = _account_id_by_code(conn, COGS_CODE)
+                inventory_acct = _account_id_by_code(conn, INVENTORY_CODE)
+                sale_desc = (
+                    f"Doanh thu chưa xác định khi mở quầy: {delta}"
+                )
+                lines = [
+                    (accounts["cash_drawer"], float(delta), 0.0, sale_desc),
+                    (revenue_acct, 0.0, float(delta), sale_desc),
+                    (cogs_acct, float(cogs), 0.0, f"Giá vốn 50%: {cogs}"),
+                    (inventory_acct, 0.0, float(cogs), f"Giá vốn 50%: {cogs}"),
+                ]
+                entry_id = _insert_journal_entry(
+                    conn,
+                    description=sale_desc,
+                    source_type="cash_drawer_open",
+                    source_id=None,
+                    lines=lines,
+                    transaction_date=now_utc(),
+                    drawer_id=drawer.id,
+                )
+                entry = JournalEntry.from_row(
+                    conn.execute(
+                        "SELECT * FROM journal_entries WHERE id = ?",
+                        (entry_id,),
+                    ).fetchone()
+                )
+                fetched_lines = JournalLine.list_for_entry(conn, entry_id)
+                surplus_result = entry.to_api_dict(fetched_lines)
+            else:
+                # Default to equity injection (owner capital) when surplus
+                # is confirmed but no source picked — backward compatible with
+                # the pre-DG-360 plain delta booking.
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["cash_drawer"],
+                    credit_account_id=accounts["equity"],
+                    amount=delta,
+                    drawer_id=drawer.id,
+                )
+        elif delta < 0:
+            amt = abs(delta)
+            desc = (
+                f"Mở quầy tiền mặt: {opening} (chênh lệch giảm {amt})"
             )
-            sale_entry = JournalEntry.from_row(
-                conn.execute(
-                    "SELECT * FROM journal_entries WHERE id = ?", (sale_entry_id,)
-                ).fetchone()
-            )
-            fetched_lines = JournalLine.list_for_entry(conn, sale_entry_id)
-            unidentified_sale = sale_entry.to_api_dict(fetched_lines)
-        # DG-330: owner capital injection — when opening balance exceeds the
-        # accounting 1101 balance and the owner chooses to record the excess
-        # as personal cash injected into the shop. Creates journal entry
-        # DR 1101 / CR 3100 for the excess.
-        owner_capital = None
-        if opening > reference_balance > 0 and body.ownerCapitalConfirmed:
-            excess = int(opening - reference_balance)
-            capital_desc = (
-                f"Chủ cho thêm tiền mặt khi mở quầy (vốn chủ sở hữu): {excess}"
-            )
-            owner_capital = _create_drawer_journal_entry(
-                conn,
-                source_type="cash_drawer_owner_capital",
-                description=capital_desc,
-                debit_account_id=accounts["cash_drawer"],
-                credit_account_id=accounts["equity"],
-                amount=excess,
-                drawer_id=drawer.id,
-            )
+            if body.note:
+                desc += f" — {body.note}"
+            if body.shortageSource == "owner_withdraw":
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["owner_cash"],
+                    credit_account_id=accounts["cash_drawer"],
+                    amount=amt,
+                    drawer_id=drawer.id,
+                )
+            elif body.shortageSource == "equity_loss":
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["equity"],
+                    credit_account_id=accounts["cash_drawer"],
+                    amount=amt,
+                    drawer_id=drawer.id,
+                )
+            else:
+                # Default to owner-withdraw (DR 1102 / CR 1101) when shortage
+                # is confirmed but no source picked — backward compatible with
+                # the pre-DG-360 auto-transfer behavior.
+                journal = _create_drawer_journal_entry(
+                    conn,
+                    source_type="cash_drawer_open",
+                    description=desc,
+                    debit_account_id=accounts["owner_cash"],
+                    credit_account_id=accounts["cash_drawer"],
+                    amount=amt,
+                    drawer_id=drawer.id,
+                )
+        # delta == 0 → no journal entry (1101 already at target)
         result = drawer.to_api_dict(conn)
         if journal is not None:
             result["journalEntry"] = journal
         if carry_over_from is not None:
             result["carryOver"] = carry_over_from
-        if auto_transfer is not None:
-            result["autoTransfer"] = auto_transfer
-        if unidentified_sale is not None:
-            result["unidentifiedSale"] = unidentified_sale
-        if owner_capital is not None:
-            result["ownerCapital"] = owner_capital
+        if surplus_result is not None:
+            result["surplusJournalEntry"] = surplus_result
         return result
 
 
@@ -725,7 +715,6 @@ def close_drawer(body: CloseDrawerRequest):
         discrepancy = drawer.close(conn, counted_amount=body.countedAmount)
         journal = None
         surplus_result = None
-        shortage_result = None
 
         if discrepancy > 0:
             if not body.surplusConfirmed:
@@ -855,8 +844,6 @@ def close_drawer(body: CloseDrawerRequest):
             result["journalEntry"] = journal
         if surplus_result is not None:
             result["surplusJournalEntry"] = surplus_result
-        if shortage_result is not None:
-            result["shortageJournalEntry"] = shortage_result
         return result
 
 

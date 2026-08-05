@@ -77,6 +77,36 @@ def _adjust_drawer_balance(conn, drawer_id: int, delta: int) -> None:
     )
 
 
+def _adjust_1101_global(conn, delta: int) -> None:
+    """Insert an unlinked balanced journal entry to adjust the global 1101
+    balance by ``delta`` (positive → DR 1101/CR 3100; negative → DR 3100/CR
+    1101). Not linked to any drawer so it does not affect any drawer's
+    expected_balance."""
+    if delta == 0:
+        return
+    cash_acct = _account_id(conn, "1101")
+    equity_acct = _account_id(conn, "3100")
+    if delta > 0:
+        lines = [
+            (cash_acct, float(delta), 0.0, "test"),
+            (equity_acct, 0.0, float(delta), "test"),
+        ]
+    else:
+        amt = abs(delta)
+        lines = [
+            (equity_acct, float(amt), 0.0, "test"),
+            (cash_acct, 0.0, float(amt), "test"),
+        ]
+    _insert_journal_entry(
+        conn,
+        description=f"Test global 1101 adjust: {delta}",
+        source_type="cash_drawer_test_adjust",
+        source_id=None,
+        lines=lines,
+        drawer_id=None,
+    )
+
+
 def _backdate_drawer(conn, drawer_id: int, opened_at_iso: str) -> None:
     """Set a drawer's opened_at to a past ISO-8601 UTC timestamp so the lazy
     auto-close check treats it as belonging to a previous local day."""
@@ -138,6 +168,219 @@ def test_open_second_drawer_blocked_while_active(api_client):
     r2 = api_client.post("/api/cash-drawer/open", json={"openingBalance": 200_000})
     assert r2.status_code == 409
     assert "đang mở" in r2.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# DG-360 Phase 1: surplus/shortage proposals when opening with 1101 ≤ 0
+# ---------------------------------------------------------------------------
+
+
+def _open_with_global_1101(api_client, balance_1101: int, opening: int):
+    """Seed the global 1101 balance to ``balance_1101`` (via a prior drawer
+    cycle) then open a new drawer with ``opening``.
+
+    Returns the open response so callers can assert on the 409 proposal or
+    the 201 success body."""
+    # First cycle to seed the 1101 balance at the target value.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    with get_db() as conn:
+        delta = balance_1101 - 1_000_000
+        if delta != 0:
+            _adjust_1101_global(conn, delta)
+    return api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
+
+
+def test_open_with_negative_1101_surplus_proposal_ac3(api_client):
+    """AC3: Given 1101 = -200,000, when opening with 500,000, then 409
+    surplusProposal with surplus=700,000 (opening - reference)."""
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "surplusProposal" in detail
+    p = detail["surplusProposal"]
+    assert p["referenceBalance"] == -200_000
+    assert p["openingBalance"] == 500_000
+    assert p["surplus"] == 700_000
+
+
+def test_open_with_positive_1101_shortage_proposal_ac4(api_client):
+    """AC4: Given 1101 = 500,000, when opening with 100,000, then 409
+    shortageProposal with shortage=400,000 (reference - opening)."""
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "shortageProposal" in detail
+    p = detail["shortageProposal"]
+    assert p["referenceBalance"] == 500_000
+    assert p["openingBalance"] == 100_000
+    assert p["shortage"] == 400_000
+
+
+def test_open_with_equal_balance_no_proposal_ac5(api_client):
+    """AC5: Given 1101 = 500,000, when opening with 500,000, then no dialog
+    and drawer opens with expectedBalance == 500,000 (delta == 0 → no
+    journal entry)."""
+    resp = _open_with_global_1101(api_client, 500_000, 500_000)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["expectedBalance"] == 500_000
+    assert body.get("journalEntry") is None
+
+
+def test_open_surplus_confirmed_owner_cash_books_delta_only_fr8(api_client):
+    """FR8/NFR3: Given 1101 = -200,000, opening 500,000 (delta 700,000),
+    when confirmed with surplusSource=owner_cash, then only the 700,000
+    delta is booked (DR 1101/CR 1102), not the full 500,000 opening."""
+    # First call → 409 surplusProposal.
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409
+    # Confirm → 201 with journal entry booking only the delta.
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "owner_cash",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 500_000
+    je = body["journalEntry"]
+    assert je["sourceType"] == "cash_drawer_open"
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    # FR8: only the 700,000 delta is booked, not the full 500,000 opening.
+    assert float(debit_line["debit"]) == 700_000.0
+    assert float(credit_line["credit"]) == 700_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
+
+def test_open_shortage_confirmed_owner_withdraw_books_delta_only_fr8(api_client):
+    """FR8/NFR3: Given 1101 = 500,000, opening 100,000 (delta -400,000),
+    when confirmed with shortageSource=owner_withdraw, then only the
+    400,000 delta is booked (DR 1102/CR 1101)."""
+    # First call → 409 shortageProposal.
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409
+    # Confirm → 201 with journal entry booking only the delta.
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 100_000,
+        "shortageConfirmed": True,
+        "shortageSource": "owner_withdraw",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 100_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    # FR8: only the 400,000 delta is booked, not the full 100,000 opening.
+    assert float(debit_line["debit"]) == 400_000.0
+    assert float(credit_line["credit"]) == 400_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1102") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_open_shortage_confirmed_equity_loss_books_delta_only(api_client):
+    """NFR3: Given 1101 = 500,000, opening 100,000 (delta -400,000),
+    when confirmed with shortageSource=equity_loss, then DR 3100/CR 1101
+    for the 400,000 delta only."""
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 100_000,
+        "shortageConfirmed": True,
+        "shortageSource": "equity_loss",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 400_000.0
+    assert float(credit_line["credit"]) == 400_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "3100") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_open_surplus_confirmed_unidentified_sale_compound_entry(api_client):
+    """NFR3: Given 1101 = -200,000, opening 500,000 (delta 700,000),
+    when confirmed with surplusSource=unidentified_sale, then compound
+    entry DR 1101/CR 4100 + DR 5900/CR 1300 (50% COGS) for the delta only."""
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "unidentified_sale",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 500_000
+    surplus_je = body["surplusJournalEntry"]
+    # Compound entry: 4 lines, balanced.
+    lines = surplus_je["lines"]
+    assert len(lines) == 4
+    total_debit = sum(float(l["debit"]) for l in lines)
+    total_credit = sum(float(l["credit"]) for l in lines)
+    assert abs(total_debit - total_credit) < 0.005
+    assert total_debit == 1_050_000.0  # 700,000 + 350,000 COGS
+    with get_db() as conn:
+        cash_1101 = _account_id(conn, "1101")
+        revenue_4100 = _account_id(conn, "4100")
+        cogs_5900 = _account_id(conn, "5900")
+        inventory_1300 = _account_id(conn, "1300")
+        by_acct = {int(l["accountId"]): l for l in lines}
+        assert float(by_acct[cash_1101]["debit"]) == 700_000.0
+        assert float(by_acct[revenue_4100]["credit"]) == 700_000.0
+        assert float(by_acct[cogs_5900]["debit"]) == 350_000.0
+        assert float(by_acct[inventory_1300]["credit"]) == 350_000.0
+
+
+def test_open_zero_1101_books_full_opening_fr8(api_client):
+    """FR8: Given 1101 = 0 (first open), when opening with 1,000,000, then
+    the full 1,000,000 is booked as DR 1101/CR 3100 (no proposal)."""
+    # Fresh db — no prior drawers — 1101 == 0.
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["expectedBalance"] == 1_000_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 1_000_000.0
+    assert float(credit_line["credit"]) == 1_000_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "3100") == int(credit_line["accountId"])
+
+
+def test_open_all_journal_entries_balanced_nfr3(api_client):
+    """NFR3: all journal entries created by the open surplus/shortage flow
+    are balanced (debit sum == credit sum)."""
+    # Open → close → adjust 1101 negative → open with surplus (owner_cash).
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    with get_db() as conn:
+        _adjust_1101_global(conn, -1_200_000)  # 1101 = -200,000
+    resp = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "owner_cash",
+    })
+    assert resp.status_code == 201, resp.text
+    with get_db() as conn:
+        debit, credit = _sums(conn, "cash_drawer_open")
+        assert abs(debit - credit) < 0.005, (
+            f"unbalanced cash_drawer_open: debit={debit} credit={credit}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -809,10 +1052,12 @@ def test_history_returns_paginated_list(api_client):
     # First drawer
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
-    # Second drawer — 1101 balance from first open requires transfer confirmation
+    # Second drawer — 1101 balance from first open requires shortage confirmation
+    # (opening 500k < reference 1M → shortage 500k → owner_withdraw default).
     api_client.post("/api/cash-drawer/open", json={
         "openingBalance": 500_000,
-        "transferConfirmed": True,
+        "shortageConfirmed": True,
+        "shortageSource": "owner_withdraw",
     })
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 500_000})
 
@@ -830,15 +1075,16 @@ def test_history_supports_pagination(api_client):
     for i in range(3):
         opening = 100_000 * (i + 1)
         # First open (100k): no prior 1101 balance → no gate
-        # Second open (200k): > 1101 balance (100k) → excess gate → ownerCapital
+        # Second open (200k): > 1101 balance (100k) → surplus 100k → owner_cash
         # Third open (300k): > 1101 balance (200k now, not 400k like before fix)
-        #   → excess gate → stockRecon+unidSale
+        #   → surplus 100k → unidentified_sale
         payload: dict = {"openingBalance": opening}
         if i == 1:
-            payload["ownerCapitalConfirmed"] = True
+            payload["surplusConfirmed"] = True
+            payload["surplusSource"] = "owner_cash"
         elif i == 2:
-            payload["stockReconciliationConfirmed"] = True
-            payload["unidentifiedSaleConfirmed"] = True
+            payload["surplusConfirmed"] = True
+            payload["surplusSource"] = "unidentified_sale"
         open_resp = api_client.post("/api/cash-drawer/open", json=payload)
         assert open_resp.status_code in (200, 201), open_resp.text
         # Close with the journal-derived expected balance so no confirmation

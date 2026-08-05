@@ -89,16 +89,18 @@ class CashDrawerStatusCard extends StatelessWidget {
               ],
             ),
             // Phase 4.1 F7: show the 1101 journal balance as an additional
-            // row below the expected balance. The journal balance may
-            // differ from the computed expected balance between a mutation
-            // and the next read; surfacing both supports reconciliation.
-            if (drawer.accountingBalance1101 > 0) ...[
-              const SizedBox(height: 4),
-              _BalanceRow(
-                label: VN.cashDrawerReferenceBalance,
-                value: drawer.accountingBalance1101,
-              ),
-            ],
+            // row below the expected balance. The journal balance may differ
+            // from the computed expected balance between a mutation and the
+            // next read; surfacing both supports reconciliation.
+            // DG-360 Phase 2 FR3/AC6: render this row at any value (negative,
+            // zero, or positive) — the old `> 0` guard hid over-drawn 1101
+            // balances. `_BalanceRow` already colors negative values via
+            // `colorScheme.error` (NFR1).
+            const SizedBox(height: 4),
+            _BalanceRow(
+              label: VN.cashDrawerReferenceBalance,
+              value: drawer.accountingBalance1101,
+            ),
           ],
         ),
       ),

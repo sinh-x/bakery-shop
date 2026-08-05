@@ -42,58 +42,18 @@ class CarryOverProposalException implements Exception {
       'CarryOverProposalException(amount: $amount, fromDrawerId: $fromDrawerId)';
 }
 
-/// DG-330: thrown when opening balance < 1101 reference balance and the
-/// owner must confirm transferring the difference to 1102 (Owner's Cash).
-class TransferProposalException implements Exception {
-  TransferProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown when opening balance > 1101 reference balance and the
-/// owner must confirm stock reconciliation before proceeding.
-class ExcessProposalException implements Exception {
-  ExcessProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown after stock reconciliation confirmed, asking whether the
-/// excess should be recorded as an unidentified sale (50% COGS markup).
-class UnidentifiedSaleProposalException implements Exception {
-  UnidentifiedSaleProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
 /// DG-331: thrown when closing the drawer with a surplus (counted > expected)
 /// and `surplusConfirmed` is false. The backend responds with HTTP 409
 /// carrying a `surplusProposal` so the owner can choose the nature of the
 /// surplus before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close surplus proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseSurplusDialog` for both flows.
 class CloseSurplusProposalException implements Exception {
   CloseSurplusProposalException({
     required this.message,
@@ -117,6 +77,14 @@ class CloseSurplusProposalException implements Exception {
 /// expected) and `shortageConfirmed` is false. The backend responds with
 /// HTTP 409 carrying a `shortageProposal` so the owner can choose the nature
 /// of the shortage before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close shortage proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseShortageDialog` for both flows.
 class CloseShortageProposalException implements Exception {
   CloseShortageProposalException({
     required this.message,
@@ -166,14 +134,25 @@ class CashDrawerService {
   /// successful open the returned [CashDrawer] is unchanged; the optional
   /// `carryOver` block on the success body is not surfaced as a separate
   /// field (the proposal was already confirmed by the caller).
+  ///
+  /// DG-360 Phase 2 FR7: when `openingBalance` diverges from the 1101
+  /// reference balance, the backend responds with HTTP 409 carrying a
+  /// `surplusProposal` or `shortageProposal` (same shape as the close
+  /// drawer flow, except the inner fields are `referenceBalance`/
+  /// `openingBalance` instead of `expectedBalance`/`countedAmount`). This
+  /// method decodes that 409 and throws a [CloseSurplusProposalException] or
+  /// [CloseShortageProposalException] so the caller can reuse the existing
+  /// `showCloseSurplusDialog`/`showCloseShortageDialog` and re-call
+  /// `openDrawer` with the matching `surplusConfirmed`/`surplusSource` or
+  /// `shortageConfirmed`/`shortageSource` flags.
   Future<CashDrawer> openDrawer({
     required int openingBalance,
     String note = '',
     bool carryOverConfirmed = false,
-    bool transferConfirmed = false,
-    bool stockReconciliationConfirmed = false,
-    bool unidentifiedSaleConfirmed = false,
-    bool ownerCapitalConfirmed = false,
+    bool surplusConfirmed = false,
+    String? surplusSource,
+    bool shortageConfirmed = false,
+    String? shortageSource,
   }) async {
     try {
       final response = await _dio.post(
@@ -182,10 +161,12 @@ class CashDrawerService {
           'openingBalance': openingBalance,
           'note': note,
           'carryOverConfirmed': carryOverConfirmed,
-          'transferConfirmed': transferConfirmed,
-          'stockReconciliationConfirmed': stockReconciliationConfirmed,
-          'unidentifiedSaleConfirmed': unidentifiedSaleConfirmed,
-          'ownerCapitalConfirmed': ownerCapitalConfirmed,
+          if (surplusConfirmed) 'surplusConfirmed': true,
+          if (surplusSource != null && surplusSource.isNotEmpty)
+            'surplusSource': surplusSource,
+          if (shortageConfirmed) 'shortageConfirmed': true,
+          if (shortageSource != null && shortageSource.isNotEmpty)
+            'shortageSource': shortageSource,
         },
       );
       return CashDrawer.fromJson(response.data as Map<String, dynamic>);
@@ -197,8 +178,16 @@ class CashDrawerService {
   }
 
   /// Decodes a 409 `detail` body into a proposal exception (carry-over,
-  /// transfer, excess, or unidentified-sale), or returns `null` when the
-  /// error is not a known proposal type.
+  /// surplus, or shortage), or returns `null` when the error is not a known
+  /// proposal type.
+  ///
+  /// DG-360 Phase 2: `surplusProposal`/`shortageProposal` reuse the close
+  /// drawer exception types so the caller can re-use the same confirmation
+  /// dialogs. The open proposal's `referenceBalance`/`openingBalance` fields
+  /// map onto the close exception's `expectedBalance`/`countedAmount` fields
+  /// so the dialog labels stay consistent (the dialog prints "Số dư dự kiến"
+  /// and "Số tiền đếm được" — for an open flow these correspond to the 1101
+  /// reference and the entered opening amount respectively).
   Object? _decodeOpenProposal(DioException e) {
     if (e.response?.statusCode != 409) return null;
     final body = e.response?.data;
@@ -216,31 +205,22 @@ class CashDrawerService {
         fromExpectedBalance: (p['fromExpectedBalance'] as num).toInt(),
       );
     }
-    if (detail.containsKey('transferProposal')) {
-      final p = detail['transferProposal'] as Map<String, dynamic>;
-      return TransferProposalException(
+    if (detail.containsKey('surplusProposal')) {
+      final p = detail['surplusProposal'] as Map<String, dynamic>;
+      return CloseSurplusProposalException(
         message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
+        expectedBalance: (p['referenceBalance'] as num).toInt(),
+        countedAmount: (p['openingBalance'] as num).toInt(),
+        surplus: (p['surplus'] as num).toInt(),
       );
     }
-    if (detail.containsKey('excessProposal')) {
-      final p = detail['excessProposal'] as Map<String, dynamic>;
-      return ExcessProposalException(
+    if (detail.containsKey('shortageProposal')) {
+      final p = detail['shortageProposal'] as Map<String, dynamic>;
+      return CloseShortageProposalException(
         message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
-      );
-    }
-    if (detail.containsKey('unidentifiedSaleProposal')) {
-      final p = detail['unidentifiedSaleProposal'] as Map<String, dynamic>;
-      return UnidentifiedSaleProposalException(
-        message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
+        expectedBalance: (p['referenceBalance'] as num).toInt(),
+        countedAmount: (p['openingBalance'] as num).toInt(),
+        shortage: (p['shortage'] as num).toInt(),
       );
     }
     return null;

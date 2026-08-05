@@ -390,7 +390,11 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
 
     DG-354 Phase 3: ``openingBalance`` in the response is the 1101 accounting
     reference (1,550,000 — the carry-over amount), and
-    ``countedOpeningBalance`` is the user's physical cash count (1,000,000)."""
+    ``countedOpeningBalance`` is the user's physical cash count (1,000,000).
+
+    DG-360 Phase 1: the auto-transfer now ships as ``journalEntry`` with
+    source_type ``cash_drawer_open`` (shortage default = owner_withdraw).
+    The journal lines are identical (DR 1102 / CR 1101 for the delta)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
@@ -407,10 +411,10 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
     # openingBalance = 1101 reference (1,550,000); countedOpeningBalance = user input.
     assert body["openingBalance"] == 1_550_000
     assert body["countedOpeningBalance"] == 1_000_000
-    # AC17: an auto-transfer journal entry is created.
-    assert "autoTransfer" in body, "expected autoTransfer block in response"
-    transfer = body["autoTransfer"]
-    assert transfer["sourceType"] == "cash_drawer_auto_transfer"
+    # AC17: a journal entry is created for the shortage delta (owner_withdraw).
+    assert "journalEntry" in body, "expected journalEntry block in response"
+    transfer = body["journalEntry"]
+    assert transfer["sourceType"] == "cash_drawer_open"
     lines = transfer["lines"]
     assert len(lines) == 2
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -424,10 +428,8 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
     # The transfer entry is balanced (NFR2).
     with get_db() as conn:
-        rows = _auto_transfer_lines(conn)
-        debit_sum = sum(float(r["debit"]) for r in rows)
-        credit_sum = sum(float(r["credit"]) for r in rows)
-        assert debit_sum == credit_sum
+        debit, credit = _sums(conn, "cash_drawer_open")
+        assert abs(debit - credit) < 0.005
 
 
 def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
@@ -453,7 +455,11 @@ def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
 
 def test_open_with_carry_over_and_higher_balance_no_auto_transfer(api_client):
     """FR10: when opening balance > previous expected balance, no
-    auto-transfer is created (the owner added cash, no excess to move)."""
+    auto-transfer is created (the owner added cash, no excess to move).
+
+    DG-360 Phase 1: carry-over + surplus defaults to an equity-injection
+    journal entry (DR 1101 / CR 3100 for the delta) instead of an
+    auto-transfer. The ``autoTransfer`` block is absent."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
