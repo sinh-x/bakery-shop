@@ -7,6 +7,7 @@ import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'candle_type_radio_group.dart';
 import 'rut_tien_editor.dart';
 
 class ExpandableItemCard extends StatefulWidget {
@@ -32,6 +33,14 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   bool _isBirthday = false;
   bool _isTrungBayMarkup = false;
   String? _floorWarning;
+  // Local candle type state (CQ-3): initialized read-only from the draft
+  // model in initState, written back to the model only on explicit user
+  // selection. Avoids the previous `widget.item.candleType ??= ...` model
+  // mutation in initState that could affect other widgets holding the same
+  // draft reference. Default "khong_nen" lives in the local field only, so
+  // the radio group renders a default selection without persisting it until
+  // the user actually picks an option (AC7: absent = no candle).
+  String? _candleType;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
@@ -43,14 +52,16 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     _isBirthday = widget.item.isBirthday;
     // AC1/AC7: default candle type to "Không nến" when none is set so the
     // radio group renders a default selection once is_birthday is checked.
-    // FR6 (auto-check is_birthday for new cake items) is intentionally NOT
-    // applied here: re-checking on every card build would override restored
-    // drafts where the user explicitly unchecked birthday, violating the
-    // Phase 2 guardrail ("Do NOT change existing birthday checkbox behavior")
-    // and AC6. FR6 belongs at the item-creation boundary
+    // The default is applied to the LOCAL field only — the shared draft
+    // model is not mutated in initState (CQ-3 fix). FR6 (auto-check
+    // is_birthday for new cake items) is intentionally NOT applied here:
+    // re-checking on every card build would override restored drafts where
+    // the user explicitly unchecked birthday, violating the Phase 2
+    // guardrail ("Do NOT change existing birthday checkbox behavior") and
+    // AC6. FR6 belongs at the item-creation boundary
     // (`product_picker_page._createDraftItem`), which is outside the three
     // files in scope for this phase.
-    widget.item.candleType ??= 'khong_nen';
+    _candleType = widget.item.candleType ?? 'khong_nen';
     _isTrungBayMarkup = widget.item.product.isTrungBay;
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(text: widget.item.age);
@@ -398,7 +409,11 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     ),
                     const SizedBox(height: 8),
                     // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
-                    // Wired to DraftOrderItem.candleType (added in Phase 1).
+                    // Wired to a LOCAL _candleType field (CQ-3 fix) and
+                    // written back to DraftOrderItem.candleType only on
+                    // explicit user selection, mirroring the local-state +
+                    // submit-time persistence pattern used by
+                    // cake_detail_body.dart.
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 2),
                       child: Text(
@@ -408,40 +423,20 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                             ),
                       ),
                     ),
-                    RadioGroup<String>(
-                      groupValue: widget.item.candleType,
+                    CandleTypeRadioGroup(
+                      groupValue: _candleType,
                       onChanged: (v) {
-                        setState(() => widget.item.candleType = v);
+                        setState(() {
+                          _candleType = v;
+                          // Persist selection back to the draft model. This
+                          // card is a live editor (no explicit submit
+                          // button), so write-back on change is the
+                          // submit-time equivalent. The default "khong_nen"
+                          // is only persisted once the user interacts.
+                          widget.item.candleType = v;
+                        });
                         widget.onStateChanged();
                       },
-                      child: const Column(
-                        children: [
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenSo),
-                            value: 'nen_so',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenXoan),
-                            value: 'nen_xoan',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenNho),
-                            value: 'nen_nho',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeKhongNen),
-                            value: 'khong_nen',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 8),
                   ],

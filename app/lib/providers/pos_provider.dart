@@ -98,32 +98,34 @@ class PosCartNotifier extends Notifier<PosCartState> {
     bool rutTien = false,
   }) {
     final items = List<PosCartItem>.from(state.items);
-    final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:candle:${candleType ?? ''}:rt:${rutTien ? 1 : 0}';
+    // Build the candidate cart line first so its `lineKey` getter is the
+    // single source of truth for the dedup key (review finding CQ-4:
+    // previously the lineKey string format was duplicated between the
+    // `PosCartItem.lineKey` getter and this `addItem` method, risking
+    // desync if the format ever changes).
+    final candidate = PosCartItem(
+      product: product,
+      quantity: 1,
+      useInventory: useInventory,
+      selectedPrice: selectedPrice,
+      selectedChipId: selectedChipId,
+      selectedChipLabel: selectedChipLabel,
+      assignedPrice: assignedPrice,
+      isBirthday: isBirthday,
+      age: age,
+      candleType: candleType,
+      rutTien: rutTien,
+    );
+    final lineKey = candidate.lineKey;
 
     // Check if same product + same chip selection is already in cart.
-    final existing = items
-        .where((i) => i.lineKey == lineKey && !i.isGift)
-        .firstOrNull;
+    final existing =
+        items.where((i) => i.lineKey == lineKey && !i.isGift).firstOrNull;
 
     if (existing != null) {
       existing.quantity += 1;
     } else {
-      items.add(
-        PosCartItem(
-          product: product,
-          quantity: 1,
-          useInventory: useInventory,
-          selectedPrice: selectedPrice,
-          selectedChipId: selectedChipId,
-          selectedChipLabel: selectedChipLabel,
-          assignedPrice: assignedPrice,
-          isBirthday: isBirthday,
-          age: age,
-          candleType: candleType,
-          rutTien: rutTien,
-        ),
-      );
+      items.add(candidate);
     }
 
     // Auto-gift: only recompute when the added item itself is tang_kem, so

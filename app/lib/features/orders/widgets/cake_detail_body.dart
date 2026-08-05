@@ -8,6 +8,7 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import 'cake_detail_blank_section.dart';
+import 'candle_type_radio_group.dart';
 import 'order_photo_section.dart';
 
 /// Status → color map for work item status chips (shared between the detail
@@ -412,37 +413,9 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             // value under `attributes['candle_type']` (FR2/AC7).
             const SizedBox(height: 8),
             const _SectionLabel(VN.candleTypeSectionLabel),
-            RadioGroup<String>(
+            CandleTypeRadioGroup(
               groupValue: _candleType,
               onChanged: (v) => setState(() => _candleType = v),
-              child: const Column(
-                children: [
-                  RadioListTile<String>(
-                    title: Text(VN.candleTypeNenSo),
-                    value: 'nen_so',
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<String>(
-                    title: Text(VN.candleTypeNenXoan),
-                    value: 'nen_xoan',
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<String>(
-                    title: Text(VN.candleTypeNenNho),
-                    value: 'nen_nho',
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<String>(
-                    title: Text(VN.candleTypeKhongNen),
-                    value: 'khong_nen',
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
             ),
           ],
 

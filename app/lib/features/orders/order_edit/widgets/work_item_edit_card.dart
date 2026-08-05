@@ -9,6 +9,7 @@ import '../../../../providers/order_providers.dart';
 import '../../../../providers/products_provider.dart';
 import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
+import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
@@ -584,7 +585,10 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     ),
                     const SizedBox(height: 8),
                     // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
-                    // Wired to item.attributes['candle_type'] via _saveCandleType.
+                    // Wired to item.attributes['candle_type'] via
+                    // _saveCandleType (local-state + immediate-persist
+                    // pattern, acceptable per CQ-3). Uses the shared
+                    // CandleTypeRadioGroup widget (CQ-1).
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 2),
                       child: Text(
@@ -594,40 +598,12 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                             ),
                       ),
                     ),
-                    RadioGroup<String>(
+                    CandleTypeRadioGroup(
                       groupValue: _candleType,
                       onChanged: (v) {
                         setState(() => _candleType = v);
                         _saveCandleType(v);
                       },
-                      child: const Column(
-                        children: [
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenSo),
-                            value: 'nen_so',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenXoan),
-                            value: 'nen_xoan',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeNenNho),
-                            value: 'nen_nho',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<String>(
-                            title: Text(VN.candleTypeKhongNen),
-                            value: 'khong_nen',
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 8),
                   ],
