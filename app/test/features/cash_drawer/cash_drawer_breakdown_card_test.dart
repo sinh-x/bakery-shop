@@ -85,6 +85,9 @@ void main() {
 
       // Eight "0đ" amount entries: six category rows + two footer totals.
       expect(find.text('0đ'), findsNWidgets(8));
+
+      // UI-1: count column header renders once above the rows.
+      expect(find.text(VN.cashDrawerBreakdownCount), findsOneWidget);
     });
 
     testWidgets(
@@ -143,7 +146,8 @@ void main() {
     });
 
     test('aggregateCashDrawerBreakdown returns 6 rows in fixed order', () {
-      final rows = aggregateCashDrawerBreakdown(const []);
+      final breakdown = aggregateCashDrawerBreakdown(const []);
+      final rows = breakdown.rows;
       expect(rows.length, 6);
       expect(rows[0].category, CashDrawerBreakdownCategory.sale);
       expect(rows[1].category, CashDrawerBreakdownCategory.expense);
@@ -155,6 +159,8 @@ void main() {
         expect(r.totalAmount, 0);
         expect(r.count, 0);
       }
+      expect(breakdown.totalIn, 0);
+      expect(breakdown.totalOut, 0);
     });
   });
 }

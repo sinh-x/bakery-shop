@@ -18,6 +18,7 @@
 /// totals and zero counts rather than a blank table.
 library;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cash_drawer_transaction.dart';
@@ -59,6 +60,9 @@ CashDrawerBreakdownCategory _categoryForType(String type) {
     default:
       // Unknown source types fall back to the sale category so the row
       // stays visible; the per-row total surfaces the unrecognised amount.
+      if (kDebugMode) {
+        debugPrint('Unknown source_type: $type');
+      }
       return CashDrawerBreakdownCategory.sale;
   }
 }
@@ -102,10 +106,29 @@ class CashDrawerBreakdownRow {
       category == CashDrawerBreakdownCategory.open;
 }
 
-/// Aggregate a transaction list into one [CashDrawerBreakdownRow] per
-/// canonical category (FR1/FR2). Empty categories are included with zero
-/// totals so the table always shows six rows (FR5).
-List<CashDrawerBreakdownRow> aggregateCashDrawerBreakdown(
+/// Aggregated breakdown result: one row per canonical category plus the
+/// footer totals (sum of inflows and sum of outflows) computed in the same
+/// pass. `totalIn` sums positive row amounts; `totalOut` sums the absolute
+/// value of negative row amounts. Computed alongside the rows so the
+/// widget does not need a second pass over the data (CQ-2).
+class CashDrawerBreakdown {
+  const CashDrawerBreakdown({
+    required this.rows,
+    required this.totalIn,
+    required this.totalOut,
+  });
+
+  final List<CashDrawerBreakdownRow> rows;
+  final int totalIn;
+  final int totalOut;
+}
+
+/// Aggregate a transaction list into a [CashDrawerBreakdown] containing one
+/// [CashDrawerBreakdownRow] per canonical category (FR1/FR2) and the footer
+/// totals. Empty categories are included with zero totals so the table
+/// always shows six rows (FR5). Totals are accumulated in the same loop so
+/// the widget renders them without a duplicate pass (CQ-2).
+CashDrawerBreakdown aggregateCashDrawerBreakdown(
     List<CashDrawerTransaction> transactions) {
   final totals = <CashDrawerBreakdownCategory, int>{
     for (final c in CashDrawerBreakdownCategory.values) c: 0,
@@ -118,7 +141,7 @@ List<CashDrawerBreakdownRow> aggregateCashDrawerBreakdown(
     totals[c] = totals[c]! + t.amount;
     counts[c] = counts[c]! + 1;
   }
-  return [
+  final rows = [
     for (final c in CashDrawerBreakdownCategory.values)
       CashDrawerBreakdownRow(
         category: c,
@@ -126,6 +149,16 @@ List<CashDrawerBreakdownRow> aggregateCashDrawerBreakdown(
         count: counts[c]!,
       ),
   ];
+  int totalIn = 0;
+  int totalOut = 0;
+  for (final r in rows) {
+    if (r.totalAmount > 0) {
+      totalIn += r.totalAmount;
+    } else if (r.totalAmount < 0) {
+      totalOut += r.totalAmount.abs();
+    }
+  }
+  return CashDrawerBreakdown(rows: rows, totalIn: totalIn, totalOut: totalOut);
 }
 
 /// Breakdown card widget (DG-359 Phase 1). Renders the six category rows
@@ -141,16 +174,7 @@ class CashDrawerBreakdownCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final rows = aggregateCashDrawerBreakdown(transactions);
-    int totalIn = 0;
-    int totalOut = 0;
-    for (final r in rows) {
-      if (r.totalAmount > 0) {
-        totalIn += r.totalAmount;
-      } else if (r.totalAmount < 0) {
-        totalOut += r.totalAmount.abs();
-      }
-    }
+    final breakdown = aggregateCashDrawerBreakdown(transactions);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -161,19 +185,62 @@ class CashDrawerBreakdownCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        for (final r in rows) _BreakdownRow(row: r),
+        const _BreakdownHeader(),
+        for (final r in breakdown.rows) _BreakdownRow(row: r),
         const Divider(height: 16),
         _TotalRow(
           label: VN.cashDrawerBreakdownTotalIn,
-          amount: totalIn,
+          amount: breakdown.totalIn,
           inflow: true,
         ),
         _TotalRow(
           label: VN.cashDrawerBreakdownTotalOut,
-          amount: totalOut,
+          amount: breakdown.totalOut,
           inflow: false,
         ),
       ],
+    );
+  }
+}
+
+class _BreakdownHeader extends StatelessWidget {
+  const _BreakdownHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              '',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              '',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 40,
+            child: Text(
+              VN.cashDrawerBreakdownCount,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
