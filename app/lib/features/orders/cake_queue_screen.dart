@@ -12,6 +12,7 @@ import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
+import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/cake_queue_group_header.dart';
 import 'widgets/date_filter_chips.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -225,6 +226,16 @@ class _CakeQueueCard extends ConsumerWidget {
                   if (item.isBirthday) ...[
                     const Text('🎂', style: TextStyle(fontSize: 16)),
                     const SizedBox(width: 6),
+                    if (item.candleType != null &&
+                        item.candleType!.isNotEmpty &&
+                        item.candleType != 'khong_nen')
+                      Text(
+                        'Nến: ${VN.candleTypeLabel(item.candleType)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.pink.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                   ],
                   Expanded(
                     child: Text(

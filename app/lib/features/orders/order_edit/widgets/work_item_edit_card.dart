@@ -9,8 +9,10 @@ import '../../../../providers/order_providers.dart';
 import '../../../../providers/products_provider.dart';
 import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
+import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class WorkItemEditCard extends ConsumerStatefulWidget {
   const WorkItemEditCard({super.key, required this.orderRef, required this.item});
@@ -26,6 +28,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   bool _expanded = true;
   bool _isBirthday = false;
   bool _rutTien = false;
+  String? _candleType;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
@@ -73,6 +76,10 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
       text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee',
     );
     _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
+    // AC1/AC7: default candle type to "Không nến" when none is stored so the
+    // radio group renders a default selection (DG-340 Phase 2 — FR1/AC1).
+    final storedCandle = widget.item.attributes['candle_type']?.toString();
+    _candleType = storedCandle?.isNotEmpty == true ? storedCandle : 'khong_nen';
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
     _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
@@ -165,6 +172,20 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
       'cash_fee': cashFee.isNotEmpty ? cashFee : '$_defaultCashFee',
     };
     _editItem(attributes: attrs);
+  }
+
+  /// Persist the selected candle type into `attributes['candle_type']`
+  /// (DG-340 Phase 2 — FR2). Preserves all other attributes by merging into
+  /// the current item attributes. A "Không nến" selection (or birthday
+  /// unchecked) removes the key entirely so AC7 (absent = no candle) holds.
+  void _saveCandleType(String? value) {
+    final next = Map<String, dynamic>.from(widget.item.attributes);
+    if (_isBirthday && value != null && value != 'khong_nen') {
+      next['candle_type'] = value;
+    } else {
+      next.remove('candle_type');
+    }
+    _editItem(attributes: next);
   }
 
   Future<void> _editItem({
@@ -538,6 +559,13 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       final newVal = v ?? false;
                       setState(() => _isBirthday = newVal);
                       _editItem(isBirthday: newVal);
+                      // When birthday is unchecked, clear any stored
+                      // candle_type so AC7 (absent = no candle) holds.
+                      if (!newVal &&
+                          widget.item.attributes
+                              .containsKey('candle_type')) {
+                        _saveCandleType(null);
+                      }
                     },
                     title: const Text(VN.isBirthday),
                     controlAffinity: ListTileControlAffinity.leading,
@@ -554,6 +582,28 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                         isDense: true,
                       ),
                       keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 8),
+                    // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
+                    // Wired to item.attributes['candle_type'] via
+                    // _saveCandleType (local-state + immediate-persist
+                    // pattern, acceptable per CQ-3). Uses the shared
+                    // CandleTypeRadioGroup widget (CQ-1).
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 2),
+                      child: Text(
+                        VN.candleTypeSectionLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                      ),
+                    ),
+                    CandleTypeRadioGroup(
+                      groupValue: _candleType,
+                      onChanged: (v) {
+                        setState(() => _candleType = v);
+                        _saveCandleType(v);
+                      },
                     ),
                     const SizedBox(height: 8),
                   ],

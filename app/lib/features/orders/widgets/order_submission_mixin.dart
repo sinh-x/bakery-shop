@@ -227,6 +227,18 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// encoded in `DraftOrderItem.attributes` by the cart-sync layer).
   List<Map<String, dynamic>> buildOrderItemsPayload(OrderCreateState state) {
     return state.items.map((i) {
+      // Bridge `DraftOrderItem.candleType` into `attributes['candle_type']`
+      // for API persistence (DG-340 Phase 4 / FR2, NFR2). Only include a real
+      // candle type — null/empty/`khong_nen` map to "no candle" and are omitted
+      // so the attributes map stays clean (AC7). Follows the existing
+      // `is_birthday`/`age` pattern of conditionally attaching fields.
+      final attrs = Map<String, dynamic>.from(i.attributes);
+      final candle = i.candleType;
+      if (candle != null && candle.isNotEmpty && candle != 'khong_nen') {
+        attrs['candle_type'] = candle;
+      } else {
+        attrs.remove('candle_type');
+      }
       final m = <String, dynamic>{
         'productId': i.product.id.toString(),
         'productName': i.product.name,
@@ -236,7 +248,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
         'isBirthday': i.isBirthday,
         'isExtra': i.isExtra,
         'isGift': i.isGift,
-        'attributes': i.attributes,
+        'attributes': attrs,
         'priceChipId': i.priceChipId,
         if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
       };
