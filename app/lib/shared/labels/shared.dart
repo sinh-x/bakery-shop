@@ -13,6 +13,7 @@ class SharedLabels {
   // Navigation
   static const appName = 'Đoàn Gia - Bánh Kem';
   static const tabDashboard = 'Tổng quan';
+  static const tabManagement = 'Quản lý';
   static const tabOrders = 'Đơn hàng';
   static const tabProducts = 'Sản phẩm';
   static const tabKnowledgeBase = 'Sổ tay';

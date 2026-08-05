@@ -19,7 +19,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Dashboard tab is the initial route — verify it renders
-    expect(find.text('Tổng quan'), findsWidgets);
+    expect(find.text(SharedLabels.tabManagement), findsWidgets);
     expect(find.byIcon(Icons.storefront_outlined), findsOneWidget);
 
     await tester.tap(find.text(VN.banHang).first);

@@ -6,7 +6,7 @@ import '../../features/auth/auth_provider.dart';
 import '../../features/auth/force_change_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/password_change_screen.dart';
-import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/dashboard/management_dashboard_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/knowledge_base/knowledge_base_screen.dart';
@@ -74,7 +74,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/dashboard',
             pageBuilder: (context, state) =>
-                const NoTransitionPage(child: DashboardScreen()),
+                const NoTransitionPage(child: ManagementDashboardScreen()),
           ),
           GoRoute(
             path: '/orders',
