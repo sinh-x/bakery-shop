@@ -663,3 +663,100 @@ def test_autosync_extras_skip_already_at_target(api_client):
     candle_state = api_client.get(f"/api/orders/{ref}/items").json()
     candle_item = next(i for i in candle_state if i["productName"] == "Nến")
     assert candle_item["status"] == "ready"
+
+
+# --- Candle type persistence in attributes (DG-340 Phase 5) ---
+# FR2/NFR2/AC2: candle_type lives in order_items.attributes JSON and must
+# survive create, update, and round-trip (create → read → verify). The
+# backend passes attributes through opaquely (no schema migration), so
+# these tests exercise the existing passthrough on POST/PATCH/GET.
+
+
+def test_create_work_item_persists_candle_type_in_attributes(api_client):
+    """POST /items stores candle_type inside attributes JSON (FR2)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, attributes={"candle_type": "nen_so"})
+    assert item["attributes"]["candle_type"] == "nen_so"
+
+    # Read back from DB to confirm JSON persistence (not just echo)
+    from baker.db.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT attributes FROM order_items WHERE id = ?",
+            (int(item["id"]),),
+        ).fetchone()
+    import json as _json
+    saved = _json.loads(row["attributes"] or "{}")
+    assert saved["candle_type"] == "nen_so"
+
+
+def test_create_work_item_without_candle_type_has_no_key(api_client):
+    """No candle_type selection → key absent from attributes (AC7)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    assert "candle_type" not in item["attributes"]
+
+
+def test_update_work_item_persists_candle_type_in_attributes(api_client):
+    """PATCH /items updates candle_type inside attributes JSON (FR2)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, attributes={"candle_type": "nen_xoan"})
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"attributes": {"candle_type": "nen_nho"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["attributes"]["candle_type"] == "nen_nho"
+
+    # Verify DB row
+    from baker.db.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT attributes FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    import json as _json
+    saved = _json.loads(row["attributes"] or "{}")
+    assert saved["candle_type"] == "nen_nho"
+
+
+def test_candle_type_survives_round_trip_create_read_verify(api_client):
+    """AC2: candle_type survives create → read → verify round trip."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+
+    # Create with nen_so
+    item = _create_item(api_client, ref, attributes={"candle_type": "nen_so"})
+    item_id = item["id"]
+
+    # Read back via list endpoint (simulates page reload)
+    list_resp = api_client.get(f"/api/orders/{ref}/items")
+    assert list_resp.status_code == 200
+    fetched = next(i for i in list_resp.json() if i["id"] == item_id)
+    assert fetched["attributes"]["candle_type"] == "nen_so"
+
+    # Update to nen_xoan and read again
+    api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"attributes": {"candle_type": "nen_xoan"}},
+    )
+    list_resp2 = api_client.get(f"/api/orders/{ref}/items")
+    fetched2 = next(i for i in list_resp2.json() if i["id"] == item_id)
+    assert fetched2["attributes"]["candle_type"] == "nen_xoan"
+
+
+def test_candle_type_absent_means_no_candle_round_trip(api_client):
+    """AC7: absent candle_type key round-trips as no candle (empty attributes)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, attributes={})
+    item_id = item["id"]
+
+    list_resp = api_client.get(f"/api/orders/{ref}/items")
+    fetched = next(i for i in list_resp.json() if i["id"] == item_id)
+    assert "candle_type" not in fetched["attributes"]
