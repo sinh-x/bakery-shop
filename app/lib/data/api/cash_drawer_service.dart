@@ -42,58 +42,18 @@ class CarryOverProposalException implements Exception {
       'CarryOverProposalException(amount: $amount, fromDrawerId: $fromDrawerId)';
 }
 
-/// DG-330: thrown when opening balance < 1101 reference balance and the
-/// owner must confirm transferring the difference to 1102 (Owner's Cash).
-class TransferProposalException implements Exception {
-  TransferProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown when opening balance > 1101 reference balance and the
-/// owner must confirm stock reconciliation before proceeding.
-class ExcessProposalException implements Exception {
-  ExcessProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown after stock reconciliation confirmed, asking whether the
-/// excess should be recorded as an unidentified sale (50% COGS markup).
-class UnidentifiedSaleProposalException implements Exception {
-  UnidentifiedSaleProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
 /// DG-331: thrown when closing the drawer with a surplus (counted > expected)
 /// and `surplusConfirmed` is false. The backend responds with HTTP 409
 /// carrying a `surplusProposal` so the owner can choose the nature of the
 /// surplus before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close surplus proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseSurplusDialog` for both flows.
 class CloseSurplusProposalException implements Exception {
   CloseSurplusProposalException({
     required this.message,
@@ -117,6 +77,14 @@ class CloseSurplusProposalException implements Exception {
 /// expected) and `shortageConfirmed` is false. The backend responds with
 /// HTTP 409 carrying a `shortageProposal` so the owner can choose the nature
 /// of the shortage before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close shortage proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseShortageDialog` for both flows.
 class CloseShortageProposalException implements Exception {
   CloseShortageProposalException({
     required this.message,
