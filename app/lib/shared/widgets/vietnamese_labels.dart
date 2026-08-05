@@ -1216,6 +1216,20 @@ class VN {
   static const cashDrawerTxnTypeExpense = 'Chi phí';
   static const cashDrawerTxnTypeClose = 'Đóng quầy';
 
+  // ── Cash-drawer breakdown card (DG-359 Phase 1) ───────────────────────
+  /// Section title for the categorized in/out breakdown shown inside the
+  /// active-drawer status card. Sits directly under the opening-balance row.
+  static const cashDrawerBreakdownTitle = 'Phân tích tiền vào/ra';
+
+  /// Total row labels — the breakdown card footer summarises all six
+  /// category rows. "Tổng tiền vào" sums inflows; "Tổng tiền ra" sums
+  /// outflows; their difference reconciles to the expected balance.
+  static const cashDrawerBreakdownTotalIn = 'Tổng tiền vào';
+  static const cashDrawerBreakdownTotalOut = 'Tổng tiền ra';
+
+  /// Count column header for the per-category transaction count.
+  static const cashDrawerBreakdownCount = 'SL';
+
   /// Map a cash-drawer transaction `type` (journal `source_type`) to the
   /// short Vietnamese label used in the transaction list rows (AC3).
   ///
