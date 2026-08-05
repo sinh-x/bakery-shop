@@ -148,23 +148,41 @@ enum CloseSurplusDecision { ownerCash, unidentifiedSale }
 ///   - [CloseSurplusDecision.unidentifiedSale] → DR 1101/CR 4100 +
 ///     DR 5900/CR 1300 (50% COGS)
 /// Returns `null` when the user cancels (the close flow is aborted).
+///
+/// DG-360 CQ-6: the open flow reuses this dialog (via the dual-use
+/// [CloseSurplusProposalException]) but the close labels ("Số dư dự kiến" /
+/// "Số tiền đếm được") are misleading in that context. Pass
+/// `openFlow: true` to switch to the open-flow labels ("Số dư kế toán 1101"
+/// / "Số tiền mở quầy") and the open-flow title/question.
 Future<CloseSurplusDecision?> showCloseSurplusDialog(
   BuildContext context, {
   required int expectedBalance,
   required int countedAmount,
   required int surplus,
+  bool openFlow = false,
 }) async {
+  final String title =
+      openFlow ? VN.cashDrawerOpenSurplusTitle : VN.cashDrawerCloseSurplusTitle;
+  final String referenceLabel = openFlow
+      ? VN.cashDrawerOpenSurplusReferenceLabel
+      : 'Số dư dự kiến';
+  final String openingLabel = openFlow
+      ? VN.cashDrawerOpenSurplusOpeningLabel
+      : 'Số tiền đếm được';
+  final String question = openFlow
+      ? VN.cashDrawerOpenSurplusQuestion
+      : VN.cashDrawerCloseSurplusQuestion;
   return showDialog<CloseSurplusDecision>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text(VN.cashDrawerCloseSurplusTitle),
+      title: Text(title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Số dư dự kiến: ${formatVND(expectedBalance.toDouble())}'),
+          Text('$referenceLabel: ${formatVND(expectedBalance.toDouble())}'),
           const SizedBox(height: 4),
-          Text('Số tiền đếm được: ${formatVND(countedAmount.toDouble())}'),
+          Text('$openingLabel: ${formatVND(countedAmount.toDouble())}'),
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thừa: ${formatVND(surplus.toDouble())}',
@@ -173,7 +191,7 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
                 ),
           ),
           const SizedBox(height: 12),
-          const Text(VN.cashDrawerCloseSurplusQuestion),
+          Text(question),
         ],
       ),
       actions: [
@@ -210,23 +228,42 @@ enum CloseShortageDecision { ownerWithdraw, equityLoss }
 ///     cash)
 ///   - [CloseShortageDecision.equityLoss] → DR 3100/CR 1101 (equity loss)
 /// Returns `null` when the user cancels (the close flow is aborted).
+///
+/// DG-360 CQ-6: the open flow reuses this dialog (via the dual-use
+/// [CloseShortageProposalException]) but the close labels ("Số dư dự kiến"
+/// / "Số tiền đếm được") are misleading in that context. Pass
+/// `openFlow: true` to switch to the open-flow labels ("Số dư kế toán 1101"
+/// / "Số tiền mở quầy") and the open-flow title/question.
 Future<CloseShortageDecision?> showCloseShortageDialog(
   BuildContext context, {
   required int expectedBalance,
   required int countedAmount,
   required int shortage,
+  bool openFlow = false,
 }) async {
+  final String title = openFlow
+      ? VN.cashDrawerOpenShortageTitle
+      : VN.cashDrawerCloseShortageTitle;
+  final String referenceLabel = openFlow
+      ? VN.cashDrawerOpenShortageReferenceLabel
+      : 'Số dư dự kiến';
+  final String openingLabel = openFlow
+      ? VN.cashDrawerOpenShortageOpeningLabel
+      : 'Số tiền đếm được';
+  final String question = openFlow
+      ? VN.cashDrawerOpenShortageQuestion
+      : VN.cashDrawerCloseShortageQuestion;
   return showDialog<CloseShortageDecision>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text(VN.cashDrawerCloseShortageTitle),
+      title: Text(title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Số dư dự kiến: ${formatVND(expectedBalance.toDouble())}'),
+          Text('$referenceLabel: ${formatVND(expectedBalance.toDouble())}'),
           const SizedBox(height: 4),
-          Text('Số tiền đếm được: ${formatVND(countedAmount.toDouble())}'),
+          Text('$openingLabel: ${formatVND(countedAmount.toDouble())}'),
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thiếu: ${formatVND(shortage.toDouble())}',
@@ -235,7 +272,7 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
                 ),
           ),
           const SizedBox(height: 12),
-          const Text(VN.cashDrawerCloseShortageQuestion),
+          Text(question),
         ],
       ),
       actions: [

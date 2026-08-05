@@ -781,10 +781,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // The first open returned 409 → surplus proposal dialog should appear.
-    // The dialog reuses showCloseSurplusDialog, so its title/question labels
-    // are the close surplus ones.
-    expect(find.text(VN.cashDrawerCloseSurplusTitle), findsOneWidget);
-    expect(find.text(VN.cashDrawerCloseSurplusQuestion), findsOneWidget);
+    // The dialog reuses showCloseSurplusDialog with openFlow: true, so its
+    // title/question/labels are the open surplus variants.
+    expect(find.text(VN.cashDrawerOpenSurplusTitle), findsOneWidget);
+    expect(find.text(VN.cashDrawerOpenSurplusQuestion), findsOneWidget);
     expect(find.textContaining('700.000'), findsOneWidget);
 
     // Accept the surplus as owner_cash.
@@ -828,8 +828,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // The first open returned 409 → shortage proposal dialog should appear.
-    expect(find.text(VN.cashDrawerCloseShortageTitle), findsOneWidget);
-    expect(find.text(VN.cashDrawerCloseShortageQuestion), findsOneWidget);
+    // The dialog reuses showCloseShortageDialog with openFlow: true, so its
+    // title/question/labels are the open shortage variants.
+    expect(find.text(VN.cashDrawerOpenShortageTitle), findsOneWidget);
+    expect(find.text(VN.cashDrawerOpenShortageQuestion), findsOneWidget);
     expect(find.textContaining('400.000'), findsOneWidget);
 
     // Accept the shortage as equity_loss.

@@ -473,7 +473,6 @@ def open_drawer(body: OpenDrawerRequest):
         #   delta == 0           → no journal entry (1101 already at target)
         journal = None
         surplus_result = None
-        shortage_result = None
         delta = opening - int(reference_balance)
         if int(reference_balance) == 0:
             desc = f"Mở quầy tiền mặt: {opening}"
@@ -596,8 +595,6 @@ def open_drawer(body: OpenDrawerRequest):
             result["carryOver"] = carry_over_from
         if surplus_result is not None:
             result["surplusJournalEntry"] = surplus_result
-        if shortage_result is not None:
-            result["shortageJournalEntry"] = shortage_result
         return result
 
 
@@ -718,7 +715,6 @@ def close_drawer(body: CloseDrawerRequest):
         discrepancy = drawer.close(conn, counted_amount=body.countedAmount)
         journal = None
         surplus_result = None
-        shortage_result = None
 
         if discrepancy > 0:
             if not body.surplusConfirmed:
@@ -848,8 +844,6 @@ def close_drawer(body: CloseDrawerRequest):
             result["journalEntry"] = journal
         if surplus_result is not None:
             result["surplusJournalEntry"] = surplus_result
-        if shortage_result is not None:
-            result["shortageJournalEntry"] = shortage_result
         return result
 
 

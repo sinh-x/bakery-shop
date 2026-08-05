@@ -1167,6 +1167,22 @@ class VN {
   static const cashDrawerCloseShortageOwnerWithdraw = 'Chủ rút tiền';
   static const cashDrawerCloseShortageEquityLoss = 'Lỗ vốn chủ sở hữu';
 
+  /// DG-360 CQ-6: open-flow variants of the surplus/shortage confirmation
+  /// dialogs. The close flow uses "Số dư dự kiến"/"Số tiền đếm được"; the
+  /// open flow (reusing the same dialog) shows the 1101 accounting reference
+  /// and the entered opening amount instead.
+  static const cashDrawerOpenSurplusTitle = 'Xác nhận chênh lệch thừa khi mở quầy';
+  static const cashDrawerOpenSurplusReferenceLabel = 'Số dư kế toán 1101';
+  static const cashDrawerOpenSurplusOpeningLabel = 'Số tiền mở quầy';
+  static const cashDrawerOpenSurplusQuestion =
+      'Số tiền mở quầy lớn hơn số dư kế toán 1101. Chủ thêm tiền mặt hay ghi nhận doanh thu chưa xác định?';
+
+  static const cashDrawerOpenShortageTitle = 'Xác nhận chênh lệch thiếu khi mở quầy';
+  static const cashDrawerOpenShortageReferenceLabel = 'Số dư kế toán 1101';
+  static const cashDrawerOpenShortageOpeningLabel = 'Số tiền mở quầy';
+  static const cashDrawerOpenShortageQuestion =
+      'Số tiền mở quầy nhỏ hơn số dư kế toán 1101. Chủ rút tiền hay ghi nhận lỗ vốn chủ sở hữu?';
+
   /// Cash-in source / cash-out destination dropdown labels (DG-330 Phase 8).
   static const cashDrawerSourceLabel = 'Nguồn tiền vào';
   static const cashDrawerDestinationLabel = 'Đích tiền ra';

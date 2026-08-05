@@ -367,6 +367,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           expectedBalance: e.expectedBalance,
           countedAmount: e.countedAmount,
           surplus: e.surplus,
+          openFlow: true,
         );
         if (decision == null || !context.mounted) return;
         surplusConfirmed = true;
@@ -380,6 +381,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           expectedBalance: e.expectedBalance,
           countedAmount: e.countedAmount,
           shortage: e.shortage,
+          openFlow: true,
         );
         if (decision == null || !context.mounted) return;
         shortageConfirmed = true;
