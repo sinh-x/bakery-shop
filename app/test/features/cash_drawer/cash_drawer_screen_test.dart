@@ -156,7 +156,13 @@ void main() {
     expect(find.text(VN.cashDrawerStatusOpen), findsWidgets);
     expect(find.text(VN.cashDrawerCashIn), findsOneWidget);
     expect(find.text(VN.cashDrawerCashOut), findsOneWidget);
-    expect(find.text(VN.cashDrawerClose), findsOneWidget);
+    // DG-359 Phase 2: the breakdown card now renders a "Đóng quầy" category
+    // label that collides with the close action button label, so scope the
+    // assertion to a FilledButton.
+    expect(
+      find.widgetWithText(FilledButton, VN.cashDrawerClose),
+      findsOneWidget,
+    );
     // 1.550.000đ is the expected balance per AC6 formula.
     expect(find.textContaining('1.550.000'), findsOneWidget);
   });
@@ -195,12 +201,22 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    await tester.tap(find.text(VN.cashDrawerClose));
+    // DG-359 Phase 2: scope the tap to the close action button by its unique
+    // icon — the breakdown card now also renders a "Đóng quầy" category
+    // label. The breakdown card also makes the status card taller, so we
+    // drag the list up to bring the action bar into the viewport.
+    await tester.drag(
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.lock_outline));
     await tester.pumpAndSettle();
 
     expect(find.text(VN.cashDrawerClose), findsWidgets);
     expect(find.textContaining('1.550.000'), findsWidgets);
     // The dialog confirm button is inside the AlertDialog.
+    expect(find.byType(AlertDialog), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(AlertDialog),

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cash_drawer.dart';
+import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'cash_drawer_breakdown_card.dart';
 
 /// Status card for the active (open) cash drawer (FR4 / AC6, updated by
 /// DG-347 Phase 5 and DG-354 Phase 4).
@@ -15,9 +17,19 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// cash count (`countedOpeningBalance`) rather than the accounting
 /// `openingBalance`, matching AC6.
 class CashDrawerStatusCard extends StatelessWidget {
-  const CashDrawerStatusCard({super.key, required this.drawer});
+  const CashDrawerStatusCard({
+    super.key,
+    required this.drawer,
+    this.transactions = const [],
+  });
 
   final CashDrawer drawer;
+
+  /// Transactions for this drawer, used to render the categorized
+  /// in/out breakdown (DG-359 Phase 2 / FR6). Defaults to empty so the
+  /// card renders an all-zero breakdown (FR5) when no transaction data
+  /// is available yet.
+  final List<CashDrawerTransaction> transactions;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +65,10 @@ class CashDrawerStatusCard extends StatelessWidget {
               // back to the accounting openingBalance for older backends.
               value: drawer.displayedOpeningBalance,
             ),
+            // DG-359 Phase 2 FR6: categorized in/out breakdown, fixed
+            // position right below the opening balance row.
+            const SizedBox(height: 8),
+            CashDrawerBreakdownCard(transactions: transactions),
             const Divider(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
