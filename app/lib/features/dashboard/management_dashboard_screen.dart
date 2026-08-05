@@ -120,12 +120,12 @@ class _ManagementDashboardBody extends ConsumerWidget {
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
 
-    final orders = ordersAsync.asData?.value ?? const <dynamic>[];
+    final orders = ordersAsync.asData?.value ?? const <Order>[];
     final ordersToday = ordersAsync.isRefreshing
         ? null
-        : countOrdersToday(orders.cast());
+        : countOrdersToday(orders);
     final criticalCount = ordersAsync.asData != null
-        ? countCriticalOrders(orders.cast())
+        ? countCriticalOrders(orders)
         : 0;
 
     final revenueStock = revenueStockAsync.asData?.value;
@@ -155,7 +155,7 @@ class _ManagementDashboardBody extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _SectionTitle(title: 'Chỉ số hôm nay'),
+          const _SectionTitle(title: SharedLabels.dashboardSectionMetrics),
           const SizedBox(height: 8),
           _MetricRow(
             ordersToday: ordersToday == null ? null : '$ordersToday',
@@ -163,13 +163,13 @@ class _ManagementDashboardBody extends ConsumerWidget {
             lowStockCount: lowStockCount,
           ),
           const SizedBox(height: 20),
-          const _SectionTitle(title: 'Truy cập nhanh'),
+          const _SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
           const SizedBox(height: 8),
           ShortcutGrid(
             onNavigate: (route) => _handleShortcutTap(context, route),
           ),
           const SizedBox(height: 20),
-          const _SectionTitle(title: 'Cảnh báo'),
+          const _SectionTitle(title: SharedLabels.dashboardSectionAlerts),
           const SizedBox(height: 8),
           AlertSection(
             count: criticalCount,
@@ -205,7 +205,7 @@ class _MetricRow extends StatelessWidget {
           Expanded(
             child: MetricCard(
               icon: Icons.receipt_outlined,
-              label: 'Đơn hàng hôm nay',
+              label: SharedLabels.dashboardMetricOrdersToday,
               value: ordersToday,
             ),
           ),
@@ -213,7 +213,7 @@ class _MetricRow extends StatelessWidget {
           Expanded(
             child: MetricCard(
               icon: Icons.payments_outlined,
-              label: 'Doanh thu hôm nay',
+              label: SharedLabels.dashboardMetricRevenueToday,
               value: revenueToday,
               color: Colors.green,
             ),
@@ -222,7 +222,7 @@ class _MetricRow extends StatelessWidget {
           Expanded(
             child: MetricCard(
               icon: Icons.inventory_outlined,
-              label: 'Tồn kho thấp',
+              label: SharedLabels.dashboardMetricLowStock,
               value: lowStockCount,
               color: Colors.red,
             ),

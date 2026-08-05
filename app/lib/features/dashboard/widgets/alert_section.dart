@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/labels/shared.dart';
+
 /// Alert section of the management dashboard.
 ///
 /// Renders a dismissible banner that surfaces urgent info (currently critical
-/// orders). Phase 1 (this file): UI scaffolding only — the parent screen
-/// supplies the count and onTap. Phase 3 will wire this to the existing
-/// `critical_alert_provider` (FR5/AC9), which is reused unchanged.
+/// orders). The count is supplied by the parent screen; tapping the banner
+/// triggers [onTap], which delegates to the existing
+/// `critical_alert_provider` (FR5/AC9), reused unchanged.
 ///
 /// When [count] is 0, nothing is rendered (the section is hidden).
 class AlertSection extends StatelessWidget {
@@ -48,7 +50,7 @@ class AlertSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Có $count đơn hàng khẩn cấp cần xử lý',
+                  SharedLabels.dashboardCriticalOrdersAlert(count),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onErrorContainer,
                     fontWeight: FontWeight.w600,
@@ -61,7 +63,7 @@ class AlertSection extends StatelessWidget {
                   iconSize: 20,
                   color: theme.colorScheme.onErrorContainer,
                   onPressed: onDismiss,
-                  tooltip: 'Đóng cảnh báo',
+                  tooltip: SharedLabels.dashboardCriticalAlertsDismiss,
                 ),
             ],
           ),

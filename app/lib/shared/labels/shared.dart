@@ -162,6 +162,22 @@ class SharedLabels {
   static const saveToGallery = 'Lưu ảnh';
   static const receiptSaved = 'Đã lưu ảnh phiếu';
 
+  // Management dashboard (DG-344)
+  static const dashboardSectionMetrics = 'Chỉ số hôm nay';
+  static const dashboardSectionShortcuts = 'Truy cập nhanh';
+  static const dashboardSectionAlerts = 'Cảnh báo';
+  static const dashboardMetricOrdersToday = 'Đơn hàng hôm nay';
+  static const dashboardMetricRevenueToday = 'Doanh thu hôm nay';
+  static const dashboardMetricLowStock = 'Tồn kho thấp';
+  static const dashboardCriticalAlertsDismiss = 'Đóng cảnh báo';
+  static const dashboardShortcutStock = 'Kho hàng';
+  static const dashboardShortcutCategories = 'Quản lý danh mục';
+  static const dashboardShortcutCustomers = 'Quản lý khách hàng';
+  static const dashboardShortcutExpenses = 'Chi phí';
+  static const dashboardShortcutBlanks = 'Quản lý phôi bánh';
+  static String dashboardCriticalOrdersAlert(int count) =>
+      'Có $count đơn hàng khẩn cấp cần xử lý';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';

@@ -163,38 +163,38 @@ void main() {
       (tester) async {
     await _pump(tester);
     expect(find.text(SharedLabels.tabManagement), findsOneWidget);
-    expect(find.text('Chỉ số hôm nay'), findsOneWidget);
-    expect(find.text('Truy cập nhanh'), findsOneWidget);
-    expect(find.text('Đơn hàng hôm nay'), findsOneWidget);
-    expect(find.text('Doanh thu hôm nay'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardSectionMetrics), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardSectionShortcuts), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardMetricOrdersToday), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardMetricRevenueToday), findsOneWidget);
     await tester.dragUntilVisible(
-      find.text('Tồn kho thấp'),
+      find.text(SharedLabels.dashboardMetricLowStock),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text('Tồn kho thấp'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardMetricLowStock), findsOneWidget);
     await tester.dragUntilVisible(
-      find.text('Cảnh báo'),
+      find.text(SharedLabels.dashboardSectionAlerts),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text('Cảnh báo'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardSectionAlerts), findsOneWidget);
   });
 
   testWidgets('renders five shortcut tiles', (tester) async {
     await _pump(tester);
-    expect(find.text('Kho hàng'), findsOneWidget);
-    expect(find.text('Quản lý danh mục'), findsOneWidget);
-    expect(find.text('Quản lý khách hàng'), findsOneWidget);
-    expect(find.text('Chi phí'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutStock), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutCategories), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutCustomers), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutExpenses), findsOneWidget);
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
     await tester.pump();
-    expect(find.text('Quản lý phôi bánh'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutBlanks), findsOneWidget);
   });
 
   testWidgets('shortcut tap navigates via go router', (tester) async {
     await _pump(tester);
-    await tester.tap(find.text('Kho hàng'), warnIfMissed: false);
+    await tester.tap(find.text(SharedLabels.dashboardShortcutStock), warnIfMissed: false);
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text('stock-page'), findsOneWidget);
   });
@@ -254,7 +254,7 @@ void main() {
       ],
     );
     await tester.dragUntilVisible(
-      find.text('Tồn kho thấp'),
+      find.text(SharedLabels.dashboardMetricLowStock),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
@@ -278,7 +278,7 @@ void main() {
       const Offset(0, -300),
     );
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-    expect(find.text('Có 2 đơn hàng khẩn cấp cần xử lý'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardCriticalOrdersAlert(2)), findsOneWidget);
   });
 
   testWidgets('no critical alert banner when no critical orders (FR5/AC9)',

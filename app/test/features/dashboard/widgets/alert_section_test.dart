@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/dashboard/widgets/alert_section.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 void _noop() {}
 
@@ -27,7 +28,7 @@ void main() {
       ),
     );
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-    expect(find.text('Có 3 đơn hàng khẩn cấp cần xử lý'), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardCriticalOrdersAlert(3)), findsOneWidget);
   });
 
   testWidgets('invokes onTap when banner is tapped', (tester) async {

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/labels/shared.dart';
+
 /// A single shortcut tile inside the management dashboard shortcut grid.
 ///
-/// Phase 1 (this file): UI scaffolding only — `onTap` is wired to
-/// `context.go()` by the parent screen. Phase 2 will finalize the route
-/// targets from `app_router.dart` (which already exist: /stock,
-/// /categories/manage, /customers, /expenses, /blanks).
+/// `onTap` is wired to `context.go()` by the parent screen; the route targets
+/// come from `app_router.dart` (/stock, /categories/manage, /customers,
+/// /expenses, /blanks).
 class ShortcutTile extends StatelessWidget {
   const ShortcutTile({
     super.key,
@@ -56,8 +57,7 @@ class ShortcutTile extends StatelessWidget {
 ///
 /// Displays the five management navigation shortcuts in a 2-column grid:
 /// Kho hàng, Quản lý danh mục, Quản lý khách hàng, Chi phí, Quản lý phôi bánh
-/// (FR3). Each tile navigates via `context.go()` (Phase 2 wires the actual
-/// routes; Phase 1 only renders the grid).
+/// (FR3). Each tile navigates via `context.go()`.
 class ShortcutGrid extends StatelessWidget {
   const ShortcutGrid({
     super.key,
@@ -71,27 +71,27 @@ class ShortcutGrid extends StatelessWidget {
   static const List<_ShortcutDef> _shortcuts = [
     _ShortcutDef(
       icon: Icons.inventory_2_outlined,
-      label: 'Kho hàng',
+      label: SharedLabels.dashboardShortcutStock,
       route: '/stock',
     ),
     _ShortcutDef(
       icon: Icons.category_outlined,
-      label: 'Quản lý danh mục',
+      label: SharedLabels.dashboardShortcutCategories,
       route: '/categories/manage',
     ),
     _ShortcutDef(
       icon: Icons.people_outline,
-      label: 'Quản lý khách hàng',
+      label: SharedLabels.dashboardShortcutCustomers,
       route: '/customers',
     ),
     _ShortcutDef(
       icon: Icons.payments_outlined,
-      label: 'Chi phí',
+      label: SharedLabels.dashboardShortcutExpenses,
       route: '/expenses',
     ),
     _ShortcutDef(
       icon: Icons.cake_outlined,
-      label: 'Quản lý phôi bánh',
+      label: SharedLabels.dashboardShortcutBlanks,
       route: '/blanks',
     ),
   ];

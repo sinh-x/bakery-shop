@@ -5,12 +5,7 @@ import 'package:flutter/material.dart';
 /// Displays one business metric (today's orders, today's revenue, low-stock
 /// count) with an icon, value, and label. Supports a loading state
 /// (`value == null`) that renders a skeleton placeholder, satisfying NFR2
-/// (per-section loading indicators) during the progressive data fetch in
-/// Phase 3.
-///
-/// Phase 1 (this file): UI scaffolding only — values are passed in from the
-/// parent screen. Phase 3 will wire the real API providers that supply
-/// `value`.
+/// (per-section loading indicators) during the progressive data fetch.
 class MetricCard extends StatelessWidget {
   const MetricCard({
     super.key,
