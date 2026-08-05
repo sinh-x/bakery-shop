@@ -72,8 +72,8 @@ int checkNewCriticalOrders(WidgetRef ref) {
 }
 
 /// Shared helper that checks for new critical orders and shows the in-app alert
-/// if any are found. Extracted to eliminate duplication between
-/// [DashboardScreen] and [OrderListScreen].
+/// if any are found. Shared by the management dashboard and the order list
+/// screen so both surfaces stay consistent.
 void checkAndShowCriticalAlert({
   required WidgetRef ref,
   required BuildContext context,

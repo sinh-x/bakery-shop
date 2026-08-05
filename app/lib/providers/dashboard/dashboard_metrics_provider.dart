@@ -18,8 +18,8 @@ const String revenueAccountCode = '4100';
 const int lowStockThreshold = 5;
 
 /// Number of active orders whose `dueDate` is today — "số đơn hàng hôm nay"
-/// (FR2/NFR1). Reuses the same `dueDate == today` convention as the legacy
-/// `DashboardScreen._DashboardContent`.
+/// (FR2/NFR1). Uses the `dueDate == today` convention to filter the active
+/// order list down to today's orders.
 int countOrdersToday(List<Order> orders) {
   final todayStr = formatApiDate(DateTime.now());
   return orders.where((o) => o.dueDate == todayStr).length;
