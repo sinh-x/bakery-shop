@@ -401,6 +401,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   void _onOpenSuccess(BuildContext context) {
     ref.invalidate(cashDrawerStatusProvider);
     ref.invalidate(cashDrawerHistoryProvider);
+    ref.invalidate(cashDrawerAccountingBalance1101Provider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(VN.cashDrawerOpenSuccess)),
@@ -494,6 +495,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         // Confirmed close succeeded — show success via the notifier pattern.
         ref.invalidate(cashDrawerStatusProvider);
         ref.invalidate(cashDrawerHistoryProvider);
+        ref.invalidate(cashDrawerAccountingBalance1101Provider);
+        ref.invalidate(cashDrawerPreviousCloseProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text(VN.cashDrawerCloseSuccess)),
