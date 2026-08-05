@@ -33,7 +33,8 @@ class CandleTypeRadioGroup extends StatelessWidget {
     return RadioGroup<String>(
       groupValue: groupValue,
       onChanged: onChanged,
-      child: const Column(
+      child: const Wrap(
+        spacing: 4,
         children: [
           RadioListTile<String>(
             title: Text(VN.candleTypeNenSo),
