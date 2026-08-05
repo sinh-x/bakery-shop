@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/cash_drawer_service.dart';
 import '../../data/api/staff_service.dart';
 import '../../data/models/cash_drawer.dart';
+import '../../data/models/cash_drawer_transaction.dart';
 import '../../providers/cash_drawer_provider.dart';
 import '../../providers/staff_provider.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -121,11 +122,21 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // tab's full refresh cycle is handled by the widget-level timer in
     // [CashDrawerTransactionList(poll: true)], so a second screen-level
     // invalidation of [cashDrawerTransactionsProvider] would be redundant.
+    // DG-359 Phase 2 FR4/AC3: also invalidate the active drawer's first
+    // transaction page so the breakdown card on the status tab refreshes
+    // within 30 seconds of a new transaction — reusing the same polling
+    // cycle (no extra API call beyond the existing transaction fetch).
     _statusPollTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) {
         if (!mounted) return;
         ref.invalidate(cashDrawerStatusProvider);
+        final activeDrawerId = _activeDrawerId;
+        if (activeDrawerId != null) {
+          ref.invalidate(cashDrawerTransactionsProvider(
+            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+          ));
+        }
       },
     );
   }
@@ -169,6 +180,17 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // id so the tab state rebuilds when the status resolves/invalidates.
     final activeDrawerId = _activeDrawerId;
     final transactionsEnabled = activeDrawerId != null;
+
+    // DG-359 Phase 2 FR6: watch the active drawer's first transaction page so
+    // the breakdown card on the status tab rebuilds when the provider is
+    // invalidated (30s poll, manual refresh, mutation). NFR2: no extra API
+    // call — reuses the same `cashDrawerTransactionsProvider` page the
+    // transaction tab would fetch.
+    final transactionsResponseAsync = activeDrawerId == null
+        ? null
+        : ref.watch(cashDrawerTransactionsProvider(
+            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+          ));
 
     return Scaffold(
       appBar: AppBar(
@@ -220,6 +242,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         children: [
           _ActiveTab(
             statusAsync: statusAsync,
+            transactionsResponseAsync: transactionsResponseAsync,
             mutating: mutating,
             accountingBalance1101Async: accountingBalance1101Async,
             previousCloseAsync: previousCloseAsync,
@@ -534,6 +557,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 class _ActiveTab extends StatelessWidget {
   const _ActiveTab({
     required this.statusAsync,
+    required this.transactionsResponseAsync,
     required this.mutating,
     required this.accountingBalance1101Async,
     required this.previousCloseAsync,
@@ -544,6 +568,13 @@ class _ActiveTab extends StatelessWidget {
   });
 
   final AsyncValue<CashDrawer?> statusAsync;
+
+  /// DG-359 Phase 2: transactions for the active drawer, used to render the
+  /// breakdown card inside [CashDrawerStatusCard]. Resolved from
+  /// `cashDrawerTransactionsProvider` (first page) in
+  /// `_CashDrawerScreenState.build`. `null` when no drawer is open.
+  final AsyncValue<CashDrawerTransactionResponse>? transactionsResponseAsync;
+
   final bool mutating;
   final AsyncValue<int> accountingBalance1101Async;
   final AsyncValue<int?> previousCloseAsync;
@@ -578,9 +609,18 @@ class _ActiveTab extends StatelessWidget {
             previousCloseAsync: previousCloseAsync,
           );
         }
+        // DG-359 Phase 2 FR5/AC4: when transactions have not loaded yet,
+        // pass an empty list so the breakdown renders an all-zero table
+        // rather than crashing. Once data resolves, the card rebuilds via
+        // Riverpod's watch with the real transaction list.
+        final transactions =
+            transactionsResponseAsync?.value?.items ?? const <CashDrawerTransaction>[];
         return ListView(
           children: [
-            CashDrawerStatusCard(drawer: drawer),
+            CashDrawerStatusCard(
+              drawer: drawer,
+              transactions: transactions,
+            ),
             const SizedBox(height: 8),
             _ActionBar(
               isOpen: drawer.isOpen,
