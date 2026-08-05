@@ -63,10 +63,17 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   /// price upward in [ExpandableItemCard]. Non-trưng bày products keep
   /// `assignedPrice` null so backend COGS falls back to `unitPrice` (FR8).
   /// See DG-296 Phase 4.
+  ///
+  /// For cake items (`banh_kem` category), `is_birthday` defaults to `true`
+  /// so the candle type radio group is immediately visible (DG-340 Phase 4 /
+  /// FR6). Staff can still uncheck the birthday checkbox for non-birthday
+  /// cake orders; existing drafts are not re-checked because this only runs
+  /// at item-creation time (AC6 — existing behavior preserved).
   DraftOrderItem _createDraftItem(Product product) {
     return DraftOrderItem(
       product: product,
       assignedPrice: product.isTrungBay ? product.basePrice : null,
+      isBirthday: product.category == 'banh_kem',
     );
   }
 

@@ -39,6 +39,7 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
     assignedPrice: item.assignedPrice,
     isBirthday: item.isBirthday,
     age: item.age,
+    candleType: item.candleType,
     attributes: attrs,
     notes: item.notes,
     pendingPhotos: item.pendingPhotos,
@@ -76,6 +77,7 @@ PosCartItem draftItemToCart(DraftOrderItem item) {
     useInventory: useInventory,
     isBirthday: item.isBirthday,
     age: item.age,
+    candleType: item.candleType,
     rutTien: rutTien,
     cashFee: cashFeeStr != null && cashFeeStr.isNotEmpty
         ? double.tryParse(cashFeeStr)
