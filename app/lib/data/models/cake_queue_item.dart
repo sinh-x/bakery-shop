@@ -14,6 +14,12 @@ class CakeQueueItem {
   final String status;
   final bool isBirthday;
   final int? age;
+  /// Selected candle type carried through the cake queue display model
+  /// (DG-340 Phase 1). Sourced from `work_item.attributes['candle_type']`
+  /// by the API layer; null when no candle type is set (FR2, AC7). Display
+  /// phases render it via [VN.candleTypeLabel] alongside the birthday
+  /// indicator (FR4).
+  final String? candleType;
   final String? dueDate;
   final String? dueTime;
   final String? createdAt;
@@ -34,6 +40,7 @@ class CakeQueueItem {
     required this.status,
     required this.isBirthday,
     this.age,
+    this.candleType,
     this.dueDate,
     this.dueTime,
     this.createdAt,
@@ -55,6 +62,7 @@ class CakeQueueItem {
         status: json['status'] as String,
         isBirthday: json['isBirthday'] as bool? ?? false,
         age: json['age'] as int?,
+        candleType: json['candleType'] as String?,
         dueDate: json['dueDate'] as String?,
         dueTime: json['dueTime'] as String?,
         createdAt: json['createdAt'] as String?,

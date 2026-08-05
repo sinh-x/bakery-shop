@@ -21,6 +21,7 @@ class PosCartItem {
     this.pendingPhotos = const [],
     this.isBirthday = false,
     this.age = '',
+    this.candleType,
     this.rutTien = false,
     this.cashFee,
     this.cashAmount,
@@ -42,6 +43,13 @@ class PosCartItem {
   List<XFile> pendingPhotos;
   final bool isBirthday;
   final String age;
+  /// Selected candle type for cake items (DG-340 Phase 1).
+  ///
+  /// Values: `nen_so`, `nen_xoan`, `nen_nho`, `khong_nen`. Null/absent means
+  /// no candle selected (FR2, AC7). Included in [lineKey] so two cart lines
+  /// for the same cake with different candle types stay distinct (Risks §11
+  /// — POS cart lineKey dedup).
+  final String? candleType;
   final bool rutTien;
   final double? cashFee;
   final double? cashAmount;
@@ -49,7 +57,7 @@ class PosCartItem {
 
   String get lineKey {
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
+    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:candle:${candleType ?? ''}:rt:${rutTien ? 1 : 0}';
   }
 
   double get unitPrice => selectedPrice ?? product.basePrice;
@@ -86,11 +94,12 @@ class PosCartNotifier extends Notifier<PosCartState> {
     bool useInventory = true,
     bool isBirthday = false,
     String age = '',
+    String? candleType,
     bool rutTien = false,
   }) {
     final items = List<PosCartItem>.from(state.items);
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
+    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:candle:${candleType ?? ''}:rt:${rutTien ? 1 : 0}';
 
     // Check if same product + same chip selection is already in cart.
     final existing = items
@@ -111,6 +120,7 @@ class PosCartNotifier extends Notifier<PosCartState> {
           assignedPrice: assignedPrice,
           isBirthday: isBirthday,
           age: age,
+          candleType: candleType,
           rutTien: rutTien,
         ),
       );

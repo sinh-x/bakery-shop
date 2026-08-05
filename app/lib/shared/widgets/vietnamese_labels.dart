@@ -336,6 +336,36 @@ class VN {
   static const dueTime = 'Giờ giao';
   static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
+
+  // Candle type selection (DG-340 Phase 1)
+  /// Radio button group shown on cake item edit screens when is_birthday is
+  /// checked. Values persist under `order_items.attributes['candle_type']`.
+  /// `khong_nen` represents the explicit "no candle" choice; an absent
+  /// `candle_type` key also means no candle (AC7).
+  static const candleTypeSectionLabel = 'Loại nến';
+  static const candleTypeNenSo = 'Nến số';
+  static const candleTypeNenXoan = 'Nến xoắn';
+  static const candleTypeNenNho = 'Nến nhỏ';
+  static const candleTypeKhongNen = 'Không nến';
+
+  /// Map a stored `candle_type` value to its Vietnamese display label.
+  /// Falls back to the raw `value` so unknown keys remain visible rather
+  /// than blank.
+  static String candleTypeLabel(String? value) {
+    switch (value) {
+      case 'nen_so':
+        return candleTypeNenSo;
+      case 'nen_xoan':
+        return candleTypeNenXoan;
+      case 'nen_nho':
+        return candleTypeNenNho;
+      case 'khong_nen':
+        return candleTypeKhongNen;
+      default:
+        return value ?? '';
+    }
+  }
+
   static const useInventory = 'Dùng tồn kho';
   static const stockRemaining = 'Còn';
   static const stockUnknown = 'Chưa có số tồn';
