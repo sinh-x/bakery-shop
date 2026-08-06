@@ -83,6 +83,20 @@ class CashDrawer {
   /// cash-out, close-with-discrepancy). Null for the status/history GETs.
   final JournalEntry? journalEntry;
 
+  /// DG-363 Phase 4 / FR7: persisted breakdown snapshot for a closed drawer.
+  /// The backend (`CashDrawer.get_breakdown_snapshot`) returns one row per
+  /// canonical category (8 total) with `category`, `totalAmount` (float), and
+  /// `count` (int), captured at close time. An empty list means no snapshot
+  /// is available (open drawer, or a closed drawer that predates the v097
+  /// migration and was not backfilled) — the UI renders an "N/A" placeholder
+  /// in that case. Open drawers return `[]` from the backend; the History
+  /// tab only renders the snapshot for closed drawers.
+  ///
+  /// Parsed from the `breakdownSnapshot` field embedded in `/status` and
+  /// `/history` responses (Phase 2). Defaults to empty for older responses
+  /// that omit the field.
+  final List<CashDrawerBreakdownSnapshotRow> breakdownSnapshot;
+
   const CashDrawer({
     required this.id,
     this.openedAt,
@@ -96,6 +110,7 @@ class CashDrawer {
     this.closingBalance,
     this.accountingBalance1101 = 0,
     this.journalEntry,
+    this.breakdownSnapshot = const [],
   });
 
   /// Whether this drawer is currently open (status == 'open').
@@ -110,6 +125,7 @@ class CashDrawer {
 
   factory CashDrawer.fromJson(Map<String, dynamic> json) {
     final journalJson = json['journalEntry'];
+    final rawSnapshot = json['breakdownSnapshot'];
     return CashDrawer(
       id: json['id'] as String,
       openedAt: parseApiDateTime(json['openedAt'] as String?),
@@ -126,6 +142,12 @@ class CashDrawer {
       journalEntry: journalJson is Map<String, dynamic>
           ? JournalEntry.fromJson(journalJson)
           : null,
+      breakdownSnapshot: rawSnapshot is List
+          ? rawSnapshot
+              .map((e) => CashDrawerBreakdownSnapshotRow.fromJson(
+                  e as Map<String, dynamic>))
+              .toList()
+          : const <CashDrawerBreakdownSnapshotRow>[],
     );
   }
 
@@ -142,6 +164,9 @@ class CashDrawer {
         'closingBalance': closingBalance,
         'accountingBalance1101': accountingBalance1101,
         if (journalEntry != null) 'journalEntry': journalEntry!.toJson(),
+        'breakdownSnapshot': [
+          for (final r in breakdownSnapshot) r.toJson(),
+        ],
       };
 
   @override
@@ -186,4 +211,69 @@ class CashDrawerHistoryResponse {
           : const <CashDrawer>[],
     );
   }
+}
+
+/// DG-363 Phase 4 / FR7: one row of the persisted breakdown snapshot for a
+/// closed drawer. Mirrors the backend `CashDrawer.get_breakdown_snapshot`
+/// dict shape: `category` (one of the 8 canonical `CashDrawerBreakdownCategory`
+/// names), `totalAmount` (float VND, signed), and `count` (int). The backend
+/// stores `total_amount` as REAL (float) to preserve any fractional value,
+/// but in practice amounts are whole VND; we coerce to int for display so
+/// the snapshot renders through the same `formatVND` path as the live
+/// breakdown.
+///
+/// Parsed from the `breakdownSnapshot` array embedded in `/status` and
+/// `/history` responses. An empty list on [CashDrawer.breakdownSnapshot]
+/// means "no snapshot available" (open drawer, or pre-v097 closed drawer).
+class CashDrawerBreakdownSnapshotRow {
+  const CashDrawerBreakdownSnapshotRow({
+    required this.category,
+    required this.totalAmount,
+    required this.count,
+  });
+
+  /// Canonical category name as stored by the backend
+  /// (`BREAKDOWN_SNAPSHOT_CATEGORIES` in v097): `sale`, `refund`, `expense`,
+  /// `cashIn`, `cashOut`, `open`, `close`, `busShipping`. Matches the
+  /// `CashDrawerBreakdownCategory` enum names in
+  /// `cash_drawer_breakdown_card.dart`.
+  final String category;
+
+  /// Signed total amount for this category (VND). Positive = inflow,
+  /// negative = outflow. Coerced to int from the backend's float value.
+  final int totalAmount;
+
+  /// Number of transactions that contributed to this category's total.
+  final int count;
+
+  factory CashDrawerBreakdownSnapshotRow.fromJson(Map<String, dynamic> json) {
+    return CashDrawerBreakdownSnapshotRow(
+      category: (json['category'] as String?) ?? '',
+      totalAmount: (json['totalAmount'] as num?)?.toInt() ?? 0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'category': category,
+        'totalAmount': totalAmount,
+        'count': count,
+      };
+
+  @override
+  String toString() =>
+      'CashDrawerBreakdownSnapshotRow(category: $category, totalAmount: '
+      '$totalAmount, count: $count)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CashDrawerBreakdownSnapshotRow &&
+          runtimeType == other.runtimeType &&
+          category == other.category &&
+          totalAmount == other.totalAmount &&
+          count == other.count;
+
+  @override
+  int get hashCode => Object.hash(category, totalAmount, count);
 }

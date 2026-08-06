@@ -1904,6 +1904,256 @@ def test_v095_migration_idempotent_on_rerun(api_client):
 
 
 # ---------------------------------------------------------------------------
+# DG-363 Phase 1 — cash_drawer_breakdown_snapshot table + backfill (FR6, FR8)
+# ---------------------------------------------------------------------------
+
+
+def _snapshot_columns(conn):
+    return {r[1]: r for r in conn.execute(
+        "PRAGMA table_info(cash_drawer_breakdown_snapshot)"
+    ).fetchall()}
+
+
+def _snapshot_rows(conn, drawer_id: int) -> dict:
+    rows = conn.execute(
+        "SELECT category, total_amount, count FROM cash_drawer_breakdown_snapshot "
+        "WHERE drawer_id = ? ORDER BY category",
+        (drawer_id,),
+    ).fetchall()
+    return {r["category"]: (float(r["total_amount"]), int(r["count"])) for r in rows}
+
+
+_BREAKDOWN_CATEGORIES = (
+    "sale", "refund", "expense", "cashIn", "cashOut", "open", "close", "busShipping",
+)
+
+
+def test_v097_snapshot_table_exists_with_required_columns(api_client):
+    """FR6/AC: cash_drawer_breakdown_snapshot exists with id, drawer_id,
+    category TEXT, total_amount REAL, count INTEGER, created_at TEXT."""
+    with get_db() as conn:
+        cols = _snapshot_columns(conn)
+    required = {"id", "drawer_id", "category", "total_amount", "count", "created_at"}
+    assert required.issubset(set(cols.keys())), (
+        f"missing columns: {required - set(cols.keys())}; got {sorted(cols.keys())}"
+    )
+    assert cols["category"]["type"] == "TEXT"
+    assert cols["total_amount"]["type"] == "REAL"
+    assert cols["count"]["type"] == "INTEGER"
+    assert cols["created_at"]["type"] == "TEXT"
+    assert cols["drawer_id"]["type"] == "INTEGER"
+
+
+def test_v097_snapshot_unique_index_on_drawer_category(api_client):
+    """NFR2/AC: UNIQUE(drawer_id, category) index exists so the backfill is
+    idempotent on re-run."""
+    with get_db() as conn:
+        idx = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='cash_drawer_breakdown_snapshot' "
+            "AND name='idx_breakdown_snapshot_drawer_category'"
+        ).fetchone()
+    assert idx is not None, "UNIQUE(drawer_id, category) index missing"
+
+
+def test_v097_backfill_creates_8_rows_per_closed_drawer(use_memory_db):
+    """FR8/AC: backfill creates 8 snapshot rows (one per category) for every
+    already-closed drawer, including drawers with no journal activity."""
+    from baker.db.schema import (
+        BUS_SHIPPING_HELD_CODE,
+        CUSTOMER_DEPOSITS_CODE,
+        _migrate_v97_cash_drawer_breakdown_snapshot,
+    )
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Two closed drawers: d1 with activity, d2 with no journal entries.
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed' ORDER BY id"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-08-02T00:00:00Z','2026-08-02T23:00:00Z','closed',2000,0)"
+        )
+        d2 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed' ORDER BY id DESC"
+        ).fetchone()[0]
+        # An open drawer that must NOT receive a snapshot.
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, status, opening_balance) "
+            "VALUES ('2026-08-06T00:00:00Z','open',1000)"
+        )
+        open_id = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='open'"
+        ).fetchone()[0]
+
+        asset_id = _account_id(conn, "1101")
+        dep_id = _account_id(conn, CUSTOMER_DEPOSITS_CODE)
+        bus_id = _account_id(conn, BUS_SHIPPING_HELD_CODE)
+        exp_id = _account_id(conn, "5800")
+        cap_id = _account_id(conn, "3100")
+
+        # d1 activity across all 8 categories (bus sale splits into sale + busShipping).
+        _insert_journal_entry(conn, description="sale",
+            source_type="payment_transaction", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 10000, 0, "in"), (dep_id, 0, 10000, "dep")])
+        _insert_journal_entry(conn, description="expense",
+            source_type="expense", source_id=2, drawer_id=d1,
+            lines=[(exp_id, 3000, 0, "exp"), (asset_id, 0, 3000, "out")])
+        _insert_journal_entry(conn, description="bus sale",
+            source_type="payment_transaction", source_id=3, drawer_id=d1,
+            lines=[(asset_id, 5000, 0, "in"), (dep_id, 0, 4000, "dep"),
+                   (bus_id, 0, 1000, "bus")])
+        _insert_journal_entry(conn, description="refund",
+            source_type="payment_transaction", source_id=4, drawer_id=d1,
+            lines=[(dep_id, 2000, 0, "refund"), (asset_id, 0, 2000, "out")])
+        _insert_journal_entry(conn, description="cash_in",
+            source_type="cash_drawer_cash_in", source_id=5, drawer_id=d1,
+            lines=[(asset_id, 500, 0, "in"), (cap_id, 0, 500, "cap")])
+        _insert_journal_entry(conn, description="cash_out",
+            source_type="cash_drawer_cash_out", source_id=6, drawer_id=d1,
+            lines=[(cap_id, 700, 0, "cap"), (asset_id, 0, 700, "out")])
+        _insert_journal_entry(conn, description="open",
+            source_type="cash_drawer_open", source_id=7, drawer_id=d1,
+            lines=[(asset_id, 1000, 0, "open"), (cap_id, 0, 1000, "cap")])
+        _insert_journal_entry(conn, description="close",
+            source_type="cash_drawer_close_adjust", source_id=8, drawer_id=d1,
+            lines=[(cap_id, 100, 0, "adj"), (asset_id, 0, 100, "close")])
+        conn.commit()
+
+        _migrate_v97_cash_drawer_breakdown_snapshot(conn)
+        conn.commit()
+
+        d1_rows = _snapshot_rows(conn, d1)
+        d2_rows = _snapshot_rows(conn, d2)
+        open_rows = _snapshot_rows(conn, open_id)
+
+    # d1: 8 categories with the expected split.
+    assert set(d1_rows.keys()) == set(_BREAKDOWN_CATEGORIES), (
+        f"d1 categories: {sorted(d1_rows.keys())}"
+    )
+    assert d1_rows["sale"] == (14000.0, 2)  # 10000 + 4000 (after bus split)
+    assert d1_rows["busShipping"] == (1000.0, 1)
+    assert d1_rows["refund"] == (-2000.0, 1)
+    assert d1_rows["expense"] == (-3000.0, 1)
+    assert d1_rows["cashIn"] == (500.0, 1)
+    assert d1_rows["cashOut"] == (-700.0, 1)
+    assert d1_rows["open"] == (1000.0, 1)
+    assert d1_rows["close"] == (-100.0, 1)
+
+    # d2: 8 categories all zero (no activity).
+    assert set(d2_rows.keys()) == set(_BREAKDOWN_CATEGORIES)
+    for cat in _BREAKDOWN_CATEGORIES:
+        assert d2_rows[cat] == (0.0, 0), f"d2 {cat}: {d2_rows[cat]}"
+
+    # Open drawer must not have any snapshot rows.
+    assert open_rows == {}, f"open drawer should have no snapshot, got {open_rows}"
+
+
+def test_v097_backfill_idempotent_on_rerun(use_memory_db):
+    """NFR2/AC: re-running v097 on an already-backfilled DB is a no-op —
+    no duplicate rows, no changed totals."""
+    from baker.db.schema import (
+        CUSTOMER_DEPOSITS_CODE,
+        _migrate_v97_cash_drawer_breakdown_snapshot,
+    )
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed'"
+        ).fetchone()[0]
+        asset_id = _account_id(conn, "1101")
+        dep_id = _account_id(conn, CUSTOMER_DEPOSITS_CODE)
+        _insert_journal_entry(conn, description="sale",
+            source_type="payment_transaction", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 5000, 0, "in"), (dep_id, 0, 5000, "dep")])
+        conn.commit()
+
+        _migrate_v97_cash_drawer_breakdown_snapshot(conn)
+        conn.commit()
+        before = _snapshot_rows(conn, d1)
+        before_count = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot"
+        ).fetchone()[0]
+
+        # Re-run — should be a no-op.
+        _migrate_v97_cash_drawer_breakdown_snapshot(conn)
+        conn.commit()
+        after = _snapshot_rows(conn, d1)
+        after_count = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot"
+        ).fetchone()[0]
+
+    assert before_count == after_count, (
+        f"row count changed on re-run: {before_count} -> {after_count}"
+    )
+    assert before == after
+
+
+def test_v097_backfill_skips_drawers_that_already_have_snapshots(use_memory_db):
+    """NFR2/AC: a closed drawer that already has snapshot rows is not
+    re-backfilled (the UNIQUE index + NOT IN guard makes the backfill
+    idempotent per-drawer, not just per-run)."""
+    from baker.db.schema import _migrate_v97_cash_drawer_breakdown_snapshot
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed'"
+        ).fetchone()[0]
+        # Seed a snapshot row for d1 so the backfill's NOT IN guard excludes it.
+        conn.execute(
+            "INSERT INTO cash_drawer_breakdown_snapshot "
+            "(drawer_id, category, total_amount, count, created_at) "
+            "VALUES (?, 'sale', 999.0, 9, '2026-01-01T00:00:00Z')",
+            (d1,),
+        )
+        conn.commit()
+
+        _migrate_v97_cash_drawer_breakdown_snapshot(conn)
+        conn.commit()
+
+        rows = conn.execute(
+            "SELECT category, total_amount, count "
+            "FROM cash_drawer_breakdown_snapshot WHERE drawer_id = ?",
+            (d1,),
+        ).fetchall()
+    # Only the pre-seeded row should exist; the backfill must not have added
+    # the other 7 categories for d1.
+    assert len(rows) == 1, f"expected 1 pre-seeded row, got {len(rows)}"
+    assert rows[0]["category"] == "sale"
+    assert float(rows[0]["total_amount"]) == 999.0
+
+
+def test_v097_migration_idempotent_on_rerun(api_client):
+    """NFR2: re-applying ensure_schema on a fully-migrated DB is a no-op for
+    the snapshot table (no error, no duplicate rows)."""
+    with get_db() as conn:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot"
+        ).fetchone()[0]
+        ensure_schema(conn)
+        after = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot"
+        ).fetchone()[0]
+    assert before == after, f"row count changed: {before} -> {after}"
+
+
+# ---------------------------------------------------------------------------
 # DG-343 Phase 1 — GET /{drawer_id}/transactions (FR1, FR2, AC1, AC2, AC3)
 # ---------------------------------------------------------------------------
 
@@ -2246,3 +2496,331 @@ def test_transactions_reference_detail_handles_missing_payment_source(api_client
     exp = by_type["expense"]
     assert exp["reference"] == "Mua phụ liệu"
     assert exp["reference_detail"] == "Phượng"
+
+
+# ---------------------------------------------------------------------------
+# DG-363 Phase 2 — shippingAmount + breakdown snapshot (FR4, FR5, FR6, FR7)
+# ---------------------------------------------------------------------------
+
+
+def _bus_order_with_shipping_payment(api_client, *, shipping_fee, payment_amount):
+    """Create a bus-delivery order with a cash deposit payment and return the
+    order ref. Used to exercise the shippingAmount split in get_transactions."""
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách Bus",
+        "dueDate": "2026-08-20",
+        "items": [{"productName": "Bánh mì", "quantity": 1,
+                   "unitPrice": payment_amount, "productId": "BMS-01"}],
+        "deliveryType": "bus",
+        "shippingFee": shipping_fee,
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    txn = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": payment_amount, "method": "cash", "type": "deposit",
+    })
+    assert txn.status_code == 201, txn.text
+    return ref
+
+
+def test_transactions_includes_shipping_amount_for_bus_payment(api_client):
+    """FR5/AC: get_transactions() includes shippingAmount for a
+    payment_transaction on a bus order with shipping_fee > 0. The shipping
+    portion (held in 2200) is exposed separately from the sale amount."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Bus order: payment 200,000 with shipping_fee 30,000 → 30,000 held in 2200.
+    _bus_order_with_shipping_payment(
+        api_client, shipping_fee=30_000, payment_amount=200_000
+    )
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    pay = next(it for it in items if it["type"] == "payment_transaction")
+    # 1101 inflow is the full 200,000; shippingAmount is the 2200-held 30,000.
+    assert pay["amount"] == 200_000
+    assert pay["shippingAmount"] == 30_000
+
+
+def test_transactions_shipping_amount_zero_for_non_bus_payment(api_client):
+    """FR5: shippingAmount is 0 for a payment_transaction with no bus-shipping
+    split (pickup order), and 0 for non-payment rows."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Pickup order (default deliveryType) → no 2200 split.
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách Pickup",
+        "dueDate": "2026-08-20",
+        "items": [{"productName": "Bánh kem", "quantity": 1,
+                   "unitPrice": 150_000, "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 150_000, "method": "cash", "type": "deposit",
+    })
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    pay = next(it for it in items if it["type"] == "payment_transaction")
+    assert pay["shippingAmount"] == 0
+    # Non-payment rows always have shippingAmount == 0.
+    for it in items:
+        if it["type"] != "payment_transaction":
+            assert it["shippingAmount"] == 0
+
+
+def test_save_breakdown_snapshot_inserts_8_rows(use_memory_db):
+    """FR6: save_breakdown_snapshot() inserts exactly 8 rows (one per
+    category) for a drawer, including zero rows for empty categories."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed'"
+        ).fetchone()[0]
+        asset_id = _account_id(conn, "1101")
+        dep_id = _account_id(conn, "2100")
+        bus_id = _account_id(conn, "2200")
+        # One bus sale (split into sale + busShipping) + one refund.
+        _insert_journal_entry(conn, description="bus sale",
+            source_type="payment_transaction", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 5000, 0, "in"), (dep_id, 0, 4000, "dep"),
+                   (bus_id, 0, 1000, "bus")])
+        _insert_journal_entry(conn, description="refund",
+            source_type="payment_transaction", source_id=2, drawer_id=d1,
+            lines=[(dep_id, 2000, 0, "refund"), (asset_id, 0, 2000, "out")])
+        conn.commit()
+
+        CashDrawer.save_breakdown_snapshot(conn, d1)
+        conn.commit()
+
+        rows = _snapshot_rows(conn, d1)
+
+    assert set(rows.keys()) == set(_BREAKDOWN_CATEGORIES), (
+        f"categories: {sorted(rows.keys())}"
+    )
+    assert rows["sale"] == (4000.0, 1)
+    assert rows["busShipping"] == (1000.0, 1)
+    assert rows["refund"] == (-2000.0, 1)
+    # Empty categories get zero rows.
+    for cat in ("expense", "cashIn", "cashOut", "open", "close"):
+        assert rows[cat] == (0.0, 0), f"{cat}: {rows[cat]}"
+
+
+def test_get_breakdown_snapshot_returns_canonical_order(use_memory_db):
+    """FR7: get_breakdown_snapshot() returns the 8 categories in the fixed
+    BREAKDOWN_SNAPSHOT_CATEGORIES order with totalAmount (float) + count (int)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed'"
+        ).fetchone()[0]
+        asset_id = _account_id(conn, "1101")
+        dep_id = _account_id(conn, "2100")
+        _insert_journal_entry(conn, description="sale",
+            source_type="payment_transaction", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 5000, 0, "in"), (dep_id, 0, 5000, "dep")])
+        conn.commit()
+        CashDrawer.save_breakdown_snapshot(conn, d1)
+        conn.commit()
+
+        snapshot = CashDrawer.get_breakdown_snapshot(conn, d1)
+
+    assert [s["category"] for s in snapshot] == list(_BREAKDOWN_CATEGORIES)
+    for s in snapshot:
+        assert isinstance(s["totalAmount"], float)
+        assert isinstance(s["count"], int)
+    sale = next(s for s in snapshot if s["category"] == "sale")
+    assert sale == {"category": "sale", "totalAmount": 5000.0, "count": 1}
+
+
+def test_get_breakdown_snapshot_empty_for_drawer_without_snapshot(use_memory_db):
+    """FR7: get_breakdown_snapshot() returns [] for a drawer with no persisted
+    snapshot (open drawer or pre-migration closed drawer)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, status, opening_balance) "
+            "VALUES ('2026-08-06T00:00:00Z','open',1000)"
+        )
+        open_id = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='open'"
+        ).fetchone()[0]
+        snapshot = CashDrawer.get_breakdown_snapshot(conn, open_id)
+    assert snapshot == []
+
+
+def test_manual_close_triggers_snapshot_save(api_client):
+    """FR6/AC: POST /close persists a breakdown snapshot; the closed drawer's
+    snapshot is readable via get_breakdown_snapshot (8 rows)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
+    close = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_100_000}
+    )
+    assert close.status_code == 200, close.text
+    closed_id = int(close.json()["id"])
+    with get_db() as conn:
+        snapshot = CashDrawer.get_breakdown_snapshot(conn, closed_id)
+    assert len(snapshot) == 8
+    cats = {s["category"] for s in snapshot}
+    assert cats == set(_BREAKDOWN_CATEGORIES)
+    # open = 1,000,000; cashIn = 200,000; cashOut = -100,000.
+    by_cat = {s["category"]: s for s in snapshot}
+    assert by_cat["open"]["totalAmount"] == 1_000_000.0
+    assert by_cat["open"]["count"] == 1
+    assert by_cat["cashIn"]["totalAmount"] == 200_000.0
+    assert by_cat["cashIn"]["count"] == 1
+    assert by_cat["cashOut"]["totalAmount"] == -100_000.0
+    assert by_cat["cashOut"]["count"] == 1
+
+
+def test_auto_close_triggers_snapshot_save(use_memory_db):
+    """FR6/AC: CashDrawer.auto_close() persists a breakdown snapshot, identical
+    to the manual close path. Verified at the model level by inserting a stale
+    open drawer and calling auto_close directly."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, status, opening_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','open',1000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='open'"
+        ).fetchone()[0]
+        asset_id = _account_id(conn, "1101")
+        cap_id = _account_id(conn, "3100")
+        _insert_journal_entry(conn, description="open",
+            source_type="cash_drawer_open", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 1000, 0, "open"), (cap_id, 0, 1000, "cap")])
+        _insert_journal_entry(conn, description="cash-in",
+            source_type="cash_drawer_cash_in", source_id=2, drawer_id=d1,
+            lines=[(asset_id, 500, 0, "in"), (cap_id, 0, 500, "cap")])
+        conn.commit()
+
+        drawer = CashDrawer.get_by_id(conn, d1)
+        drawer.auto_close(conn)
+        conn.commit()
+
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot "
+            "WHERE drawer_id = ?", (d1,)
+        ).fetchone()[0]
+        snapshot = CashDrawer.get_breakdown_snapshot(conn, d1)
+
+    assert rows == 8
+    assert len(snapshot) == 8
+    by_cat = {s["category"]: s for s in snapshot}
+    assert by_cat["open"]["totalAmount"] == 1000.0
+    assert by_cat["cashIn"]["totalAmount"] == 500.0
+
+
+def test_reclose_refreshes_snapshot(use_memory_db):
+    """FR6: save_breakdown_snapshot is idempotent on re-close — it replaces
+    the existing rows with the fresh aggregation rather than duplicating."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cash_drawer (opened_at, closed_at, status, "
+            "opening_balance, closing_balance) "
+            "VALUES ('2026-07-31T00:00:00Z','2026-07-31T23:00:00Z','closed',1000,5000)"
+        )
+        d1 = conn.execute(
+            "SELECT id FROM cash_drawer WHERE status='closed'"
+        ).fetchone()[0]
+        asset_id = _account_id(conn, "1101")
+        dep_id = _account_id(conn, "2100")
+        _insert_journal_entry(conn, description="sale",
+            source_type="payment_transaction", source_id=1, drawer_id=d1,
+            lines=[(asset_id, 5000, 0, "in"), (dep_id, 0, 5000, "dep")])
+        conn.commit()
+
+        CashDrawer.save_breakdown_snapshot(conn, d1)
+        conn.commit()
+        before_count = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot "
+            "WHERE drawer_id = ?", (d1,)
+        ).fetchone()[0]
+        before_sale = _snapshot_rows(conn, d1)["sale"]
+
+        # Add another sale then re-save — should refresh, not duplicate.
+        _insert_journal_entry(conn, description="sale2",
+            source_type="payment_transaction", source_id=2, drawer_id=d1,
+            lines=[(asset_id, 3000, 0, "in"), (dep_id, 0, 3000, "dep")])
+        conn.commit()
+        CashDrawer.save_breakdown_snapshot(conn, d1)
+        conn.commit()
+        after_count = conn.execute(
+            "SELECT COUNT(*) FROM cash_drawer_breakdown_snapshot "
+            "WHERE drawer_id = ?", (d1,)
+        ).fetchone()[0]
+        after_sale = _snapshot_rows(conn, d1)["sale"]
+
+    assert before_count == 8
+    assert after_count == 8, f"re-close duplicated rows: {after_count}"
+    assert before_sale == (5000.0, 1)
+    assert after_sale == (8000.0, 2)
+
+
+def test_history_includes_breakdown_snapshot_per_closed_drawer(api_client):
+    """FR7/AC4: GET /history embeds breakdownSnapshot in each closed drawer
+    item; open drawers (none in history) would return []."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    close = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_200_000}
+    )
+    assert close.status_code == 200, close.text
+    resp = api_client.get("/api/cash-drawer/history")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert items, "history should have at least one closed drawer"
+    closed = items[0]
+    assert closed["status"] == "closed"
+    snapshot = closed["breakdownSnapshot"]
+    assert len(snapshot) == 8
+    cats = {s["category"] for s in snapshot}
+    assert cats == set(_BREAKDOWN_CATEGORIES)
+
+
+def test_status_includes_breakdown_snapshot_for_recent_closed(api_client):
+    """FR7: GET /status includes breakdownSnapshot for the most recent closed
+    drawer when no active drawer is open. Empty list when an open drawer
+    exists (client aggregates live)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    close = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_200_000}
+    )
+    assert close.status_code == 200, close.text
+    # No active drawer now → status returns the recent-closed branch.
+    resp = api_client.get("/api/cash-drawer/status")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body.get("activeDrawer") is None
+    snapshot = body["breakdownSnapshot"]
+    assert len(snapshot) == 8
+    cats = {s["category"] for s in snapshot}
+    assert cats == set(_BREAKDOWN_CATEGORIES)
+
+
+def test_status_breakdown_snapshot_empty_when_open_drawer_exists(api_client):
+    """FR7: GET /status returns breakdownSnapshot == [] for an open active
+    drawer (the client aggregates breakdown live from transactions)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    resp = api_client.get("/api/cash-drawer/status")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body.get("status") == "open"
+    assert body["breakdownSnapshot"] == []

@@ -12,8 +12,15 @@
 ///     "timestamp": "2026-08-01T08:00:00Z",// transaction_date fallback to created_at
 ///     "note": "Mở quầy sáng",             // journal entry description
 ///     "reference": "BKS-16-001",          // originating document (order ref / event summary)
-///     "reference_detail": "Khách A"       // customer name or "staff — provider"
+///     "reference_detail": "Khách A",      // customer name or "staff — provider"
+///     "shippingAmount": 30000             // bus-shipping portion (2200 credit)
 ///   }
+///
+/// `shippingAmount` (DG-363 Phase 3 / FR5) carries the bus-shipping portion
+/// of a `payment_transaction` split into account 2200 by the backend. It is
+/// non-zero only for `payment_transaction` rows with a held bus-shipping
+/// amount; all other row types report `0`. The breakdown card uses it to
+/// separate the shipping inflow into the `busShipping` category.
 ///
 /// The backend computes `amount` as the net 1101 (Cash in Drawer) movement
 /// (debit - credit) of the linked journal entry, so positive values are
@@ -65,6 +72,13 @@ class CashDrawerTransaction {
   /// from the event JSON; empty for drawer-only operations.
   final String referenceDetail;
 
+  /// Bus-shipping portion of a `payment_transaction` (DG-363 Phase 3 / FR5).
+  /// Mirrors the net 2200 (Bus Shipping Held) credit the backend attaches
+  /// to each payment transaction row. Zero for non-payment rows and for
+  /// payments with no bus split. The breakdown card splits this amount
+  /// into the `busShipping` category so it is not folded into `Bán hàng`.
+  final int shippingAmount;
+
   const CashDrawerTransaction({
     required this.id,
     required this.type,
@@ -73,6 +87,7 @@ class CashDrawerTransaction {
     this.note = '',
     this.reference = '',
     this.referenceDetail = '',
+    this.shippingAmount = 0,
   });
 
   /// Convenience: whether this transaction is a cash inflow (amount > 0).
@@ -90,6 +105,7 @@ class CashDrawerTransaction {
       note: (json['note'] as String?) ?? '',
       reference: (json['reference'] as String?) ?? '',
       referenceDetail: (json['referenceDetail'] as String?) ?? '',
+      shippingAmount: (json['shippingAmount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -101,6 +117,7 @@ class CashDrawerTransaction {
         'note': note,
         'reference': reference,
         'referenceDetail': referenceDetail,
+        'shippingAmount': shippingAmount,
       };
 
   @override

@@ -88,6 +88,8 @@ _EXPECTED_TABLES = {
     "cash_drawer",
     # v95
     "cash_drawer_journal_entries",
+    # v97
+    "cash_drawer_breakdown_snapshot",
 }
 
 # Key composite / unique indexes that must exist after the full chain.

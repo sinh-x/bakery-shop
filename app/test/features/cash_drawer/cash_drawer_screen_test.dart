@@ -154,6 +154,11 @@ void main() {
     await _pump(tester, container);
 
     expect(find.text(VN.cashDrawerStatusOpen), findsWidgets);
+    // DG-363 Phase 3: the breakdown card is taller now (8 categories in 2
+    // groups + group totals + expected balance), so the action bar sits
+    // below the fold. Drag up to reveal it before asserting on its buttons.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
     expect(find.text(VN.cashDrawerCashIn), findsOneWidget);
     expect(find.text(VN.cashDrawerCashOut), findsOneWidget);
     // DG-359 Phase 2: the breakdown card now renders a "Đóng quầy" category

@@ -868,12 +868,25 @@ def drawer_status():
         if drawer:
             result = drawer.to_api_dict(conn)
             result["accountingBalance1101"] = accounting_balance_1101
+            # DG-363 Phase 2 (FR7): include the breakdown snapshot when the
+            # active drawer is closed (defensive — the active drawer is
+            # normally open, but if it is closed the client can render the
+            # snapshot directly). Open drawers return an empty list; the
+            # client aggregates breakdown live from transactions (Phase 3).
+            result["breakdownSnapshot"] = (
+                CashDrawer.get_breakdown_snapshot(conn, drawer.id)
+                if drawer.status == "closed"
+                else []
+            )
             return result
         recent = CashDrawer.get_most_recent_closed(conn)
         if recent:
             data = {"activeDrawer": None}
             data["previousCloseCountedAmount"] = recent.counted_amount
             data["accountingBalance1101"] = accounting_balance_1101
+            data["breakdownSnapshot"] = CashDrawer.get_breakdown_snapshot(
+                conn, recent.id
+            )
             return data
         # FR3 (DG-337 phase 4.1): always return accountingBalance1101, even when
         # no active drawer and no closed-drawer history exist, so the client
@@ -882,6 +895,7 @@ def drawer_status():
             "activeDrawer": None,
             "previousCloseCountedAmount": None,
             "accountingBalance1101": accounting_balance_1101,
+            "breakdownSnapshot": [],
         }
 
 
@@ -897,11 +911,24 @@ def drawer_history(
         drawers, total = CashDrawer.list_history(
             conn, since=since, until=until, limit=limit, offset=offset
         )
+        items = []
+        for d in drawers:
+            item = d.to_api_dict(conn)
+            # DG-363 Phase 2 (FR7): embed the breakdown snapshot for each
+            # closed drawer so the History tab renders the breakdown from
+            # the snapshot (source of truth) without re-aggregating journal
+            # entries (NFR1). Open drawers return an empty list.
+            item["breakdownSnapshot"] = (
+                CashDrawer.get_breakdown_snapshot(conn, d.id)
+                if d.status == "closed"
+                else []
+            )
+            items.append(item)
         return {
             "total": total,
             "limit": limit,
             "offset": offset,
-            "items": [d.to_api_dict(conn) for d in drawers],
+            "items": items,
         }
 
 

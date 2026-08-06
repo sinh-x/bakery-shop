@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from typing import Optional
 
+from baker.db.schema.migrations.v097 import BREAKDOWN_SNAPSHOT_CATEGORIES
 from baker.utils.time import now_utc
 
 
@@ -178,6 +179,10 @@ class CashDrawer:
         self.counted_amount = int(counted_amount)
         self.discrepancy = discrepancy
         self.closing_balance = expected
+        # DG-363 Phase 2 (FR6): persist the breakdown snapshot at close time
+        # so /history reads the closed-drawer breakdown from the snapshot
+        # instead of re-aggregating journal entries (FR7, NFR1).
+        CashDrawer.save_breakdown_snapshot(conn, self.id)
         return discrepancy
 
     def auto_close(self, conn, *, closed_at: Optional[str] = None) -> int:
@@ -208,6 +213,9 @@ class CashDrawer:
         self.counted_amount = expected
         self.discrepancy = 0
         self.closing_balance = expected
+        # DG-363 Phase 2 (FR6): persist the breakdown snapshot at auto-close
+        # time, identical to the manual close path.
+        CashDrawer.save_breakdown_snapshot(conn, self.id)
         return 0
 
     @staticmethod
@@ -279,6 +287,13 @@ class CashDrawer:
         # `expense` rows. These populate the `reference` and `reference_detail`
         # fields returned to the UI so each transaction card can show its
         # originating document (order ref or expense description).
+        #
+        # DG-363 Phase 2: also aggregate the net 2200 (Bus Shipping Held)
+        # credit per linked journal entry so the response can expose
+        # ``shippingAmount`` — the bus-shipping portion of a
+        # ``payment_transaction`` that was split into 2200 (FR5). The 2200
+        # lines are joined via a separate LEFT JOIN aliased ``jl2200`` /
+        # ``a2200`` so they do not fan-out the 1101 aggregation.
         rows = conn.execute(
             """
             SELECT je.id                AS je_id,
@@ -287,6 +302,14 @@ class CashDrawer:
                    je.transaction_date  AS transaction_date,
                    je.created_at        AS created_at,
                    COALESCE(SUM(jl1101.debit - jl1101.credit), 0) AS amount,
+                   COALESCE((
+                       SELECT SUM(jl2200.credit - jl2200.debit)
+                       FROM journal_lines jl2200
+                       JOIN accounts a2200
+                            ON a2200.id = jl2200.account_id
+                            AND a2200.code = '2200'
+                       WHERE jl2200.journal_entry_id = je.id
+                   ), 0) AS shipping_amount,
                    o.order_ref          AS order_ref,
                    o.customer_name      AS customer_name,
                    e.summary           AS event_summary,
@@ -344,6 +367,15 @@ class CashDrawer:
                     "id": str(row["je_id"]),
                     "type": source_type,
                     "amount": int(row["amount"]) if row["amount"] is not None else 0,
+                    # DG-363 Phase 2 (FR5): shippingAmount is the bus-shipping
+                    # portion of a payment_transaction split into 2200. Zero
+                    # for non-payment rows and for payments with no bus split.
+                    "shippingAmount": (
+                        int(row["shipping_amount"])
+                        if source_type == "payment_transaction"
+                           and row["shipping_amount"] is not None
+                        else 0
+                    ),
                     "timestamp": (
                         row["transaction_date"] if row["transaction_date"]
                         else row["created_at"]
@@ -373,3 +405,166 @@ class CashDrawer:
         ).fetchone()
         total = int(total_row["c"]) if total_row else 0
         return items, total
+
+    # ------------------------------------------------------------------
+    # DG-363 Phase 2 — breakdown snapshot (FR6, FR7)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _aggregate_breakdown(conn, drawer_id: int) -> dict[str, tuple[float, int]]:
+        """Aggregate the per-category breakdown for a single drawer.
+
+        Mirrors the v097 backfill classification (FR4/FR5/FR6): each linked
+        journal entry is classified by ``source_type`` into one of the 8
+        canonical categories. ``payment_transaction`` inflows on bus orders
+        split the 2200-held shipping portion into ``busShipping`` and the
+        remainder into ``sale``; refunds (net 1101 < 0) go to ``refund``.
+        Returns a dict keyed by category with ``(total_amount, count)`` tuples,
+        always containing all 8 categories (zero rows for empty categories).
+        """
+        snapshot: dict[str, tuple[float, int]] = {
+            cat: (0.0, 0) for cat in BREAKDOWN_SNAPSHOT_CATEGORIES
+        }
+        entry_totals = conn.execute(
+            """
+            SELECT je.id               AS je_id,
+                   je.source_type      AS source_type,
+                   COALESCE(SUM(CASE WHEN a.code = '1101'
+                                     THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_1101,
+                   COALESCE(SUM(CASE WHEN a.code = '2200'
+                                     THEN jl.credit - jl.debit ELSE 0 END), 0) AS held_2200
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_entries je ON je.id = cdje.journal_entry_id
+            JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            JOIN accounts a ON a.id = jl.account_id AND a.code IN ('1101', '2200')
+            WHERE cdje.cash_drawer_id = ?
+            GROUP BY je.id, je.source_type
+            """,
+            (int(drawer_id),),
+        ).fetchall()
+
+        def accumulate(category: str, amount: float, count: int) -> None:
+            prev_amount, prev_count = snapshot[category]
+            snapshot[category] = (prev_amount + amount, prev_count + count)
+
+        for row in entry_totals:
+            source_type = row["source_type"] or ""
+            net_1101 = float(row["net_1101"] or 0)
+            held_2200 = float(row["held_2200"] or 0)
+            # CQ-1 (DG-363 review-auto cycle 1): the source_type → breakdown
+            # category classification below is triplicated. The same mapping
+            # exists in two other files and MUST be kept in sync:
+            #   - src/baker/db/schema/migrations/v097.py:
+            #     _migrate_v97_cash_drawer_breakdown_snapshot (the backfill
+            #     path that persists snapshots for already-closed drawers)
+            #   - app/lib/features/cash_drawer/widgets/
+            #     cash_drawer_breakdown_card.dart: _categoryForType +
+            #     aggregateCashDrawerBreakdown (the Flutter live-aggregation
+            #     path)
+            # Any change to a category mapping, ordering, fallback, or the
+            # payment_transaction shipping split here MUST be mirrored in
+            # both of those files so the live aggregation, the persisted
+            # snapshot, and the client-side aggregation stay consistent.
+            if source_type == "payment_transaction":
+                if net_1101 < 0:
+                    accumulate("refund", net_1101, 1)
+                elif net_1101 > 0:
+                    shipping = min(held_2200, net_1101) if held_2200 > 0 else 0.0
+                    sale_portion = net_1101 - shipping
+                    if sale_portion > 0:
+                        accumulate("sale", sale_portion, 1)
+                    else:
+                        # sale_portion == 0: 1101 inflow fully consumed by
+                        # held shipping. The sale category still counts the
+                        # entry (at zero amount) so the count is not lost,
+                        # matching the backfill in v097.py. CQ-2 (DG-363
+                        # review-auto cycle 1): previously an
+                        # `elif sale_portion != 0` branch which was
+                        # unreachable (sale_portion >= 0 by construction);
+                        # changed to `else` so the zero-amount accumulation
+                        # actually executes as documented.
+                        accumulate("sale", sale_portion, 1)
+                    if shipping > 0:
+                        accumulate("busShipping", shipping, 1)
+            elif source_type == "expense":
+                accumulate("expense", net_1101, 1)
+            elif source_type in ("cash_drawer_cash_in", "owner_capital"):
+                accumulate("cashIn", net_1101, 1)
+            elif source_type in ("cash_drawer_cash_out", "cash_drawer_auto_transfer"):
+                accumulate("cashOut", net_1101, 1)
+            elif source_type == "cash_drawer_open":
+                accumulate("open", net_1101, 1)
+            elif source_type == "cash_drawer_close_adjust":
+                accumulate("close", net_1101, 1)
+            else:
+                accumulate("sale", net_1101, 1)
+        return snapshot
+
+    @staticmethod
+    def save_breakdown_snapshot(conn, drawer_id: int) -> None:
+        """FR6: persist the 8-row breakdown snapshot for a drawer at close time.
+
+        Aggregates the drawer's linked journal entries by category and
+        upserts one row per category into
+        ``cash_drawer_breakdown_snapshot``. Idempotent: existing rows for
+        ``(drawer_id, category)`` are replaced with the fresh aggregation so
+        re-closing (or a re-run) updates the snapshot rather than duplicating
+        rows. Must be called inside the close transaction so the snapshot
+        reflects the same journal state as the persisted ``closing_balance``.
+        """
+        snapshot = CashDrawer._aggregate_breakdown(conn, int(drawer_id))
+        created_at = now_utc()
+        # Delete then re-insert so a re-close refreshes the snapshot. The
+        # UNIQUE(drawer_id, category) index makes INSERT OR REPLACE an
+        # alternative, but delete+insert keeps the created_at consistent for
+        # all 8 rows on a refresh.
+        conn.execute(
+            "DELETE FROM cash_drawer_breakdown_snapshot WHERE drawer_id = ?",
+            (int(drawer_id),),
+        )
+        rows = [
+            (int(drawer_id), cat, total_amount, count, created_at)
+            for cat in BREAKDOWN_SNAPSHOT_CATEGORIES
+            for total_amount, count in (snapshot[cat],)
+        ]
+        conn.executemany(
+            "INSERT INTO cash_drawer_breakdown_snapshot "
+            "(drawer_id, category, total_amount, count, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    @staticmethod
+    def get_breakdown_snapshot(conn, drawer_id: int) -> list[dict]:
+        """FR7: read the persisted breakdown snapshot for a closed drawer.
+
+        Returns a list of 8 dicts (one per canonical category, in the fixed
+        ``BREAKDOWN_SNAPSHOT_CATEGORIES`` order) with ``category``,
+        ``totalAmount`` (float), and ``count`` (int). Returns ``[]`` when the
+        drawer has no snapshot (e.g. an open drawer, or a closed drawer that
+        predates the v097 migration and was not backfilled) — the caller
+        treats an empty list as "snapshot unavailable".
+        """
+        placeholders = ",".join("?" for _ in BREAKDOWN_SNAPSHOT_CATEGORIES)
+        rows = conn.execute(
+            f"""
+            SELECT category, total_amount, count
+            FROM cash_drawer_breakdown_snapshot
+            WHERE drawer_id = ? AND category IN ({placeholders})
+            """,
+            (int(drawer_id), *BREAKDOWN_SNAPSHOT_CATEGORIES),
+        ).fetchall()
+        by_cat = {r["category"]: r for r in rows}
+        result = []
+        for cat in BREAKDOWN_SNAPSHOT_CATEGORIES:
+            row = by_cat.get(cat)
+            if row is None:
+                continue
+            result.append(
+                {
+                    "category": cat,
+                    "totalAmount": float(row["total_amount"]),
+                    "count": int(row["count"]),
+                }
+            )
+        return result

@@ -193,6 +193,8 @@ from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts  # noqa: F401
 from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries  # noqa: F401
 from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns  # noqa: F401
 from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance  # noqa: F401
+from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance  # noqa: F401
+from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -364,6 +366,8 @@ __all__ = [
     '_migrate_v93_rename_quy_to_quay_in_journal_entries',
     '_migrate_v94_cash_drawer_tien_rut_columns',
     '_migrate_v95_cash_drawer_journal_balance',
+    '_migrate_v96_cash_drawer_counted_opening_balance',
+    '_migrate_v97_cash_drawer_breakdown_snapshot',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',
