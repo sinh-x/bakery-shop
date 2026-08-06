@@ -47,12 +47,18 @@ class PosCheckoutPaymentController {
     required this.resolveDeliveryType,
     required this.goToStage,
     required this.writeBackToCart,
+    this.backFromPaymentStepOverride,
   });
 
   final SubmitOrderFn submitOrder;
   final ResolveDeliveryTypeFn resolveDeliveryType;
   final GoToStageFn goToStage;
   final WriteBackToCartFn writeBackToCart;
+
+  /// Optional override for the Stage 5 "Quay lại" action. When provided
+  /// (e.g. by the Giao ngay fast-path, DG-370 Phase 1), this is called
+  /// instead of the default [backFromPaymentStep] which returns to Stage 4.
+  final VoidCallback? backFromPaymentStepOverride;
 
   bool _isProcessing = false;
   bool get isProcessing => _isProcessing;
@@ -119,7 +125,13 @@ class PosCheckoutPaymentController {
         isProcessing: _isProcessing,
       );
 
-  void backFromPaymentStep() => goToStage(4);
+  void backFromPaymentStep() {
+    if (backFromPaymentStepOverride != null) {
+      backFromPaymentStepOverride!();
+      return;
+    }
+    goToStage(4);
+  }
 
   void onPaymentMethodChanged(String paymentMethod) {
     if (_selectedPaymentMethod == paymentMethod) return;

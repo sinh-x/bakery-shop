@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../providers/pos_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Sticky bottom cart summary bar for POS screen.
 class PosCartBar extends ConsumerWidget {
@@ -79,7 +79,18 @@ class PosCartBar extends ConsumerWidget {
                   ),
                 ),
 
-                // Payment button
+                // Payment buttons
+                // DG-370 Phase 1 — "Giao ngay & Thanh toán" fast-path button:
+                // jumps directly to Stage 5 with Giao ngay walk-in defaults
+                // (FR1). Only visible when the cart has items (the whole bar
+                // is hidden when itemCount == 0).
+                FilledButton.icon(
+                  // ignore: prefer_const_constructors
+                  onPressed: () => context.push('/pos/checkout?fast=true'),
+                  icon: const Icon(Icons.bolt, size: 18),
+                  label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+                ),
+                const SizedBox(width: 8),
                 FilledButton.icon(
                   // ignore: prefer_const_constructors
                   onPressed: () => context.push('/pos/checkout'),

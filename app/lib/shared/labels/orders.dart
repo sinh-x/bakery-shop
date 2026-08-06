@@ -163,6 +163,10 @@ class OrdersLabels {
   static const pickupTitle = 'Nhận bánh';
   static const pickupSubtitle = 'Vui lòng chọn hình thức nhận bánh';
 
+  // POS cart bar fast-path button (DG-370 Phase 1) — one-tap Giao ngay +
+  // Thanh toán jump to Stage 5 with walk-in defaults.
+  static const posGiaoNgayThanhToan = 'Giao ngay & Thanh toán';
+
   // Delivery filter labels (DG-261 Phase 1)
   static const deliveryFilterToday = 'Hôm nay';
   static const deliveryFilterAll = 'Tất cả';
