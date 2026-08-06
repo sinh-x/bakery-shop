@@ -45,6 +45,11 @@ class VN {
   // Order detail
   static const orderDetail = 'Chi tiết đơn hàng';
   static const editOrder = 'Sửa đơn hàng';
+
+  // Order detail tabs (DG-334 Phase 1 — FR1, AC1)
+  static const orderDetailTabGeneral = 'Tổng quan';
+  static const orderDetailTabWorkItems = 'Sản xuất';
+  static const orderDetailTabTransactions = 'Giao dịch';
   static const customer = 'Khách hàng';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
