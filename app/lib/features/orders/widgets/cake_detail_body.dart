@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
+import '../../../providers/products_provider.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import 'cake_detail_blank_section.dart';
 import 'candle_type_radio_group.dart';
+import 'enum_attribute_display.dart';
 import 'order_photo_section.dart';
 
 /// Status → color map for work item status chips (shared between the detail
@@ -240,6 +242,16 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             '${widget.item.quantity} × ${formatVND(widget.item.unitPrice)}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.outline,
+            ),
+          ),
+
+          // ── Enum attribute lines (DG-362 Phase 3 / FR2 / AC2) ────
+          ...buildEnumAttributeLines(
+            context,
+            widget.item.attributes,
+            enumAttributesFor(
+              widget.item.productId,
+              ref.watch(productsProvider).asData?.value ?? const [],
             ),
           ),
 

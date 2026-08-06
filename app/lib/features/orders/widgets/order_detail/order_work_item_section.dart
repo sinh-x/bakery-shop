@@ -10,7 +10,9 @@ import '../../../../data/api/api_client.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
+import '../../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
 import 'order_work_item_print_dialog.dart';
@@ -87,6 +89,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+    final products = ref.watch(productsProvider).asData?.value ?? const [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,6 +156,10 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                   ...regularItems.map(
                     (item) => OrderWorkItemCard(
                       item: item,
+                      enumAttributes: enumAttributesFor(
+                        item.productId,
+                        products,
+                      ),
                       photos: allPhotos.where((p) {
                         final wId = p.workItemId;
                         return wId != null && wId == int.tryParse(item.id);

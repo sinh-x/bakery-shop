@@ -25,6 +25,13 @@ class CakeQueueItem {
   final String? createdAt;
   final String orderStatus;
   final int blankCount;
+  /// Selected enum attributes for this work item (e.g. `nhan_banh`, `candle_type`)
+  /// sourced from `order_items.attributes` via the cake queue API response.
+  /// Populated as `Map<String, dynamic>` by [fromJson]; empty dict when no
+  /// attributes are stored (FR5, AC5). Display phases render it via
+  /// `buildEnumAttributeLines()` together with `productsProvider`-resolved
+  /// `enumAttributes` (Phase 3/4).
+  final Map<String, dynamic> attributes;
 
   const CakeQueueItem({
     required this.id,
@@ -46,6 +53,7 @@ class CakeQueueItem {
     this.createdAt,
     required this.orderStatus,
     this.blankCount = 0,
+    this.attributes = const {},
   });
 
   factory CakeQueueItem.fromJson(Map<String, dynamic> json) => CakeQueueItem(
@@ -68,5 +76,6 @@ class CakeQueueItem {
         createdAt: json['createdAt'] as String?,
         orderStatus: (json['orderStatus'] as String?) ?? '',
         blankCount: (json['blankCount'] as int?) ?? 0,
+        attributes: (json['attributes'] as Map<String, dynamic>?) ?? const {},
       );
 }
