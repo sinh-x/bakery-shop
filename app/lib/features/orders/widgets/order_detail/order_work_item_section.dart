@@ -7,13 +7,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../data/api/api_client.dart';
+import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order.dart';
+import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
+import '../../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
 import 'order_work_item_print_dialog.dart';
+
+/// Resolve the enum attributes defined on the product matching [productId].
+///
+/// Mirrors `OrderDetailGeneralTab._enumAttributesFor` so work-item cards in
+/// the work-items tab show the same enum lines as the order-items list
+/// (DG-362 Phase 3 / FR1 / AC1).
+List<EnumAttribute> _enumAttributesFor(
+  String productId,
+  List<Product> products,
+) {
+  if (productId.isEmpty || products.isEmpty) return const [];
+  for (final p in products) {
+    if (p.id.toString() == productId || p.productCode == productId) {
+      return p.enumAttributes;
+    }
+  }
+  return const [];
+}
 
 /// Expandable section listing the order's work items (regular + extras),
 /// with per-item status transition and internal-print prompts.
@@ -87,6 +108,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+    final products = ref.watch(productsProvider).asData?.value ?? const [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,6 +175,10 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                   ...regularItems.map(
                     (item) => OrderWorkItemCard(
                       item: item,
+                      enumAttributes: _enumAttributesFor(
+                        item.productId,
+                        products,
+                      ),
                       photos: allPhotos.where((p) {
                         final wId = p.workItemId;
                         return wId != null && wId == int.tryParse(item.id);

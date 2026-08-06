@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/enum_attribute.dart';
 import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
+import '../../../providers/products_provider.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import 'cake_detail_blank_section.dart';
 import 'candle_type_radio_group.dart';
+import 'enum_attribute_display.dart';
 import 'order_photo_section.dart';
 
 /// Status → color map for work item status chips (shared between the detail
@@ -75,6 +78,24 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
   static const int _cashAmountStep = 100000;
   static const int _minCashAmount = 100000;
   bool _editingCashAmount = false;
+
+  /// Resolve the enum attributes defined on the product matching the work
+  /// item's `productId`. Mirrors `OrderDetailGeneralTab._enumAttributesFor`
+  /// so the cake detail body shows the same enum lines (DG-362 Phase 3 /
+  /// FR2 / AC2).
+  List<EnumAttribute> _enumAttributesFor(
+    String productId,
+    WidgetRef ref,
+  ) {
+    if (productId.isEmpty) return const [];
+    final products = ref.watch(productsProvider).asData?.value ?? const [];
+    for (final p in products) {
+      if (p.id.toString() == productId || p.productCode == productId) {
+        return p.enumAttributes;
+      }
+    }
+    return const [];
+  }
 
   @override
   void initState() {
@@ -241,6 +262,13 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.outline,
             ),
+          ),
+
+          // ── Enum attribute lines (DG-362 Phase 3 / FR2 / AC2) ────
+          ...buildEnumAttributeLines(
+            context,
+            widget.item.attributes,
+            _enumAttributesFor(widget.item.productId, ref),
           ),
 
           // ── Birthday / age ────────────────────────────────────────

@@ -4,9 +4,11 @@
 // Reviewed 2026-07-30.
 import 'package:flutter/material.dart';
 
+import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/work_item.dart';
 import 'package:bakery_app/shared/labels/orders.dart' hide workItemStatusColors;
+import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_photo_strip.dart';
@@ -21,6 +23,7 @@ class OrderWorkItemCard extends StatelessWidget {
     required this.photos,
     required this.baseUrl,
     required this.onTap,
+    this.enumAttributes = const [],
   });
 
   final WorkItem item;
@@ -28,6 +31,11 @@ class OrderWorkItemCard extends StatelessWidget {
   final List<OrderPhoto> photos;
   final String baseUrl;
   final VoidCallback? onTap;
+
+  /// Product-defined enum attributes (e.g. `nhan_banh`) used to render
+  /// `labelVi: valueVi` lines for the stored `item.attributes` selections
+  /// (DG-362 Phase 3 / FR1 / AC1).
+  final List<EnumAttribute> enumAttributes;
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +152,12 @@ class OrderWorkItemCard extends StatelessWidget {
                     assignedPrice: item.assignedPrice,
                   ),
                 ),
+              // Enum attribute lines (DG-362 Phase 3 / FR1 / AC1).
+              ...buildEnumAttributeLines(
+                context,
+                item.attributes,
+                enumAttributes,
+              ),
               // Birthday badge + age
               if (item.isBirthday)
                 Padding(
