@@ -166,6 +166,68 @@ void main() {
     });
   });
 
+  group('CashDrawerTransaction (DG-363 Phase 3 — shippingAmount)', () {
+    test('fromJson parses shippingAmount for bus payment rows', () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '40',
+        'type': 'payment_transaction',
+        'amount': 200000,
+        'timestamp': '2026-08-06T09:00:00Z',
+        'note': 'Bán bánh kem giao xe khách',
+        'shippingAmount': 30000,
+      });
+
+      expect(txn.shippingAmount, 30000);
+    });
+
+    test('fromJson defaults shippingAmount to 0 when absent', () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '41',
+        'type': 'cash_drawer_open',
+        'amount': 1000000,
+        'timestamp': '2026-08-06T08:00:00Z',
+        'note': 'Mở quầy',
+      });
+
+      expect(txn.shippingAmount, 0);
+    });
+
+    test('fromJson defaults shippingAmount to 0 when null', () {
+      final txn = CashDrawerTransaction.fromJson({
+        'id': '42',
+        'type': 'expense',
+        'amount': -50000,
+        'shippingAmount': null,
+      });
+
+      expect(txn.shippingAmount, 0);
+    });
+
+    test('toJson round-trips shippingAmount', () {
+      final original = CashDrawerTransaction.fromJson({
+        'id': '43',
+        'type': 'payment_transaction',
+        'amount': 200000,
+        'shippingAmount': 30000,
+      });
+
+      final roundTripped =
+          CashDrawerTransaction.fromJson(original.toJson());
+
+      expect(roundTripped.shippingAmount, original.shippingAmount);
+    });
+
+    test('constructor defaults shippingAmount to 0', () {
+      const txn = CashDrawerTransaction(
+        id: '44',
+        type: 'payment_transaction',
+        amount: 50000,
+      );
+
+      expect(txn.shippingAmount, 0);
+    });
+  });
+
   group('CashDrawerTransactionResponse (DG-343 Phase 2)', () {
     test('fromJson parses paginated envelope with items', () {
       final resp = CashDrawerTransactionResponse.fromJson({

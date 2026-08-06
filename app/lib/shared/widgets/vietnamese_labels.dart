@@ -1245,17 +1245,34 @@ class VN {
   static const cashDrawerTxnTypeSale = 'Bán hàng';
   static const cashDrawerTxnTypeExpense = 'Chi phí';
   static const cashDrawerTxnTypeClose = 'Đóng quầy';
+  // DG-363 Phase 3 (FR1): two new categories for the 2-group breakdown.
+  /// "Hoàn tiền" — customer refund (payment_transaction with amount < 0).
+  static const cashDrawerTxnTypeRefund = 'Hoàn tiền';
+  /// "Phí ship bus" — bus-shipping portion split out of a payment inflow.
+  static const cashDrawerTxnTypeBusShipping = 'Phí ship bus';
 
-  // ── Cash-drawer breakdown card (DG-359 Phase 1) ───────────────────────
+  // ── Cash-drawer breakdown card (DG-359 Phase 1, DG-363 Phase 3) ────────
   /// Section title for the categorized in/out breakdown shown inside the
   /// active-drawer status card. Sits directly under the opening-balance row.
   static const cashDrawerBreakdownTitle = 'Phân tích tiền vào/ra';
 
-  /// Total row labels — the breakdown card footer summarises all six
-  /// category rows. "Tổng tiền vào" sums inflows; "Tổng tiền ra" sums
-  /// outflows; their difference reconciles to the expected balance.
+  // DG-363 Phase 3 (FR1): 2-group structure headers.
+  /// "Tiền vào" — header for the inflow group (Bán hàng, Nạp tiền, Mở quầy).
+  static const cashDrawerBreakdownInflowGroup = 'Tiền vào';
+  /// "Tiền ra" — header for the outflow group (Hoàn tiền, Chi phí, Rút tiền,
+  /// Phí ship bus, Đóng quầy).
+  static const cashDrawerBreakdownOutflowGroup = 'Tiền ra';
+
+  /// Total row labels — the breakdown card footer summarises the category
+  /// rows. "Tổng tiền vào" sums inflows; "Tổng tiền ra" sums outflows; their
+  /// difference reconciles to the expected balance (FR3/AC3).
   static const cashDrawerBreakdownTotalIn = 'Tổng tiền vào';
   static const cashDrawerBreakdownTotalOut = 'Tổng tiền ra';
+
+  /// "Số dư dự kiến" — the reconciled inflow − outflow total shown at the
+  /// bottom of the breakdown card. Should match the status card's expected
+  /// balance (FR3/AC3).
+  static const cashDrawerBreakdownExpected = 'Số dư dự kiến';
 
   /// Count column header for the per-category transaction count.
   static const cashDrawerBreakdownCount = 'SL';
