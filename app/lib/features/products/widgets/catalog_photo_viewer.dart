@@ -1,16 +1,15 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
+import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'catalog_tag_chips.dart';
@@ -92,14 +91,14 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) throw Exception('No data');
-      final tmpDir = await getTemporaryDirectory();
-      final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
-      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      final bytes = Uint8List.fromList(resp.data!);
+      final xfile = await createXFileFromBytes(
+        bytes,
+        fileName: 'catalog_photo_${photo.id}.jpg',
+        mimeType: 'image/jpeg',
+      );
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(tmpFile.path)],
-          text: 'Tiệm Bánh Ninh Diêm',
-        ),
+        ShareParams(files: [xfile], text: 'Tiệm Bánh Ninh Diêm'),
       );
     } catch (e) {
       if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);

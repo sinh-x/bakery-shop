@@ -1,16 +1,14 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
 import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
+import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -179,16 +177,17 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) throw Exception('No data');
-      final tmpDir = await getTemporaryDirectory();
       final bytes = Uint8List.fromList(resp.data!);
       final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
-      final tmpFile = File(
-        '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
+      final fileName = _knowledgePhotoFileName(photo, metadata);
+      final xfile = await createXFileFromBytes(
+        bytes,
+        fileName: fileName,
+        mimeType: metadata.mimeType,
       );
-      await tmpFile.writeAsBytes(bytes);
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(tmpFile.path, mimeType: metadata.mimeType)],
+          files: [xfile],
           text: photo.caption.isNotEmpty ? photo.caption : null,
         ),
       );

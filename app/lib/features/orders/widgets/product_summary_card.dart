@@ -1,6 +1,7 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_draft.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
@@ -147,25 +148,7 @@ class ProductSummaryCard extends StatelessWidget {
           separatorBuilder: (_, _) => const SizedBox(width: 6),
           itemBuilder: (context, index) {
             final xfile = item.pendingPhotos[index];
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(
-                File(xfile.path),
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 56,
-                  height: 56,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: 20,
-                    color: theme.colorScheme.outline,
-                  ),
-                ),
-              ),
-            );
+            return _PhotoThumb(file: xfile);
           },
         ),
       ),
@@ -199,6 +182,71 @@ class ProductSummaryCard extends StatelessWidget {
           Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
+    );
+  }
+}
+
+class _PhotoThumb extends StatefulWidget {
+  const _PhotoThumb({required this.file});
+
+  final XFile file;
+
+  @override
+  State<_PhotoThumb> createState() => _PhotoThumbState();
+}
+
+class _PhotoThumbState extends State<_PhotoThumb> {
+  late final Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = widget.file.readAsBytes();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<Uint8List>(
+      future: _bytesFuture,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return CircleAvatar(
+            radius: 28,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            child: Icon(
+              Icons.broken_image_outlined,
+              size: 20,
+              color: theme.colorScheme.outline,
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: const SizedBox(width: 56, height: 56),
+          );
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.memory(
+            snap.data!,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Container(
+              width: 56,
+              height: 56,
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: Icon(
+                Icons.broken_image_outlined,
+                size: 20,
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

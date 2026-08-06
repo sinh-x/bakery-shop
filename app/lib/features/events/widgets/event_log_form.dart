@@ -1,5 +1,3 @@
-import 'dart:io';
-
 // EXEMPT: 300-line widget threshold exceeded because the quick-log form owns
 // summary/type/tag selection, photo upload lifecycle, and submit flow in one
 // inline widget to keep QuickLogPhotoPicker under its own widget limit.
@@ -132,7 +130,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     final service = ref.read(eventServiceProvider);
     await upload.uploadAll(
       _selectedPhotos,
-      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+      (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
       showTopSnackBar(context, VN.eventPhotosUploadFailed);

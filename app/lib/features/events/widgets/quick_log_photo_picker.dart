@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -95,31 +95,67 @@ class _QuickLogPhotoPickerState extends ConsumerState<QuickLogPhotoPicker> {
   }
 }
 
-class _CompactThumb extends StatelessWidget {
+class _CompactThumb extends StatefulWidget {
   const _CompactThumb({required this.file, required this.onRemove});
 
   final XFile file;
   final VoidCallback onRemove;
 
   @override
+  State<_CompactThumb> createState() => _CompactThumbState();
+}
+
+class _CompactThumbState extends State<_CompactThumb> {
+  late final Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = widget.file.readAsBytes();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.file(
-            File(file.path),
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
-          ),
+        FutureBuilder<Uint8List>(
+          future: _bytesFuture,
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return CircleAvatar(
+                radius: 28,
+                backgroundColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              );
+            }
+            if (!snap.hasData) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: const SizedBox(width: 56, height: 56),
+              );
+            }
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(
+                snap.data!,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
+              ),
+            );
+          },
         ),
         Positioned(
           top: -6,
           right: -6,
           child: GestureDetector(
-            onTap: onRemove,
+            onTap: widget.onRemove,
             child: const CircleAvatar(
               radius: 10,
               backgroundColor: Colors.black54,
