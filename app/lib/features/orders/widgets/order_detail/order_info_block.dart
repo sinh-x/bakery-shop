@@ -22,7 +22,7 @@ import 'order_info_row.dart';
 /// banner and the items list.
 ///
 /// Watches [currentStaffProvider] and reacts to [orderDetailProvider] refresh
-/// (via the [order] prop supplied by the parent [OrderDetailBody]) so the
+/// (via the [order] prop supplied by the parent screen/tab widget) so the
 /// delivery assignment row stays in sync after claim/unclaim (DG-311 / FR3 /
 /// AC4).
 ///
