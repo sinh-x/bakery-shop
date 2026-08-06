@@ -64,7 +64,7 @@ class OrderPaymentStatusSummary extends StatelessWidget {
                       ),
                     ),
                     TextSpan(
-                      text: ' / ${formatVND(total)}',
+                      text: ' ${VN.paymentStatusSummaryOfTotal} ${formatVND(total)}',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.outline,
                       ),

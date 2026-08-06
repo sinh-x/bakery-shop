@@ -39,6 +39,7 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     with SingleTickerProviderStateMixin {
+  static const _tabCount = 3;
   late final TabController _tabController;
   bool _transitioning = false;
   bool _acknowledgedOnce = false;
@@ -46,7 +47,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: _tabCount, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _acknowledgeIfNeeded();
     });
