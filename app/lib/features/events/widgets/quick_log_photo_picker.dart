@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106,14 +106,25 @@ class _CompactThumb extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.file(
-            File(file.path),
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
-          ),
+        FutureBuilder<Uint8List>(
+          future: file.readAsBytes(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: const SizedBox(width: 56, height: 56),
+              );
+            }
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(
+                snap.data!,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover,
+              ),
+            );
+          },
         ),
         Positioned(
           top: -6,

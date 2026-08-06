@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -147,24 +147,35 @@ class ProductSummaryCard extends StatelessWidget {
           separatorBuilder: (_, _) => const SizedBox(width: 6),
           itemBuilder: (context, index) {
             final xfile = item.pendingPhotos[index];
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(
-                File(xfile.path),
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 56,
-                  height: 56,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: 20,
-                    color: theme.colorScheme.outline,
+            return FutureBuilder<Uint8List>(
+              future: xfile.readAsBytes(),
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: const SizedBox(width: 56, height: 56),
+                  );
+                }
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(
+                    snap.data!,
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 56,
+                      height: 56,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 20,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             );
           },
         ),
