@@ -1,33 +1,20 @@
-/// Categorized cash in/out breakdown card (DG-359 Phase 1, DG-363 Phase 3).
+/// Categorized cash in/out breakdown card (DG-359 Phase 1, DG-363 Phase 3/4).
 ///
-/// Renders an 8-category breakdown of drawer transactions split into two
-/// groups — "Tiền vào" (Bán hàng, Nạp tiền, Mở quầy) and "Tiền ra" (Hoàn tiền,
-/// Chi phí, Rút tiền, Phí ship bus, Đóng quầy) — each group followed by its
-/// own total, and a footer row reconciling inflow − outflow = expected
-/// balance. Aggregation is fully client-side on a list of
-/// [CashDrawerTransaction] already fetched by
-/// `cashDrawerTransactionsProvider` (NFR2: no new network request).
+/// Renders an 8-category breakdown split into two groups — "Tiền vào" and
+/// "Tiền ra" — each with its own total, plus a footer reconciling inflow −
+/// outflow = expected balance. Special transaction types are folded into
+/// canonical categories (FR7), and `payment_transaction` rows are split by
+/// sign and shipping (FR4/FR5).
 ///
-/// Special transaction types are folded into the closest canonical category
-/// (FR7):
-///   - `cash_drawer_auto_transfer` → Rút tiền
-///   - `unidentified_sale`         → Bán hàng
-///   - `owner_capital`             → Nạp tiền
+/// The widget is a pure function of its inputs: [transactions] (live, open
+/// drawer — wired into [CashDrawerStatusCard]) or [breakdown] (snapshot,
+/// closed drawer — wired into [CashDrawerHistoryList], Phase 4 / FR7). Empty
+/// state (FR5) renders all 8 categories with zero totals/counts.
 ///
-/// `payment_transaction` rows are split by sign and shipping (FR4/FR5):
-///   - amount < 0                   → Hoàn tiền (refund)
-///   - amount > 0, shippingAmount>0 → sale keeps (amount − shippingAmount),
-///                                     Phí ship bus keeps shippingAmount
-///   - amount > 0, shippingAmount=0→ Bán hàng (sale)
-///
-/// The widget is a pure function of its `transactions` prop, so it can be
-/// wired into [CashDrawerStatusCard] by passing the active drawer's loaded
-/// transaction list. Empty state (FR5) renders all 8 categories with zero
-/// totals and zero counts rather than a blank table.
-///
-/// Per NFR3 (each file ≤ 300 lines) the group widgets live in their own files:
-/// `cash_drawer_breakdown_inflow_group.dart` and
-/// `cash_drawer_breakdown_outflow_group.dart`.
+/// Per NFR3 (file ≤ 300 lines) the group widgets live in their own files
+/// (`cash_drawer_breakdown_inflow_group.dart`,
+/// `cash_drawer_breakdown_outflow_group.dart`) and the snapshot adapter in
+/// `cash_drawer_breakdown_snapshot.dart`.
 library;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -244,28 +231,40 @@ const outflowCategories = [
   CashDrawerBreakdownCategory.close,
 ];
 
-/// Breakdown card widget (DG-359 Phase 1, DG-363 Phase 3). Renders the 8
+/// Breakdown card widget (DG-359 Phase 1, DG-363 Phase 3/4). Renders the 8
 /// category rows in two groups with per-group totals and a footer reconciling
 /// inflow − outflow = expected balance.
+///
+/// Two modes: pass [transactions] for live aggregation (open drawer), or
+/// [breakdown] for snapshot mode (closed drawer, Phase 4 / FR7 —
+/// pre-built via [breakdownFromSnapshot], no /transactions request, NFR1).
+/// [breakdown] wins when both are set (snapshot is source of truth).
 class CashDrawerBreakdownCard extends StatelessWidget {
   const CashDrawerBreakdownCard({
     super.key,
-    required this.transactions,
+    this.transactions,
+    this.breakdown,
   });
 
-  final List<CashDrawerTransaction> transactions;
+  /// Live transaction list (open drawer). Ignored when [breakdown] is set.
+  final List<CashDrawerTransaction>? transactions;
+
+  /// Pre-aggregated breakdown (snapshot mode). When set, renders this
+  /// directly without re-aggregating [transactions].
+  final CashDrawerBreakdown? breakdown;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final breakdown = aggregateCashDrawerBreakdown(transactions);
+    final aggregated =
+        breakdown ?? aggregateCashDrawerBreakdown(transactions ?? const []);
     final inflowRows = [
       for (final c in inflowCategories)
-        breakdown.rows.firstWhere((r) => r.category == c),
+        aggregated.rows.firstWhere((r) => r.category == c),
     ];
     final outflowRows = [
       for (final c in outflowCategories)
-        breakdown.rows.firstWhere((r) => r.category == c),
+        aggregated.rows.firstWhere((r) => r.category == c),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,15 +278,16 @@ class CashDrawerBreakdownCard extends StatelessWidget {
         const SizedBox(height: 8),
         CashDrawerBreakdownInflowGroup(
           rows: inflowRows,
-          totalIn: breakdown.totalIn,
+          totalIn: aggregated.totalIn,
         ),
         const SizedBox(height: 8),
         CashDrawerBreakdownOutflowGroup(
           rows: outflowRows,
-          totalOut: breakdown.totalOut,
+          totalOut: aggregated.totalOut,
         ),
         const Divider(height: 16),
-        CashDrawerBreakdownExpectedBalanceRow(expected: breakdown.expectedBalance),
+        CashDrawerBreakdownExpectedBalanceRow(
+            expected: aggregated.expectedBalance),
       ],
     );
   }

@@ -209,6 +209,63 @@ void main() {
       ).toJson();
       expect(withCount['countedOpeningBalance'], 950000);
     });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson parses breakdownSnapshot rows when '
+        'present', () {
+      final drawer = CashDrawer.fromJson({
+        ..._drawerJson(),
+        'breakdownSnapshot': [
+          {'category': 'sale', 'totalAmount': 200000.0, 'count': 3},
+          {'category': 'refund', 'totalAmount': -25000.0, 'count': 1},
+          {'category': 'busShipping', 'totalAmount': 30000.0, 'count': 1},
+        ],
+      });
+
+      expect(drawer.breakdownSnapshot.length, 3);
+      expect(drawer.breakdownSnapshot.first.category, 'sale');
+      expect(drawer.breakdownSnapshot.first.totalAmount, 200000);
+      expect(drawer.breakdownSnapshot.first.count, 3);
+      expect(
+          drawer.breakdownSnapshot
+              .firstWhere((r) => r.category == 'refund')
+              .totalAmount,
+          -25000);
+      expect(
+          drawer.breakdownSnapshot
+              .firstWhere((r) => r.category == 'busShipping')
+              .count,
+          1);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson defaults breakdownSnapshot to empty '
+        'when omitted (older responses / open drawer)', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+      expect(drawer.breakdownSnapshot, isEmpty);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson tolerates a non-list '
+        'breakdownSnapshot as empty', () {
+      final drawer = CashDrawer.fromJson({..._drawerJson(), 'breakdownSnapshot': null});
+      expect(drawer.breakdownSnapshot, isEmpty);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: toJson round-trips breakdownSnapshot', () {
+      final original = CashDrawer.fromJson({
+        ..._drawerJson(),
+        'breakdownSnapshot': [
+          {'category': 'sale', 'totalAmount': 100.0, 'count': 1},
+        ],
+      });
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+      expect(roundTripped.breakdownSnapshot.length, 1);
+      expect(roundTripped.breakdownSnapshot.first.category, 'sale');
+      expect(roundTripped.breakdownSnapshot.first.totalAmount, 100);
+      expect(roundTripped.breakdownSnapshot.first.count, 1);
+    });
   });
 
   group('CashDrawerHistoryResponse', () {

@@ -1277,6 +1277,12 @@ class VN {
   /// Count column header for the per-category transaction count.
   static const cashDrawerBreakdownCount = 'SL';
 
+  /// DG-363 Phase 4 / FR7: placeholder shown in place of the breakdown card
+  /// for closed drawers that have no persisted snapshot (e.g. drawers closed
+  /// before the v097 migration backfilled snapshots). The requirements doc
+  /// specifies an "N/A" / "Dữ liệu không có sẵn" display for this case.
+  static const cashDrawerBreakdownSnapshotNa = 'Dữ liệu không có sẵn';
+
   /// Map a cash-drawer transaction `type` (journal `source_type`) to the
   /// short Vietnamese label used in the transaction list rows (AC3).
   ///
