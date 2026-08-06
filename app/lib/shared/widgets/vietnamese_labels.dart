@@ -528,6 +528,15 @@ class VN {
   static const autoSyncWorkItemStatus = 'Đã đồng bộ trạng thái sản phẩm';
   static const autoSyncOrderStatus = 'Đã đồng bộ trạng thái đơn hàng';
 
+  // General tab summary overview (Phase 3 — DG-334 / FR4 / AC4)
+  static const workItemSummaryTitle = 'Tóm tắt công việc';
+  static const paymentStatusSummaryTitle = 'Tóm tắt thanh toán';
+  static const workItemSummaryUnit = 'công việc';
+  static const paymentStatusSummaryOfTotal = 'trên tổng';
+  static const workItemSummaryEmpty = 'Chưa có công việc';
+  /// Renders "N công việc" for the work item summary count.
+  static String workItemSummaryCount(int count) => '$count $workItemSummaryUnit';
+
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
   static const deliveryTab = 'Giao hàng';

@@ -10,8 +10,10 @@ import 'package:bakery_app/shared/utils/date_formatting.dart';
 import '../order_photo_section.dart';
 import 'order_info_block.dart';
 import 'order_items_list.dart';
+import 'order_payment_status_summary.dart';
 import 'order_payment_summary.dart';
 import 'order_print_status_row.dart';
+import 'order_work_item_summary.dart';
 
 /// General tab content: order info block, items list, payment summary, print
 /// status row, and photo section. Work item / transaction sections live on
@@ -91,6 +93,14 @@ class OrderDetailGeneralTab extends ConsumerWidget {
           paymentColor: paymentColor,
           paymentLabel: paymentLabel,
           onAddPayment: onAddPayment,
+        ),
+        const SizedBox(height: 16),
+        OrderWorkItemSummary(orderRef: order.orderRef),
+        const SizedBox(height: 16),
+        OrderPaymentStatusSummary(
+          order: order,
+          amountPaid: amountPaid,
+          paymentColor: paymentColor,
         ),
         const SizedBox(height: 16),
         OrderPhotoSection(orderRef: order.orderRef, baseUrl: baseUrl),
