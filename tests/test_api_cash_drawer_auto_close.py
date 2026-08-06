@@ -22,9 +22,8 @@ drawer is auto-closed with counted_amount = expected_balance and
 discrepancy = 0.
 """
 
-import pytest
-
 from baker.db.connection import get_db
+from baker.db.schema import _account_id_by_code, _insert_journal_entry
 from baker.models.cash_drawer import CashDrawer
 
 
@@ -42,14 +41,32 @@ def _backdate_drawer(conn, drawer_id: int, opened_at_iso: str) -> None:
     )
 
 
-def _set_balance_columns(conn, drawer_id: int, **cols) -> None:
-    """Directly set balance columns on a drawer row (bypassing the auto-link
-    flow) so auto-close tests exercise the full expected-balance formula."""
-    sets = ", ".join(f"{k} = ?" for k in cols)
-    conn.execute(
-        f"UPDATE cash_drawer SET {sets} WHERE id = ?",
-        (*cols.values(), drawer_id),
+def _adjust_drawer_balance(conn, drawer_id: int, delta: int) -> None:
+    """Insert a 1101/3100 journal entry linked to the drawer to adjust its
+    journal-derived expected_balance by ``delta`` (replaces the legacy
+    ``_set_balance_columns`` helper that set removed accumulator columns)."""
+    if delta == 0:
+        return
+    cash_acct = _account_id_by_code(conn, "1101")
+    equity_acct = _account_id_by_code(conn, "3100")
+    _insert_journal_entry(
+        conn,
+        description=f"Test balance adjust: {delta}",
+        source_type="cash_drawer_test_adjust",
+        source_id=None,
+        lines=[
+            (cash_acct, float(delta), 0.0, "test"),
+            (equity_acct, 0.0, float(delta), "test"),
+        ],
+        drawer_id=drawer_id,
     )
+
+
+def _link_drawer_opening(conn, drawer_id: int, opening: int) -> None:
+    """Link a DR 1101 / CR 3100 journal entry to a directly-inserted drawer so
+    its journal-derived expected_balance equals the opening amount (replaces
+    reliance on the now-removed accumulator columns)."""
+    _adjust_drawer_balance(conn, drawer_id, opening)
 
 
 def _drawer_row(conn, drawer_id: int) -> CashDrawer:
@@ -108,26 +125,23 @@ def test_auto_close_on_status_read_closes_stale_drawer(api_client):
 
 
 def test_auto_close_uses_expected_balance_as_counted_amount(api_client):
-    """AC9: counted_amount = expected_balance (opening + sales + in - out -
-    expenses), discrepancy = 0."""
+    """AC9: counted_amount = expected_balance (journal-derived), discrepancy
+    = 0. The expected balance is the sum of 1101 journal lines linked to the
+    drawer via the join table (replaces the legacy accumulator formula)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Inject a +550,000 1101 journal entry to raise the expected balance
+        # to 1,550,000 (legacy: cash_sales=500K + owner_in=200K - owner_out=100K
+        # - cash_expenses=50K = +550K).
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     # Trigger lazy auto-close via a status read.
     api_client.get("/api/cash-drawer/status")
     with get_db() as conn:
         row = _drawer_row(conn, drawer.id)
-        # expected = 1,000,000 + 500,000 + 200,000 - 100,000 - 50,000 = 1,550,000
+        # expected = 1,000,000 + 550,000 = 1,550,000
         assert row.counted_amount == 1_550_000
         assert row.discrepancy == 0
         assert row.status == "closed"
@@ -217,7 +231,10 @@ def test_auto_close_idempotent_no_stale_drawers(api_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "open"
-    assert body["openingBalance"] == 1_000_000
+    # DG-354 Phase 3: openingBalance is the 1101 accounting reference (0 for
+    # the first open); countedOpeningBalance holds the user's physical count.
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
 
 
 def test_auto_close_only_closes_previous_day_drawers(api_client):
@@ -250,18 +267,26 @@ def test_auto_close_multiple_stale_drawers_all_closed(api_client):
     """FR8: when multiple previous-day drawers are open (e.g. backfilled
     rows), the lazy check closes all of them, oldest first."""
     # Create two drawers directly with backdated timestamps. (The API
-    # enforces single-active-drawer, so insert them at the DB layer.)
+    # enforces single-active-drawer, so insert them at the DB layer.) Link
+    # a 1101/3100 opening journal entry to each so the journal-derived
+    # expected_balance equals opening_balance + linked 1101 sum.
+    #
+    # DG-354 Phase 3: opening_balance now stores the 1101 reference at open
+    # time. For directly-inserted test drawers we seed opening_balance = 0
+    # (no prior 1101 activity) and link a DR 1101 entry for the counted
+    # opening amount, so expected_balance = 0 + linked sum = counted opening.
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO cash_drawer (opened_at, opening_balance, status) "
-            "VALUES (?, ?, 'open')",
+        for opened_at, opening in (
             ("2026-07-27T08:00:00Z", 1_000_000),
-        )
-        conn.execute(
-            "INSERT INTO cash_drawer (opened_at, opening_balance, status) "
-            "VALUES (?, ?, 'open')",
             ("2026-07-28T08:00:00Z", 500_000),
-        )
+        ):
+            cur = conn.execute(
+                "INSERT INTO cash_drawer "
+                "(opened_at, opening_balance, counted_opening_balance, status) "
+                "VALUES (?, 0, ?, 'open')",
+                (opened_at, opening),
+            )
+            _adjust_drawer_balance(conn, cur.lastrowid, opening)
         ids = [
             r["id"]
             for r in conn.execute(
@@ -274,7 +299,10 @@ def test_auto_close_multiple_stale_drawers_all_closed(api_client):
             row = _drawer_row(conn, did)
             assert row.status == "closed"
             assert row.discrepancy == 0
-            assert row.counted_amount == row.opening_balance
+            # auto-close sets counted_amount = expected_balance =
+            # opening_balance (0) + linked 1101 sum (the inserted opening
+            # adjustment) = the seeded counted_opening_balance.
+            assert row.counted_amount == row.counted_opening_balance
 
 
 # ---------------------------------------------------------------------------
@@ -288,14 +316,8 @@ def test_open_with_unclosed_previous_day_proposes_carry_over(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     # Without confirmation → 409 with the carry-over proposal.
     resp = api_client.post(
@@ -319,14 +341,8 @@ def test_open_with_carry_over_confirmed_auto_closes_and_opens(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     resp = api_client.post(
         "/api/cash-drawer/open",
@@ -370,18 +386,20 @@ def _auto_transfer_lines(conn):
 def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_client):
     """AC17: opening with carry-over confirmed and opening balance < previous
     expected balance creates a balanced journal entry DR 1102, CR 1101 for the
-    difference (excess cash transferred to owner's cash)."""
+    difference (excess cash transferred to owner's cash).
+
+    DG-354 Phase 3: ``openingBalance`` in the response is the 1101 accounting
+    reference (1,550,000 — the carry-over amount), and
+    ``countedOpeningBalance`` is the user's physical cash count (1,000,000).
+
+    DG-360 Phase 1: the auto-transfer now ships as ``journalEntry`` with
+    source_type ``cash_drawer_open`` (shortage default = owner_withdraw).
+    The journal lines are identical (DR 1102 / CR 1101 for the delta)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     # Previous expected balance = 1,550,000. Open today with 1,000,000 (< 1,550,000).
     resp = api_client.post(
@@ -390,11 +408,13 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["openingBalance"] == 1_000_000
-    # AC17: an auto-transfer journal entry is created.
-    assert "autoTransfer" in body, "expected autoTransfer block in response"
-    transfer = body["autoTransfer"]
-    assert transfer["sourceType"] == "cash_drawer_auto_transfer"
+    # openingBalance = 1101 reference (1,550,000); countedOpeningBalance = user input.
+    assert body["openingBalance"] == 1_550_000
+    assert body["countedOpeningBalance"] == 1_000_000
+    # AC17: a journal entry is created for the shortage delta (owner_withdraw).
+    assert "journalEntry" in body, "expected journalEntry block in response"
+    transfer = body["journalEntry"]
+    assert transfer["sourceType"] == "cash_drawer_open"
     lines = transfer["lines"]
     assert len(lines) == 2
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -408,10 +428,8 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
     # The transfer entry is balanced (NFR2).
     with get_db() as conn:
-        rows = _auto_transfer_lines(conn)
-        debit_sum = sum(float(r["debit"]) for r in rows)
-        credit_sum = sum(float(r["credit"]) for r in rows)
-        assert debit_sum == credit_sum
+        debit, credit = _sums(conn, "cash_drawer_open")
+        assert abs(debit - credit) < 0.005
 
 
 def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
@@ -420,14 +438,8 @@ def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     # Previous expected = 1,550,000. Open with exactly that amount.
     resp = api_client.post(
@@ -443,18 +455,16 @@ def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
 
 def test_open_with_carry_over_and_higher_balance_no_auto_transfer(api_client):
     """FR10: when opening balance > previous expected balance, no
-    auto-transfer is created (the owner added cash, no excess to move)."""
+    auto-transfer is created (the owner added cash, no excess to move).
+
+    DG-360 Phase 1: carry-over + surplus defaults to an equity-injection
+    journal entry (DR 1101 / CR 3100 for the delta) instead of an
+    auto-transfer. The ``autoTransfer`` block is absent."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
-        _set_balance_columns(
-            conn,
-            drawer.id,
-            cash_sales=500_000,
-            owner_in=200_000,
-            owner_out=100_000,
-            cash_expenses=50_000,
-        )
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
         _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
     # Previous expected = 1,550,000. Open with more than that (2,000,000).
     resp = api_client.post(
@@ -491,7 +501,10 @@ def test_open_without_stale_drawer_does_not_propose_carry_over(api_client):
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["openingBalance"] == 1_000_000
+    # DG-354 Phase 3: openingBalance = 1101 reference (0 for first open);
+    # countedOpeningBalance = user input (1,000,000).
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
     assert "carryOver" not in body
 
 
@@ -515,36 +528,41 @@ def test_open_with_stale_today_drawer_still_409_active(api_client):
 # ---------------------------------------------------------------------------
 
 
-def test_auto_close_model_sets_zero_discrepancy():
+def test_auto_close_model_sets_zero_discrepancy(api_client):
     """The model helper auto_close() sets counted_amount = expected_balance
-    and discrepancy = 0, and guards the update with WHERE status='open'
-    (race-condition safety)."""
-    d = CashDrawer(
-        opened_at="2026-07-28T08:00:00Z",
-        opening_balance=1_000_000,
-        cash_sales=500_000,
-        owner_in=200_000,
-        owner_out=100_000,
-        cash_expenses=50_000,
-    )
-    # expected_balance = 1,550,000
+    (journal-derived) and discrepancy = 0, and guards the update with WHERE
+    status='open' (race-condition safety)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        # Raise the expected balance to 1,550,000 via a 1101 journal entry.
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
+        # Wrap conn to capture the UPDATE cash_drawer SQL so we can assert the
+        # WHERE status='open' guard (sqlite3.Connection.execute is read-only,
+        # so we use a thin delegating wrapper).
+        captured_sql: list[str] = []
 
-    class _FakeConn:
-        def __init__(self):
-            self.calls = []
+        class _CaptureConn:
+            def __init__(self, real):
+                self._real = real
 
-        def execute(self, sql, params):
-            self.calls.append((sql, params))
+            def execute(self, sql, *args, **kwargs):
+                if isinstance(sql, str) and "UPDATE cash_drawer" in sql:
+                    captured_sql.append(sql)
+                return self._real.execute(sql, *args, **kwargs)
 
-    fake = _FakeConn()
-    d.id = 1
-    disc = d.auto_close(fake)
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+        wrapper = _CaptureConn(conn)
+        disc = drawer.auto_close(wrapper)
     assert disc == 0
-    assert d.status == "closed"
-    assert d.counted_amount == 1_550_000
-    assert d.discrepancy == 0
+    assert drawer.status == "closed"
+    assert drawer.counted_amount == 1_550_000
+    assert drawer.discrepancy == 0
     # The update guards with WHERE status='open' (race-condition safety).
-    assert "status = 'open'" in fake.calls[0][0]
+    assert captured_sql, "expected an UPDATE cash_drawer statement"
+    assert "status = 'open'" in captured_sql[0]
 
 
 def test_get_stale_open_before_filters_by_date(api_client):

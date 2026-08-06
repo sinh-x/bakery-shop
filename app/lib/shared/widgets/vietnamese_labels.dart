@@ -336,6 +336,36 @@ class VN {
   static const dueTime = 'Giờ giao';
   static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
+
+  // Candle type selection (DG-340 Phase 1)
+  /// Radio button group shown on cake item edit screens when is_birthday is
+  /// checked. Values persist under `order_items.attributes['candle_type']`.
+  /// `khong_nen` represents the explicit "no candle" choice; an absent
+  /// `candle_type` key also means no candle (AC7).
+  static const candleTypeSectionLabel = 'Loại nến';
+  static const candleTypeNenSo = 'Nến số';
+  static const candleTypeNenXoan = 'Nến xoắn';
+  static const candleTypeNenNho = 'Nến nhỏ';
+  static const candleTypeKhongNen = 'Không nến';
+
+  /// Map a stored `candle_type` value to its Vietnamese display label.
+  /// Falls back to the raw `value` so unknown keys remain visible rather
+  /// than blank.
+  static String candleTypeLabel(String? value) {
+    switch (value) {
+      case 'nen_so':
+        return candleTypeNenSo;
+      case 'nen_xoan':
+        return candleTypeNenXoan;
+      case 'nen_nho':
+        return candleTypeNenNho;
+      case 'khong_nen':
+        return candleTypeKhongNen;
+      default:
+        return value ?? '';
+    }
+  }
+
   static const useInventory = 'Dùng tồn kho';
   static const stockRemaining = 'Còn';
   static const stockUnknown = 'Chưa có số tồn';
@@ -1050,16 +1080,17 @@ class VN {
   static const cashDrawerCashIn = 'Cho tiền vào quầy';
   static const cashDrawerCashOut = 'Lấy tiền khỏi quầy';
   static const cashDrawerOpeningBalance = 'Số dư đầu ngày';
+  // DG-347 Phase 5: closing balance surfaced on closed drawer history rows.
+  static const cashDrawerClosingBalance = 'Số dư cuối ngày';
   static const cashDrawerExpectedBalance = 'Số dư dự kiến';
   static const cashDrawerCountedAmount = 'Số tiền đếm được';
   static const cashDrawerDiscrepancy = 'Chênh lệch';
   static const cashDrawerStatus = 'Trạng thái';
   static const cashDrawerStatusOpen = 'Đang mở';
   static const cashDrawerStatusClosed = 'Đã đóng';
-  static const cashDrawerCashSales = 'Tiền bán hàng';
-  static const cashDrawerOwnerIn = 'Chủ cho thêm';
-  static const cashDrawerOwnerOut = 'Chủ rút ra';
-  static const cashDrawerCashExpenses = 'Chi phí tiền mặt';
+  // DG-347 Phase 5: removed per-accumulator labels (cashDrawerCashSales,
+  // cashDrawerTienRutIn/Out, cashDrawerOwnerIn/Out, cashDrawerCashExpenses)
+  // — the status card no longer shows an accumulator breakdown.
   static const cashDrawerHistory = 'Lịch sử quầy';
   static const cashDrawerNoActive = 'Không có quầy tiền mặt đang mở';
   static const cashDrawerAlreadyOpen = 'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.';
@@ -1136,6 +1167,22 @@ class VN {
   static const cashDrawerCloseShortageOwnerWithdraw = 'Chủ rút tiền';
   static const cashDrawerCloseShortageEquityLoss = 'Lỗ vốn chủ sở hữu';
 
+  /// DG-360 CQ-6: open-flow variants of the surplus/shortage confirmation
+  /// dialogs. The close flow uses "Số dư dự kiến"/"Số tiền đếm được"; the
+  /// open flow (reusing the same dialog) shows the 1101 accounting reference
+  /// and the entered opening amount instead.
+  static const cashDrawerOpenSurplusTitle = 'Xác nhận chênh lệch thừa khi mở quầy';
+  static const cashDrawerOpenSurplusReferenceLabel = 'Số dư kế toán 1101';
+  static const cashDrawerOpenSurplusOpeningLabel = 'Số tiền mở quầy';
+  static const cashDrawerOpenSurplusQuestion =
+      'Số tiền mở quầy lớn hơn số dư kế toán 1101. Chủ thêm tiền mặt hay ghi nhận doanh thu chưa xác định?';
+
+  static const cashDrawerOpenShortageTitle = 'Xác nhận chênh lệch thiếu khi mở quầy';
+  static const cashDrawerOpenShortageReferenceLabel = 'Số dư kế toán 1101';
+  static const cashDrawerOpenShortageOpeningLabel = 'Số tiền mở quầy';
+  static const cashDrawerOpenShortageQuestion =
+      'Số tiền mở quầy nhỏ hơn số dư kế toán 1101. Chủ rút tiền hay ghi nhận lỗ vốn chủ sở hữu?';
+
   /// Cash-in source / cash-out destination dropdown labels (DG-330 Phase 8).
   static const cashDrawerSourceLabel = 'Nguồn tiền vào';
   static const cashDrawerDestinationLabel = 'Đích tiền ra';
@@ -1154,6 +1201,77 @@ class VN {
   static const accountingSourceTypeCashDrawerCashIn = 'Cho tiền vào quầy';
   static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quầy';
   static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quầy — điều chỉnh chênh lệch';
+
+  // ── Cash-drawer transaction history tab (DG-343 Phase 3) ────────────────
+  /// "Chi tiết giao dịch" — the 3rd tab on the cash drawer screen (FR3).
+  /// Shows the per-transaction detail list for the active or a closed drawer.
+  static const cashDrawerTransactionsTab = 'Chi tiết giao dịch';
+
+  /// Short transaction-type labels used in the per-transaction list (AC3).
+  /// These are intentionally shorter than the journal `source_type` labels
+  /// because each row already carries the amount, timestamp, and note — the
+  /// type label is a one-word chip, not a full sentence.
+  ///
+  /// Mapping (journal `source_type` → short VN label):
+  ///   cash_drawer_open          → Mở quầy
+  ///   cash_drawer_cash_in       → Nạp tiền
+  ///   cash_drawer_cash_out      → Rút tiền
+  ///   payment_transaction       → Bán hàng
+  ///   expense                   → Chi phí
+  ///   cash_drawer_close_adjust  → Đóng quầy
+  ///
+  /// `owner_capital`, `owner_draw`, and `staff_reimburse` flow through the
+  /// cash-in / cash-out source types in the drawer transaction list (the
+  /// backend links the underlying journal entry, not the capital/draw
+  /// adjustment), so they don't need a dedicated short label here. Unknown
+  /// source types fall back to the raw string so the row stays visible.
+  static const cashDrawerTxnTypeOpen = 'Mở quầy';
+  static const cashDrawerTxnTypeCashIn = 'Nạp tiền';
+  static const cashDrawerTxnTypeCashOut = 'Rút tiền';
+  static const cashDrawerTxnTypeSale = 'Bán hàng';
+  static const cashDrawerTxnTypeExpense = 'Chi phí';
+  static const cashDrawerTxnTypeClose = 'Đóng quầy';
+
+  // ── Cash-drawer breakdown card (DG-359 Phase 1) ───────────────────────
+  /// Section title for the categorized in/out breakdown shown inside the
+  /// active-drawer status card. Sits directly under the opening-balance row.
+  static const cashDrawerBreakdownTitle = 'Phân tích tiền vào/ra';
+
+  /// Total row labels — the breakdown card footer summarises all six
+  /// category rows. "Tổng tiền vào" sums inflows; "Tổng tiền ra" sums
+  /// outflows; their difference reconciles to the expected balance.
+  static const cashDrawerBreakdownTotalIn = 'Tổng tiền vào';
+  static const cashDrawerBreakdownTotalOut = 'Tổng tiền ra';
+
+  /// Count column header for the per-category transaction count.
+  static const cashDrawerBreakdownCount = 'SL';
+
+  /// Map a cash-drawer transaction `type` (journal `source_type`) to the
+  /// short Vietnamese label used in the transaction list rows (AC3).
+  ///
+  /// Falls back to [accountingSourceTypeLabel] (and then the raw
+  /// `sourceType`) so unknown source types remain visible rather than
+  /// blank. Kept separate from [accountingSourceTypeLabel] because the
+  /// transaction list uses the short chip-style labels above while the
+  /// journal filter uses the longer accounting-style labels.
+  static String cashDrawerTxnTypeLabel(String sourceType) {
+    switch (sourceType) {
+      case 'cash_drawer_open':
+        return cashDrawerTxnTypeOpen;
+      case 'cash_drawer_cash_in':
+        return cashDrawerTxnTypeCashIn;
+      case 'cash_drawer_cash_out':
+        return cashDrawerTxnTypeCashOut;
+      case 'payment_transaction':
+        return cashDrawerTxnTypeSale;
+      case 'expense':
+        return cashDrawerTxnTypeExpense;
+      case 'cash_drawer_close_adjust':
+        return cashDrawerTxnTypeClose;
+      default:
+        return accountingSourceTypeLabel(sourceType);
+    }
+  }
 
   /// Map a journal entry ``sourceType`` to a Vietnamese label.
   ///

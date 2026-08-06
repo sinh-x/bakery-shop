@@ -40,7 +40,8 @@ class ProductUpdate(BaseModel):
 def _product_price_chips(conn, product_id: int) -> list[dict]:
     """Get ordered price chips for a product."""
     rows = conn.execute(
-        "SELECT pc.id, pc.label, pc.price, pc.position, COALESCE(ps.quantity, 0) AS stock_qty "
+        "SELECT pc.id, pc.label, pc.price, pc.position, "
+        "COALESCE(ps.quantity, 0) - COALESCE(nb.qty, 0) AS stock_qty "
         "FROM product_price_chips pc "
         "LEFT JOIN ("
         "  SELECT sl.price_chip_id, COUNT(ii.id) AS quantity "
@@ -49,6 +50,7 @@ def _product_price_chips(conn, product_id: int) -> list[dict]:
         "  WHERE sl.product_id = ? "
         "  GROUP BY sl.price_chip_id"
         ") ps ON ps.price_chip_id = pc.id "
+        "LEFT JOIN negative_balance nb ON nb.product_id = pc.product_id AND nb.price_chip_id = pc.id "
         "WHERE pc.product_id = ? "
         "ORDER BY pc.position, pc.id",
         (product_id, product_id),
@@ -202,7 +204,14 @@ def list_products(
                    GROUP BY sl.product_id
                ) ps ON ps.product_id = p.id"""
         )
-        select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
+        joins.append(
+            """LEFT JOIN (
+                   SELECT nb.product_id, SUM(nb.qty) AS qty
+                   FROM negative_balance nb
+                   GROUP BY nb.product_id
+               ) nb ON nb.product_id = p.id"""
+        )
+        select_cols = "p.*, COALESCE(ps.quantity, 0) - COALESCE(nb.qty, 0) AS stock_qty"
         if trung_bay:
             joins.append(
                 """LEFT JOIN product_attribute_values pav

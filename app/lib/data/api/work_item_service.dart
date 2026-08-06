@@ -66,6 +66,7 @@ class WorkItemService {
     bool? isExtra,
     bool? isGift,
     Map<String, dynamic>? attributes,
+    double? assignedPrice,
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
@@ -78,6 +79,7 @@ class WorkItemService {
     if (isExtra != null) body['isExtra'] = isExtra;
     if (isGift != null) body['isGift'] = isGift;
     if (attributes != null) body['attributes'] = attributes;
+    if (assignedPrice != null) body['assignedPrice'] = assignedPrice;
 
     final response = await _dio.patch(
       '/api/orders/$orderRef/items/$itemId',

@@ -15,7 +15,20 @@ Covers:
 import pytest
 
 from baker.db.connection import get_db
+from baker.db.schema import _account_id_by_code, _insert_journal_entry
+from baker.db.schema import ensure_schema
 from baker.models.cash_drawer import CashDrawer
+
+# DG-347 Phase 3 removed the _sync_drawer_tien_rut_out call site and the
+# tien_rut_out accumulator column from cash_drawer. These delivery tests
+# assert on drawer.tien_rut_out, which is no longer updated (drawer balances
+# derive from 1101 journal lines). Retained for historical context; skipped
+# because the column they assert on no longer exists.
+_PHASE3_SKIP = pytest.mark.skip(
+    reason="DG-347 Phase 3: _sync_drawer_tien_rut_out removed; "
+           "tien_rut_out accumulator column dropped; drawer balances derive "
+           "from 1101 journal lines"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +57,73 @@ def _sums(conn, source_type: str) -> tuple[float, float]:
     return debit, credit
 
 
+def _adjust_drawer_balance(conn, drawer_id: int, delta: int) -> None:
+    """Insert a 1101/3100 journal entry linked to the drawer to adjust its
+    journal-derived expected_balance by ``delta``."""
+    if delta == 0:
+        return
+    cash_acct = _account_id(conn, "1101")
+    equity_acct = _account_id(conn, "3100")
+    _insert_journal_entry(
+        conn,
+        description=f"Test balance adjust: {delta}",
+        source_type="cash_drawer_test_adjust",
+        source_id=None,
+        lines=[
+            (cash_acct, float(delta), 0.0, "test"),
+            (equity_acct, 0.0, float(delta), "test"),
+        ],
+        drawer_id=drawer_id,
+    )
+
+
+def _adjust_1101_global(conn, delta: int) -> None:
+    """Insert an unlinked balanced journal entry to adjust the global 1101
+    balance by ``delta`` (positive → DR 1101/CR 3100; negative → DR 3100/CR
+    1101). Not linked to any drawer so it does not affect any drawer's
+    expected_balance."""
+    if delta == 0:
+        return
+    cash_acct = _account_id(conn, "1101")
+    equity_acct = _account_id(conn, "3100")
+    if delta > 0:
+        lines = [
+            (cash_acct, float(delta), 0.0, "test"),
+            (equity_acct, 0.0, float(delta), "test"),
+        ]
+    else:
+        amt = abs(delta)
+        lines = [
+            (equity_acct, float(amt), 0.0, "test"),
+            (cash_acct, 0.0, float(amt), "test"),
+        ]
+    _insert_journal_entry(
+        conn,
+        description=f"Test global 1101 adjust: {delta}",
+        source_type="cash_drawer_test_adjust",
+        source_id=None,
+        lines=lines,
+        drawer_id=None,
+    )
+
+
+def _backdate_drawer(conn, drawer_id: int, opened_at_iso: str) -> None:
+    """Set a drawer's opened_at to a past ISO-8601 UTC timestamp so the lazy
+    auto-close check treats it as belonging to a previous local day."""
+    conn.execute(
+        "UPDATE cash_drawer SET opened_at = ? WHERE id = ?",
+        (opened_at_iso, drawer_id),
+    )
+
+
+def _drawer_row(conn, drawer_id: int) -> CashDrawer:
+    return CashDrawer.from_row(
+        conn.execute(
+            "SELECT * FROM cash_drawer WHERE id = ?", (drawer_id,)
+        ).fetchone()
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /open (FR1, AC1)
 # ---------------------------------------------------------------------------
@@ -54,11 +134,13 @@ def test_open_drawer_creates_drawer_and_journal_entry(api_client):
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["status"] == "open"
-    assert body["openingBalance"] == 1_000_000
-    assert body["cashSales"] == 0
-    assert body["ownerIn"] == 0
-    assert body["ownerOut"] == 0
-    assert body["cashExpenses"] == 0
+    # DG-354 Phase 3 (FR1/FR2/AC1): openingBalance stores the 1101 accounting
+    # reference (0 for the first open) and countedOpeningBalance stores the
+    # user's physical cash count (1,000,000). The open journal entry books the
+    # full counted opening as DR 1101 / CR 3100 linked to this drawer, so
+    # expected_balance = opening_balance + SUM(linked 1101) = 0 + 1,000,000.
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
     assert body["expectedBalance"] == 1_000_000
     # AC3: journal entry debit 1101 (Cash in Drawer), credit 3100 (equity)
     je = body["journalEntry"]
@@ -79,6 +161,7 @@ def test_open_drawer_rejects_negative_balance(api_client):
     assert resp.status_code == 422
 
 
+
 def test_open_second_drawer_blocked_while_active(api_client):
     r1 = api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
     assert r1.status_code == 201
@@ -88,8 +171,222 @@ def test_open_second_drawer_blocked_while_active(api_client):
 
 
 # ---------------------------------------------------------------------------
+# DG-360 Phase 1: surplus/shortage proposals when opening with 1101 ≤ 0
+# ---------------------------------------------------------------------------
+
+
+def _open_with_global_1101(api_client, balance_1101: int, opening: int):
+    """Seed the global 1101 balance to ``balance_1101`` (via a prior drawer
+    cycle) then open a new drawer with ``opening``.
+
+    Returns the open response so callers can assert on the 409 proposal or
+    the 201 success body."""
+    # First cycle to seed the 1101 balance at the target value.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    with get_db() as conn:
+        delta = balance_1101 - 1_000_000
+        if delta != 0:
+            _adjust_1101_global(conn, delta)
+    return api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
+
+
+def test_open_with_negative_1101_surplus_proposal_ac3(api_client):
+    """AC3: Given 1101 = -200,000, when opening with 500,000, then 409
+    surplusProposal with surplus=700,000 (opening - reference)."""
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "surplusProposal" in detail
+    p = detail["surplusProposal"]
+    assert p["referenceBalance"] == -200_000
+    assert p["openingBalance"] == 500_000
+    assert p["surplus"] == 700_000
+
+
+def test_open_with_positive_1101_shortage_proposal_ac4(api_client):
+    """AC4: Given 1101 = 500,000, when opening with 100,000, then 409
+    shortageProposal with shortage=400,000 (reference - opening)."""
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+    assert "shortageProposal" in detail
+    p = detail["shortageProposal"]
+    assert p["referenceBalance"] == 500_000
+    assert p["openingBalance"] == 100_000
+    assert p["shortage"] == 400_000
+
+
+def test_open_with_equal_balance_no_proposal_ac5(api_client):
+    """AC5: Given 1101 = 500,000, when opening with 500,000, then no dialog
+    and drawer opens with expectedBalance == 500,000 (delta == 0 → no
+    journal entry)."""
+    resp = _open_with_global_1101(api_client, 500_000, 500_000)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["expectedBalance"] == 500_000
+    assert body.get("journalEntry") is None
+
+
+def test_open_surplus_confirmed_owner_cash_books_delta_only_fr8(api_client):
+    """FR8/NFR3: Given 1101 = -200,000, opening 500,000 (delta 700,000),
+    when confirmed with surplusSource=owner_cash, then only the 700,000
+    delta is booked (DR 1101/CR 1102), not the full 500,000 opening."""
+    # First call → 409 surplusProposal.
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409
+    # Confirm → 201 with journal entry booking only the delta.
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "owner_cash",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 500_000
+    je = body["journalEntry"]
+    assert je["sourceType"] == "cash_drawer_open"
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    # FR8: only the 700,000 delta is booked, not the full 500,000 opening.
+    assert float(debit_line["debit"]) == 700_000.0
+    assert float(credit_line["credit"]) == 700_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
+
+def test_open_shortage_confirmed_owner_withdraw_books_delta_only_fr8(api_client):
+    """FR8/NFR3: Given 1101 = 500,000, opening 100,000 (delta -400,000),
+    when confirmed with shortageSource=owner_withdraw, then only the
+    400,000 delta is booked (DR 1102/CR 1101)."""
+    # First call → 409 shortageProposal.
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409
+    # Confirm → 201 with journal entry booking only the delta.
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 100_000,
+        "shortageConfirmed": True,
+        "shortageSource": "owner_withdraw",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 100_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    # FR8: only the 400,000 delta is booked, not the full 100,000 opening.
+    assert float(debit_line["debit"]) == 400_000.0
+    assert float(credit_line["credit"]) == 400_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1102") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_open_shortage_confirmed_equity_loss_books_delta_only(api_client):
+    """NFR3: Given 1101 = 500,000, opening 100,000 (delta -400,000),
+    when confirmed with shortageSource=equity_loss, then DR 3100/CR 1101
+    for the 400,000 delta only."""
+    resp = _open_with_global_1101(api_client, 500_000, 100_000)
+    assert resp.status_code == 409
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 100_000,
+        "shortageConfirmed": True,
+        "shortageSource": "equity_loss",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 400_000.0
+    assert float(credit_line["credit"]) == 400_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "3100") == int(debit_line["accountId"])
+        assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
+
+def test_open_surplus_confirmed_unidentified_sale_compound_entry(api_client):
+    """NFR3: Given 1101 = -200,000, opening 500,000 (delta 700,000),
+    when confirmed with surplusSource=unidentified_sale, then compound
+    entry DR 1101/CR 4100 + DR 5900/CR 1300 (50% COGS) for the delta only."""
+    resp = _open_with_global_1101(api_client, -200_000, 500_000)
+    assert resp.status_code == 409
+    resp2 = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "unidentified_sale",
+    })
+    assert resp2.status_code == 201, resp2.text
+    body = resp2.json()
+    assert body["expectedBalance"] == 500_000
+    surplus_je = body["surplusJournalEntry"]
+    # Compound entry: 4 lines, balanced.
+    lines = surplus_je["lines"]
+    assert len(lines) == 4
+    total_debit = sum(float(l["debit"]) for l in lines)
+    total_credit = sum(float(l["credit"]) for l in lines)
+    assert abs(total_debit - total_credit) < 0.005
+    assert total_debit == 1_050_000.0  # 700,000 + 350,000 COGS
+    with get_db() as conn:
+        cash_1101 = _account_id(conn, "1101")
+        revenue_4100 = _account_id(conn, "4100")
+        cogs_5900 = _account_id(conn, "5900")
+        inventory_1300 = _account_id(conn, "1300")
+        by_acct = {int(l["accountId"]): l for l in lines}
+        assert float(by_acct[cash_1101]["debit"]) == 700_000.0
+        assert float(by_acct[revenue_4100]["credit"]) == 700_000.0
+        assert float(by_acct[cogs_5900]["debit"]) == 350_000.0
+        assert float(by_acct[inventory_1300]["credit"]) == 350_000.0
+
+
+def test_open_zero_1101_books_full_opening_fr8(api_client):
+    """FR8: Given 1101 = 0 (first open), when opening with 1,000,000, then
+    the full 1,000,000 is booked as DR 1101/CR 3100 (no proposal)."""
+    # Fresh db — no prior drawers — 1101 == 0.
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["expectedBalance"] == 1_000_000
+    je = body["journalEntry"]
+    lines = je["lines"]
+    debit_line = next(l for l in lines if l["debit"] > 0)
+    credit_line = next(l for l in lines if l["credit"] > 0)
+    assert float(debit_line["debit"]) == 1_000_000.0
+    assert float(credit_line["credit"]) == 1_000_000.0
+    with get_db() as conn:
+        assert _account_id(conn, "1101") == int(debit_line["accountId"])
+        assert _account_id(conn, "3100") == int(credit_line["accountId"])
+
+
+def test_open_all_journal_entries_balanced_nfr3(api_client):
+    """NFR3: all journal entries created by the open surplus/shortage flow
+    are balanced (debit sum == credit sum)."""
+    # Open → close → adjust 1101 negative → open with surplus (owner_cash).
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    with get_db() as conn:
+        _adjust_1101_global(conn, -1_200_000)  # 1101 = -200,000
+    resp = api_client.post("/api/cash-drawer/open", json={
+        "openingBalance": 500_000,
+        "surplusConfirmed": True,
+        "surplusSource": "owner_cash",
+    })
+    assert resp.status_code == 201, resp.text
+    with get_db() as conn:
+        debit, credit = _sums(conn, "cash_drawer_open")
+        assert abs(debit - credit) < 0.005, (
+            f"unbalanced cash_drawer_open: debit={debit} credit={credit}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # POST /cash-in (FR2, AC2)
 # ---------------------------------------------------------------------------
+
 
 
 def test_cash_in_increases_owner_in_and_creates_journal(api_client):
@@ -97,7 +394,6 @@ def test_cash_in_increases_owner_in_and_creates_journal(api_client):
     resp = api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000, "note": "bổ sung"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 200_000
     assert body["expectedBalance"] == 1_200_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_in"
@@ -112,6 +408,7 @@ def test_cash_in_increases_owner_in_and_creates_journal(api_client):
         assert _account_id(conn, "3100") == int(credit_line["accountId"])
 
 
+
 def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     """FR3a: cash-in source=owner → DR 1101 (Cash in Drawer), CR 1102 (Owner's Cash)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
@@ -121,7 +418,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerIn"] == 300_000
+    assert body["expectedBalance"] == 1_300_000
     je = body["journalEntry"]
     lines = je["lines"]
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -129,6 +426,7 @@ def test_cash_in_from_owner_cash_debits_1101_credits_1102(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1101") == int(debit_line["accountId"])
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
 
 
 def test_cash_in_from_employee_debits_1101_credits_23xx(api_client):
@@ -181,12 +479,12 @@ def test_cash_in_rejects_zero_or_negative(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_cash_out_increases_owner_out_and_creates_journal(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ownerOut"] == 100_000
     assert body["expectedBalance"] == 900_000
     je = body["journalEntry"]
     assert je["sourceType"] == "cash_drawer_cash_out"
@@ -199,6 +497,7 @@ def test_cash_out_increases_owner_out_and_creates_journal(api_client):
         # AC4: default destination=owner → DR 1102 (Owner's Cash), CR 1101 (Cash in Drawer)
         assert _account_id(conn, "1102") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
@@ -216,6 +515,7 @@ def test_cash_out_to_owner_debits_1102_credits_1101(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1102") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_cash_out_to_employee_debits_23xx_credits_1101(api_client):
@@ -262,6 +562,7 @@ def test_cash_out_requires_active_drawer(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_close_drawer_with_shortage_records_discrepancy(api_client):
     """Close with shortage: first call returns 409 shortageProposal,
     second call with confirmed flag creates DR 3100 / CR 1101."""
@@ -301,6 +602,7 @@ def test_close_drawer_with_shortage_records_discrepancy(api_client):
     with get_db() as conn:
         assert _account_id(conn, "3100") == int(debit_line["accountId"])
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
+
 
 
 def test_close_drawer_with_surplus_records_discrepancy(api_client):
@@ -344,16 +646,28 @@ def test_close_drawer_with_surplus_records_discrepancy(api_client):
 
 def _open_with_expected(api_client, *, opening: int, expected: int) -> None:
     """Open a drawer and adjust its expected balance to the target by
-    setting cash_sales directly on the DB row (bypasses auto-link)."""
+    inserting an additional 1101 journal entry linked to the drawer via
+    the join table (replaces the legacy direct cash_sales column update)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": opening})
     if expected != opening:
+        delta = expected - opening
         with get_db() as conn:
             drawer = CashDrawer.get_active(conn)
             assert drawer is not None
-            conn.execute(
-                "UPDATE cash_drawer SET cash_sales = ? WHERE id = ?",
-                (expected - opening, drawer.id),
+            cash_acct = _account_id(conn, "1101")
+            equity_acct = _account_id(conn, "3100")
+            _insert_journal_entry(
+                conn,
+                description=f"Test adjustment: {delta}",
+                source_type="cash_drawer_test_adjust",
+                source_id=None,
+                lines=[
+                    (cash_acct, float(delta), 0.0, "test"),
+                    (equity_acct, 0.0, float(delta), "test"),
+                ],
+                drawer_id=drawer.id,
             )
+
 
 
 def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
@@ -373,6 +687,7 @@ def test_close_surplus_returns_409_with_surplusProposal_ac1(api_client):
     assert proposal["expectedBalance"] == 2_000_000
     assert proposal["countedAmount"] == 3_000_000
     assert proposal["surplus"] == 1_000_000
+
 
 
 def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
@@ -401,6 +716,7 @@ def test_close_surplus_owner_cash_creates_dr1101_cr1102_ac2(api_client):
     with get_db() as conn:
         assert _account_id(conn, "1101") == int(debit_line["accountId"])
         assert _account_id(conn, "1102") == int(credit_line["accountId"])
+
 
 
 def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
@@ -450,6 +766,7 @@ def test_close_surplus_unidentified_sale_creates_compound_entry_ac3(api_client):
     assert float(inv_line["credit"]) == 500_000.0
 
 
+
 def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     """AC4: close with shortage and shortageSource set but shortageConfirmed
     false → 409 with shortageProposal {expectedBalance, countedAmount, shortage}.
@@ -467,6 +784,7 @@ def test_close_shortage_returns_409_with_shortageProposal_ac4(api_client):
     assert proposal["expectedBalance"] == 2_000_000
     assert proposal["countedAmount"] == 1_500_000
     assert proposal["shortage"] == 500_000
+
 
 
 def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
@@ -496,6 +814,7 @@ def test_close_shortage_owner_withdraw_creates_dr1102_cr1101_ac5(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
+
 def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
     """AC6: close shortage with shortageConfirmed + shortageSource=equity_loss
     → DR 3100 (Equity) / CR 1101 (Cash in Drawer); discrepancy stored."""
@@ -523,6 +842,7 @@ def test_close_shortage_equity_loss_creates_dr3100_cr1101_ac6(api_client):
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
 
 
+
 def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     """AC7: zero discrepancy close → no journal entry, no confirmation flags
     needed. Drawer closes normally."""
@@ -537,6 +857,7 @@ def test_close_zero_discrepancy_no_confirmation_required_ac7(api_client):
     assert "journalEntry" not in body
     assert "surplusJournalEntry" not in body
     assert "shortageJournalEntry" not in body
+
 
 
 def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client):
@@ -555,6 +876,7 @@ def test_close_surplus_old_client_without_flags_backward_compat_nfr2(api_client)
     assert p["expectedBalance"] == 1_000_000
     assert p["countedAmount"] == 1_100_000
     assert p["surplus"] == 100_000
+
 
 
 def test_close_shortage_old_client_without_flags_backward_compat_nfr2(api_client):
@@ -580,6 +902,74 @@ def test_close_drawer_requires_active_drawer(api_client):
     assert resp.status_code == 409
 
 
+def test_closing_balance_equals_expected_balance(api_client):
+    """Regression test DG-350: closing_balance matches the journal-derived
+    expected_balance (SUM of all linked 1101 journal lines) for a closed
+    drawer.
+
+    opening 500,000 (DR 1101) + cash-in 200,000 (DR 1101) − cash-out 50,000
+    (CR 1101) = 650,000 expected balance. The close endpoint persists
+    closing_balance = expected_balance at close time; this test verifies the
+    persisted value equals the 1101 journal sum computed independently.
+    """
+    # 1. Open drawer
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    assert resp.status_code in (200, 201), resp.text
+
+    # 2. Create linked 1101 entries via cash-in and cash-out
+    ci = api_client.post(
+        "/api/cash-drawer/cash-in",
+        json={"amount": 200_000, "source": "owner", "method": "cash"},
+    )
+    assert ci.status_code == 200, ci.text
+    co = api_client.post(
+        "/api/cash-drawer/cash-out",
+        json={"amount": 50_000, "destination": "owner", "method": "cash"},
+    )
+    assert co.status_code == 200, co.text
+
+    # 3. Close the drawer (counted == expected → no confirmation gate)
+    resp = api_client.post("/api/cash-drawer/close", json={"countedAmount": 650_000})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "closed"
+
+    # 4. Get drawer_id from history
+    hist_resp = api_client.get("/api/cash-drawer/history?limit=1")
+    assert hist_resp.status_code == 200
+    items = hist_resp.json()["items"]
+    assert len(items) >= 1
+    drawer_id = int(items[0]["id"])
+
+    # 5. Assert closing_balance == journal-derived 1101 sum (the formula
+    #    used by expected_balance() for open drawers). For closed drawers
+    #    expected_balance() short-circuits to closing_balance, so compute
+    #    the journal sum directly to make this a meaningful regression check.
+    with get_db() as conn:
+        drawer = CashDrawer.get_by_id(conn, drawer_id)
+        assert drawer is not None
+        assert drawer.status == "closed"
+        assert drawer.closing_balance == 650_000
+
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_id,),
+        ).fetchone()
+        journal_sum = int(row["balance"])
+
+    assert drawer.closing_balance == journal_sum, (
+        f"closing_balance {drawer.closing_balance} != "
+        f"journal-derived 1101 sum {journal_sum}"
+    )
+    # Also verify via the API history response.
+    assert int(items[0]["closingBalance"]) == journal_sum
+
+
 # ---------------------------------------------------------------------------
 # GET /status (FR4, AC6)
 # ---------------------------------------------------------------------------
@@ -597,6 +987,7 @@ def test_status_returns_accounting_balance_when_no_active_drawer(api_client):
     assert isinstance(body["accountingBalance1101"], int)
 
 
+
 def test_status_returns_active_drawer(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     resp = api_client.get("/api/cash-drawer/status")
@@ -604,6 +995,7 @@ def test_status_returns_active_drawer(api_client):
     body = resp.json()
     assert body["status"] == "open"
     assert body["expectedBalance"] == 1_000_000
+
 
 
 def test_status_after_close_returns_previous_counted_amount(api_client):
@@ -619,26 +1011,35 @@ def test_status_after_close_returns_previous_counted_amount(api_client):
     assert body["previousCloseCountedAmount"] == 1_000_000
 
 
-def test_expected_balance_formula_ac6(api_client):
-    """AC6: opening=1M, cash_sales=500K, owner_in=200K, owner_out=100K,
-    cash_expenses=50K → expected_balance=1,550,000.
 
-    cash_sales and cash_expenses are populated by Phase 3 (auto-link), so
-    here we set them directly on the DB row to verify the formula in
-    isolation.
+def test_expected_balance_formula_ac6(api_client):
+    """AC6/FR1: opening=1M, +500K test adjustment → expected_balance=1,500,000.
+
+    The legacy accumulator formula (cash_sales + owner_in - owner_out -
+    cash_expenses + tien_rut_in - tien_rut_out) is now replaced by the sum of
+    1101 journal lines linked to the drawer via the join table, so we inject
+    a 500K 1101 journal entry to verify the journal-derived balance.
     """
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
         assert drawer is not None
-        conn.execute(
-            "UPDATE cash_drawer SET cash_sales = 500000, owner_in = 200000, "
-            "owner_out = 100000, cash_expenses = 50000 WHERE id = ?",
-            (drawer.id,),
+        cash_acct = _account_id(conn, "1101")
+        equity_acct = _account_id(conn, "3100")
+        _insert_journal_entry(
+            conn,
+            description="Test +500K",
+            source_type="cash_drawer_test_adjust",
+            source_id=None,
+            lines=[
+                (cash_acct, 500_000.0, 0.0, "test"),
+                (equity_acct, 0.0, 500_000.0, "test"),
+            ],
+            drawer_id=drawer.id,
         )
     resp = api_client.get("/api/cash-drawer/status")
     assert resp.status_code == 200
-    assert resp.json()["expectedBalance"] == 1_550_000
+    assert resp.json()["expectedBalance"] == 1_500_000
 
 
 # ---------------------------------------------------------------------------
@@ -646,14 +1047,17 @@ def test_expected_balance_formula_ac6(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_history_returns_paginated_list(api_client):
     # First drawer
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
-    # Second drawer — 1101 balance from first open requires transfer confirmation
+    # Second drawer — 1101 balance from first open requires shortage confirmation
+    # (opening 500k < reference 1M → shortage 500k → owner_withdraw default).
     api_client.post("/api/cash-drawer/open", json={
         "openingBalance": 500_000,
-        "transferConfirmed": True,
+        "shortageConfirmed": True,
+        "shortageSource": "owner_withdraw",
     })
     api_client.post("/api/cash-drawer/close", json={"countedAmount": 500_000})
 
@@ -666,22 +1070,33 @@ def test_history_returns_paginated_list(api_client):
     assert body["items"][0]["openingBalance"] in (1_000_000, 500_000)
 
 
+
 def test_history_supports_pagination(api_client):
     for i in range(3):
         opening = 100_000 * (i + 1)
         # First open (100k): no prior 1101 balance → no gate
-        # Second open (200k): > 1101 balance (100k) → excess gate → ownerCapital
+        # Second open (200k): > 1101 balance (100k) → surplus 100k → owner_cash
         # Third open (300k): > 1101 balance (200k now, not 400k like before fix)
-        #   → excess gate → stockRecon+unidSale
+        #   → surplus 100k → unidentified_sale
         payload: dict = {"openingBalance": opening}
         if i == 1:
-            payload["ownerCapitalConfirmed"] = True
+            payload["surplusConfirmed"] = True
+            payload["surplusSource"] = "owner_cash"
         elif i == 2:
-            payload["stockReconciliationConfirmed"] = True
-            payload["unidentifiedSaleConfirmed"] = True
+            payload["surplusConfirmed"] = True
+            payload["surplusSource"] = "unidentified_sale"
         open_resp = api_client.post("/api/cash-drawer/open", json=payload)
         assert open_resp.status_code in (200, 201), open_resp.text
-        api_client.post("/api/cash-drawer/close", json={"countedAmount": opening})
+        # Close with the journal-derived expected balance so no confirmation
+        # gate triggers (DG-347 Phase 2: expected_balance is per-drawer 1101
+        # sum, which may differ from opening_balance when carry-over journals
+        # only the delta).
+        status = api_client.get("/api/cash-drawer/status").json()
+        counted = status["expectedBalance"]
+        close_resp = api_client.post(
+            "/api/cash-drawer/close", json={"countedAmount": counted}
+        )
+        assert close_resp.status_code == 200, close_resp.text
 
     resp = api_client.get("/api/cash-drawer/history?limit=2&offset=0")
     assert resp.status_code == 200
@@ -692,6 +1107,7 @@ def test_history_supports_pagination(api_client):
     resp2 = api_client.get("/api/cash-drawer/history?limit=2&offset=2")
     assert resp2.json()["total"] == 3
     assert len(resp2.json()["items"]) == 1
+
 
 
 def test_history_supports_date_range_filter(api_client):
@@ -713,6 +1129,7 @@ def test_history_supports_date_range_filter(api_client):
 # ---------------------------------------------------------------------------
 
 
+
 def test_all_drawer_journal_entries_are_balanced(api_client):
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
@@ -730,6 +1147,7 @@ def test_all_drawer_journal_entries_are_balanced(api_client):
             assert abs(debit - credit) < 0.005, (
                 f"unbalanced {source_type}: debit={debit} credit={credit}"
             )
+
 
 
 def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
@@ -768,12 +1186,1063 @@ def test_1101_balance_equals_drawer_expected_balance_nfr4(api_client):
 
 
 def test_cash_drawer_expected_balance_model():
-    d = CashDrawer(
+    """Unit-level: expected_balance() without a conn falls back to
+    opening_balance for open drawers and closing_balance for closed drawers.
+    The full journal-derived balance is exercised via the API tests below."""
+    d_open = CashDrawer(
         opened_at="2026-08-01T00:00:00Z",
         opening_balance=1_000_000,
-        cash_sales=500_000,
-        owner_in=200_000,
-        owner_out=100_000,
-        cash_expenses=50_000,
     )
-    assert d.expected_balance() == 1_550_000
+    assert d_open.expected_balance() == 1_000_000
+    d_closed = CashDrawer(
+        opened_at="2026-08-01T00:00:00Z",
+        opening_balance=1_000_000,
+        status="closed",
+        closing_balance=1_550_000,
+    )
+    assert d_closed.expected_balance() == 1_550_000
+
+
+def test_expected_balance_formula_opening_plus_linked_1101_sum(use_memory_db):
+    """DG-354 Phase 2 (FR3, AC1/AC2/AC3 partial — model only):
+
+    expected_balance() = opening_balance + SUM(1101 debit - credit) over the
+    journal lines linked to this drawer via ``cash_drawer_journal_entries``.
+    Phase 2 changes the model formula; Phase 3 wires the API to store the 1101
+    accounting balance as ``opening_balance`` so the API-level AC1/AC2/AC3
+    integration tests pass. This test verifies the model formula directly.
+    """
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash_acct = _account_id(conn, "1101")
+        equity_acct = _account_id(conn, "3100")
+
+        # AC1: opening_balance=1,000,000, no linked entries → expected = 1,000,000
+        drawer = CashDrawer(
+            opened_at=now_utc(),
+            opening_balance=1_000_000,
+            counted_opening_balance=1_000_000,
+        )
+        drawer.save(conn)
+        assert drawer.expected_balance(conn) == 1_000_000
+
+        # AC2: linked cash sale of 200,000 (DR 1101 / CR 3100) → expected = 1,200,000
+        _insert_journal_entry(
+            conn,
+            description="Cash sale 200,000",
+            source_type="cash_sale",
+            source_id=None,
+            lines=[
+                (cash_acct, 200_000.0, 0.0, "cash sale"),
+                (equity_acct, 0.0, 200_000.0, "cash sale"),
+            ],
+            drawer_id=drawer.id,
+        )
+        assert drawer.expected_balance(conn) == 1_200_000
+
+        # AC3: linked cash expense of 100,000 (DR 3100 / CR 1101) → expected = 1,100,000
+        _insert_journal_entry(
+            conn,
+            description="Cash expense 100,000",
+            source_type="cash_expense",
+            source_id=None,
+            lines=[
+                (equity_acct, 100_000.0, 0.0, "cash expense"),
+                (cash_acct, 0.0, 100_000.0, "cash expense"),
+            ],
+            drawer_id=drawer.id,
+        )
+        assert drawer.expected_balance(conn) == 1_100_000
+
+        # Unlinked 1101 entry does NOT affect this drawer's expected_balance.
+        _insert_journal_entry(
+            conn,
+            description="Unlinked 1101 entry 500,000",
+            source_type="other_drawer",
+            source_id=None,
+            lines=[
+                (cash_acct, 500_000.0, 0.0, "unlinked"),
+                (equity_acct, 0.0, 500_000.0, "unlinked"),
+            ],
+            drawer_id=None,
+        )
+        assert drawer.expected_balance(conn) == 1_100_000
+
+
+def test_counted_opening_balance_round_trip(use_memory_db):
+    """DG-354 Phase 2 (FR2): counted_opening_balance persists through
+    save()/from_row()/to_api_dict() and stays nullable for backward
+    compatibility."""
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        drawer = CashDrawer(
+            opened_at=now_utc(),
+            opening_balance=1_000_000,
+            counted_opening_balance=950_000,
+        )
+        drawer.save(conn)
+        fetched = CashDrawer.get_by_id(conn, drawer.id)
+        assert fetched is not None
+        assert fetched.opening_balance == 1_000_000
+        assert fetched.counted_opening_balance == 950_000
+
+        api = fetched.to_api_dict(conn)
+        assert api["countedOpeningBalance"] == 950_000
+        assert api["openingBalance"] == 1_000_000
+
+        # Backward-compat: a drawer saved without counted_opening_balance
+        # round-trips as None (no crash, nullable field).
+        drawer2 = CashDrawer(opened_at=now_utc(), opening_balance=500_000)
+        drawer2.save(conn)
+        fetched2 = CashDrawer.get_by_id(conn, drawer2.id)
+        assert fetched2 is not None
+        assert fetched2.counted_opening_balance is None
+        assert fetched2.to_api_dict(conn)["countedOpeningBalance"] is None
+
+
+# ---------------------------------------------------------------------------
+# DG-354 Phase 3 — API dual-balance acceptance criteria (AC1, AC4, AC5, AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_ac1_fresh_open_stores_1101_reference_and_counted_balance(api_client):
+    """AC1: Given a fresh database with no prior drawers, when opening a
+    drawer with openingBalance=1,000,000, then expected_balance() returns
+    1,000,000 and counted_opening_balance = 1,000,000.
+
+    DG-354 Phase 3: opening_balance stores the 1101 accounting reference (0
+    for the first open); counted_opening_balance stores the user's physical
+    cash count (1,000,000). The open journal entry books the full 1,000,000
+    as DR 1101 / CR 3100 linked to the drawer, so expected_balance =
+    opening_balance (0) + linked 1101 sum (1,000,000) = 1,000,000.
+    """
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
+    assert body["expectedBalance"] == 1_000_000
+
+
+def test_ac4_close_discrepancy_uses_expected_balance(api_client):
+    """AC4: Given a drawer with expected_balance()=1,200,000, when closing
+    with countedAmount=1,250,000, then discrepancy = 50,000 (surplus) and
+    closing_balance = 1,200,000.
+
+    Flow: open 1,000,000 (counted), cash-in 200,000 (linked) →
+    expected_balance = 0 (opening/1101 ref) + 1,200,000 (linked 1101) =
+    1,200,000. Close with 1,250,000 → discrepancy = 50,000 surplus,
+    closing_balance = expected_balance = 1,200,000.
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["expectedBalance"] == 1_200_000
+    resp = api_client.post(
+        "/api/cash-drawer/close",
+        json={
+            "countedAmount": 1_250_000,
+            "surplusConfirmed": True,
+            "surplusSource": "owner_cash",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["discrepancy"] == 50_000
+    assert body["closingBalance"] == 1_200_000
+
+
+def test_ac5_carry_over_uses_expected_balance(api_client):
+    """AC5: Given a previous-day drawer with expected_balance()=1,550,000
+    still open, when opening today's drawer, then the carry-over proposal
+    shows 1,550,000 and on confirmation the stale drawer is auto-closed with
+    closing_balance=1,550,000.
+
+    Flow: open 1,000,000 (counted), +550,000 1101 adjustment →
+    expected_balance = 0 + 1,550,000 = 1,550,000. Backdate to previous day.
+    Open today → 409 carry-over proposal with amount = 1,550,000. Confirm →
+    stale drawer auto-closed with closing_balance = 1,550,000.
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        _adjust_drawer_balance(conn, drawer.id, 550_000)
+        _backdate_drawer(conn, drawer.id, "2026-07-28T08:00:00Z")
+    # 409 carry-over proposal.
+    resp = api_client.post(
+        "/api/cash-drawer/open", json={"openingBalance": 1_550_000}
+    )
+    assert resp.status_code == 409
+    proposal = resp.json()["detail"]["carryOverProposal"]
+    assert proposal["amount"] == 1_550_000
+    assert proposal["fromExpectedBalance"] == 1_550_000
+    # Confirm carry-over → stale drawer auto-closed, today's drawer opens.
+    resp2 = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_550_000, "carryOverConfirmed": True},
+    )
+    assert resp2.status_code == 201, resp2.text
+    with get_db() as conn:
+        stale = _drawer_row(conn, drawer.id)
+        assert stale.status == "closed"
+        assert stale.closing_balance == 1_550_000
+        assert stale.discrepancy == 0
+
+
+def test_ac6_status_returns_both_balances(api_client):
+    """AC6: Given a drawer opened with openingBalance=1,000,000 (accounting)
+    and countedOpeningBalance=950,000 (physical count), when GET /status is
+    called, then the response includes both fields.
+
+    DG-354 Phase 3: openingBalance = 1101 accounting reference (0 for first
+    open), countedOpeningBalance = user's physical cash count. The user
+    requests 950,000; the open journal entry books 950,000 as DR 1101 / CR
+    3100 linked to the drawer. expected_balance = 0 + 950,000 = 950,000.
+    """
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 950_000})
+    assert resp.status_code == 201, resp.text
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["status"] == "open"
+    assert "openingBalance" in status
+    assert "countedOpeningBalance" in status
+    assert status["openingBalance"] == 0
+    assert status["countedOpeningBalance"] == 950_000
+    assert status["expectedBalance"] == 950_000
+
+
+def test_ac8_history_returns_counted_opening_balance_for_backfill(api_client):
+    """AC7/AC8: GET /history returns countedOpeningBalance for each drawer.
+    For a drawer opened before the migration (or with counted_opening_balance
+    backfilled to opening_balance), countedOpeningBalance equals openingBalance
+    and the drawer data is intact."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/close", json={"countedAmount": 1_000_000})
+    resp = api_client.get("/api/cash-drawer/history")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) >= 1
+    item = items[0]
+    # The closed drawer has both fields; countedOpeningBalance was set at open.
+    assert "countedOpeningBalance" in item
+    assert item["countedOpeningBalance"] is not None
+
+
+# ---------------------------------------------------------------------------
+# DG-341 Phase 3 — tien rut delivery lifecycle (FR3, NFR3, AC2, AC7)
+# ---------------------------------------------------------------------------
+
+
+def _create_order_with_tien_rut(client, cash_amount=200000):
+    """Create an order with a tien_rut work item and return the response."""
+    resp = client.post("/api/orders", json={
+        "customerName": "Khách Rút Tiền",
+        "dueDate": "2026-08-10",
+        "items": [{
+            "productName": "Bánh kem",
+            "quantity": 1,
+            "unitPrice": 350000,
+            "attributes": {
+                "rut_tien": "true",
+                "cash_amount": str(cash_amount),
+                "cash_fee": "20000",
+            },
+        }],
+    })
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _create_txn(client, ref, amount=100000, **kwargs):
+    payload = {"amount": amount, **kwargs}
+    resp = client.post(f"/api/orders/{ref}/transactions", json=payload)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _advance_to_delivered(client, ref):
+    """Walk the order through status transitions up to ``delivered``."""
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        resp = client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": "Tiến độ bình thường"},
+        )
+        assert resp.status_code == 200, resp.text
+
+
+
+@_PHASE3_SKIP
+def test_tien_rut_out_increases_on_delivery_ac2(api_client):
+    """AC2: Given an open drawer with ``tienRutIn`` = 500,000, when the order
+    is delivered, then ``tienRutOut`` = 500,000 and ``expectedBalance``
+    decreases by 500,000.
+    """
+    # Open a drawer with a known opening balance.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    # Create an order with a tien rut item.
+    order = _create_order_with_tien_rut(api_client, cash_amount=500000)
+    ref = order["orderRef"]
+    # Customer gives 500,000 cash for safekeeping (tien_rut deposit inflow).
+    _create_txn(api_client, ref, amount=500000, type="tien_rut", method="cash")
+
+    status_before = api_client.get("/api/cash-drawer/status").json()
+    assert status_before["tienRutIn"] == 500000
+    assert status_before["tienRutOut"] == 0
+    expected_before = status_before["expectedBalance"]
+    # expected_balance = 1,000,000 + 0 + 500,000 + 0 - 0 - 0 - 0 = 1,500,000
+    assert expected_before == 1_500_000
+
+    # Advance the order to delivered.
+    _advance_to_delivered(api_client, ref)
+
+    status_after = api_client.get("/api/cash-drawer/status").json()
+    assert status_after["tienRutIn"] == 500000  # in column preserved (audit trail)
+    assert status_after["tienRutOut"] == 500000
+    # expected_balance drops by 500,000
+    assert status_after["expectedBalance"] == expected_before - 500000
+
+
+
+@_PHASE3_SKIP
+def test_tien_rut_delivery_skips_closed_drawer_ac7(api_client):
+    """AC7: Given an order with tien rut is delivered and the linked drawer is
+    already closed, the delivery does not modify the closed drawer (no crash,
+    no error).
+    """
+    # Open a drawer and record a tien_rut payment against it.
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=200000, type="tien_rut", method="cash")
+    # Close the drawer (freeze its totals).
+    close_resp = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_200_000}
+    )
+    assert close_resp.status_code == 200
+    closed_drawer = close_resp.json()
+    assert closed_drawer["status"] == "closed"
+    assert closed_drawer["tienRutOut"] == 0
+    closed_expected = closed_drawer["expectedBalance"]
+
+    # Advance the order to delivered after the drawer is closed.
+    _advance_to_delivered(api_client, ref)
+
+    # No crash; closed drawer totals are unchanged (frozen).
+    with get_db() as conn:
+        drawer = CashDrawer.get_by_id(conn, int(closed_drawer["id"]))
+    assert drawer.status == "closed"
+    assert drawer.tien_rut_out == 0
+    assert drawer.expected_balance() == closed_expected
+
+
+def test_tien_rut_delivery_no_active_drawer_no_error(api_client):
+    """Delivery of an order with tien rut when no drawer was ever opened must
+    not crash (no cash_drawer_id link → no drawer to update)."""
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    # Non-cash tien_rut (transfer) leaves no drawer link and must not error.
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 200000, "type": "tien_rut", "method": "transfer"},
+    )
+    assert resp.status_code == 201
+    _advance_to_delivered(api_client, ref)
+    # No drawer exists; the status endpoint reports no active drawer.
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["activeDrawer"] is None
+
+
+
+@_PHASE3_SKIP
+def test_tien_rut_delivery_invalidated_payment_skipped(api_client):
+    """An invalidated tien_rut payment must not contribute to tien_rut_out at
+    delivery (the inflow was already reversed from tien_rut_in on invalidate).
+    """
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    order = _create_order_with_tien_rut(api_client, cash_amount=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000, type="tien_rut", method="cash")
+    # Invalidate the payment (reverses tien_rut_in).
+    inv = api_client.post(f"/api/orders/{ref}/transactions/{txn['id']}/invalidate",
+                          json={"invalidatedBy": "test"})
+    assert inv.status_code == 200
+    # tien_rut_in has been reversed back to 0.
+    status = api_client.get("/api/cash-drawer/status").json()
+    assert status["tienRutIn"] == 0
+
+    _advance_to_delivered(api_client, ref)
+
+    status_after = api_client.get("/api/cash-drawer/status").json()
+    # The invalidated payment is excluded → tien_rut_out stays 0.
+    assert status_after["tienRutOut"] == 0
+
+
+# ---------------------------------------------------------------------------
+# DG-351 Phase 4.6 — Cross-drawer tien rut (AC5)
+# ---------------------------------------------------------------------------
+
+
+def test_cross_drawer_tien_rut_deposit_and_return_ac5(api_client):
+    """AC5: Given a tien rut deposit recorded against drawer A and a return at
+    delivery recorded against drawer B, when both drawers close, then drawer
+    A's closing_balance includes the deposit (DR 1101), drawer B's
+    closing_balance includes the return (CR 1101), and neither drawer's
+    linked journal entries include the other drawer's entry.
+
+    DG-354 Phase 3: opening_balance stores the 1101 accounting reference at
+    open time; counted_opening_balance stores the user's physical cash count.
+    expected_balance() = opening_balance + SUM(linked 1101 debit - credit).
+
+    Flow:
+      1. Open drawer A (counted=1,000,000; 1101 reference is 0 → opening_balance
+         = 0, counted_opening_balance = 1,000,000). A ``cash_drawer_open`` entry
+         DR 1101 / CR 3100 for 1,000,000 is created and linked to drawer A.
+         Drawer A expected_balance = 0 + 1,000,000 = 1,000,000.
+      2. Create an order with a tien_rut work item (cash_amount = 500,000).
+      3. Record a cash tien_rut payment → DR 1101 / CR 2400 linked to drawer A.
+         Drawer A expected_balance = 0 + (1,000,000 + 500,000) = 1,500,000.
+      4. Close drawer A (counted == expected) → closing_balance = 1,500,000.
+         The 1101 reference balance is now 1,500,000.
+      5. Open drawer B with counted=1,500,000 (== 1101 reference). No delta
+         entry is created (opening == reference). opening_balance = 1,500,000,
+         counted_opening_balance = 1,500,000. Drawer B expected_balance =
+         1,500,000 + 0 = 1,500,000.
+      6. Deliver the order → tien_rut return entry DR 2400 / CR 1101 (500,000)
+         linked to drawer B. Drawer B expected_balance = 1,500,000 − 500,000
+         = 1,000,000.
+      7. Close drawer B (counted == expected = 1,000,000) → closing_balance
+         = 1,000,000.
+      8. Assert each drawer's linked 1101 journal entries exclude the other
+         drawer's entry (source_types disjoint, journal_entry_id sets disjoint).
+    """
+    # 1. Open drawer A.
+    resp = api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    assert resp.status_code == 201, resp.text
+    drawer_a_open = resp.json()
+    drawer_a_id = int(drawer_a_open["id"])
+
+    # 2. Create an order with a tien_rut work item.
+    order = _create_order_with_tien_rut(api_client, cash_amount=500_000)
+    ref = order["orderRef"]
+
+    # 3. Record a cash tien_rut payment (deposit inflow) → DR 1101 / CR 2400
+    #    linked to drawer A (the active drawer).
+    _create_txn(api_client, ref, amount=500_000, type="tien_rut", method="cash")
+
+    # Drawer A expected_balance now includes the 500,000 deposit.
+    status_a = api_client.get("/api/cash-drawer/status").json()
+    assert status_a["id"] == str(drawer_a_id)
+    assert status_a["expectedBalance"] == 1_500_000
+
+    # 4. Close drawer A (counted == expected → no confirmation gate).
+    close_a = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_500_000}
+    )
+    assert close_a.status_code == 200, close_a.text
+    close_a_body = close_a.json()
+    assert close_a_body["status"] == "closed"
+    assert close_a_body["closingBalance"] == 1_500_000
+
+    # 5. Open drawer B with counted_opening_balance = 1,500,000 (matching the
+    #    1101 reference balance). No delta entry is created; opening_balance
+    #    stores the 1,500,000 reference.
+    resp = api_client.post(
+        "/api/cash-drawer/open",
+        json={"openingBalance": 1_500_000},
+    )
+    assert resp.status_code == 201, resp.text
+    drawer_b_open = resp.json()
+    drawer_b_id = int(drawer_b_open["id"])
+    assert drawer_b_id != drawer_a_id
+
+    # 6. Deliver the order → the tien_rut return entry (DR 2400 / CR 1101) is
+    #    linked to the active drawer (drawer B).
+    _advance_to_delivered(api_client, ref)
+
+    # Drawer B expected_balance = 1,500,000 (opening_balance) − 500,000
+    # (tien_rut return CR 1101) = 1,000,000.
+    status_b = api_client.get("/api/cash-drawer/status").json()
+    assert status_b["id"] == str(drawer_b_id)
+    assert status_b["expectedBalance"] == 1_000_000
+
+    # 7. Close drawer B (counted == expected = 1,000,000 → no confirmation gate).
+    close_b = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_000_000}
+    )
+    assert close_b.status_code == 200, close_b.text
+    close_b_body = close_b.json()
+    assert close_b_body["status"] == "closed"
+    assert close_b_body["closingBalance"] == 1_000_000
+
+    # 8. Verify each drawer's linked 1101 journal entries exclude the other
+    #    drawer's entry. The tien_rut deposit entry (source_type =
+    #    'payment_transaction') must be linked only to drawer A; the tien_rut
+    #    return entry (source_type = 'order') must be linked only to drawer B.
+    with get_db() as conn:
+        # Drawer A: linked 1101 net = opening entry (1,000,000) + deposit
+        # (500,000) = 1,500,000. The return entry (CR 1101) is NOT linked to
+        # drawer A. opening_balance (0) + linked 1101 sum (1,500,000) =
+        # 1,500,000 = closing_balance.
+        row_a = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_a_id,),
+        ).fetchone()
+        drawer_a_1101_net = int(row_a["balance"])
+
+        # Drawer B: linked 1101 net = return (-500,000). The deposit entry
+        # (DR 1101) is NOT linked to drawer B. opening_balance (1,500,000) +
+        # linked 1101 sum (-500,000) = 1,000,000 = closing_balance.
+        row_b = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE cdje.cash_drawer_id = ? AND a.code = '1101'
+            """,
+            (drawer_b_id,),
+        ).fetchone()
+        drawer_b_1101_net = int(row_b["balance"])
+
+        # Drawer A includes its opening entry (1,000,000) and the deposit
+        # (500,000), and excludes the return.
+        assert drawer_a_1101_net == 1_500_000, (
+            f"drawer A 1101 net expected 1,500,000 (opening + deposit, no return), "
+            f"got {drawer_a_1101_net}"
+        )
+        # Drawer B includes only the return (-500,000), and excludes the
+        # deposit and the opening entry (which belong to drawer A).
+        assert drawer_b_1101_net == -500_000, (
+            f"drawer B 1101 net expected -500,000 (return only, no deposit/opening), "
+            f"got {drawer_b_1101_net}"
+        )
+
+        # Verify closing_balance equals opening_balance + linked 1101 sum
+        # (the DG-354 Phase 3 expected_balance formula) for each drawer.
+        drawer_a = CashDrawer.get_by_id(conn, drawer_a_id)
+        drawer_b = CashDrawer.get_by_id(conn, drawer_b_id)
+        assert drawer_a.closing_balance == drawer_a.opening_balance + drawer_a_1101_net
+        assert drawer_b.closing_balance == drawer_b.opening_balance + drawer_b_1101_net
+
+        # Verify the journal_entry_id sets linked to each drawer are disjoint
+        # — no journal entry is linked to both drawers (cross-drawer
+        # isolation).
+        a_entries = {
+            r["journal_entry_id"]
+            for r in conn.execute(
+                "SELECT journal_entry_id FROM cash_drawer_journal_entries "
+                "WHERE cash_drawer_id = ?",
+                (drawer_a_id,),
+            ).fetchall()
+        }
+        b_entries = {
+            r["journal_entry_id"]
+            for r in conn.execute(
+                "SELECT journal_entry_id FROM cash_drawer_journal_entries "
+                "WHERE cash_drawer_id = ?",
+                (drawer_b_id,),
+            ).fetchall()
+        }
+        assert a_entries.isdisjoint(b_entries), (
+            "drawers A and B share a linked journal_entry_id — cross-drawer "
+            "isolation broken"
+        )
+
+        # Verify the tien_rut deposit entry is linked to drawer A (not B), and
+        # the tien_rut return entry is linked to drawer B (not A). The deposit
+        # entry has source_type 'payment_transaction'; the return entry has
+        # source_type 'order' with a 'Tien rut return:' description prefix.
+        deposit_row = conn.execute(
+            """
+            SELECT cdje.cash_drawer_id AS drawer_id
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_entries je ON je.id = cdje.journal_entry_id
+            WHERE je.source_type = 'payment_transaction'
+              AND je.description LIKE '%tien_rut%'
+            """,
+        ).fetchone()
+        return_row = conn.execute(
+            """
+            SELECT cdje.cash_drawer_id AS drawer_id
+            FROM cash_drawer_journal_entries cdje
+            JOIN journal_entries je ON je.id = cdje.journal_entry_id
+            WHERE je.source_type = 'order'
+              AND je.description LIKE 'Tien rut return:%'
+            """,
+        ).fetchone()
+        assert deposit_row is not None, (
+            "tien_rut deposit entry not found / not linked to any drawer"
+        )
+        assert int(deposit_row["drawer_id"]) == drawer_a_id, (
+            f"tien_rut deposit entry linked to drawer "
+            f"{deposit_row['drawer_id']}, expected drawer A ({drawer_a_id})"
+        )
+        assert return_row is not None, (
+            "tien_rut return entry not found / not linked to any drawer"
+        )
+        assert int(return_row["drawer_id"]) == drawer_b_id, (
+            f"tien_rut return entry linked to drawer "
+            f"{return_row['drawer_id']}, expected drawer B ({drawer_b_id})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# DG-347 Phase 1 — Schema migration verification (AC3, AC4, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _cash_drawer_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(cash_drawer)").fetchall()}
+
+
+def _payment_transactions_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()}
+
+
+def _events_columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()}
+
+
+def test_v095_closing_balance_column_exists(api_client):
+    """AC3: closing_balance column exists on cash_drawer after migration."""
+    with get_db() as conn:
+        cols = _cash_drawer_columns(conn)
+    assert "closing_balance" in cols, f"closing_balance missing; got {sorted(cols)}"
+
+
+def test_v095_accumulator_columns_dropped(api_client):
+    """AC3: accumulator columns do not exist on cash_drawer after migration."""
+    with get_db() as conn:
+        cols = _cash_drawer_columns(conn)
+    for col in ("cash_sales", "tien_rut_in", "tien_rut_out",
+                "owner_in", "owner_out", "cash_expenses"):
+        assert col not in cols, f"{col} should have been dropped; got {sorted(cols)}"
+
+
+def test_v095_join_table_exists_with_unique_constraint(api_client):
+    """AC4: cash_drawer_journal_entries table exists with both columns and a
+    unique constraint on the pair."""
+    with get_db() as conn:
+        # Table exists.
+        row = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' "
+            "AND name='cash_drawer_journal_entries'"
+        ).fetchone()
+        assert row is not None, "cash_drawer_journal_entries table missing"
+        # Both columns exist.
+        cols = {
+            r[1] for r in conn.execute(
+                "PRAGMA table_info(cash_drawer_journal_entries)"
+            ).fetchall()
+        }
+        assert "cash_drawer_id" in cols, f"cash_drawer_id missing; got {sorted(cols)}"
+        assert "journal_entry_id" in cols, f"journal_entry_id missing; got {sorted(cols)}"
+        # Unique constraint on the pair exists. The table-level UNIQUE(...) is
+        # declared in the CREATE TABLE sql and backed by an auto-index whose
+        # sql is NULL — so check the table sql text and the auto-index name.
+        table_sql = row["sql"] or ""
+        assert "UNIQUE(cash_drawer_id, journal_entry_id)" in table_sql, (
+            f"UNIQUE(cash_drawer_id, journal_entry_id) not in table sql: {table_sql}"
+        )
+        # The auto-index for a table-level UNIQUE has a name like
+        # sqlite_autoindex_cash_drawer_journal_entries_1.
+        auto_idx = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='cash_drawer_journal_entries' "
+            "AND name LIKE 'sqlite_autoindex_%'"
+        ).fetchone()
+        assert auto_idx is not None, "no sqlite_autoindex for the UNIQUE constraint"
+
+
+def test_v095_cash_drawer_id_dropped_from_payment_transactions(api_client):
+    """AC5: cash_drawer_id column does not exist on payment_transactions."""
+    with get_db() as conn:
+        cols = _payment_transactions_columns(conn)
+    assert "cash_drawer_id" not in cols, (
+        f"cash_drawer_id should have been dropped; got {sorted(cols)}"
+    )
+
+
+def test_v095_cash_drawer_id_dropped_from_events(api_client):
+    """AC5: cash_drawer_id column does not exist on events."""
+    with get_db() as conn:
+        cols = _events_columns(conn)
+    assert "cash_drawer_id" not in cols, (
+        f"cash_drawer_id should have been dropped; got {sorted(cols)}"
+    )
+
+
+def test_v095_migration_idempotent_on_rerun(api_client):
+    """NFR2: re-running v095 on an already-migrated DB is a no-op.
+
+    Applies ensure_schema again on the same connection and verifies the
+    schema is unchanged (no error, same columns).
+    """
+    with get_db() as conn:
+        before_cd = _cash_drawer_columns(conn)
+        before_pt = _payment_transactions_columns(conn)
+        before_ev = _events_columns(conn)
+        # Re-applying should be a no-op (schema_version already at 95).
+        ensure_schema(conn)
+        after_cd = _cash_drawer_columns(conn)
+        after_pt = _payment_transactions_columns(conn)
+        after_ev = _events_columns(conn)
+    assert before_cd == after_cd
+    assert before_pt == after_pt
+    assert before_ev == after_ev
+
+
+# ---------------------------------------------------------------------------
+# DG-343 Phase 1 — GET /{drawer_id}/transactions (FR1, FR2, AC1, AC2, AC3)
+# ---------------------------------------------------------------------------
+
+
+def _get_drawer_id(client) -> int:
+    """Return the active drawer's id (assumes exactly one open drawer)."""
+    resp = client.get("/api/cash-drawer/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("status") == "open", "expected an open drawer"
+    return int(body["id"])
+
+
+def test_transactions_returns_open_cash_in_cash_out_with_signed_amounts(api_client):
+    """FR1/FR2/AC1/AC3: open + cash-in + cash-out each appear as a row with
+    type, signed amount (+/-), timestamp, and note."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post(
+        "/api/cash-drawer/cash-in",
+        json={"amount": 200_000, "note": "bổ sung", "source": "owner"},
+    )
+    api_client.post(
+        "/api/cash-drawer/cash-out",
+        json={"amount": 100_000, "note": "lấy ra", "destination": "owner"},
+    )
+    drawer_id = _get_drawer_id(api_client)
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    items = body["items"]
+    # 3 linked journal entries with 1101 lines: open, cash-in, cash-out.
+    assert body["total"] == 3
+    assert len(items) == 3
+    by_type = {it["type"]: it for it in items}
+    assert "cash_drawer_open" in by_type
+    assert "cash_drawer_cash_in" in by_type
+    assert "cash_drawer_cash_out" in by_type
+    # AC3: signed amounts — open and cash-in positive, cash-out negative.
+    assert by_type["cash_drawer_open"]["amount"] == 1_000_000
+    assert by_type["cash_drawer_cash_in"]["amount"] == 200_000
+    assert by_type["cash_drawer_cash_out"]["amount"] == -100_000
+    # AC3: every item has type, amount, timestamp, note.
+    for it in items:
+        assert "type" in it and isinstance(it["type"], str)
+        assert "amount" in it and isinstance(it["amount"], int)
+        assert "timestamp" in it and isinstance(it["timestamp"], str)
+        assert "note" in it and isinstance(it["note"], str)
+    # The cash-in note preserves the user-supplied note substring.
+    assert "bổ sung" in by_type["cash_drawer_cash_in"]["note"]
+
+
+def test_transactions_ordered_newest_first(api_client):
+    """FR1: transactions ordered newest-first by transaction_date then id DESC."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 100_000})
+    api_client.post("/api/cash-drawer/cash-out", json={"amount": 50_000})
+    drawer_id = _get_drawer_id(api_client)
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    # cash-out was created last → must appear before cash-in and open.
+    types_in_order = [it["type"] for it in items]
+    assert types_in_order[0] == "cash_drawer_cash_out"
+    assert types_in_order[-1] == "cash_drawer_open"
+
+
+def test_transactions_supports_pagination(api_client):
+    """AC2: pagination via limit/offset supports historical drawer queries."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 100_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 300_000})
+    drawer_id = _get_drawer_id(api_client)
+    # 4 linked entries: open + 3 cash-in. Page size 2.
+    page1 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=0"
+    )
+    assert page1.status_code == 200
+    p1 = page1.json()
+    assert p1["total"] == 4
+    assert len(p1["items"]) == 2
+    page2 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=2"
+    )
+    assert page2.status_code == 200
+    p2 = page2.json()
+    assert p2["total"] == 4
+    assert len(p2["items"]) == 2
+    # No overlap between pages.
+    ids_p1 = {it["id"] for it in p1["items"]}
+    ids_p2 = {it["id"] for it in p2["items"]}
+    assert ids_p1.isdisjoint(ids_p2)
+    # Beyond the last page returns an empty items list but total stays 4.
+    page3 = api_client.get(
+        f"/api/cash-drawer/{drawer_id}/transactions?limit=2&offset=4"
+    )
+    assert page3.status_code == 200
+    assert page3.json()["total"] == 4
+    assert page3.json()["items"] == []
+
+
+def test_transactions_includes_cash_payment_and_cash_expense(api_client):
+    """FR1: cash sales (payment_transaction with method=cash) and cash expenses
+    (expense with payment_source='Tiền mặt tại quầy') both touch 1101 and must
+    appear in the unified list with the correct signed amount."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Cash sale: create an order + a cash deposit payment.
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách A",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 150_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    txn = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 150_000, "method": "cash", "type": "deposit",
+    })
+    assert txn.status_code == 201, txn.text
+    # Cash expense: create an expense event paid from "Tiền mặt tại quầy".
+    expense = api_client.post("/api/events", json={
+        "summary": "Chi phí vận chuyển",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50_000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "tiền xe",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    by_type = {it["type"]: it for it in items}
+    # Cash sale appears as payment_transaction with +150,000.
+    assert "payment_transaction" in by_type
+    assert by_type["payment_transaction"]["amount"] == 150_000
+    # Cash expense appears as expense with -50,000.
+    assert "expense" in by_type
+    assert by_type["expense"]["amount"] == -50_000
+
+
+def test_transactions_excludes_non_cash_operations(api_client):
+    """FR1: non-cash operations (bank transfer, card) do not touch 1101 and
+    must NOT appear in the cash drawer transaction list."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách B",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201
+    ref = order.json()["orderRef"]
+    # Transfer payment → debits 1200, not 1101 → must not appear.
+    transfer = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 200_000, "method": "transfer", "type": "deposit",
+    })
+    assert transfer.status_code == 201
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    types = {it["type"] for it in items}
+    # Only the drawer-open entry should be present; the transfer is excluded.
+    assert "payment_transaction" not in types
+    assert "cash_drawer_open" in types
+
+
+def test_transactions_returns_404_for_unknown_drawer(api_client):
+    """FR1: 404 for a drawer id that does not exist."""
+    resp = api_client.get("/api/cash-drawer/999999/transactions")
+    assert resp.status_code == 404
+    detail = resp.json()["detail"]
+    assert "999999" in detail
+
+
+def test_transactions_limit_offset_bounds_enforced(api_client):
+    """AC2: limit and offset bounds (ge/le) are enforced by FastAPI."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000})
+    drawer_id = _get_drawer_id(api_client)
+    # limit must be >= 1
+    r1 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?limit=0")
+    assert r1.status_code == 422
+    # limit must be <= 500
+    r2 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?limit=501")
+    assert r2.status_code == 422
+    # offset must be >= 0
+    r3 = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions?offset=-1")
+    assert r3.status_code == 422
+
+
+def test_transactions_works_for_closed_drawer(api_client):
+    """FR1/AC2: closed drawers also expose their historical transactions for
+    the History-tab tap navigation."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    api_client.post("/api/cash-drawer/cash-out", json={"amount": 100_000})
+    # Close with counted == expected (1,100,000) so no confirmation gate.
+    close = api_client.post(
+        "/api/cash-drawer/close", json={"countedAmount": 1_100_000}
+    )
+    assert close.status_code == 200
+    closed_id = int(close.json()["id"])
+    resp = api_client.get(f"/api/cash-drawer/{closed_id}/transactions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 3
+    types = {it["type"] for it in body["items"]}
+    assert "cash_drawer_open" in types
+    assert "cash_drawer_cash_in" in types
+    assert "cash_drawer_cash_out" in types
+
+
+# ---------------------------------------------------------------------------
+# DG-343 Phase 4 — reference + reference_detail enrichment (FR6, FR7)
+# ---------------------------------------------------------------------------
+
+
+def test_transactions_reference_fields_for_payment_and_expense(api_client):
+    """FR6/FR7: payment_transaction rows carry the order receiving code and
+    customer name; expense rows carry the event summary and the
+    "staff_name — payment_source" string. Drawer-only operations (open,
+    cash-in, cash-out, close) leave both fields empty."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Cash sale: create an order + a cash deposit payment.
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách A",
+        "dueDate": "2026-08-10",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 150_000,
+                    "productId": "BKS-16"}],
+    })
+    assert order.status_code == 201, order.text
+    ref = order.json()["orderRef"]
+    txn = api_client.post(f"/api/orders/{ref}/transactions", json={
+        "amount": 150_000, "method": "cash", "type": "deposit",
+    })
+    assert txn.status_code == 201, txn.text
+    # Cash expense with staff_name + payment_source in the event data JSON.
+    expense = api_client.post("/api/events", json={
+        "summary": "Chi phí vận chuyển",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50_000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "tiền xe",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    # The API resolves events.staff_name from the authenticated session (not
+    # from data.paid_by_name). In unauthenticated tests staff_name is empty,
+    # so patch the events row directly to exercise the "staff — provider"
+    # branch of `CashDrawer.get_transactions`.
+    from baker.db.connection import get_db as _get_db
+    event_id = expense.json()["id"]
+    with _get_db() as conn:
+        conn.execute(
+            "UPDATE events SET staff_name = ? WHERE id = ?",
+            ("Phượng", event_id),
+        )
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    by_type = {it["type"]: it for it in resp.json()["items"]}
+    # FR6: payment_transaction → reference = order_ref, reference_detail = customer name.
+    pay = by_type["payment_transaction"]
+    assert pay["reference"] == ref
+    assert pay["reference_detail"] == "Khách A"
+    # FR7: expense → reference = summary, reference_detail = "staff — provider".
+    exp = by_type["expense"]
+    assert exp["reference"] == "Chi phí vận chuyển"
+    assert exp["reference_detail"] == "Phượng — Tiền mặt tại quầy"
+    # Drawer-only operations leave both reference fields empty.
+    for src_type in ("cash_drawer_open",):
+        it = by_type[src_type]
+        assert it["reference"] == ""
+        assert it["reference_detail"] == ""
+
+
+def test_transactions_reference_detail_handles_missing_payment_source(api_client):
+    """FR7: when an expense event has a staff_name but no payment_source in its
+    data JSON (a debt expense — debt expenses hide/ignore payment_source per
+    `_validate_expense_data`), reference_detail degrades to the staff_name
+    alone (no trailing " — ")."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _get_drawer_id(api_client)
+    # Debt expense: payment_method = "Nợ" → payment_source is not required and
+    # the journal entry credits Accounts Payable (not 1101) so the expense
+    # will NOT appear in the cash drawer list. To exercise the missing-
+    # payment_source branch we instead create a normal cash expense and then
+    # patch the underlying events row directly to remove payment_source from
+    # the JSON, bypassing the API validator (this test asserts the read-side
+    # behaviour of `CashDrawer.get_transactions`, not the write-side guard).
+    expense = api_client.post("/api/events", json={
+        "summary": "Mua phụ liệu",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 30_000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+            "vendor": "Chợ",
+            "note": "kem",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert expense.status_code == 201, expense.text
+    event_id = expense.json()["id"]
+    # Bypass the API validator: rewrite events.data directly so payment_source
+    # is absent but staff_name remains. This simulates a legacy/historical
+    # expense row written before payment_source existed. Also set staff_name
+    # directly (the API derives it from the authenticated session, which is
+    # not active in tests).
+    import json as _json
+    from baker.db.connection import get_db as _get_db
+    with _get_db() as conn:
+        conn.execute(
+            "UPDATE events SET data = ?, staff_name = ? WHERE id = ?",
+            (_json.dumps({
+                "amount_vnd": 30_000,
+                "category": "Nguyên liệu",
+                "payment_method": "Tiền mặt",
+                "vendor": "Chợ",
+                "note": "kem",
+                "paid_by_name": "Phượng",
+            }), "Phượng", event_id),
+        )
+    resp = api_client.get(f"/api/cash-drawer/{drawer_id}/transactions")
+    assert resp.status_code == 200, resp.text
+    by_type = {it["type"]: it for it in resp.json()["items"]}
+    exp = by_type["expense"]
+    assert exp["reference"] == "Mua phụ liệu"
+    assert exp["reference_detail"] == "Phượng"

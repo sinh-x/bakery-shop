@@ -74,6 +74,9 @@ from .migrations.v090 import _migrate_v90_force_password_change
 from .migrations.v091 import _migrate_v91_cash_drawer_schema
 from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts
 from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries
+from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns
+from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance
+from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance
 
 MIGRATIONS = {
     1: {
@@ -528,6 +531,21 @@ MIGRATIONS = {
         "description": "Rename 'quỹ' → 'quầy' in journal_entries.description for terminology consistency (DG-337 Phase 5)",
         "sql": "",
         "callable": _migrate_v93_rename_quy_to_quay_in_journal_entries,
+    },
+    94: {
+        "description": "Add tien_rut_in/tien_rut_out INTEGER columns to cash_drawer for separate tien rut tracking (DG-341 Phase 4.1)",
+        "sql": "",
+        "callable": _migrate_v94_cash_drawer_tien_rut_columns,
+    },
+    95: {
+        "description": "Refactor cash drawer balance to derive from journal: add closing_balance, create cash_drawer_journal_entries join table, drop accumulator columns, drop cash_drawer_id from payment_transactions/events (DG-347 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v95_cash_drawer_journal_balance,
+    },
+    96: {
+        "description": "Add counted_opening_balance INTEGER column to cash_drawer and backfill existing rows with counted_opening_balance = opening_balance (DG-354 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v96_cash_drawer_counted_opening_balance,
     },
 }
 

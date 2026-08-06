@@ -86,6 +86,8 @@ _EXPECTED_TABLES = {
     "expense_categories",
     # v91
     "cash_drawer",
+    # v95
+    "cash_drawer_journal_entries",
 }
 
 # Key composite / unique indexes that must exist after the full chain.

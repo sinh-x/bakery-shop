@@ -4,16 +4,34 @@ import '../../../data/models/cash_drawer.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
-/// Scrollable daily drawer history list (FR10 / AC10).
+/// Scrollable daily drawer history list (FR10 / AC10, updated by DG-347
+/// Phase 5).
 ///
-/// Each entry shows the open/close date, opening balance, expected balance,
-/// counted amount, and discrepancy with a surplus/shortage/exact chip. The
-/// movements (cashSales, ownerIn, ownerOut, cashExpenses) are summarised in
-/// an expandable detail section.
+/// Each entry shows the open/close date, opening balance, expected
+/// balance, counted amount, and discrepancy with a
+/// surplus/shortage/exact chip. DG-347 Phase 5 removed the per-accumulator
+/// rows (cash sales, owner in/out, cash expenses); the expected balance is
+/// now the single source of truth from the journal-derived backend value.
+/// When present, the [CashDrawer.closingBalance] is shown for closed
+/// drawers.
+///
+/// DG-343 Phase 3 FR4/AC2: when [onTapClosedDrawer] is provided, tapping a
+/// closed drawer's card navigates to its transaction detail view. Open
+/// drawer rows are not tappable (the transaction tab covers the active
+/// drawer).
 class CashDrawerHistoryList extends StatelessWidget {
-  const CashDrawerHistoryList({super.key, required this.items});
+  const CashDrawerHistoryList({
+    super.key,
+    required this.items,
+    this.onTapClosedDrawer,
+  });
 
   final List<CashDrawer> items;
+
+  /// DG-343 Phase 3 FR4/AC2: callback invoked when the user taps a closed
+  /// drawer row. When `null`, rows are not tappable (preserves the original
+  /// behaviour used by tests that don't pass a callback).
+  final void Function(CashDrawer drawer)? onTapClosedDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -35,20 +53,31 @@ class CashDrawerHistoryList extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: items.length,
-      itemBuilder: (context, index) => _HistoryCard(drawer: items[index]),
+      itemBuilder: (context, index) => _HistoryCard(
+        drawer: items[index],
+        onTapClosedDrawer: onTapClosedDrawer,
+      ),
     );
   }
 }
 
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.drawer});
+  const _HistoryCard({required this.drawer, this.onTapClosedDrawer});
 
   final CashDrawer drawer;
+
+  /// DG-343 Phase 3 FR4/AC2: when non-null and [drawer] is closed, the whole
+  /// card is wrapped in an [InkWell] that fires this callback on tap.
+  final void Function(CashDrawer drawer)? onTapClosedDrawer;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
+    // DG-343 Phase 3 FR4/AC2: closed drawers are tappable when a callback is
+    // provided. Open drawers are never tappable here (the active drawer's
+    // transactions are reached via the "Chi tiết giao dịch" tab).
+    final canTap = drawer.isClosed && onTapClosedDrawer != null;
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
         title: Text(
@@ -81,23 +110,17 @@ class _HistoryCard extends StatelessWidget {
                   label: VN.cashDrawerOpeningBalance,
                   value: drawer.openingBalance,
                 ),
-                _DetailRow(
-                  label: VN.cashDrawerCashSales,
-                  value: drawer.cashSales,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerOwnerIn,
-                  value: drawer.ownerIn,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerOwnerOut,
-                  value: -drawer.ownerOut,
-                ),
-                _DetailRow(
-                  label: VN.cashDrawerCashExpenses,
-                  value: -drawer.cashExpenses,
-                ),
+                if (drawer.closingBalance != null)
+                  _DetailRow(
+                    label: VN.cashDrawerClosingBalance,
+                    value: drawer.closingBalance ?? 0,
+                  ),
                 const Divider(height: 16),
+                _DetailRow(
+                  label: VN.cashDrawerExpectedBalance,
+                  value: drawer.expectedBalance,
+                  emphasize: true,
+                ),
                 _DetailRow(
                   label: VN.cashDrawerCountedAmount,
                   value: drawer.countedAmount ?? 0,
@@ -107,11 +130,38 @@ class _HistoryCard extends StatelessWidget {
                   value: drawer.discrepancy ?? 0,
                   emphasize: true,
                 ),
+                // DG-343 Phase 3 FR4/AC2: explicit "view transactions"
+                // affordance for closed drawers. The [ExpansionTile]
+                // header consumes taps to toggle expand/collapse, so this
+                // button is the guaranteed tappable entry point to the
+                // transaction detail view. It only renders when a callback
+                // is provided and the drawer is closed.
+                if (canTap) ...[
+                  const Divider(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => onTapClosedDrawer!(drawer),
+                      icon: const Icon(Icons.receipt_long, size: 18),
+                      label: const Text(VN.cashDrawerTransactionsTab),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ],
       ),
+    );
+    if (!canTap) return card;
+    // DG-343 Phase 3 FR4/AC2: also wrap the card in an InkWell so tapping
+    // the expanded body (outside the header) navigates. The header tap is
+    // captured by the ExpansionTile toggle, so the explicit TextButton above
+    // is the primary affordance.
+    return InkWell(
+      onTap: () => onTapClosedDrawer!(drawer),
+      borderRadius: BorderRadius.circular(12),
+      child: card,
     );
   }
 }

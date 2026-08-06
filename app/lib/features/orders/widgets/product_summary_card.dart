@@ -92,6 +92,11 @@ class ProductSummaryCard extends StatelessWidget {
       if (item.notes.isNotEmpty) '${VN.notes}: ${item.notes}',
       if (item.isBirthday && item.age.isNotEmpty)
         '${VN.birthdayWithAge}: ${item.age}',
+      if (item.isBirthday &&
+          item.candleType != null &&
+          item.candleType!.isNotEmpty &&
+          item.candleType != 'khong_nen')
+        'Nến: ${VN.candleTypeLabel(item.candleType)}',
       if (usesInventory) VN.useInventory,
       if (priceChipLabel != null) '${VN.priceChipLabel}: $priceChipLabel',
     ];

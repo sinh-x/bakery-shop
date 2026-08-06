@@ -20,25 +20,15 @@ from baker.db.schema import (
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
-from baker.models.cash_drawer import CashDrawer
 from baker.services.journal_sync._common import (
     STAFF_ADVANCE_PAYMENT_SOURCE,
+    _active_drawer_id,
     _delete_journal_entry_cascade,
     _find_journal_entry,
     _is_locked,
     _reverse_journal_entry,
     _update_journal_entry_in_place,
 )
-
-
-# FR6 (DG-324 Phase 3, updated by DG-330 Phase 4.4): the on-hand cash account
-# whose asset code identifies drawer cash. Expenses paid from the source that
-# maps to this code draw physical cash from the drawer and must auto-link to
-# the active day's drawer. DG-330 split the legacy "Shop tiền mặt" (1100) into
-# two payment sources — "Tiền mặt tại quầy" (1101, drawer cash) and "Tiền mặt
-# chủ sở hữu" (1102, owner cash). Only 1101 expenses link to the drawer; 1102
-# expenses do not, because owner-held cash is not physically in the POS drawer.
-CASH_ASSET_CODE = "1101"
 
 
 def _resolve_expense_account_code(data: dict) -> Optional[str]:
@@ -183,95 +173,6 @@ def _build_expense_journal_lines(
         ]
     return description, lines
 
-def _is_cash_expense(data: dict[str, Any]) -> bool:
-    """FR6 (DG-324 Phase 3, updated by DG-330 Phase 4.4): return True iff the
-    expense pays from on-hand drawer cash.
-
-    Debt expenses (``payment_method == 'Nợ'``) credit Accounts Payable, not
-    cash, so they never link. Staff-advance expenses credit a per-staff 2300
-    sub-account, also not cash. Only expenses whose ``payment_source`` maps to
-    the drawer-cash asset code (1101 — "Tiền mặt tại quầy") draw from the
-    drawer and link to it. The owner-cash source "Tiền mặt chủ sở hữu" (1102)
-    does not link because that cash is not physically held in the POS drawer.
-    """
-    payment_method = data.get("payment_method", "")
-    if payment_method == EXPENSE_DEBT_PAYMENT_METHOD:
-        return False
-    payment_source = data.get("payment_source", "")
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
-        return False
-    return EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source) == CASH_ASSET_CODE
-
-
-def _recompute_drawer_cash_expenses(conn, drawer_id: int) -> None:
-    """FR6 (DG-324 Phase 3): recompute a drawer's ``cash_expenses`` total.
-
-    Idempotent: sums ``amount_vnd`` over all non-deleted expense events linked
-    to the drawer via ``cash_drawer_id``. This avoids fragile delta tracking
-    across create/update/delete — each sync recomputes the authoritative total
-    from the current event rows, so re-syncs never double-count and amount
-    changes on update are reflected without needing the prior value.
-    """
-    row = conn.execute(
-        "SELECT COALESCE(SUM(json_extract(data, '$.amount_vnd')), 0) AS total "
-        "FROM events WHERE cash_drawer_id = ? AND type = 'expense' "
-        "AND deleted_at IS NULL",
-        (drawer_id,),
-    ).fetchone()
-    total = int(row["total"]) if row else 0
-    conn.execute(
-        "UPDATE cash_drawer SET cash_expenses = ? WHERE id = ?",
-        (total, drawer_id),
-    )
-
-
-def _reconcile_expense_drawer_link(
-    conn,
-    event_id: int,
-    data: dict[str, Any],
-    *,
-    deleted: bool,
-) -> None:
-    """FR6 (DG-324 Phase 3): link/unlink a cash expense to the active drawer.
-
-    On create/update: when the expense pays from on-hand cash and an active
-    drawer exists, set ``events.cash_drawer_id`` to the active drawer. On
-    delete, or when the expense no longer pays cash, clear the link.
-
-    The drawer's ``cash_expenses`` aggregate is recomputed from scratch for
-    both the prior and new linked drawers (see
-    ``_recompute_drawer_cash_expenses``), so the total is always authoritative
-    regardless of amount/method changes on update.
-    """
-    row = conn.execute(
-        "SELECT cash_drawer_id FROM events WHERE id = ?", (event_id,)
-    ).fetchone()
-    if row is None:
-        return
-    prior_drawer_id = row["cash_drawer_id"] if "cash_drawer_id" in row.keys() else None
-
-    is_cash = _is_cash_expense(data) if not deleted else False
-    active = CashDrawer.get_active(conn) if is_cash else None
-    new_drawer_id = active.id if (is_cash and active is not None) else None
-
-    if prior_drawer_id == new_drawer_id:
-        # Link unchanged — just recompute the drawer total in case the amount
-        # changed on update (idempotent recompute handles the delta).
-        if new_drawer_id is not None:
-            _recompute_drawer_cash_expenses(conn, int(new_drawer_id))
-        return
-
-    # Link changed: clear the old link, set the new one, and recompute both
-    # drawers' totals so each reflects its current set of linked events.
-    conn.execute(
-        "UPDATE events SET cash_drawer_id = ? WHERE id = ?",
-        (new_drawer_id, event_id),
-    )
-    if prior_drawer_id is not None:
-        _recompute_drawer_cash_expenses(conn, int(prior_drawer_id))
-    if new_drawer_id is not None:
-        _recompute_drawer_cash_expenses(conn, int(new_drawer_id))
-
 
 def _sync_expense_journal(
     conn,
@@ -284,14 +185,7 @@ def _sync_expense_journal(
     """Create/update/delete the journal entry for an expense event.
 
     Wrap in try/except by the caller — accounting must never break expense CRUD.
-
-    FR6 (DG-324 Phase 3): also reconciles the ``events.cash_drawer_id`` link
-    and the drawer's ``cash_expenses`` aggregate. This runs before the journal
-    entry sync so the drawer totals are authoritative regardless of whether
-    the expense is journallable.
     """
-    _reconcile_expense_drawer_link(conn, event_id, data, deleted=deleted)
-
     existing_id = _find_journal_entry(conn, "expense", event_id)
 
     if deleted:
@@ -326,6 +220,7 @@ def _sync_expense_journal(
             source_id=event_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         # Locked: reverse the original, then create a new correct entry.
@@ -337,6 +232,7 @@ def _sync_expense_journal(
             source_id=event_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(
@@ -454,6 +350,7 @@ def _sync_debt_settlement_journal(
             source_id=settlement_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         _reverse_journal_entry(conn, existing_id)
@@ -464,6 +361,7 @@ def _sync_debt_settlement_journal(
             source_id=settlement_id,
             lines=lines,
             transaction_date=transaction_date,
+            drawer_id=_active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(

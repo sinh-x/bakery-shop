@@ -16,6 +16,7 @@ from baker.db.schema import (
     REVENUE_UPDATE_TOLERANCE,
     _insert_journal_entry,
 )
+from baker.models.cash_drawer import CashDrawer
 from baker.models.journal_entry import JournalEntry, JournalLine
 
 logger = logging.getLogger("baker.server")
@@ -23,6 +24,16 @@ logger = logging.getLogger("baker.server")
 STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
 
 journal_sync_failures: int = 0
+
+
+def _active_drawer_id(conn) -> int | None:
+    """Return the active cash drawer ID, or None if no drawer is open.
+
+    DG-347 Phase 2 (FR4): journal entries touching 1101 must be linked to the
+    active drawer so expected_balance() can filter per-drawer.
+    """
+    drawer = CashDrawer.get_active(conn)
+    return drawer.id if drawer else None
 
 # Backwards-compatible alias kept so any external import of the legacy name
 # continues to resolve to the centralized constant in ``baker.db.schema``.

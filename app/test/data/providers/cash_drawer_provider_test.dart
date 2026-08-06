@@ -39,10 +39,6 @@ Map<String, dynamic> _drawerJson({
     'closedAt': null,
     'status': status,
     'openingBalance': 1000000,
-    'cashSales': 500000,
-    'ownerIn': 200000,
-    'ownerOut': 100000,
-    'cashExpenses': 50000,
     'countedAmount': null,
     'discrepancy': null,
     'expectedBalance': expectedBalance,
@@ -187,6 +183,129 @@ void main() {
       final drawer = await service.getDrawerStatus();
       expect(drawer, isNotNull);
       expect(drawer!.id, '1');
+    });
+  });
+
+  group('cashDrawerTransactionsProvider (DG-343 Phase 2)', () {
+    test('fetches GET /{drawerId}/transactions with the given filter',
+        () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_StubInterceptor({
+          'total': 1,
+          'limit': 50,
+          'offset': 0,
+          'items': [
+            {
+              'id': '5',
+              'type': 'cash_drawer_open',
+              'amount': 1000000,
+              'timestamp': '2026-08-01T08:00:00Z',
+              'note': 'open',
+            },
+          ],
+        }));
+      final container = ProviderContainer(
+        overrides: [dioProvider.overrideWithValue(dio)],
+      );
+      addTearDown(container.dispose);
+
+      final resp = await container.read(
+        cashDrawerTransactionsProvider(
+          const CashDrawerTransactionsFilter(drawerId: 7),
+        ).future,
+      );
+
+      expect(resp.total, 1);
+      expect(resp.items, hasLength(1));
+      expect(resp.items.first.id, '5');
+      expect(resp.items.first.amount, 1000000);
+
+      final interceptor = dio.interceptors.whereType<_StubInterceptor>().first;
+      expect(interceptor.lastPath, '/api/cash-drawer/7/transactions');
+      expect(interceptor.lastQuery!['limit'], 50);
+      expect(interceptor.lastQuery!['offset'], 0);
+    });
+
+    test('passes custom pagination params through the filter', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_StubInterceptor({
+          'total': 100,
+          'limit': 20,
+          'offset': 40,
+          'items': <Map<String, dynamic>>[],
+        }));
+      final container = ProviderContainer(
+        overrides: [dioProvider.overrideWithValue(dio)],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(
+        cashDrawerTransactionsProvider(
+          const CashDrawerTransactionsFilter(
+            drawerId: 11,
+            limit: 20,
+            offset: 40,
+          ),
+        ).future,
+      );
+
+      final interceptor = dio.interceptors.whereType<_StubInterceptor>().first;
+      expect(interceptor.lastPath, '/api/cash-drawer/11/transactions');
+      expect(interceptor.lastQuery!['limit'], 20);
+      expect(interceptor.lastQuery!['offset'], 40);
+    });
+
+    test('caches distinct (drawerId, offset) pages independently', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..interceptors.add(_StubInterceptor({
+          'total': 0,
+          'limit': 50,
+          'offset': 0,
+          'items': <Map<String, dynamic>>[],
+        }));
+      final container = ProviderContainer(
+        overrides: [dioProvider.overrideWithValue(dio)],
+      );
+      addTearDown(container.dispose);
+
+      // Two different filters should both resolve without error.
+      final a = await container.read(
+        cashDrawerTransactionsProvider(
+          const CashDrawerTransactionsFilter(drawerId: 1),
+        ).future,
+      );
+      final b = await container.read(
+        cashDrawerTransactionsProvider(
+          const CashDrawerTransactionsFilter(drawerId: 2, offset: 50),
+        ).future,
+      );
+
+      expect(a.total, 0);
+      expect(b.total, 0);
+    });
+  });
+
+  group('CashDrawerTransactionsFilter', () {
+    test('equality + hashCode account for all fields', () {
+      const a = CashDrawerTransactionsFilter(drawerId: 7, limit: 10);
+      const b = CashDrawerTransactionsFilter(drawerId: 7, limit: 10);
+      const c = CashDrawerTransactionsFilter(drawerId: 8, limit: 10);
+      const d = CashDrawerTransactionsFilter(drawerId: 7, limit: 10, offset: 20);
+
+      expect(a == b, isTrue);
+      expect(a.hashCode, b.hashCode);
+      expect(a == c, isFalse);
+      expect(a == d, isFalse);
+    });
+
+    test('copyWith preserves unspecified fields', () {
+      const original =
+          CashDrawerTransactionsFilter(drawerId: 7, limit: 25);
+      final updated = original.copyWith(offset: 50);
+
+      expect(updated.drawerId, 7);
+      expect(updated.limit, 25);
+      expect(updated.offset, 50);
     });
   });
 }

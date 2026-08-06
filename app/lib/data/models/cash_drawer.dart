@@ -1,4 +1,4 @@
-/// Cash drawer model (DG-324 Phase 2/6).
+/// Cash drawer model (DG-324 Phase 2/6; updated by DG-347 Phase 5).
 ///
 /// Mirrors the JSON returned by the cash-drawer backend API
 /// (see `src/baker/api/cash_drawer.py` and `CashDrawer.to_api_dict`):
@@ -9,19 +9,23 @@
 ///     "closedAt": null,
 ///     "status": "open",
 ///     "openingBalance": 1000000,
-///     "cashSales": 0,
-///     "ownerIn": 0,
-///     "ownerOut": 0,
-///     "cashExpenses": 0,
+///     "countedOpeningBalance": 950000,  // DG-354 Phase 4: physical count
 ///     "countedAmount": null,
 ///     "discrepancy": null,
 ///     "expectedBalance": 1000000,
+///     "closingBalance": null,           // DG-347: null for open, int when closed
 ///     "accountingBalance1101": 1000000, // optional, status only
-///     "journalEntry": { ... } // optional, only on mutation responses
+///     "journalEntry": { ... }            // optional, only on mutation responses
 ///   }
 ///
-/// Balance fields are INTEGER (VND) per NFR1. The expected balance is derived
-/// (FR4) rather than stored, so it is parsed directly from the API response.
+/// DG-347 Phase 5: the per-accumulator fields (`cashSales`, `ownerIn`,
+/// `ownerOut`, `cashExpenses`, `tienRutIn`, `tienRutOut`) are no longer
+/// returned by the backend. The expected balance is now derived on the
+/// server from journal entries and is the single source of truth.
+///
+/// Balance fields are INTEGER (VND) per NFR1. The expected balance is parsed
+/// directly from the API `expectedBalance` field (the backend computes it;
+/// we do not recompute on the client to avoid drift).
 ///
 /// Plain Dart class (no freezed codegen) — matches the `CakeQueueItem` and
 /// `ExpenseCategory` pattern for read-oriented models. `toJson` is provided
@@ -40,17 +44,33 @@ class CashDrawer {
   final DateTime? closedAt;
   final String status;
   final int openingBalance;
-  final int cashSales;
-  final int ownerIn;
-  final int ownerOut;
-  final int cashExpenses;
+
+  /// DG-354 Phase 4 FR7: the user's physical cash count at open time.
+  /// The backend returns this separately from `openingBalance` (which
+  /// stores the 1101 accounting balance). The Flutter UI displays this
+  /// field as the opening balance. Nullable for backward compatibility
+  /// with older backends/rows; falls back to [openingBalance] when null
+  /// via [displayedOpeningBalance].
+  final int? countedOpeningBalance;
+
+  /// DG-354 Phase 4 FR7: the opening balance to display in the UI — the
+  /// physical count when available, otherwise the accounting opening
+  /// balance. Avoids null-check churn at call sites.
+  int get displayedOpeningBalance => countedOpeningBalance ?? openingBalance;
+
   final int? countedAmount;
   final int? discrepancy;
 
-  /// FR4: opening + cashSales + ownerIn - ownerOut - cashExpenses.
-  /// Parsed directly from the API `expectedBalance` field (the backend
-  /// computes it; we do not recompute on the client to avoid drift).
+  /// FR4: expected balance computed by the backend from journal entries
+  /// (opening + cashSales + ownerIn - ownerOut - cashExpenses, plus
+  /// tien-rut adjustments). Parsed directly from the API `expectedBalance`
+  /// field; the client does not recompute it to avoid drift.
   final int expectedBalance;
+
+  /// DG-347 Phase 5 F2: the counted balance recorded when the drawer was
+  /// closed. Null for open drawers (not yet counted). Populated by the
+  /// backend `to_api_dict` once a close-with-count has been performed.
+  final int? closingBalance;
 
   /// Phase 4.1 F2: the 1101 (Cash in Drawer) journal account balance from
   /// `GET /api/cash-drawer/status`. Surfaced for reconciliation alongside
@@ -69,13 +89,11 @@ class CashDrawer {
     this.closedAt,
     required this.status,
     required this.openingBalance,
-    required this.cashSales,
-    required this.ownerIn,
-    required this.ownerOut,
-    required this.cashExpenses,
+    this.countedOpeningBalance,
     this.countedAmount,
     this.discrepancy,
     required this.expectedBalance,
+    this.closingBalance,
     this.accountingBalance1101 = 0,
     this.journalEntry,
   });
@@ -98,13 +116,11 @@ class CashDrawer {
       closedAt: parseApiDateTime(json['closedAt'] as String?),
       status: (json['status'] as String?) ?? 'open',
       openingBalance: (json['openingBalance'] as num?)?.toInt() ?? 0,
-      cashSales: (json['cashSales'] as num?)?.toInt() ?? 0,
-      ownerIn: (json['ownerIn'] as num?)?.toInt() ?? 0,
-      ownerOut: (json['ownerOut'] as num?)?.toInt() ?? 0,
-      cashExpenses: (json['cashExpenses'] as num?)?.toInt() ?? 0,
+      countedOpeningBalance: (json['countedOpeningBalance'] as num?)?.toInt(),
       countedAmount: (json['countedAmount'] as num?)?.toInt(),
       discrepancy: (json['discrepancy'] as num?)?.toInt(),
       expectedBalance: (json['expectedBalance'] as num?)?.toInt() ?? 0,
+      closingBalance: (json['closingBalance'] as num?)?.toInt(),
       accountingBalance1101:
           (json['accountingBalance1101'] as num?)?.toInt() ?? 0,
       journalEntry: journalJson is Map<String, dynamic>
@@ -119,13 +135,11 @@ class CashDrawer {
         'closedAt': timestampToJson(closedAt),
         'status': status,
         'openingBalance': openingBalance,
-        'cashSales': cashSales,
-        'ownerIn': ownerIn,
-        'ownerOut': ownerOut,
-        'cashExpenses': cashExpenses,
+        'countedOpeningBalance': countedOpeningBalance,
         'countedAmount': countedAmount,
         'discrepancy': discrepancy,
         'expectedBalance': expectedBalance,
+        'closingBalance': closingBalance,
         'accountingBalance1101': accountingBalance1101,
         if (journalEntry != null) 'journalEntry': journalEntry!.toJson(),
       };

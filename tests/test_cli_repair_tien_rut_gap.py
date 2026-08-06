@@ -363,7 +363,7 @@ def test_backfill_all_clears_2400_and_balances_revenue():
         # Tien rut return entry: debit 2400 300k, credit 1100 300k.
         ret = _tien_rut_return_entry(conn, oid)
         assert ret[TIEN_RUT_HELD_CODE]["debit"] == 300000.0
-        assert ret["1100"]["credit"] == 300000.0
+        assert ret["1101"]["credit"] == 300000.0
 
 
 def test_backfill_single_order_id():
