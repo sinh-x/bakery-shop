@@ -21,11 +21,18 @@ class PosReviewPanel extends ConsumerWidget {
     required this.onBack,
     required this.onContinue,
     required this.orderStateProvider,
+    this.onFastPath,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-6): optional "Giao ngay & Thanh toán" fast-path
+  /// callback. When provided, a button is rendered between "Quay lại" and
+  /// "Tiếp tục" so the user can jump directly to Stage 5 with Giao ngay
+  /// walk-in defaults from the Stage 4 review.
+  final VoidCallback? onFastPath;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,6 +91,16 @@ class PosReviewPanel extends ConsumerWidget {
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          // DG-370 Phase 5.6-c1 (UX-6): "Giao ngay & Thanh toán" fast-path
+          // button between "Quay lại" and "Tiếp tục".
+          if (onFastPath != null) ...[
+            FilledButton.icon(
+              onPressed: onFastPath,
+              icon: const Icon(Icons.bolt, size: 18),
+              label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: onContinue,
             child: const Text(OrdersLabels.continueLabel),

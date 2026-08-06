@@ -7,10 +7,17 @@ class PosStage3PickupScreen extends StatelessWidget {
     super.key,
     required this.onDeliverNow,
     required this.onDeliverLater,
+    this.onFastPath,
   });
 
   final VoidCallback onDeliverNow;
   final VoidCallback onDeliverLater;
+
+  /// DG-370 Phase 5.6-c1 (UX-4): optional "Giao ngay & Thanh toán" fast-path
+  /// callback. When provided, a third button is rendered alongside the
+  /// existing "Giao ngay" / "Giao hàng sau" options so the user can jump
+  /// directly to Stage 5 with Giao ngay walk-in defaults.
+  final VoidCallback? onFastPath;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +72,25 @@ class PosStage3PickupScreen extends StatelessWidget {
                 ),
               ),
             ),
+            // DG-370 Phase 5.6-c1 (UX-4): fast-path button alongside the
+            // existing "Giao ngay" / "Giao hàng sau" options.
+            if (onFastPath != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 64,
+                child: FilledButton.icon(
+                  onPressed: onFastPath,
+                  icon: const Icon(Icons.bolt),
+                  label: Text(
+                    OrdersLabels.posGiaoNgayThanhToan,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -79,18 +79,11 @@ class PosCartBar extends ConsumerWidget {
                   ),
                 ),
 
-                // Payment buttons
-                // DG-370 Phase 1 — "Giao ngay & Thanh toán" fast-path button:
-                // jumps directly to Stage 5 with Giao ngay walk-in defaults
-                // (FR1). Only visible when the cart has items (the whole bar
-                // is hidden when itemCount == 0).
-                FilledButton.icon(
-                  // ignore: prefer_const_constructors
-                  onPressed: () => context.push('/pos/checkout?fast=true'),
-                  icon: const Icon(Icons.bolt, size: 18),
-                  label: const Text(OrdersLabels.posGiaoNgayThanhToan),
-                ),
-                const SizedBox(width: 8),
+                // Payment button — opens the POS checkout flow.
+                // DG-370 Phase 5.6-c1: the "Giao ngay & Thanh toán" fast-path
+                // button was moved from PosCartBar into the bottom navigation
+                // of each POS checkout stage (1-4) so it is available at every
+                // step of the order process (UX-1).
                 FilledButton.icon(
                   // ignore: prefer_const_constructors
                   onPressed: () => context.push('/pos/checkout'),

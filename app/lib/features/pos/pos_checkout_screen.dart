@@ -146,6 +146,17 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     _payment.enterPaymentStep(ref);
   }
 
+  /// DG-370 Phase 5.6-c1 (UX-1..UX-6): "Giao ngay & Thanh toán" fast-path
+  /// invoked from any POS checkout stage (1-4). Sets deliverImmediately=true
+  /// (so the order is created with status="delivered" on both pay-now and
+  /// pay-later, FR4) and jumps to Stage 5. Used as the `onFastPath` callback
+  /// for Stage 1/2/3/4 bottom navigation buttons.
+  void _enterFastPath() {
+    _posDeliverImmediately = true;
+    _payment.deliverImmediately = true;
+    _enterPaymentStep();
+  }
+
   /// DG-370 Phase 1 — fast-path "Quay lại": write the wizard items back to
   /// the cart (so the cart survives the back-out) and return to the POS
   /// product grid (/pos) instead of Stage 4 (FR3/AC5).
@@ -186,6 +197,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       },
       stage1Builder: (ctx, controller) => Stage1ProductSelectionScreen(
         onContinue: () => controller.goToStage(2),
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       stage2Builder: (ctx, controller) => Stage2CustomerInfoScreen(
@@ -195,6 +207,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           context.pop();
         },
         onContinue: () => controller.goToStage(3),
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       stage3Builder: (ctx, controller) {
@@ -211,6 +224,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               _stage3ShowFullOptions = true;
               setState(() {});
             },
+            onFastPath: _enterFastPath,
           );
         }
         return Stage3DeliveryOptionsScreen(
@@ -222,12 +236,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                 }
               : () => controller.goToStage(2),
           onContinue: () => controller.goToStage(4),
+          onFastPath: _enterFastPath,
           orderStateProvider: posOrderStateProvider,
         );
       },
       stage4Builder: (ctx, controller) => PosReviewPanel(
         onBack: () => controller.goToStage(3),
         onContinue: _enterPaymentStep,
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       // The container hosts stages 1-4 AND the POS payment step (stage 5).

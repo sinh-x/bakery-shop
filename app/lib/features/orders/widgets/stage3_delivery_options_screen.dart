@@ -13,12 +13,18 @@ class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
     super.key,
     required this.onBack,
     required this.onContinue,
+    this.onFastPath,
     required this.orderStateProvider,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-5): optional POS-only "Giao ngay & Thanh toán"
+  /// fast-path callback. When provided (POS checkout), a button is rendered
+  /// between "Quay lại" and "Tiếp tục". Null in the normal order flow.
+  final VoidCallback? onFastPath;
 
   @override
   ConsumerState<Stage3DeliveryOptionsScreen> createState() =>
@@ -226,6 +232,16 @@ class _Stage3DeliveryOptionsScreenState
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          // DG-370 Phase 5.6-c1 (UX-5): "Giao ngay & Thanh toán" fast-path
+          // button between "Quay lại" and "Tiếp tục" — POS-only.
+          if (widget.onFastPath != null) ...[
+            FilledButton.icon(
+              onPressed: widget.onFastPath,
+              icon: const Icon(Icons.bolt, size: 18),
+              label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: _onContinue,
             child: const Text(OrdersLabels.continueLabel),
