@@ -77,6 +77,7 @@ from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries
 from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns
 from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance
 from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance
+from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot
 
 MIGRATIONS = {
     1: {
@@ -546,6 +547,11 @@ MIGRATIONS = {
         "description": "Add counted_opening_balance INTEGER column to cash_drawer and backfill existing rows with counted_opening_balance = opening_balance (DG-354 Phase 1)",
         "sql": "",
         "callable": _migrate_v96_cash_drawer_counted_opening_balance,
+    },
+    97: {
+        "description": "Create cash_drawer_breakdown_snapshot table + backfill snapshots for all already-closed drawers from linked 1101/2200 journal lines (DG-363 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v97_cash_drawer_breakdown_snapshot,
     },
 }
 
