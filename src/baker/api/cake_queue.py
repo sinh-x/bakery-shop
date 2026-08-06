@@ -1,5 +1,6 @@
 """Cake queue API — cross-order work item list for the cake team."""
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Query
@@ -50,6 +51,7 @@ def list_work_items_queue(
                 oi.status,
                 oi.is_birthday,
                 oi.age,
+                oi.attributes,
                 oi.created_at,
                 o.order_ref,
                 o.customer_name,
@@ -84,6 +86,7 @@ def list_work_items_queue(
                 "status": row["status"],
                 "isBirthday": bool(row["is_birthday"]),
                 "age": row["age"],
+                "attributes": json.loads(row["attributes"]) if row["attributes"] and row["attributes"] != "{}" else {},
                 "dueDate": row["due_date"],
                 "dueTime": row["due_time"],
                 "createdAt": row["created_at"],

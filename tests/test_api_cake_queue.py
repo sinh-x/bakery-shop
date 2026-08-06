@@ -60,6 +60,27 @@ def test_cake_queue_item_has_required_fields(api_client):
     assert item["age"] == 3
 
 
+def test_cake_queue_item_attributes_defaults_to_empty_dict(api_client):
+    """Items created without explicit attributes return an empty dict (AC4, DG-362)."""
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    assert items[0]["attributes"] == {}
+
+
+def test_cake_queue_item_attributes_reflects_stored_value(api_client):
+    """Stored enum attributes are surfaced in the cake queue response (AC4, DG-362)."""
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000,
+         "attributes": {"nhan_banh": "Sầu riêng"}},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    assert items[0]["attributes"] == {"nhan_banh": "Sầu riêng"}
+
+
 def test_cake_queue_returns_parent_order_status(api_client):
     """orderStatus must reflect the parent order's status (DG-292).
 
