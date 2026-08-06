@@ -2,20 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/target_account_dropdown.dart';
+import '../../orders/widgets/stage_summary_card.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
 /// (B3), and the submit action that finalizes the order.
+///
+/// Since DG-370 Phase 2 (FR2/AC2/AC6), this step also renders an order summary
+/// section at the top — reusing the same `ProductSummaryCard`,
+/// `CustomerSummaryCard`, and `DeliverySummaryCard` widgets as Stage 4
+/// (`PosReviewPanel`) — so the user can review the order without scrolling
+/// back. The summary applies to ALL POS orders (both the Giao ngay fast-path
+/// and the normal 5-stage flow).
 ///
 /// The transfer-photo path (`showTransferSourceDialog` + `uploadOrderPhoto`) is
 /// preserved by the caller's [onPayNow] handler — this widget only captures the
 /// selected method and amount.
 ///
 /// This widget is intentionally review-only with respect to order data: it
-/// does not read or mutate the cart/wizard state.
+/// does not mutate the cart/wizard state.
 class PosPaymentStep extends ConsumerStatefulWidget {
   const PosPaymentStep({
     super.key,
@@ -31,6 +40,7 @@ class PosPaymentStep extends ConsumerStatefulWidget {
     required this.onBack,
     required this.onPayNow,
     required this.onPayLater,
+    required this.orderStateProvider,
     this.selectedTargetAccount,
     this.onTargetAccountChanged,
   });
@@ -47,6 +57,13 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onPayNow;
   final VoidCallback onPayLater;
+
+  /// The order-create state provider used to read the cart items, wizard
+  /// data, source, and due date/time for the order summary section (DG-370
+  /// Phase 2, FR2). The same provider is also watched by `PosReviewPanel`
+  /// (Stage 4) so the summary stays consistent across both stages.
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
+      orderStateProvider;
 
   /// Optional target bank account for transfer payments (DG-244 Phase 2,
   /// FR7). `null` means no selection. Only shown when the method is
@@ -151,6 +168,10 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // DG-370 Phase 2 (FR2/AC2/AC6): watch the order state to render the same
+    // summary cards as Stage 4. Applies to both the fast-path and the normal
+    // 5-stage flow (the provider is the same `posOrderStateProvider`).
+    final orderState = ref.watch(widget.orderStateProvider);
 
     return Column(
       children: [
@@ -160,6 +181,21 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Order summary section (DG-370 Phase 2, FR2/AC2/AC6). Reuses
+                // the same compact summary cards as Stage 4 (PosReviewPanel)
+                // so payment fields stay reachable on a 360x640dp screen
+                // (NFR2).
+                ProductSummaryCard(items: orderState.items),
+                CustomerSummaryCard(
+                  wizardData: orderState.wizardData,
+                  source: orderState.source,
+                ),
+                DeliverySummaryCard(
+                  wizardData: orderState.wizardData,
+                  dueDate: orderState.dueDate,
+                  dueTime: orderState.dueTime,
+                ),
+                const SizedBox(height: 16),
                 Text(
                   VN.selectPaymentMethod,
                   style: theme.textTheme.titleMedium?.copyWith(

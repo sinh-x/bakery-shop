@@ -232,15 +232,21 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       // the orchestrator renders it via this builder closure so the
       // orchestrator stays mounted and `submitOrder` remains callable from
       // the payment step's pay-now/pay-later handlers.
-      stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: currentStage == 5
-            ? PosPaymentStepBuilder(controller: _payment).build(
-                context,
-                deliverImmediately: _posDeliverImmediately,
-                mounted: mounted,
-                onChanged: () => setState(() {}),
-              )
+        stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: currentStage == 5
+              ? PosPaymentStepBuilder(
+                  controller: _payment,
+                  // DG-370 Phase 2 (FR2/AC2/AC6): forward the POS order state
+                  // provider so Stage 5 renders the same order summary cards
+                  // as Stage 4 (PosReviewPanel).
+                  orderStateProvider: posOrderStateProvider,
+                ).build(
+                  context,
+                  deliverImmediately: _posDeliverImmediately,
+                  mounted: mounted,
+                  onChanged: () => setState(() {}),
+                )
             : (currentStage >= 1 && currentStage <= 4
                 ? stages[currentStage - 1]
                 : const SizedBox.shrink()),

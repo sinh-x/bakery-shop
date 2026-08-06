@@ -784,6 +784,10 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: the order summary section now appears above the
+      // payment fields; ensure the transfer option is visible before tapping.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
@@ -850,6 +854,10 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: summary section may push this off-screen on the
+      // default 800x600 test surface; scroll it into view first.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
@@ -887,10 +895,15 @@ void main() {
       await _navigateToPayment(tester);
 
       // Switch to transfer to reveal the target account selector.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
       // Select TK Ân VCB from the dropdown.
+      // DG-370 Phase 2: ensure the dropdown is on-screen before tapping.
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String?>));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.paymentSourceAnVCB).last);
@@ -928,6 +941,9 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: scroll the transfer option into view before tapping.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 

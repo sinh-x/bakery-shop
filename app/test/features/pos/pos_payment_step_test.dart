@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/pos/widgets/pos_payment_step.dart';
+import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
@@ -11,23 +13,31 @@ void main() {
       String? selectedTargetAccount,
       ValueChanged<String?>? onTargetAccountChanged,
     }) {
-      return MaterialApp(
-        home: Scaffold(
-          body: PosPaymentStep(
-            orderTotal: 100000,
-            initialAmount: 100000,
-            hasTienRut: false,
-            tienRutAmount: 0,
-            selectedPaymentMethod: paymentMethod,
-            selectedTargetAccount: selectedTargetAccount,
-            isProcessing: false,
-            onPaymentMethodChanged: (_) {},
-            onAmountChanged: (_) {},
-            onTienRutAmountChanged: (_) {},
-            onTargetAccountChanged: onTargetAccountChanged,
-            onBack: () {},
-            onPayNow: () {},
-            onPayLater: () {},
+      // DG-370 Phase 2: PosPaymentStep now requires an orderStateProvider to
+      // render the summary cards. Wrap it in a ProviderScope + Consumer so
+      // the test can watch the seeded posOrderStateProvider.
+      return ProviderScope(
+        child: Consumer(
+          builder: (context, ref, _) => MaterialApp(
+            home: Scaffold(
+              body: PosPaymentStep(
+                orderTotal: 100000,
+                initialAmount: 100000,
+                hasTienRut: false,
+                tienRutAmount: 0,
+                selectedPaymentMethod: paymentMethod,
+                selectedTargetAccount: selectedTargetAccount,
+                isProcessing: false,
+                orderStateProvider: posOrderStateProvider,
+                onPaymentMethodChanged: (_) {},
+                onAmountChanged: (_) {},
+                onTienRutAmountChanged: (_) {},
+                onTargetAccountChanged: onTargetAccountChanged,
+                onBack: () {},
+                onPayNow: () {},
+                onPayLater: () {},
+              ),
+            ),
           ),
         ),
       );
@@ -106,6 +116,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap the dropdown to open the menu.
+      // DG-370 Phase 2: the dropdown now sits below the order summary cards;
+      // scroll it into view on the default 800x600 test surface first.
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String?>));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.paymentSourcePhuongVCB).last);
