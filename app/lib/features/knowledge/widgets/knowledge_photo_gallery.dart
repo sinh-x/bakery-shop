@@ -179,16 +179,21 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) throw Exception('No data');
-      final tmpDir = await getTemporaryDirectory();
       final bytes = Uint8List.fromList(resp.data!);
       final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
-      final tmpFile = File(
-        '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
-      );
-      await tmpFile.writeAsBytes(bytes);
+      final fileName = _knowledgePhotoFileName(photo, metadata);
+      final XFile xfile;
+      if (kIsWeb) {
+        xfile = XFile.fromData(bytes, mimeType: metadata.mimeType, name: fileName);
+      } else {
+        final tmpDir = await getTemporaryDirectory();
+        final tmpFile = File('${tmpDir.path}/$fileName');
+        await tmpFile.writeAsBytes(bytes);
+        xfile = XFile(tmpFile.path, mimeType: metadata.mimeType);
+      }
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(tmpFile.path, mimeType: metadata.mimeType)],
+          files: [xfile],
           text: photo.caption.isNotEmpty ? photo.caption : null,
         ),
       );

@@ -91,7 +91,6 @@ class BulkShareService {
         }
         try {
           downloadedPhotoBytesByPhotoId[photo.id] = bytes;
-          final tempDir = await getTemporaryDirectory();
           final metadata = imageDownloadMetadata(
             bytes,
             sourceName: photo.filePath,
@@ -102,10 +101,21 @@ class BulkShareService {
             photoId: photo.id,
             extension: metadata.extension,
           );
-          final file = File('${tempDir.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          allWrittenFiles.add(file);
-          allShareFiles.add(XFile(file.path, mimeType: metadata.mimeType));
+          final XFile shareFile;
+          if (kIsWeb) {
+            shareFile = XFile.fromData(
+              bytes,
+              mimeType: metadata.mimeType,
+              name: fileName,
+            );
+          } else {
+            final tempDir = await getTemporaryDirectory();
+            final file = File('${tempDir.path}/$fileName');
+            await file.writeAsBytes(bytes);
+            allWrittenFiles.add(file);
+            shareFile = XFile(file.path, mimeType: metadata.mimeType);
+          }
+          allShareFiles.add(shareFile);
         } catch (e) {
           failCount++;
           errors.add('${photo.productName} #${photo.id}: save failed — $e');

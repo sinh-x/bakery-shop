@@ -255,17 +255,22 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
         return;
       }
 
-      final tmpDir = await getTemporaryDirectory();
       final files = <XFile>[];
       for (final photo in entry.photos) {
         final bytes = await _fetchPhotoBytes(dio, baseUrl, photo);
         if (bytes == null) continue;
         final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
-        final tmpFile = File(
-          '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
-        );
-        await tmpFile.writeAsBytes(bytes);
-        files.add(XFile(tmpFile.path, mimeType: metadata.mimeType));
+        final fileName = _knowledgePhotoFileName(photo, metadata);
+        final XFile xfile;
+        if (kIsWeb) {
+          xfile = XFile.fromData(bytes, mimeType: metadata.mimeType, name: fileName);
+        } else {
+          final tmpDir = await getTemporaryDirectory();
+          final tmpFile = File('${tmpDir.path}/$fileName');
+          await tmpFile.writeAsBytes(bytes);
+          xfile = XFile(tmpFile.path, mimeType: metadata.mimeType);
+        }
+        files.add(xfile);
       }
 
       if (files.isEmpty) {
