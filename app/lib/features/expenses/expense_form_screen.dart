@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
@@ -299,7 +297,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     final service = ref.read(eventServiceProvider);
     await upload.uploadAll(
       _selectedPhotos,
-      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+      (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
       showTopSnackBar(context, VN.eventPhotosUploadFailed);

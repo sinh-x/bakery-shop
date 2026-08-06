@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -191,7 +189,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final service = ref.read(eventServiceProvider);
     await upload.uploadAll(
       _selectedPhotos,
-      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+      (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
       showTopSnackBar(context, VN.eventPhotosUploadFailed);
