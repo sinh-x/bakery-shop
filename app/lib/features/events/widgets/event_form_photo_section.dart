@@ -156,11 +156,24 @@ class _ExistingPhotoThumb extends StatelessWidget {
   }
 }
 
-class _NewPhotoThumb extends StatelessWidget {
+class _NewPhotoThumb extends StatefulWidget {
   const _NewPhotoThumb({required this.file, required this.onRemove});
 
   final XFile file;
   final VoidCallback onRemove;
+
+  @override
+  State<_NewPhotoThumb> createState() => _NewPhotoThumbState();
+}
+
+class _NewPhotoThumbState extends State<_NewPhotoThumb> {
+  late final Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = widget.file.readAsBytes();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,8 +181,20 @@ class _NewPhotoThumb extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         FutureBuilder<Uint8List>(
-          future: file.readAsBytes(),
+          future: _bytesFuture,
           builder: (context, snap) {
+            if (snap.hasError) {
+              return CircleAvatar(
+                radius: 35,
+                backgroundColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              );
+            }
             if (!snap.hasData) {
               return ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -191,7 +216,7 @@ class _NewPhotoThumb extends StatelessWidget {
           top: -8,
           right: -8,
           child: GestureDetector(
-            onTap: onRemove,
+            onTap: widget.onRemove,
             child: const CircleAvatar(
               radius: 12,
               backgroundColor: Colors.black54,

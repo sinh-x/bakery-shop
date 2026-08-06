@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
 import '../../../shared/services/image_download_metadata.dart';
+import '../../../shared/utils/xfile_utils.dart';
 import 'bulk_download_web.dart';
 import 'bulk_common.dart';
 
@@ -101,19 +101,13 @@ class BulkShareService {
             photoId: photo.id,
             extension: metadata.extension,
           );
-          final XFile shareFile;
-          if (kIsWeb) {
-            shareFile = XFile.fromData(
-              bytes,
-              mimeType: metadata.mimeType,
-              name: fileName,
-            );
-          } else {
-            final tempDir = await getTemporaryDirectory();
-            final file = File('${tempDir.path}/$fileName');
-            await file.writeAsBytes(bytes);
-            allWrittenFiles.add(file);
-            shareFile = XFile(file.path, mimeType: metadata.mimeType);
+          final XFile shareFile = await createXFileFromBytes(
+            bytes,
+            fileName: fileName,
+            mimeType: metadata.mimeType,
+          );
+          if (!kIsWeb) {
+            allWrittenFiles.add(File(shareFile.path));
           }
           allShareFiles.add(shareFile);
         } catch (e) {

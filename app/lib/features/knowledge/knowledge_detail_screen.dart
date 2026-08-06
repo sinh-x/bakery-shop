@@ -1,11 +1,8 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/api_client.dart';
@@ -14,6 +11,7 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/xfile_utils.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/knowledge_photo_gallery.dart';
@@ -261,15 +259,11 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
         if (bytes == null) continue;
         final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
         final fileName = _knowledgePhotoFileName(photo, metadata);
-        final XFile xfile;
-        if (kIsWeb) {
-          xfile = XFile.fromData(bytes, mimeType: metadata.mimeType, name: fileName);
-        } else {
-          final tmpDir = await getTemporaryDirectory();
-          final tmpFile = File('${tmpDir.path}/$fileName');
-          await tmpFile.writeAsBytes(bytes);
-          xfile = XFile(tmpFile.path, mimeType: metadata.mimeType);
-        }
+        final xfile = await createXFileFromBytes(
+          bytes,
+          fileName: fileName,
+          mimeType: metadata.mimeType,
+        );
         files.add(xfile);
       }
 
