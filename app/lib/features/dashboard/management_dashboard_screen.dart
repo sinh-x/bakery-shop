@@ -78,6 +78,12 @@ class _ManagementDashboardScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              )
+            : null,
         title: const Text(SharedLabels.tabManagement),
         actions: [
           IconButton(
@@ -111,7 +117,7 @@ class _ManagementDashboardBody extends ConsumerWidget {
   const _ManagementDashboardBody();
 
   void _handleShortcutTap(BuildContext context, String route) =>
-      context.go(route);
+      context.push(route);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
