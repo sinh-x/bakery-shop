@@ -96,7 +96,7 @@ class ShellScaffold extends ConsumerWidget {
           const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
-            label: SharedLabels.tabDashboard,
+            label: SharedLabels.tabManagement,
           ),
           NavigationDestination(
             icon: ordersIcon(icon: Icons.receipt_long_outlined),
