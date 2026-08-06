@@ -1,67 +1,275 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../providers/order_providers.dart';
-import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/utils/order_helpers.dart';
-import 'widgets/google_maps_modal.dart';
-import 'widgets/order_detail/order_detail_body.dart';
-import 'widgets/order_detail/order_receipt_type_selector.dart';
+import '../../data/api/order_service.dart';
 import '../../data/models/order.dart';
+import '../../data/models/payment_transaction.dart';
+import '../../providers/order_providers.dart';
+import '../../providers/events_provider.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils/api_error.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
+import 'package:bakery_app/shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
 import 'providers/delivery_claim_handler.dart';
 import 'providers/delivery_claim_providers.dart';
+import 'widgets/google_maps_modal.dart';
+import 'widgets/order_detail/order_detail_general_tab.dart';
+import 'widgets/order_detail/order_detail_helpers.dart';
+import 'widgets/order_detail/order_detail_transactions_tab.dart';
+import 'widgets/order_detail/order_detail_work_items_tab.dart';
+import 'widgets/order_detail/order_edit_payment_sheet.dart';
+import 'widgets/order_detail/order_print_checklist_dialog.dart';
+import 'widgets/order_detail/order_record_payment_sheet.dart';
+import 'widgets/order_detail/order_receipt_type_selector.dart';
+import 'widgets/order_detail/order_status_actions.dart';
+import 'widgets/order_detail/order_status_banner.dart';
+import 'widgets/order_detail/order_transaction_detail_sheet.dart';
 
-class OrderDetailScreen extends ConsumerWidget {
+class OrderDetailScreen extends ConsumerStatefulWidget {
   const OrderDetailScreen({super.key, required this.orderRef});
 
   final String orderRef;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final orderAsync = ref.watch(orderDetailProvider(orderRef));
-    final staffAsync = ref.watch(currentStaffProvider);
-    final claimAsync = ref.watch(orderClaimProvider);
+  ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
 
-    List<PopupMenuEntry<String>> buildMenuItems(Order? order, CurrentStaff? staff, bool isClaiming) {
-      final items = <PopupMenuEntry<String>>[];
+class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
+    with SingleTickerProviderStateMixin {
+  static const _tabCount = 3;
+  late final TabController _tabController;
+  bool _transitioning = false;
+  bool _acknowledgedOnce = false;
 
-      if (order != null) {
-        items.addAll([
-          const PopupMenuItem<String>(
-            value: 'addIncident',
-            child: Text(VN.addOrderIncident),
-          ),
-          const PopupMenuItem<String>(
-            value: 'googleMaps',
-            child: Text(OrdersLabels.googleMapsContextMenuLabel),
-          ),
-        ]);
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _tabCount, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _acknowledgeIfNeeded();
+    });
+  }
 
-        if (staff != null &&
-            staff.canClaim &&
-            isDeliveryType(order.deliveryType) &&
-            activeOrderStatuses.contains(order.status)) {
-          if (order.isAssigned) {
-            if (staff.isAdmin || order.isClaimedBy(staff.staffIdAsString)) {
-              items.add(const PopupMenuItem<String>(
-                value: 'unclaim',
-                child: Text(OrdersLabels.deliveryUnclaimButton),
-              ));
-            }
-          } else {
-            items.add(PopupMenuItem<String>(
-              value: 'claim',
-              enabled: !isClaiming,
-              child: const Text(OrdersLabels.deliveryClaimButton),
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Order? get _order =>
+      ref.read(orderDetailProvider(widget.orderRef)).asData?.value;
+
+  Future<void> _acknowledgeIfNeeded() async {
+    if (_acknowledgedOnce) return;
+    final order = _order;
+    if (order == null || order.acknowledgedAt != null) return;
+    _acknowledgedOnce = true;
+    try {
+      final service = ref.read(orderServiceProvider);
+      await service.acknowledgeOrder(order.orderRef);
+    } catch (e) {
+      debugPrint('order_detail: acknowledge failed for ${order.orderRef}: $e');
+    }
+  }
+
+  Future<void> _onTransition(String targetStatus) async {
+    final order = _order;
+    if (order == null) return;
+    String reason = '';
+    if (isBackward(order.status, targetStatus, orderStatusRank) ||
+        targetStatus == 'cancelled') {
+      final r = await showReasonDialog(context, targetStatus);
+      if (r == null || !mounted) return;
+      reason = r;
+    }
+    setState(() => _transitioning = true);
+    try {
+      await ref
+          .read(orderDetailProvider(order.orderRef).notifier)
+          .transitionTo(targetStatus, reason: reason);
+      ref.read(orderWorkItemsProvider(order.orderRef).notifier).refresh();
+      if (mounted) {
+        showTopSnackBar(context, VN.orderStatusUpdated);
+      }
+      if (targetStatus == 'confirmed' && order.status == 'new') {
+        await _showPrintChecklistDialog();
+      }
+    } catch (e) {
+      final normalized = normalizeApiError(e);
+      final statusCode = normalized.statusCode ?? 0;
+      final backendDetail = normalized.message;
+      if (statusCode == 422) {
+        final action = orderStatusRecoveryActionFromDetail(backendDetail);
+        final message = buildOrderStatusFailureMessage(
+          reason: backendDetail,
+          action: action,
+          orderRef: order.orderRef,
+          statusCode: statusCode,
+        );
+        if (kDebugMode) {
+          debugPrint(
+            '[order-status-transition-failed] orderRef=${order.orderRef} currentStatus=${order.status} targetStatus=$targetStatus httpStatus=$statusCode backendDetail=$backendDetail',
+          );
+        }
+        if (mounted) {
+          showTopSnackBar(context, message);
+        }
+        return;
+      }
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: ${normalized.message}');
+      }
+    } finally {
+      if (mounted) setState(() => _transitioning = false);
+    }
+  }
+
+  Future<void> _showPrintChecklistDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => OrderPrintChecklistDialog(orderRef: widget.orderRef),
+    );
+  }
+
+  Future<void> _openAddPaymentSheet(double remaining) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => OrderRecordPaymentSheet(
+        orderRef: widget.orderRef,
+        remaining: remaining,
+      ),
+    );
+  }
+
+  Future<void> _onMarkAsPrinted() async {
+    try {
+      final service = ref.read(orderServiceProvider);
+      final changedBy = ref.read(loggedByProvider);
+      await service.updateWorkTicketPrintedAt(
+        widget.orderRef,
+        timestampToJson(DateTime.now()) ??
+            DateTime.now().toUtc().toIso8601String(),
+        changedBy: changedBy,
+      );
+      ref.invalidate(orderDetailProvider(widget.orderRef));
+      ref.invalidate(orderListProvider);
+      if (mounted) {
+        showTopSnackBar(context, VN.internalReceiptPrinted);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    }
+  }
+
+  Future<void> _onUnmarkPrinted() async {
+    try {
+      final service = ref.read(orderServiceProvider);
+      final changedBy = ref.read(loggedByProvider);
+      await service.updateWorkTicketPrintedAt(
+        widget.orderRef,
+        '',
+        changedBy: changedBy,
+      );
+      ref.invalidate(orderDetailProvider(widget.orderRef));
+      ref.invalidate(orderListProvider);
+      if (mounted) {
+        showTopSnackBar(context, VN.printStatusUnprinted);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    }
+  }
+
+  Future<void> _openTransactionDetail(PaymentTransaction txn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => OrderTransactionDetailSheet(
+        txn: txn,
+        orderRef: widget.orderRef,
+        onEdit: () => _openEditPaymentSheet(txn),
+      ),
+    );
+  }
+
+  Future<void> _openEditPaymentSheet(PaymentTransaction txn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) =>
+          OrderEditPaymentSheet(orderRef: widget.orderRef, txn: txn),
+    );
+  }
+
+  List<PopupMenuEntry<String>> buildMenuItems(
+    Order? order,
+    CurrentStaff? staff,
+    bool isClaiming,
+  ) {
+    final items = <PopupMenuEntry<String>>[];
+
+    if (order != null) {
+      items.addAll([
+        const PopupMenuItem<String>(
+          value: 'addIncident',
+          child: Text(VN.addOrderIncident),
+        ),
+        const PopupMenuItem<String>(
+          value: 'googleMaps',
+          child: Text(OrdersLabels.googleMapsContextMenuLabel),
+        ),
+      ]);
+
+      if (staff != null &&
+          staff.canClaim &&
+          isDeliveryType(order.deliveryType) &&
+          activeOrderStatuses.contains(order.status)) {
+        if (order.isAssigned) {
+          if (staff.isAdmin || order.isClaimedBy(staff.staffIdAsString)) {
+            items.add(const PopupMenuItem<String>(
+              value: 'unclaim',
+              child: Text(OrdersLabels.deliveryUnclaimButton),
             ));
           }
+        } else {
+          items.add(PopupMenuItem<String>(
+            value: 'claim',
+            enabled: !isClaiming,
+            child: const Text(OrdersLabels.deliveryClaimButton),
+          ));
         }
       }
-
-      return items;
     }
+
+    return items;
+  }
+
+  Future<void> _handleClaimMenuSelection(
+    BuildContext context,
+    WidgetRef ref,
+    String value,
+  ) =>
+      handleDeliveryClaimAction(
+        context,
+        ref,
+        widget.orderRef,
+        isClaim: value == 'claim',
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
+    final staffAsync = ref.watch(currentStaffProvider);
+    final claimAsync = ref.watch(orderClaimProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -72,15 +280,20 @@ class OrderDetailScreen extends ConsumerWidget {
               icon: const Icon(Icons.edit_outlined),
               tooltip: VN.editOrder,
               onPressed: () async {
-                await context.push('/orders/$orderRef/edit');
-                ref.read(orderDetailProvider(orderRef).notifier).refresh();
+                await context.push('/orders/${widget.orderRef}/edit');
+                ref
+                    .read(orderDetailProvider(widget.orderRef).notifier)
+                    .refresh();
               },
             ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: VN.printReceipt,
-            onPressed: () =>
-                showOrderReceiptTypeSelector(context, ref, orderRef),
+            onPressed: () => showOrderReceiptTypeSelector(
+              context,
+              ref,
+              widget.orderRef,
+            ),
           ),
           AppBarOverflowMenu(
             items: buildMenuItems(
@@ -93,7 +306,7 @@ class OrderDetailScreen extends ConsumerWidget {
                 final order = orderAsync.asData!.value;
                 final orderId = int.tryParse(order.id);
                 context.push(
-                  '/orders/$orderRef/incident/new',
+                  '/orders/${widget.orderRef}/incident/new',
                   extra: orderId,
                 );
               } else if (value == 'googleMaps') {
@@ -112,6 +325,14 @@ class OrderDetailScreen extends ConsumerWidget {
             },
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: VN.orderDetailTabGeneral),
+            Tab(text: VN.orderDetailTabWorkItems),
+            Tab(text: VN.orderDetailTabTransactions),
+          ],
+        ),
       ),
       body: orderAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -122,31 +343,91 @@ class OrderDetailScreen extends ConsumerWidget {
               const Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () =>
-                    ref.read(orderDetailProvider(orderRef).notifier).refresh(),
+                onPressed: () => ref
+                    .read(orderDetailProvider(widget.orderRef).notifier)
+                    .refresh(),
                 child: const Text(VN.retry),
               ),
             ],
           ),
         ),
-        data: (order) => OrderDetailBody(order: order),
+        data: (order) {
+          final theme = Theme.of(context);
+          final forwardTransitions = validTransitions[order.status] ?? [];
+          final currentRank = orderStatusRank[order.status] ?? 0;
+          final backwardTransitions = orderStatusRank.entries
+              .where((e) => e.value < currentRank && e.key != order.status)
+              .map((e) => e.key)
+              .toList();
+          final transitions = [...forwardTransitions, ...backwardTransitions];
+
+          final txnsAsync = ref.watch(
+            orderPaymentTransactionsProvider(order.orderRef),
+          );
+          final txns = txnsAsync.value ?? [];
+          final amountPaid =
+              txnsAsync.hasValue ? computePaid(txns) : order.amountPaid;
+          final remaining = order.totalPrice - amountPaid;
+          final paymentColor = amountPaid >= order.totalPrice
+              ? Colors.green
+              : amountPaid > 0
+                  ? Colors.orange
+                  : theme.colorScheme.error;
+          final paymentLabel = amountPaid >= order.totalPrice
+              ? VN.paid
+              : amountPaid > 0
+                  ? VN.partialPaid
+                  : VN.unpaid;
+
+          return Column(
+            children: [
+              // Persistent status banner — visible above all tabs (FR3 / AC3).
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: OrderStatusBanner(order: order),
+              ),
+              // Tab content fills the remaining space.
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    OrderDetailGeneralTab(
+                      order: order,
+                      amountPaid: amountPaid,
+                      remaining: remaining,
+                      paymentColor: paymentColor,
+                      paymentLabel: paymentLabel,
+                      onAddPayment: () => _openAddPaymentSheet(remaining),
+                      onMarkAsPrinted: _onMarkAsPrinted,
+                      onUnmarkPrinted: _onUnmarkPrinted,
+                    ),
+                    OrderDetailWorkItemsTab(
+                      order: order,
+                      onRecordPayment: _openAddPaymentSheet,
+                    ),
+                    OrderDetailTransactionsTab(
+                      txns: txns,
+                      onTransactionTap: _openTransactionDetail,
+                    ),
+                  ],
+                ),
+              ),
+              // Persistent status action buttons — visible below all tabs
+              // (FR7 / AC3).
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: OrderStatusActions(
+                  transitions: transitions,
+                  backwardTransitions: backwardTransitions,
+                  remaining: remaining,
+                  transitioning: _transitioning,
+                  onTransition: _onTransition,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
-
-  /// Handles the "Nhận giao" / "Trả đơn" context menu selection: delegates to
-  /// the shared [handleDeliveryClaimAction] helper so the context menu uses
-  /// the same claim/unclaim code path as [DeliveryClaimActions] and
-  /// [DeliveryClaimInlineActions] (DG-311 Phase 4 / FR5 / AC7).
-  Future<void> _handleClaimMenuSelection(
-    BuildContext context,
-    WidgetRef ref,
-    String value,
-  ) =>
-      handleDeliveryClaimAction(
-        context,
-        ref,
-        orderRef,
-        isClaim: value == 'claim',
-      );
 }
