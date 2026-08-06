@@ -6,8 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/cake_queue_item.dart';
-import '../../data/models/enum_attribute.dart';
-import '../../data/models/product.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
@@ -21,25 +19,6 @@ import 'widgets/date_filter_chips.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/blanks.dart' as blanks_v;
-
-/// Resolve the enum attributes defined on the product matching [productId].
-///
-/// Mirrors `OrderWorkItemSection._enumAttributesFor` and
-/// `CakeDetailBody._enumAttributesFor` so the cake queue card shows the same
-/// enum lines as the order detail and cake detail views
-/// (DG-362 Phase 4 / FR3 / AC3 / AC6).
-List<EnumAttribute> _enumAttributesFor(
-  String productId,
-  List<Product> products,
-) {
-  if (productId.isEmpty || products.isEmpty) return const [];
-  for (final p in products) {
-    if (p.id.toString() == productId || p.productCode == productId) {
-      return p.enumAttributes;
-    }
-  }
-  return const [];
-}
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
 /// Shows work items across all orders, sorted by due date ascending.
@@ -329,7 +308,7 @@ class _CakeQueueCard extends ConsumerWidget {
               ...buildEnumAttributeLines(
                 context,
                 item.attributes,
-                _enumAttributesFor(
+                enumAttributesFor(
                   item.productId,
                   ref.watch(productsProvider).asData?.value ?? const [],
                 ),

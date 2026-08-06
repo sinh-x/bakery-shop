@@ -1,13 +1,33 @@
 """Cake queue API — cross-order work item list for the cake team."""
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
 
 from baker.db.connection import get_db
 
+logger = logging.getLogger("baker.server")
+
 router = APIRouter(prefix="/api/work-items", tags=["cake-queue"])
+
+
+def _parse_attributes(raw: str) -> dict:
+    """Parse the work-item attributes JSON column defensively.
+
+    Malformed JSON in the DB should never crash the `/api/work-items`
+    endpoint — return an empty dict and log a warning so the bad row
+    is still discoverable.
+    """
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "cake_queue: malformed attributes JSON ignored (raw=%r)", raw,
+        )
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 @router.get("")
@@ -86,7 +106,7 @@ def list_work_items_queue(
                 "status": row["status"],
                 "isBirthday": bool(row["is_birthday"]),
                 "age": row["age"],
-                "attributes": json.loads(row["attributes"]) if row["attributes"] and row["attributes"] != "{}" else {},
+                "attributes": _parse_attributes(row["attributes"]) if row["attributes"] and row["attributes"] != "{}" else {},
                 "dueDate": row["due_date"],
                 "dueTime": row["due_time"],
                 "createdAt": row["created_at"],
