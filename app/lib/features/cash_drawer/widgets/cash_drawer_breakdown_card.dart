@@ -49,6 +49,20 @@ enum CashDrawerBreakdownCategory {
 /// portion). Special types `cash_drawer_auto_transfer`, `unidentified_sale`,
 /// and `owner_capital` are folded into the closest canonical category as
 /// specified in the requirements doc.
+///
+/// CQ-1 (DG-363 review-auto cycle 1): this source_type → category mapping
+/// is triplicated. The same classification logic exists in two backend
+/// files and MUST be kept in sync with this Dart code:
+///   - `src/baker/db/schema/migrations/v097.py`:
+///     `_migrate_v97_cash_drawer_breakdown_snapshot` (the backfill path that
+///     persists snapshots for already-closed drawers)
+///   - `src/baker/models/cash_drawer.py`:
+///     `CashDrawer._aggregate_breakdown` (the live-aggregation path used at
+///     close time and by /status)
+/// Any change to a category mapping, ordering, fallback, or the
+/// payment_transaction shipping split here MUST be mirrored in both backend
+/// files so the client-side live aggregation, the persisted snapshot, and
+/// the backend live aggregation stay consistent.
 CashDrawerBreakdownCategory _categoryForType(
   String type,
   int amount,

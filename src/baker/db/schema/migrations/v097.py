@@ -131,6 +131,18 @@ def _migrate_v97_cash_drawer_breakdown_snapshot(conn):
         if did not in snapshot:
             continue
 
+        # CQ-1 (DG-363 review-auto cycle 1): the source_type → breakdown
+        # category classification below is triplicated. The same mapping
+        # exists in two other files and MUST be kept in sync:
+        #   - src/baker/models/cash_drawer.py: CashDrawer._aggregate_breakdown
+        #     (the live-aggregation path used at close time and by /status)
+        #   - app/lib/features/cash_drawer/widgets/
+        #     cash_drawer_breakdown_card.dart: _categoryForType +
+        #     aggregateCashDrawerBreakdown (the Flutter live-aggregation path)
+        # Any change to a category mapping, ordering, fallback, or the
+        # payment_transaction shipping split here MUST be mirrored in both
+        # of those files so the backfilled snapshot, the live model
+        # aggregation, and the client-side aggregation stay consistent.
         if source_type == "payment_transaction":
             if net_1101 < 0:
                 _accumulate(snapshot[did], "refund", net_1101, 1)
@@ -145,10 +157,16 @@ def _migrate_v97_cash_drawer_breakdown_snapshot(conn):
                 sale_portion = net_1101 - shipping
                 if sale_portion > 0:
                     _accumulate(snapshot[did], "sale", sale_portion, 1)
-                elif sale_portion != 0:
-                    # Edge case: 1101 inflow fully consumed by held shipping —
-                    # still count the entry under sale at zero so the count is
-                    # not lost.
+                else:
+                    # sale_portion == 0: 1101 inflow fully consumed by held
+                    # shipping. The sale category still counts the entry (at
+                    # zero amount) so the count is not lost, matching the
+                    # live aggregation in cash_drawer.py
+                    # (CashDrawer._aggregate_breakdown). CQ-2 (DG-363
+                    # review-auto cycle 1): previously an `elif sale_portion
+                    # != 0` branch which was unreachable (sale_portion >= 0
+                    # by construction); changed to `else` so the zero-amount
+                    # accumulation actually executes as documented.
                     _accumulate(snapshot[did], "sale", sale_portion, 1)
                 if shipping > 0:
                     _accumulate(snapshot[did], "busShipping", shipping, 1)

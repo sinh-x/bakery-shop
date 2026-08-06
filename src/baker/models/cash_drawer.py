@@ -451,6 +451,20 @@ class CashDrawer:
             source_type = row["source_type"] or ""
             net_1101 = float(row["net_1101"] or 0)
             held_2200 = float(row["held_2200"] or 0)
+            # CQ-1 (DG-363 review-auto cycle 1): the source_type → breakdown
+            # category classification below is triplicated. The same mapping
+            # exists in two other files and MUST be kept in sync:
+            #   - src/baker/db/schema/migrations/v097.py:
+            #     _migrate_v97_cash_drawer_breakdown_snapshot (the backfill
+            #     path that persists snapshots for already-closed drawers)
+            #   - app/lib/features/cash_drawer/widgets/
+            #     cash_drawer_breakdown_card.dart: _categoryForType +
+            #     aggregateCashDrawerBreakdown (the Flutter live-aggregation
+            #     path)
+            # Any change to a category mapping, ordering, fallback, or the
+            # payment_transaction shipping split here MUST be mirrored in
+            # both of those files so the live aggregation, the persisted
+            # snapshot, and the client-side aggregation stay consistent.
             if source_type == "payment_transaction":
                 if net_1101 < 0:
                     accumulate("refund", net_1101, 1)
@@ -459,7 +473,16 @@ class CashDrawer:
                     sale_portion = net_1101 - shipping
                     if sale_portion > 0:
                         accumulate("sale", sale_portion, 1)
-                    elif sale_portion != 0:
+                    else:
+                        # sale_portion == 0: 1101 inflow fully consumed by
+                        # held shipping. The sale category still counts the
+                        # entry (at zero amount) so the count is not lost,
+                        # matching the backfill in v097.py. CQ-2 (DG-363
+                        # review-auto cycle 1): previously an
+                        # `elif sale_portion != 0` branch which was
+                        # unreachable (sale_portion >= 0 by construction);
+                        # changed to `else` so the zero-amount accumulation
+                        # actually executes as documented.
                         accumulate("sale", sale_portion, 1)
                     if shipping > 0:
                         accumulate("busShipping", shipping, 1)
