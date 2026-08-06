@@ -91,6 +91,13 @@ class PosCheckoutPaymentController {
   bool _skipPayment = false;
   bool get skipPayment => _skipPayment;
 
+  // DG-370 Phase 3 — the fast-path "Giao ngay & Thanh toán" sets this so the
+  // order is created with status "delivered" on BOTH pay-now and pay-later
+  // (FR4). The normal 5-stage flow leaves this false (Stage 3 "Giao hàng sau"
+  // / Stage 4 review path) and only pay-now flips it via the
+  // `deliverImmediately` argument on [handlePayNow] / [enterPaymentStep].
+  bool deliverImmediately = false;
+
   /// Enters the payment step from the Stage 4 review: writes the wizard items
   /// back to the cart, computes the cart total / tien_rut defaults, and
   /// advances to stage 5. Returns the new payment state so the caller can
@@ -209,7 +216,7 @@ class PosCheckoutPaymentController {
       await _submit(
         context,
         paymentMethod: '',
-        deliverImmediately: false,
+        deliverImmediately: deliverImmediately,
         mounted: mounted,
       );
     } finally {

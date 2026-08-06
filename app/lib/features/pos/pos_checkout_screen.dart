@@ -109,10 +109,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
 
     if (_isFastPath) {
-      // DG-370 Phase 1 — Giao ngay fast-path: jump directly to Stage 5 with
+      // DG-370 Phase 1/3 — Giao ngay fast-path: jump directly to Stage 5 with
       // deliverImmediately=true so the order is created with status
       // "delivered" (same semantics as PosStage3PickupScreen "Giao ngay").
+      // Phase 3: persist the flag on the payment controller so BOTH pay-now
+      // and pay-later produce status="delivered" (FR4).
       _posDeliverImmediately = true;
+      _payment.deliverImmediately = true;
       // Seed the wizard items from the POS cart so the payment step has the
       // cart contents available (mirrors the orchestrator's init safety net,
       // but run synchronously here because the fast-path skips Stages 1-4).
