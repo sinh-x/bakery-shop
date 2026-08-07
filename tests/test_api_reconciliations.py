@@ -151,7 +151,10 @@ def test_submit_valid_creates_order_payment_waste_and_links(api_client):
         assert line["linked_stock_movement_waste_id"] == waste_movement["id"]
 
 
-def test_submit_sale_only_creates_one_order_and_one_payment(api_client):
+def test_submit_sale_creates_one_order_per_unit(api_client):
+    # DG-368: sale_qty=2 now splits into 2 Orders (each qty=1) instead of one
+    # Order with qty=2 (NFR2). Each Order gets its own payment and sale stock
+    # movement (FR1/FR2).
     with get_db() as conn:
         _mark_product_display(conn, 1, "true")
         _set_stock(conn, 1, 6)
@@ -176,10 +179,18 @@ def test_submit_sale_only_creates_one_order_and_one_payment(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'sale'").fetchone()[0] == 1
+        # 2 units sold → 2 Orders, 2 Payments, 2 sale stock movements.
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'sale'").fetchone()[0] == 2
         assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'waste'").fetchone()[0] == 0
+
+        # Each Order carries quantity=1 (FR1).
+        order_items = conn.execute(
+            "SELECT quantity FROM order_items ORDER BY id"
+        ).fetchall()
+        assert all(oi["quantity"] == 1 for oi in order_items)
+        assert len(order_items) == 2
 
 
 def test_submit_stale_stock_creates_zero_side_effect_rows(api_client):
@@ -587,21 +598,27 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert line is not None
         assert line["sale_qty"] == 3
 
+        # DG-368: sale_qty is split per unit (NFR2). Row 1 (qty=1) → 1 order,
+        # row 2 (qty=2) → 2 orders → 3 orders total, 3 payments total.
         orders = conn.execute("SELECT order_ref, total_price FROM orders ORDER BY id").fetchall()
-        assert len(orders) == 2
+        assert len(orders) == 3
 
         payments = conn.execute(
             "SELECT method, amount FROM payment_transactions ORDER BY id"
         ).fetchall()
-        assert len(payments) == 2
+        assert len(payments) == 3
+        # Row 1 (qty=1 × 12000, cash) → 1 payment.
         assert payments[0]["method"] == "cash"
         assert payments[0]["amount"] == 12000
+        # Row 2 (qty=2 × 15000, transfer) → 2 payments of 15000 each.
         assert payments[1]["method"] == "transfer"
-        assert payments[1]["amount"] == 30000
+        assert payments[1]["amount"] == 15000
+        assert payments[2]["method"] == "transfer"
+        assert payments[2]["amount"] == 15000
 
         sale_rows = conn.execute(
-            "SELECT quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref "
-            "FROM reconciliation_sale_rows ORDER BY id"
+            "SELECT quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref, "
+            "linked_order_refs FROM reconciliation_sale_rows ORDER BY id"
         ).fetchall()
         assert len(sale_rows) == 2
         assert sale_rows[0]["quantity"] == 1
@@ -609,11 +626,22 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert sale_rows[0]["payment_method"] == "cash"
         assert sale_rows[0]["linked_order_ref"] == orders[0]["order_ref"]
         assert sale_rows[0]["linked_payment_ref"]
+        # DG-368 FR3: linked_order_refs stores a JSON array of all order_refs
+        # created for the row (1 for qty=1, 2 for qty=2).
+        import json as _json
+        row0_refs = _json.loads(sale_rows[0]["linked_order_refs"])
+        assert len(row0_refs) == 1
+        assert row0_refs[0] == orders[0]["order_ref"]
         assert sale_rows[1]["quantity"] == 2
         assert sale_rows[1]["unit_price"] == 15000
         assert sale_rows[1]["payment_method"] == "transfer"
         assert sale_rows[1]["linked_order_ref"] == orders[1]["order_ref"]
         assert sale_rows[1]["linked_payment_ref"]
+        row1_refs = _json.loads(sale_rows[1]["linked_order_refs"])
+        assert len(row1_refs) == 2
+        # linked_order_ref points to the first order of the row (FR4).
+        assert row1_refs[0] == orders[1]["order_ref"]
+        assert row1_refs[1] == orders[2]["order_ref"]
 
     history_resp = api_client.get(f"/api/reconciliations/history/{session_id}")
     assert history_resp.status_code == 200
@@ -1114,27 +1142,30 @@ def test_submit_sale_creates_revenue_journal_entry(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        order = conn.execute("SELECT id, order_ref FROM orders ORDER BY id DESC LIMIT 1").fetchone()
-        assert order is not None
+        orders = conn.execute("SELECT id, order_ref FROM orders ORDER BY id").fetchall()
+        # DG-368: sale_qty=2 splits into 2 Orders, each with its own revenue
+        # journal entry (FR2). Each entry is 1 unit × 12000 = 12000.
+        assert len(orders) == 2
 
-        entries = conn.execute(
-            "SELECT * FROM journal_entries WHERE source_type = 'order' AND source_id = ? "
-            "AND description NOT LIKE 'Reversal:%' ORDER BY id",
-            (order["id"],),
-        ).fetchall()
-        assert len(entries) == 1
+        for order in orders:
+            entries = conn.execute(
+                "SELECT * FROM journal_entries WHERE source_type = 'order' AND source_id = ? "
+                "AND description NOT LIKE 'Reversal:%' ORDER BY id",
+                (order["id"],),
+            ).fetchall()
+            assert len(entries) == 1
 
-        lines = conn.execute(
-            "SELECT jl.debit, jl.credit, a.code "
-            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
-            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
-            (entries[0]["id"],),
-        ).fetchall()
-        deposits_line = next(l for l in lines if l["code"] == "2100")
-        revenue_line = next(l for l in lines if l["code"] == "4100")
-        # 2 units × 12000 = 24000 paid in cash → deposited then recognised.
-        assert deposits_line["debit"] == 24000.0
-        assert revenue_line["credit"] == 24000.0
+            lines = conn.execute(
+                "SELECT jl.debit, jl.credit, a.code "
+                "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+                "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+                (entries[0]["id"],),
+            ).fetchall()
+            deposits_line = next(l for l in lines if l["code"] == "2100")
+            revenue_line = next(l for l in lines if l["code"] == "4100")
+            # 1 unit × 12000 = 12000 per Order (split across 2 Orders).
+            assert deposits_line["debit"] == 12000.0
+            assert revenue_line["credit"] == 12000.0
 
 
 def test_submit_sale_creates_cogs_journal_entry(api_client):
@@ -1214,30 +1245,33 @@ def test_submit_sale_creates_payment_journal_entry(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        payment = conn.execute(
-            "SELECT id FROM payment_transactions ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        assert payment is not None
-
-        entries = conn.execute(
-            "SELECT * FROM journal_entries WHERE source_type = 'payment_transaction' "
-            "AND source_id = ? ORDER BY id",
-            (payment["id"],),
+        payments = conn.execute(
+            "SELECT id FROM payment_transactions ORDER BY id"
         ).fetchall()
-        assert len(entries) == 1
+        # DG-368: sale_qty=2 splits into 2 Orders, each with its own payment
+        # journal entry (FR2). Each entry is 1 unit × 12000 = 12000.
+        assert len(payments) == 2
 
-        lines = conn.execute(
-            "SELECT jl.debit, jl.credit, a.code "
-            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
-            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
-            (entries[0]["id"],),
-        ).fetchall()
-        # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
-        asset_line = next(l for l in lines if l["code"] == "1101")
-        deposits_line = next(l for l in lines if l["code"] == "2100")
-        # 2 units × 12000 = 24000 inflow.
-        assert asset_line["debit"] == 24000.0
-        assert deposits_line["credit"] == 24000.0
+        for payment in payments:
+            entries = conn.execute(
+                "SELECT * FROM journal_entries WHERE source_type = 'payment_transaction' "
+                "AND source_id = ? ORDER BY id",
+                (payment["id"],),
+            ).fetchall()
+            assert len(entries) == 1
+
+            lines = conn.execute(
+                "SELECT jl.debit, jl.credit, a.code "
+                "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+                "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+                (entries[0]["id"],),
+            ).fetchall()
+            # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
+            asset_line = next(l for l in lines if l["code"] == "1101")
+            deposits_line = next(l for l in lines if l["code"] == "2100")
+            # 1 unit × 12000 = 12000 inflow per Order (split across 2 Orders).
+            assert asset_line["debit"] == 12000.0
+            assert deposits_line["credit"] == 12000.0
 
 
 def test_submit_no_sale_creates_no_revenue_payment_journal(api_client):
