@@ -8,6 +8,7 @@ import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/work_item.dart';
 import 'package:bakery_app/shared/labels/orders.dart' hide workItemStatusColors;
+import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import 'order_detail_helpers.dart';
@@ -178,20 +179,10 @@ class OrderWorkItemCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              // Candle type (FR4 / AC3) — shown when present and not "khong_nen".
-              if (item.attributes['candle_type'] != null &&
-                  item.attributes['candle_type'].toString().isNotEmpty &&
-                  item.attributes['candle_type'].toString() != 'khong_nen')
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '${VN.packCandles}: ${VN.candleTypeLabel(item.attributes['candle_type'].toString())}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.pink.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+              // Candle type (FR4 / AC3) — shared widget (DG-371 MAJOR-2).
+              CandleTypeLine(
+                candleType: item.attributes['candle_type']?.toString(),
+              ),
               // Notes
               if (item.notes.isNotEmpty)
                 Padding(

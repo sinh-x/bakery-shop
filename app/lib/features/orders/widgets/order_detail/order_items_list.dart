@@ -7,6 +7,7 @@ import '../../../../data/models/order_item.dart';
 import '../../../../data/models/product.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
+import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import '../section_header.dart';
@@ -48,7 +49,6 @@ class OrderItemsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -59,7 +59,6 @@ class OrderItemsList extends StatelessWidget {
                 product: _productFor(item.productId),
                 baseUrl: baseUrl,
                 enumAttributes: enumAttributesFor(item.productId),
-                theme: theme,
                 isExtra: false,
               ),
             ),
@@ -72,7 +71,6 @@ class OrderItemsList extends StatelessWidget {
                   product: _productFor(item.productId),
                   baseUrl: baseUrl,
                   enumAttributes: enumAttributesFor(item.productId),
-                  theme: theme,
                   isExtra: true,
                 ),
               ),
@@ -94,7 +92,6 @@ class _OrderItemRow extends StatelessWidget {
     required this.product,
     required this.baseUrl,
     required this.enumAttributes,
-    required this.theme,
     required this.isExtra,
   });
 
@@ -102,11 +99,11 @@ class _OrderItemRow extends StatelessWidget {
   final Product? product;
   final String baseUrl;
   final List<EnumAttribute> enumAttributes;
-  final ThemeData theme;
   final bool isExtra;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final hasPhoto = product != null && product!.photoPath.isNotEmpty;
     final photoUrl = hasPhoto
         ? productPhotoUrl(baseUrl, product!.id)
@@ -184,20 +181,10 @@ class _OrderItemRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                // Candle type (FR2 / AC2) — shown when present and not "khong_nen".
-                if (item.attributes['candle_type'] != null &&
-                    item.attributes['candle_type'].toString().isNotEmpty &&
-                    item.attributes['candle_type'].toString() != 'khong_nen')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '${VN.packCandles}: ${VN.candleTypeLabel(item.attributes['candle_type'].toString())}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.pink.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
+                // Candle type (FR2 / AC2) — shared widget (DG-371 MAJOR-2).
+                CandleTypeLine(
+                  candleType: item.attributes['candle_type']?.toString(),
+                ),
                 // Notes (FR2 / AC1).
                 if (item.notes.isNotEmpty)
                   Padding(

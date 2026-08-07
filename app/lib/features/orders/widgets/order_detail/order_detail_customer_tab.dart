@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
@@ -103,7 +104,7 @@ class OrderDetailCustomerTab extends ConsumerWidget {
                 for (final order in orders)
                   OrderCard(
                     order: order,
-                    onTap: () => Navigator.of(context).pushNamed(
+                    onTap: () => context.push(
                       '/orders/${order.orderRef}',
                     ),
                   ),
