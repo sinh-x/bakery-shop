@@ -60,6 +60,11 @@ class VN {
   static const orderDetailCustomerInfoTitle = 'Thông tin khách hàng';
   /// Empty state shown when an order has no linked `customerId` (FR10/AC8).
   static const orderDetailCustomerEmpty = 'Chưa có khách hàng';
+
+  // Order detail — Transactions tab (DG-371 Phase 3 — FR5/FR6, AC4/AC5)
+  /// Add-transaction button shown at the top of the transactions tab. Opens
+  /// the existing [OrderRecordPaymentSheet] to record a new transaction.
+  static const orderDetailAddTransaction = 'Thêm giao dịch';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
   static const paid = 'Đã thanh toán';

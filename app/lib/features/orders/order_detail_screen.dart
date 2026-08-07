@@ -406,7 +406,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       onRecordPayment: _openAddPaymentSheet,
                     ),
                     OrderDetailTransactionsTab(
+                      order: order,
+                      amountPaid: amountPaid,
+                      remaining: remaining,
                       txns: txns,
+                      onAddPayment: () => _openAddPaymentSheet(remaining),
                       onTransactionTap: _openTransactionDetail,
                     ),
                   ],
