@@ -1714,9 +1714,11 @@ def test_repair_backfills_reconciliation_revenue_journal_entry(api_client):
         lines = _journal_line_codes(conn, after["order"][0])
         deposits_line = next(l for l in lines if l[0] == "2100")
         revenue_line = next(l for l in lines if l[0] == "4100")
-        # 2 units × 12000 = 24000.
-        assert deposits_line[1] == 24000.0, deposits_line
-        assert revenue_line[2] == 24000.0, revenue_line
+        # DG-368: sale_qty=2 splits into 2 Orders (each qty=1). The helper
+        # returns the last Order, whose revenue entry is 1 unit × 12000 = 12000
+        # (the other Order keeps its own 12000 entry, untouched here).
+        assert deposits_line[1] == 12000.0, deposits_line
+        assert revenue_line[2] == 12000.0, revenue_line
 
 
 def test_repair_backfills_reconciliation_cogs_journal_entry(api_client):
@@ -1775,9 +1777,11 @@ def test_repair_backfills_reconciliation_payment_journal_entry(api_client):
         # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
         asset_line = next(l for l in lines if l[0] == "1101")
         deposits_line = next(l for l in lines if l[0] == "2100")
-        # 2 units × 12000 = 24000 inflow.
-        assert asset_line[1] == 24000.0, asset_line
-        assert deposits_line[2] == 24000.0, deposits_line
+        # DG-368: sale_qty=2 splits into 2 Orders (each qty=1). The helper
+        # returns the last Order's payment, whose entry is 1 unit × 12000 = 12000
+        # (the other Order keeps its own 12000 entry, untouched here).
+        assert asset_line[1] == 12000.0, asset_line
+        assert deposits_line[2] == 12000.0, deposits_line
 
 
 def test_repair_backfills_all_reconciliation_journal_entries_idempotent(api_client):

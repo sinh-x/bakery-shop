@@ -180,6 +180,7 @@ def _assert_reconciliation_sale_rows_schema(conn) -> None:
         "payment_method",
         "linked_order_ref",
         "linked_payment_ref",
+        "linked_order_refs",
         "created_at",
     }
 
@@ -452,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3497,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
         _assert_users_role_check_constraint(conn)
 
 
@@ -3563,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3686,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3760,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3787,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4190,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         indexes = {
             r["name"]
@@ -4273,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4384,7 +4385,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4459,7 +4460,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4593,7 +4594,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4718,7 +4719,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4727,7 +4728,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 97
+        assert _migrated_version(conn) == 98
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4852,6 +4853,124 @@ def test_v94_idempotent_on_already_migrated_db():
         after = conn.execute("PRAGMA table_info(cash_drawer)").fetchall()
         assert before == after
         assert _migrated_version(conn) == 94
+
+
+def test_v98_registered_in_migration_chain():
+    """v98 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 98 in MIGRATIONS
+    assert (
+        MIGRATIONS[98]["description"]
+        == "Add linked_order_refs TEXT column to reconciliation_sale_rows for 1-order-per-cake order list (DG-368 Phase 1)"
+    )
+    assert (
+        MIGRATIONS[98]["callable"].__name__
+        == "_migrate_v98_reconciliation_sale_rows_linked_order_refs"
+    )
+
+
+def test_v98_adds_linked_order_refs_on_fresh_db():
+    """A fresh DB migrated through the full ensure_schema chain has the
+    ``linked_order_refs`` column on ``reconciliation_sale_rows`` (FR3).
+
+    The fresh-DB schema constant (``RECONCILIATION_SALE_ROWS_SCHEMA``) already
+    declares the column, so this test also verifies the fresh-DB path does
+    not double-add or conflict with v98's PRAGMA-guarded ALTER.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 98
+        cols = {
+            r[1]: r
+            for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" in cols
+        # TEXT, nullable (notnull == 0), DEFAULT NULL (PRAGMA reports the
+        # default as either None or the string 'NULL' depending on whether
+        # the column was added via ALTER TABLE or declared in CREATE TABLE).
+        assert cols["linked_order_refs"][2] == "TEXT"
+        assert cols["linked_order_refs"][3] == 0  # nullable
+        assert cols["linked_order_refs"][4] in (None, "NULL")  # DEFAULT NULL
+
+
+def test_v98_adds_linked_order_refs_on_existing_db():
+    """An existing DB (created before v98 landed) gains the
+    ``linked_order_refs`` column after running v98 (NFR1 — existing rows are
+    preserved; the new column defaults to NULL).
+
+    The fresh-DB schema constant (``RECONCILIATION_SALE_ROWS_SCHEMA``) already
+    declares the column, so a DB migrated from scratch always has it. To
+    simulate a real pre-v98 production DB, this test migrates fully to v97,
+    drops the column (SQLite >= 3.35.0 supports ``ALTER TABLE DROP COLUMN``),
+    inserts a sale row, then runs v98 and verifies the column is added back
+    with NULL on the existing row.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 97)
+        assert _migrated_version(conn) == 97
+
+        # Simulate a pre-v98 DB: drop the column the fresh-DB schema added.
+        conn.execute(
+            "ALTER TABLE reconciliation_sale_rows DROP COLUMN linked_order_refs"
+        )
+        cols_before = {
+            r[1] for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" not in cols_before
+
+        # Seed a sale row using only the pre-v98 columns. The products and
+        # reconciliation_lines rows satisfy the FK constraints.
+        conn.executescript(
+            """
+            INSERT INTO products (name, category, base_price, cost, recipe_notes)
+            VALUES ('Migration Cake', 'banh_kem', 50000, 0, '');
+            INSERT INTO reconciliation_sessions (id, reconciliation_date, staff_name)
+            VALUES (1, '2026-08-07', 'staff');
+            INSERT INTO reconciliation_lines (id, session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty)
+            VALUES (1, 1, 1, 0, 0, 0, 0);
+            INSERT INTO reconciliation_sale_rows (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref)
+            VALUES (1, 2, 50000, 'cash', 'ORD-1', 'PAY-1');
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 98)
+        assert _migrated_version(conn) == 98
+        cols_after = {
+            r[1]: r
+            for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" in cols_after
+        assert cols_after["linked_order_refs"][2] == "TEXT"
+        assert cols_after["linked_order_refs"][3] == 0  # nullable
+        # DEFAULT NULL — PRAGMA reports it as None (ALTER TABLE) or 'NULL'
+        # (CREATE TABLE); accept both forms.
+        assert cols_after["linked_order_refs"][4] in (None, "NULL")
+
+        # Existing row preserved; new column defaults to NULL.
+        row = conn.execute(
+            "SELECT linked_order_ref, linked_payment_ref, linked_order_refs "
+            "FROM reconciliation_sale_rows WHERE line_id = 1"
+        ).fetchone()
+        assert row["linked_order_ref"] == "ORD-1"
+        assert row["linked_payment_ref"] == "PAY-1"
+        assert row["linked_order_refs"] is None
+
+
+def test_v98_idempotent_on_already_migrated_db():
+    """Re-running v98 on a DB that already ran it is a no-op (NFR2 — the
+    inline PRAGMA guard skips columns that already exist).
+    """
+    from baker.db.schema import _migrate_v98_reconciliation_sale_rows_linked_order_refs
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 98)
+        assert _migrated_version(conn) == 98
+        before = conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v98_reconciliation_sale_rows_linked_order_refs(conn)
+        after = conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        assert before == after
+        assert _migrated_version(conn) == 98
 
 
 def test_schema_all_matches_imported_symbols():
