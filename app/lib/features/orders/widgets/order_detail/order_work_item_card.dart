@@ -8,6 +8,7 @@ import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/work_item.dart';
 import 'package:bakery_app/shared/labels/orders.dart' hide workItemStatusColors;
+import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import 'order_detail_helpers.dart';
@@ -178,6 +179,10 @@ class OrderWorkItemCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              // Candle type (FR4 / AC3) — shared widget (DG-371 MAJOR-2).
+              CandleTypeLine(
+                candleType: item.attributes['candle_type']?.toString(),
+              ),
               // Notes
               if (item.notes.isNotEmpty)
                 Padding(

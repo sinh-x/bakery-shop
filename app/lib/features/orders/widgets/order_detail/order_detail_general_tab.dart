@@ -13,12 +13,11 @@ import 'order_items_list.dart';
 import 'order_payment_status_summary.dart';
 import 'order_payment_summary.dart';
 import 'order_print_status_row.dart';
-import 'order_work_item_summary.dart';
 
-/// General tab content: order info block, items list, payment summary, print
-/// status row, and photo section. Work item / transaction sections live on
-/// their dedicated tabs; this tab shows summary counts only (Phase 3 adds
-/// the work item summary count and payment status summary).
+/// General tab content: order info block, items list (with product photos,
+/// birthday/age/candle/notes info), payment summary, print status row, and
+/// photo section. Work item / transaction sections live on their dedicated
+/// tabs; the work item summary was removed in DG-371 Phase 2.
 ///
 /// Receives the already-computed payment snapshot (`amountPaid`, `remaining`,
 /// `paymentColor`, `paymentLabel`) and shared action callbacks from the
@@ -85,6 +84,8 @@ class OrderDetailGeneralTab extends ConsumerWidget {
         OrderItemsList(
           order: order,
           enumAttributesFor: (id) => _enumAttributesFor(id, products),
+          products: products,
+          baseUrl: baseUrl,
         ),
         OrderPaymentSummary(
           order: order,
@@ -94,8 +95,6 @@ class OrderDetailGeneralTab extends ConsumerWidget {
           paymentLabel: paymentLabel,
           onAddPayment: onAddPayment,
         ),
-        const SizedBox(height: 16),
-        OrderWorkItemSummary(orderRef: order.orderRef),
         const SizedBox(height: 16),
         OrderPaymentStatusSummary(
           order: order,

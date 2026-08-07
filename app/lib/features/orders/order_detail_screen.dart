@@ -16,6 +16,7 @@ import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
 import 'providers/delivery_claim_handler.dart';
 import 'providers/delivery_claim_providers.dart';
 import 'widgets/google_maps_modal.dart';
+import 'widgets/order_detail/order_detail_customer_tab.dart';
 import 'widgets/order_detail/order_detail_general_tab.dart';
 import 'widgets/order_detail/order_detail_helpers.dart';
 import 'widgets/order_detail/order_detail_transactions_tab.dart';
@@ -39,7 +40,7 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     with SingleTickerProviderStateMixin {
-  static const _tabCount = 3;
+  static const _tabCount = 4;
   late final TabController _tabController;
   bool _transitioning = false;
   bool _acknowledgedOnce = false;
@@ -331,6 +332,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
             Tab(text: VN.orderDetailTabGeneral),
             Tab(text: VN.orderDetailTabWorkItems),
             Tab(text: VN.orderDetailTabTransactions),
+            Tab(text: VN.orderDetailTabCustomer),
           ],
         ),
       ),
@@ -406,9 +408,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       onRecordPayment: _openAddPaymentSheet,
                     ),
                     OrderDetailTransactionsTab(
+                      order: order,
+                      amountPaid: amountPaid,
+                      remaining: remaining,
                       txns: txns,
+                      onAddPayment: () => _openAddPaymentSheet(remaining),
                       onTransactionTap: _openTransactionDetail,
                     ),
+                    OrderDetailCustomerTab(customerId: order.customerId),
                   ],
                 ),
               ),
