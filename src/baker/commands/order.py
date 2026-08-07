@@ -1,10 +1,63 @@
 import click
+from rich.table import Table
 
 from baker.db.connection import get_db
 from baker.models.order import Order, OrderItem, allowed_transitions
 from baker.models.journal_entry import JournalEntry
 from baker.formatters.tables import console, print_orders_table, print_order_detail, print_order_accounting
 from baker.utils.time import now_utc
+
+
+def _resolve_order_ref(conn, ref):
+    """Resolve a REF argument to a single order row.
+
+    Lookup order (per FR1):
+      1. Exact match on ``order_ref``.
+      2. Numeric ``id`` (``CAST(id AS TEXT) = ref``).
+      3. ``public_order_code`` exact match.
+
+    When ``public_order_code`` matches multiple orders (FR2), display an
+    interactive numbered list sorted by ``created_at`` descending (customer
+    name, due date, status) and let the user select one via ``click.prompt``.
+
+    Returns the selected ``sqlite3.Row`` or ``None`` when not found.
+    """
+    row = conn.execute(
+        "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+        (ref, ref),
+    ).fetchone()
+    if row is not None:
+        return row
+
+    matches = conn.execute(
+        "SELECT * FROM orders WHERE public_order_code = ? ORDER BY created_at DESC",
+        (ref,),
+    ).fetchall()
+
+    if not matches:
+        return None
+
+    if len(matches) == 1:
+        return matches[0]
+
+    console.print(f"  [cyan]Found {len(matches)} orders for public code '{ref}':[/cyan]")
+    table = Table(show_lines=False, padding=(0, 1))
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Customer")
+    table.add_column("Due")
+    table.add_column("Status")
+    for idx, m in enumerate(matches, 1):
+        due = m["due_date"] or ""
+        if m["due_time"]:
+            due += f" {m['due_time']}"
+        table.add_row(str(idx), m["customer_name"], due, m["status"])
+    console.print(table)
+
+    while True:
+        choice = click.prompt("Select order number", type=int)
+        if 1 <= choice <= len(matches):
+            return matches[choice - 1]
+        console.print(f"  [red]Please enter a number between 1 and {len(matches)}[/red]")
 
 
 @click.group("order")
@@ -99,10 +152,7 @@ def order_list(show_all, status, due):
 def order_show(ref, accounting):
     """Show order details."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
-            (ref, ref),
-        ).fetchone()
+        row = _resolve_order_ref(conn, ref)
         if not row:
             console.print(f"  [red]Order '{ref}' not found[/red]")
             return
@@ -119,16 +169,13 @@ def order_show(ref, accounting):
 def order_status(ref, new_status, reason):
     """Update order status."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
-            (ref, ref),
-        ).fetchone()
+        row = _resolve_order_ref(conn, ref)
         if not row:
             console.print(f"  [red]Order '{ref}' not found[/red]")
             return
 
         current = row["status"]
-        ok = Order.update_status(conn, ref, new_status, reason)
+        ok = Order.update_status(conn, row["order_ref"], new_status, reason)
         if ok:
             console.print(f"  [green]{row['order_ref']}[/green]: {current} -> {new_status}")
         else:
@@ -150,10 +197,7 @@ def order_status(ref, new_status, reason):
 def order_edit(ref, notes, due_date, due_time, phone, address):
     """Edit order details."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
-            (ref, ref),
-        ).fetchone()
+        row = _resolve_order_ref(conn, ref)
         if not row:
             console.print(f"  [red]Order '{ref}' not found[/red]")
             return
