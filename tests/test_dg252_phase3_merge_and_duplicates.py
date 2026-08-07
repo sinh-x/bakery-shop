@@ -25,6 +25,10 @@ import pytest
 from datetime import datetime, timezone
 
 from baker.api.customers import (
+    CUSTOMER_BATCH_MERGE_DUPLICATE_MSG,
+    CUSTOMER_BATCH_MERGE_EMPTY_MSG,
+    CUSTOMER_BATCH_MERGE_SELF_MSG,
+    CUSTOMER_BATCH_MERGE_SOURCE_NOT_FOUND_MSG,
     CUSTOMER_MERGE_NOT_FOUND_MSG,
     CUSTOMER_MERGE_SELF_MSG,
     CUSTOMER_MERGE_SOURCE_NOT_FOUND_MSG,
@@ -968,3 +972,447 @@ def test_v75_migration_backfills_primary_phone_from_legacy_column(use_memory_db)
         assert after == before, (
             f"v75 must be idempotent: before={before}, after={after}"
         )
+
+
+# ---------------------------------------------------------------------------
+# DG-369 Phase 1 — Batch merge endpoint (FR1/FR2/FR3, NFR1, AC2/AC7)
+#
+# POST /api/customers/{id}/batch-merge accepts sourceCustomerIds: list[int]
+# and merges all sources into the target inside a single SQLite transaction.
+# Reuses _merge_customer_into_target() per source. Admin-only.
+# ---------------------------------------------------------------------------
+
+
+def test_batch_merge_admin_succeeds_merges_all_sources_atomically(auth_client):
+    """FR1/FR2/FR3/AC2 — admin batch-merge of 2 sources into one target
+    relinks all orders + phones, recomputes year summary, hard-deletes every
+    source, and writes one audit-log entry per source."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích gộp", phone="0901111000", headers=headers)
+    src1 = _create_customer(auth_client, name="Nguồn 1", phone="0902222001", headers=headers)
+    src2 = _create_customer(auth_client, name="Nguồn 2", phone="0902222002", headers=headers)
+    # One order on each source + one on the target.
+    _create_order(auth_client, src1["id"], src1["name"], headers=headers)
+    _create_order(auth_client, src1["id"], src1["name"], headers=headers)
+    _create_order(auth_client, src2["id"], src2["name"], headers=headers)
+    _create_order(auth_client, target["id"], target["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src1["id"], src2["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["targetId"] == target["id"]
+    assert body["sourceIds"] == [src1["id"], src2["id"]]
+    assert body["totalMovedOrders"] == 3
+    # 2 source phones added (each unique vs target).
+    assert body["totalAddedPhones"] == 2
+    # merged list carries per-source detail.
+    assert len(body["merged"]) == 2
+    by_src = {m["sourceId"]: m for m in body["merged"]}
+    assert by_src[src1["id"]]["movedOrders"] == 2
+    assert by_src[src2["id"]]["movedOrders"] == 1
+
+    with get_db() as conn:
+        # Both sources hard-deleted.
+        for sid in (src1["id"], src2["id"]):
+            row = conn.execute(
+                "SELECT id FROM customers WHERE id = ?", (sid,)
+            ).fetchone()
+            assert row is None
+        # All orders now on the target (1 original + 2 from src1 + 1 from src2).
+        target_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?",
+            (target["id"],),
+        ).fetchone()[0]
+        assert target_orders == 4
+        # Target has 3 phones (1 original + 2 merged), exactly one primary.
+        target_phones = conn.execute(
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
+            "ORDER BY is_primary DESC, id ASC",
+            (target["id"],),
+        ).fetchall()
+        assert {r["phone"] for r in target_phones} == {
+            "0901111000",
+            "0902222001",
+            "0902222002",
+        }
+        primaries = [r for r in target_phones if r["is_primary"] == 1]
+        assert len(primaries) == 1
+        # Year summary recomputed for the current year (4 orders x 10000).
+        ys = load_year_summary(conn, target["id"], _current_year())
+        assert ys["orderCount"] == 4
+        assert ys["totalVolume"] == 40000
+        # Two audit-log entries (one per source merge).
+        audit_rows = conn.execute(
+            "SELECT action, entity_type, entity_id FROM audit_log "
+            "WHERE entity_type = 'customer' AND action = 'merge' "
+            "ORDER BY id DESC LIMIT 2"
+        ).fetchall()
+        assert len(audit_rows) == 2
+        assert all(r["entity_id"] == str(target["id"]) for r in audit_rows)
+
+    # Target is still fetchable via the API.
+    get_resp = auth_client.get(f"/api/customers/{target['id']}", headers=headers)
+    assert get_resp.status_code == 200
+
+
+def test_batch_merge_dedupes_overlapping_phones_across_sources(auth_client):
+    """FR3 — phones the target already owns or that an earlier source
+    contributed are not duplicated across the batch."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích", phone="0900", headers=headers)
+    src1 = _create_customer(auth_client, name="Nguồn 1", phone="0900", headers=headers)  # shares target phone
+    src2 = _create_customer(auth_client, name="Nguồn 2", phone="0911", headers=headers)  # unique
+    _create_order(auth_client, src1["id"], src1["name"], headers=headers)
+    _create_order(auth_client, src2["id"], src2["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src1["id"], src2["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Only the unique source phone was added; the shared one was deduped.
+    assert body["totalAddedPhones"] == 1
+
+    with get_db() as conn:
+        phones = {
+            r["phone"]
+            for r in conn.execute(
+                "SELECT phone FROM customer_phones WHERE customer_id = ?",
+                (target["id"],),
+            ).fetchall()
+        }
+        assert phones == {"0900", "0911"}
+
+
+def test_batch_merge_non_admin_returns_403(auth_client):
+    """FR1 — staff JWT → 403, no data changes."""
+    admin_headers, _ = _admin_setup(auth_client)
+    staff_token = _seed_staff(auth_client)
+
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=admin_headers)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=admin_headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"]]},
+        headers=_auth_headers(staff_token),
+    )
+    assert resp.status_code == 403
+    # Source still exists.
+    assert auth_client.get(
+        f"/api/customers/{src['id']}", headers=admin_headers
+    ).status_code == 200
+
+
+def test_batch_merge_self_in_sources_returns_400(auth_client):
+    """FR1/AC7 — target id present in sourceCustomerIds → 400."""
+    headers, _ = _admin_setup(auth_client)
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"], target["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == CUSTOMER_BATCH_MERGE_SELF_MSG
+    # No data changes.
+    assert auth_client.get(
+        f"/api/customers/{src['id']}", headers=headers
+    ).status_code == 200
+
+
+def test_batch_merge_empty_source_list_returns_422(auth_client):
+    """FR1 — empty sourceCustomerIds is rejected by the request model (422)."""
+    headers, _ = _admin_setup(auth_client)
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": []},
+        headers=headers,
+    )
+    # Pydantic validator raises 422 (request validation error).
+    assert resp.status_code == 422
+    assert CUSTOMER_BATCH_MERGE_EMPTY_MSG in resp.text
+
+
+def test_batch_merge_duplicate_source_ids_returns_422(auth_client):
+    """FR1 — duplicate ids in sourceCustomerIds are rejected (422)."""
+    headers, _ = _admin_setup(auth_client)
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"], src["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 422
+    assert CUSTOMER_BATCH_MERGE_DUPLICATE_MSG in resp.text
+
+
+def test_batch_merge_unknown_target_returns_404(auth_client):
+    """FR1 — unknown target id → 404."""
+    headers, _ = _admin_setup(auth_client)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+
+    resp = auth_client.post(
+        "/api/customers/999999/batch-merge",
+        json={"sourceCustomerIds": [src["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == CUSTOMER_MERGE_NOT_FOUND_MSG
+
+
+def test_batch_merge_unknown_source_returns_404(auth_client):
+    """FR1 — any unknown source id → 404, no partial merge."""
+    headers, _ = _admin_setup(auth_client)
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+    _create_order(auth_client, src["id"], src["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"], 999999]},
+        headers=headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == CUSTOMER_BATCH_MERGE_SOURCE_NOT_FOUND_MSG
+
+    # No data changes: source still exists with its order, target has none.
+    with get_db() as conn:
+        src_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (src["id"],)
+        ).fetchone()[0]
+        assert src_orders == 1
+        tgt_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (target["id"],)
+        ).fetchone()[0]
+        assert tgt_orders == 0
+    assert auth_client.get(
+        f"/api/customers/{src['id']}", headers=headers
+    ).status_code == 200
+
+
+def test_batch_merge_rolls_back_on_failure(auth_client, monkeypatch):
+    """NFR1 — a mid-batch exception leaves target, all sources, orders,
+    phones, and year summaries unchanged. The whole batch is atomic."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    src1 = _create_customer(auth_client, name="Nguồn 1", phone="0902", headers=headers)
+    src2 = _create_customer(auth_client, name="Nguồn 2", phone="0903", headers=headers)
+    _create_order(auth_client, src1["id"], src1["name"], headers=headers)
+    _create_order(auth_client, src2["id"], src2["name"], headers=headers)
+
+    # Snapshot pre-merge state.
+    with get_db() as conn:
+        pre_src1_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (src1["id"],)
+        ).fetchone()[0]
+        pre_src2_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (src2["id"],)
+        ).fetchone()[0]
+        pre_target_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (target["id"],)
+        ).fetchone()[0]
+        pre_src1_phones = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (src1["id"],),
+        ).fetchone()[0]
+        pre_src2_phones = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (src2["id"],),
+        ).fetchone()[0]
+
+    # Inject a failure into _recompute_customer_year_summary so the batch
+    # aborts after the first source merge but before commit. The get_db()
+    # context manager must roll the whole transaction back, restoring the
+    # second source's orders that the first merge left untouched anyway.
+    from baker.api import customers as customers_module
+
+    original_recompute = customers_module._recompute_customer_year_summary
+    call_count = {"n": 0}
+
+    def _boom(conn, customer_id, year):
+        call_count["n"] += 1
+        # Fail on the second invocation (first source's recompute succeeds,
+        # second source's recompute raises) so the first merge has mutated
+        # state inside the transaction that must be rolled back.
+        if call_count["n"] >= 2:
+            raise RuntimeError("simulated mid-batch failure")
+
+    monkeypatch.setattr(
+        customers_module, "_recompute_customer_year_summary", _boom
+    )
+
+    batch_failed = False
+    try:
+        auth_client.post(
+            f"/api/customers/{target['id']}/batch-merge",
+            json={"sourceCustomerIds": [src1["id"], src2["id"]]},
+            headers=headers,
+        )
+    except RuntimeError:
+        batch_failed = True
+
+    monkeypatch.setattr(
+        customers_module, "_recompute_customer_year_summary", original_recompute
+    )
+
+    assert batch_failed, "batch merge should have failed mid-transaction"
+
+    with get_db() as conn:
+        # Both sources still exist (hard-delete rolled back).
+        for sid in (src1["id"], src2["id"]):
+            row = conn.execute(
+                "SELECT id FROM customers WHERE id = ?", (sid,)
+            ).fetchone()
+            assert row is not None
+        # Orders unchanged on every customer.
+        post_src1_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (src1["id"],)
+        ).fetchone()[0]
+        post_src2_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (src2["id"],)
+        ).fetchone()[0]
+        post_target_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (target["id"],)
+        ).fetchone()[0]
+        assert post_src1_orders == pre_src1_orders
+        assert post_src2_orders == pre_src2_orders
+        assert post_target_orders == pre_target_orders
+        # Phones unchanged on both sources.
+        post_src1_phones = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (src1["id"],),
+        ).fetchone()[0]
+        post_src2_phones = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (src2["id"],),
+        ).fetchone()[0]
+        assert post_src1_phones == pre_src1_phones
+        assert post_src2_phones == pre_src2_phones
+        # No audit-log entries committed.
+        audit = conn.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'customer' "
+            "AND action = 'merge'"
+        ).fetchone()[0]
+        assert audit == 0
+
+
+def test_batch_merge_existing_single_pair_endpoint_unchanged(auth_client):
+    """NFR2 — the existing POST /api/customers/{id}/merge endpoint continues
+    to work unchanged alongside the new batch endpoint."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    source = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+    _create_order(auth_client, source["id"], source["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/merge",
+        json={"sourceCustomerId": source["id"]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["targetId"] == target["id"]
+    assert body["sourceId"] == source["id"]
+    assert body["movedOrders"] == 1
+    # Single-pair response shape unchanged: no batch fields.
+    assert "sourceIds" not in body
+    assert "merged" not in body
+
+
+def test_batch_merge_grace_period_anon_allowed_when_auth_required_false(anon_client):
+    """NFR6 — AUTH_REQUIRED=false (grace period) lets an unauthenticated
+    batch merge request through, mirroring the single-pair merge endpoint."""
+    target = _create_customer(anon_client, name="Đích", phone="0901")
+    src = _create_customer(anon_client, name="Nguồn", phone="0902")
+    _create_order(anon_client, src["id"], src["name"])
+
+    resp = anon_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"]]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["totalMovedOrders"] == 1
+
+
+def test_batch_merge_single_source_succeeds(auth_client):
+    """FR1 — a batch with one source works (degenerate case of the batch)."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích", phone="0901", headers=headers)
+    src = _create_customer(auth_client, name="Nguồn", phone="0902", headers=headers)
+    _create_order(auth_client, src["id"], src["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": [src["id"]]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["totalMovedOrders"] == 1
+    assert body["sourceIds"] == [src["id"]]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM customers WHERE id = ?", (src["id"],)
+        ).fetchone()
+        assert row is None
+
+
+def test_batch_merge_ten_sources_completes(auth_client):
+    """NFR3 — batch merge of 10 sources completes within one transaction."""
+    headers, _ = _admin_setup(auth_client)
+
+    target = _create_customer(auth_client, name="Đích 10", phone="0900000000", headers=headers)
+    source_ids: list[int] = []
+    for i in range(10):
+        s = _create_customer(
+            auth_client,
+            name=f"Nguồn {i}",
+            phone=f"090{i:07d}",
+            headers=headers,
+        )
+        source_ids.append(s["id"])
+        _create_order(auth_client, s["id"], s["name"], headers=headers)
+
+    resp = auth_client.post(
+        f"/api/customers/{target['id']}/batch-merge",
+        json={"sourceCustomerIds": source_ids},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["totalMovedOrders"] == 10
+    assert len(body["merged"]) == 10
+
+    with get_db() as conn:
+        remaining_sources = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE id IN (%s)"
+            % ",".join("?" * len(source_ids)),
+            source_ids,
+        ).fetchone()[0]
+        assert remaining_sources == 0
+        target_orders = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?",
+            (target["id"],),
+        ).fetchone()[0]
+        assert target_orders == 10

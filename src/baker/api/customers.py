@@ -38,6 +38,13 @@ CUSTOMER_MERGE_SELF_MSG = "Không thể gộp một khách hàng vào chính nó
 CUSTOMER_MERGE_NOT_FOUND_MSG = "Không tìm thấy khách hàng"
 CUSTOMER_MERGE_SOURCE_NOT_FOUND_MSG = "Không tìm thấy khách hàng nguồn cần gộp"
 
+# DG-369 Phase 1 / FR1 / AC7 — centralized VN messages for the batch merge
+# endpoint. Reused by tests to avoid string drift.
+CUSTOMER_BATCH_MERGE_EMPTY_MSG = "Danh sách khách hàng nguồn cần gộp không được để trống."
+CUSTOMER_BATCH_MERGE_SELF_MSG = "Khách hàng nguồn không được trùng với khách hàng đích."
+CUSTOMER_BATCH_MERGE_DUPLICATE_MSG = "Danh sách khách hàng nguồn có ID trùng lặp."
+CUSTOMER_BATCH_MERGE_SOURCE_NOT_FOUND_MSG = "Không tìm thấy khách hàng nguồn cần gộp"
+
 
 class PhoneInput(BaseModel):
     phone: str
@@ -436,6 +443,31 @@ class MergeRequest(BaseModel):
         return v
 
 
+class BatchMergeRequest(BaseModel):
+    """Body for ``POST /api/customers/{id}/batch-merge`` (DG-369 FR1).
+
+    ``sourceCustomerIds`` is the list of customers to merge *into* the
+    target (the ``{id}`` path param). Each source is hard-deleted after
+    relink. The whole batch executes inside a single SQLite transaction so
+    any failure rolls back completely (NFR1).
+    """
+
+    sourceCustomerIds: list[int]
+
+    @field_validator("sourceCustomerIds")
+    @classmethod
+    def non_empty(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError(CUSTOMER_BATCH_MERGE_EMPTY_MSG)
+        return v
+
+    @model_validator(mode="after")
+    def _validate_ids(self) -> "BatchMergeRequest":
+        if len(self.sourceCustomerIds) != len(set(self.sourceCustomerIds)):
+            raise ValueError(CUSTOMER_BATCH_MERGE_DUPLICATE_MSG)
+        return self
+
+
 def _merge_customer_into_target(
     conn,
     target_id: int,
@@ -681,6 +713,120 @@ def _row_to_customer_dict(row) -> dict:
         "name": row["name"],
         "phone": row["phone"] or "",
     }
+
+
+@router.post("/{customer_id}/batch-merge")
+def batch_merge_customer(
+    customer_id: int,
+    body: BatchMergeRequest,
+    actor: str = Depends(RequireRole("admin")),
+):
+    """Gộp nhiều khách hàng nguồn vào khách hàng đích trong một giao dịch (DG-369 FR1/FR2/FR3, AC2/AC7).
+
+    Admin-only. Merges each source in ``sourceCustomerIds`` into the target
+    (``customer_id``) by reusing ``_merge_customer_into_target()`` inside a
+    single SQLite transaction so any failure rolls back completely (NFR1).
+    Rejects self-merge (any source equal to the target) and duplicate source
+    ids (validated by the request model). Writes one audit-log entry per
+    source merge so each step is independently auditable.
+
+    Status codes:
+      - 200: all source merges succeeded
+      - 400: empty source list, self-merge (any source == target), or
+              duplicate source ids
+      - 403: non-admin caller
+      - 404: target or any source customer id not found
+    """
+    target_id = customer_id
+    source_ids = body.sourceCustomerIds
+
+    # FR1/AC7 — reject self-merge (primary id present in source list).
+    if target_id in source_ids:
+        raise HTTPException(status_code=400, detail=CUSTOMER_BATCH_MERGE_SELF_MSG)
+
+    with get_db() as conn:
+        target_row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        if not target_row:
+            raise HTTPException(
+                status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG
+            )
+        # Validate every source exists before mutating anything so a
+        # missing source id is a clean 404, not a partial batch.
+        source_rows: list = []
+        for sid in source_ids:
+            srow = conn.execute(
+                "SELECT * FROM customers WHERE id = ?", (sid,)
+            ).fetchone()
+            if not srow:
+                raise HTTPException(
+                    status_code=404, detail=CUSTOMER_BATCH_MERGE_SOURCE_NOT_FOUND_MSG
+                )
+            source_rows.append(srow)
+
+        # Snapshot for audit-log old_value (pre-merge state of target + sources).
+        old_value = {
+            "target": _row_to_customer_dict(target_row),
+            "sources": [_row_to_customer_dict(r) for r in source_rows],
+        }
+
+        # FR2/NFR1 — loop the existing merge function inside this single
+        # get_db() transaction. Any failure rolls back the whole batch.
+        merged_results: list[dict] = []
+        total_moved_orders = 0
+        total_added_phones = 0
+        all_recomputed_years: set[int] = set()
+        for sid in source_ids:
+            res = _merge_customer_into_target(conn, target_id, sid)
+            merged_results.append({"sourceId": sid, **res})
+            total_moved_orders += res["movedOrders"]
+            total_added_phones += res["addedPhones"]
+            all_recomputed_years.update(res["recomputedYears"])
+
+        # Reload target after all merges for the new_value snapshot + response.
+        merged_row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        new_value = {
+            "target": _row_to_customer_dict(merged_row),
+            "deletedSourceIds": list(source_ids),
+            "merged": merged_results,
+        }
+
+        # FR3 — one audit-log entry per source merge so each step is
+        # independently auditable (documented in the requirements risk table).
+        for res in merged_results:
+            record_audit_log(
+                conn,
+                actor,
+                "merge",
+                "customer",
+                target_id,
+                old_value={
+                    "target": _row_to_customer_dict(target_row),
+                    "source": _row_to_customer_dict(
+                        next(r for r in source_rows if r["id"] == res["sourceId"])
+                    ),
+                },
+                new_value={
+                    "target": _row_to_customer_dict(merged_row),
+                    "sourceDeletedId": res["sourceId"],
+                    **res,
+                },
+            )
+
+        loaded = Customer.from_row(merged_row, conn)
+        return {
+            "ok": True,
+            "targetId": target_id,
+            "sourceIds": list(source_ids),
+            "customer": _customer_response(conn, loaded),
+            "merged": merged_results,
+            "totalMovedOrders": total_moved_orders,
+            "totalAddedPhones": total_added_phones,
+            "recomputedYears": sorted(all_recomputed_years),
+        }
 
 
 def _duplicate_customer_row(
