@@ -67,10 +67,14 @@ List<RouteBase> miscRoutes() => [
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
       ),
-      // POS checkout — full-screen (outside shell)
+      // POS checkout — full-screen (outside shell). The optional `fast`
+      // query parameter triggers the Giao ngay fast-path (DG-370 Phase 1):
+      // jumps directly to Stage 5 with walk-in defaults.
       GoRoute(
         path: '/pos/checkout',
-        builder: (context, state) => const PosCheckoutScreen(),
+        builder: (context, state) => PosCheckoutScreen(
+          fastPath: state.uri.queryParameters['fast'] == 'true',
+        ),
       ),
       // POS receipt — full-screen (outside shell)
       GoRoute(

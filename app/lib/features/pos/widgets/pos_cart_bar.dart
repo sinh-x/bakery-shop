@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../providers/pos_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Sticky bottom cart summary bar for POS screen.
 class PosCartBar extends ConsumerWidget {
@@ -79,7 +79,11 @@ class PosCartBar extends ConsumerWidget {
                   ),
                 ),
 
-                // Payment button
+                // Payment button — opens the POS checkout flow.
+                // DG-370 Phase 5.6-c1: the "Giao ngay & Thanh toán" fast-path
+                // button was moved from PosCartBar into the bottom navigation
+                // of each POS checkout stage (1-4) so it is available at every
+                // step of the order process (UX-1).
                 FilledButton.icon(
                   // ignore: prefer_const_constructors
                   onPressed: () => context.push('/pos/checkout'),

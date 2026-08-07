@@ -47,12 +47,18 @@ class PosCheckoutPaymentController {
     required this.resolveDeliveryType,
     required this.goToStage,
     required this.writeBackToCart,
+    this.backFromPaymentStepOverride,
   });
 
   final SubmitOrderFn submitOrder;
   final ResolveDeliveryTypeFn resolveDeliveryType;
   final GoToStageFn goToStage;
   final WriteBackToCartFn writeBackToCart;
+
+  /// Optional override for the Stage 5 "Quay lại" action. When provided
+  /// (e.g. by the Giao ngay fast-path, DG-370 Phase 1), this is called
+  /// instead of the default [backFromPaymentStep] which returns to Stage 4.
+  final VoidCallback? backFromPaymentStepOverride;
 
   bool _isProcessing = false;
   bool get isProcessing => _isProcessing;
@@ -84,6 +90,13 @@ class PosCheckoutPaymentController {
   // pre-refactor `skipPayment` branch in `_createOrderInternal`).
   bool _skipPayment = false;
   bool get skipPayment => _skipPayment;
+
+  // DG-370 Phase 3 — the fast-path "Giao ngay & Thanh toán" sets this so the
+  // order is created with status "delivered" on BOTH pay-now and pay-later
+  // (FR4). The normal 5-stage flow leaves this false (Stage 3 "Giao hàng sau"
+  // / Stage 4 review path) and only pay-now flips it via the
+  // `deliverImmediately` argument on [handlePayNow] / [enterPaymentStep].
+  bool deliverImmediately = false;
 
   /// Enters the payment step from the Stage 4 review: writes the wizard items
   /// back to the cart, computes the cart total / tien_rut defaults, and
@@ -119,7 +132,13 @@ class PosCheckoutPaymentController {
         isProcessing: _isProcessing,
       );
 
-  void backFromPaymentStep() => goToStage(4);
+  void backFromPaymentStep() {
+    if (backFromPaymentStepOverride != null) {
+      backFromPaymentStepOverride!();
+      return;
+    }
+    goToStage(4);
+  }
 
   void onPaymentMethodChanged(String paymentMethod) {
     if (_selectedPaymentMethod == paymentMethod) return;
@@ -197,7 +216,7 @@ class PosCheckoutPaymentController {
       await _submit(
         context,
         paymentMethod: '',
-        deliverImmediately: false,
+        deliverImmediately: deliverImmediately,
         mounted: mounted,
       );
     } finally {

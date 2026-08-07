@@ -37,6 +37,10 @@ class _FakeCustomerService extends CustomerService {
 class _FakeOrderService extends OrderService {
   _FakeOrderService({this.createOrderCompleter}) : super(Dio());
   final List<String?> paymentMethods = <String?>[];
+  final List<String?> statuses = <String?>[];
+  final List<String?> sources = <String?>[];
+  final List<String?> customerNames = <String?>[];
+  final List<String> deliveryTypes = <String>[];
   final List<List<Map<String, dynamic>>> createdItems = <List<Map<String, dynamic>>>[];
   final Completer<Order>? createOrderCompleter;
   int createOrderCallCount = 0;
@@ -65,6 +69,10 @@ class _FakeOrderService extends OrderService {
   }) async {
     createOrderCallCount += 1;
     paymentMethods.add(paymentMethod);
+    statuses.add(status);
+    sources.add(source);
+    customerNames.add(customerName);
+    deliveryTypes.add(deliveryType);
     createdItems.add(items);
     if (createOrderCompleter != null) return createOrderCompleter!.future;
     return Order(
@@ -127,11 +135,12 @@ Widget _buildCheckoutApp({
   required List<PosCartItem> items,
   OrderService? orderService,
   _FakePaymentTransactionService? txnSvc,
+  bool fastPath = false,
 }) {
   final router = GoRouter(
     routes: [
       GoRoute(path: '/pos', builder: (context, state) => const Text('POS Home')),
-      GoRoute(path: '/pos/checkout', builder: (context, state) => const PosCheckoutScreen()),
+      GoRoute(path: '/pos/checkout', builder: (context, state) => PosCheckoutScreen(fastPath: fastPath)),
       GoRoute(path: '/pos/receipt/:ref', builder: (context, state) => Text('Receipt ${state.pathParameters['ref']}')),
     ],
     initialLocation: '/pos/checkout',
@@ -784,6 +793,10 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: the order summary section now appears above the
+      // payment fields; ensure the transfer option is visible before tapping.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
@@ -850,6 +863,10 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: summary section may push this off-screen on the
+      // default 800x600 test surface; scroll it into view first.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
@@ -887,10 +904,15 @@ void main() {
       await _navigateToPayment(tester);
 
       // Switch to transfer to reveal the target account selector.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
       // Select TK Ân VCB from the dropdown.
+      // DG-370 Phase 2: ensure the dropdown is on-screen before tapping.
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String?>));
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.paymentSourceAnVCB).last);
@@ -928,6 +950,9 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
+      // DG-370 Phase 2: scroll the transfer option into view before tapping.
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
@@ -1143,6 +1168,127 @@ void main() {
       expect(posState.items.single.isBirthday, isTrue);
       expect(posState.items.single.age, '5');
       expect(posState.items.single.attributes['rut_tien'], 'true');
+    });
+  });
+
+  // DG-370 Phase 3 — fast-path navigation wiring (FR1/FR3/FR4, AC1/AC5).
+  // The "Giao ngay & Thanh toán" button navigates to /pos/checkout?fast=true,
+  // which seeds Giao ngay walk-in defaults and jumps directly to Stage 5 with
+  // deliverImmediately=true so the order is created with status="delivered".
+  // "Quay lại" from fast-path Stage 5 returns to /pos (not Stage 4).
+  group('DG-370 Phase 3: fast-path navigation (Giao ngay & Thanh toán)', () {
+    testWidgets('AC1: fast-path lands on Stage 5 with Giao ngay defaults and creates order with status=delivered (cash)',
+        (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(
+        items: <PosCartItem>[cartItem],
+        orderService: fakeOrderService,
+        fastPath: true,
+      ));
+      await tester.pumpAndSettle();
+
+      // Fast-path skips Stages 1-4 and lands on Stage 5 (payment step): the
+      // cash/transfer SegmentedButton and the "Thanh toán ngay" button are
+      // immediately visible (no need to navigate through stages).
+      expect(find.byType(SegmentedButton<String>), findsOneWidget);
+      expect(find.text(OrdersLabels.payNow), findsOneWidget);
+
+      // The order summary section (Phase 2) is also visible on Stage 5.
+      expect(find.text(OrdersLabels.summaryProducts), findsOneWidget);
+
+      // Submit with cash (default) — deliverImmediately=true should produce
+      // status="delivered" (FR4/AC1).
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.createOrderCallCount, 1);
+      // FR4 / AC1: fast-path orders are created with status "delivered".
+      expect(fakeOrderService.statuses.single, 'delivered');
+      // AC1: Giao ngay defaults — customer="Khách lẻ", source="Tại tiệm - POS",
+      // delivery="pickup".
+      expect(fakeOrderService.customerNames.single, VN.khachLe);
+      expect(fakeOrderService.sources.single, VN.taiTiemPOS);
+      expect(fakeOrderService.deliveryTypes.single, 'pickup');
+      // Receipt screen is shown after submit.
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+
+    testWidgets('AC5: fast-path "Quay lại" returns to the POS product grid (not Stage 4)',
+        (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(
+        items: <PosCartItem>[cartItem],
+        fastPath: true,
+      ));
+      await tester.pumpAndSettle();
+
+      // Confirm we're on Stage 5 (payment step).
+      expect(find.text(OrdersLabels.payNow), findsOneWidget);
+
+      // Tap "Quay lại" — fast-path override should route back to /pos
+      // (POS Home), NOT to Stage 4 review.
+      final backButton = find.text(OrdersLabels.backLabel);
+      expect(backButton, findsOneWidget);
+      await tester.ensureVisible(backButton);
+      await tester.pumpAndSettle();
+      await tester.tap(backButton);
+      await tester.pumpAndSettle();
+
+      // AC5: returned to the POS product grid, not Stage 4 review.
+      expect(find.text('POS Home'), findsOneWidget);
+      // Stage 4 review summary should NOT be visible.
+      expect(find.text(OrdersLabels.reviewSummary), findsNothing);
+    });
+
+    testWidgets('AC1: fast-path pay-later still creates order with status=delivered',
+        (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(
+        items: <PosCartItem>[cartItem],
+        orderService: fakeOrderService,
+        fastPath: true,
+      ));
+      await tester.pumpAndSettle();
+
+      // Pay later — even on the fast path, the order status is "delivered"
+      // because deliverImmediately=true is wired for the whole fast-path
+      // payment step (FR4).
+      await tester.ensureVisible(find.text(OrdersLabels.payLater));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(OrdersLabels.payLater));
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.createOrderCallCount, 1);
+      expect(fakeOrderService.statuses.single, 'delivered');
+      expect(fakeOrderService.paymentMethods.single, '');
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+
+    testWidgets('fast-path does not show Stage 1-4 content on init', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(
+        items: <PosCartItem>[cartItem],
+        fastPath: true,
+      ));
+      await tester.pumpAndSettle();
+
+      // Stage 1 "Tiếp tục" button should not be present — we jumped to 5.
+      expect(find.text(OrdersLabels.continueLabel), findsNothing);
+      // Stage 3 pickup "Giao ngay" choice should not be present.
+      expect(find.text(OrdersLabels.pickupNow), findsNothing);
+      // Stage 4 review summary should not be present.
+      expect(find.text(OrdersLabels.reviewSummary), findsNothing);
+      // Stage 5 payment selector IS present.
+      expect(find.byType(SegmentedButton<String>), findsOneWidget);
     });
   });
 }

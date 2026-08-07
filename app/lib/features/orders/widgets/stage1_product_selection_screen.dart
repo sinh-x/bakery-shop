@@ -27,10 +27,17 @@ class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
     super.key,
     required this.onContinue,
     required this.orderStateProvider,
+    this.onFastPath,
   });
 
   final VoidCallback onContinue;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-2): optional POS-only "Giao ngay & Thanh toán"
+  /// fast-path callback. When provided (POS checkout), a button is rendered
+  /// next to "Tiếp tục" that jumps directly to Stage 5 with Giao ngay walk-in
+  /// defaults. Null in the normal order flow (no button shown).
+  final VoidCallback? onFastPath;
 
   @override
   ConsumerState<Stage1ProductSelectionScreen> createState() =>
@@ -163,9 +170,26 @@ class _Stage1ProductSelectionScreenState
           Expanded(child: content),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: FilledButton(
-              onPressed: items.isEmpty ? null : widget.onContinue,
-              child: const Text(OrdersLabels.continueLabel),
+            child: Row(
+              children: [
+                // DG-370 Phase 5.6-c1 (UX-2): "Giao ngay & Thanh toán" fast-path
+                // button next to "Tiếp tục" — POS-only (onFastPath is null in
+                // the normal order flow).
+                if (widget.onFastPath != null) ...[
+                  FilledButton.icon(
+                    onPressed: items.isEmpty ? null : widget.onFastPath,
+                    icon: const Icon(Icons.bolt, size: 18),
+                    label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: FilledButton(
+                    onPressed: items.isEmpty ? null : widget.onContinue,
+                    child: const Text(OrdersLabels.continueLabel),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

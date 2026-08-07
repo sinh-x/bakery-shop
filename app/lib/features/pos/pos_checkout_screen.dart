@@ -43,7 +43,12 @@ String? extractBackendDetail(Object? data) {
 }
 
 class PosCheckoutScreen extends ConsumerStatefulWidget {
-  const PosCheckoutScreen({super.key});
+  const PosCheckoutScreen({super.key, this.fastPath = false});
+
+  /// When `true`, the screen initializes with Giao ngay walk-in defaults and
+  /// jumps directly to Stage 5 (Thanh toán). "Quay lại" from Stage 5 returns
+  /// to the POS product grid instead of Stage 4 (DG-370 Phase 1, FR1/FR3).
+  final bool fastPath;
 
   @override
   ConsumerState<PosCheckoutScreen> createState() => _PosCheckoutScreenState();
@@ -54,6 +59,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _posStateInitialized = false;
   bool _posDeliverImmediately = false;
   bool _stage3ShowFullOptions = false;
+  // DG-370 Phase 1: fast-path flag — when true, "Quay lại" from Stage 5
+  // returns to the POS product grid (/pos) instead of Stage 4.
+  bool _isFastPath = false;
 
   late final PosCheckoutPaymentController _payment;
   final GlobalKey<OrderCreationOrchestratorState> _orchestratorKey =
@@ -62,6 +70,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _isFastPath = widget.fastPath;
     _payment = PosCheckoutPaymentController(
       submitOrder: ({status, paymentMethod}) =>
           _orchestratorKey.currentState?.submitOrder(
@@ -73,6 +82,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           ref.read(posOrderStateProvider).wizardData.deliveryType,
       goToStage: _goToStage,
       writeBackToCart: _writeBackToCart,
+      // DG-370 Phase 1 — fast-path "Quay lại" returns to the POS product
+      // grid (/pos) instead of Stage 4 (FR3/AC5).
+      backFromPaymentStepOverride:
+          widget.fastPath ? _backFromPaymentStepFastPath : null,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initPosState();
@@ -94,7 +107,24 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final posDue = posDefaultDueDateTime(DateTime.now());
     posNotifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
     posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
-    posNotifier.goToStage(1);
+
+    if (_isFastPath) {
+      // DG-370 Phase 1/3 — Giao ngay fast-path: jump directly to Stage 5 with
+      // deliverImmediately=true so the order is created with status
+      // "delivered" (same semantics as PosStage3PickupScreen "Giao ngay").
+      // Phase 3: persist the flag on the payment controller so BOTH pay-now
+      // and pay-later produce status="delivered" (FR4).
+      _posDeliverImmediately = true;
+      _payment.deliverImmediately = true;
+      // Seed the wizard items from the POS cart so the payment step has the
+      // cart contents available (mirrors the orchestrator's init safety net,
+      // but run synchronously here because the fast-path skips Stages 1-4).
+      syncCartToWizardItems(ref, provider: posOrderStateProvider);
+      posNotifier.goToStage(1);
+      _enterPaymentStep();
+    } else {
+      posNotifier.goToStage(1);
+    }
   }
 
   void _goToStage(int stage) {
@@ -114,6 +144,25 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _enterPaymentStep() {
     _payment.enterPaymentStep(ref);
+  }
+
+  /// DG-370 Phase 5.6-c1 (UX-1..UX-6): "Giao ngay & Thanh toán" fast-path
+  /// invoked from any POS checkout stage (1-4). Sets deliverImmediately=true
+  /// (so the order is created with status="delivered" on both pay-now and
+  /// pay-later, FR4) and jumps to Stage 5. Used as the `onFastPath` callback
+  /// for Stage 1/2/3/4 bottom navigation buttons.
+  void _enterFastPath() {
+    _posDeliverImmediately = true;
+    _payment.deliverImmediately = true;
+    _enterPaymentStep();
+  }
+
+  /// DG-370 Phase 1 — fast-path "Quay lại": write the wizard items back to
+  /// the cart (so the cart survives the back-out) and return to the POS
+  /// product grid (/pos) instead of Stage 4 (FR3/AC5).
+  void _backFromPaymentStepFastPath() {
+    _writeBackToCart();
+    if (mounted) context.go('/pos');
   }
 
   void _confirmClearCart() {
@@ -148,6 +197,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       },
       stage1Builder: (ctx, controller) => Stage1ProductSelectionScreen(
         onContinue: () => controller.goToStage(2),
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       stage2Builder: (ctx, controller) => Stage2CustomerInfoScreen(
@@ -157,6 +207,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           context.pop();
         },
         onContinue: () => controller.goToStage(3),
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       stage3Builder: (ctx, controller) {
@@ -173,6 +224,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               _stage3ShowFullOptions = true;
               setState(() {});
             },
+            onFastPath: _enterFastPath,
           );
         }
         return Stage3DeliveryOptionsScreen(
@@ -184,12 +236,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                 }
               : () => controller.goToStage(2),
           onContinue: () => controller.goToStage(4),
+          onFastPath: _enterFastPath,
           orderStateProvider: posOrderStateProvider,
         );
       },
       stage4Builder: (ctx, controller) => PosReviewPanel(
         onBack: () => controller.goToStage(3),
         onContinue: _enterPaymentStep,
+        onFastPath: _enterFastPath,
         orderStateProvider: posOrderStateProvider,
       ),
       // The container hosts stages 1-4 AND the POS payment step (stage 5).
@@ -197,15 +251,21 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       // the orchestrator renders it via this builder closure so the
       // orchestrator stays mounted and `submitOrder` remains callable from
       // the payment step's pay-now/pay-later handlers.
-      stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: currentStage == 5
-            ? PosPaymentStepBuilder(controller: _payment).build(
-                context,
-                deliverImmediately: _posDeliverImmediately,
-                mounted: mounted,
-                onChanged: () => setState(() {}),
-              )
+        stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: currentStage == 5
+              ? PosPaymentStepBuilder(
+                  controller: _payment,
+                  // DG-370 Phase 2 (FR2/AC2/AC6): forward the POS order state
+                  // provider so Stage 5 renders the same order summary cards
+                  // as Stage 4 (PosReviewPanel).
+                  orderStateProvider: posOrderStateProvider,
+                ).build(
+                  context,
+                  deliverImmediately: _posDeliverImmediately,
+                  mounted: mounted,
+                  onChanged: () => setState(() {}),
+                )
             : (currentStage >= 1 && currentStage <= 4
                 ? stages[currentStage - 1]
                 : const SizedBox.shrink()),
