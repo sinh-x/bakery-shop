@@ -178,6 +178,20 @@ class OrderWorkItemCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              // Candle type (FR4 / AC3) — shown when present and not "khong_nen".
+              if (item.attributes['candle_type'] != null &&
+                  item.attributes['candle_type'].toString().isNotEmpty &&
+                  item.attributes['candle_type'].toString() != 'khong_nen')
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '${VN.packCandles}: ${VN.candleTypeLabel(item.attributes['candle_type'].toString())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.pink.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               // Notes
               if (item.notes.isNotEmpty)
                 Padding(
