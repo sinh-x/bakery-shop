@@ -338,6 +338,18 @@ def _create_sale_orders(
     latest_by_key: dict[tuple[int, int | None], dict],
     actor: str,
 ) -> list[list[dict]]:
+    # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
+    # entries for reconciliation sale orders (reuses the normal order
+    # and payment_transaction sync patterns). Import kept at function
+    # scope (not inner per-order loop) to avoid repeated import overhead
+    # and keep the accounting coupling at call-site without circular
+    # imports.
+    from baker.services.journal_sync import (
+        _sync_delivered_order_journal,
+        _sync_payment_journal,
+        run_journal_sync,
+    )
+
     orders_by_line: list[list[dict]] = []
 
     for line in payload.lines:
@@ -422,16 +434,6 @@ def _create_sale_orders(
 
                 Order.update_status(conn, order.order_ref, "delivered", "")
                 auto_decrement_stock(conn, order.id or 0, order.order_ref)
-
-                # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
-                # entries for reconciliation sale orders (reuses the normal order
-                # and payment_transaction sync patterns). Inline import keeps the
-                # accounting coupling at call-site and avoids circular imports.
-                from baker.services.journal_sync import (
-                    _sync_delivered_order_journal,
-                    _sync_payment_journal,
-                    run_journal_sync,
-                )
 
                 run_journal_sync(
                     _sync_delivered_order_journal,
