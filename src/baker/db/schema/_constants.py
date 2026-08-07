@@ -458,6 +458,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_sale_rows (
     payment_method      TEXT NOT NULL,
     linked_order_ref    TEXT DEFAULT NULL,
     linked_payment_ref  TEXT DEFAULT NULL,
+    linked_order_refs   TEXT DEFAULT NULL,
     created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_sale_rows_line ON reconciliation_sale_rows(line_id);
