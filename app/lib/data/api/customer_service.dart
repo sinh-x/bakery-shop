@@ -116,6 +116,89 @@ class MergeResult {
   }
 }
 
+/// Per-source merge effect inside a [BatchMergeResult] (DG-369 FR4).
+///
+/// Mirrors one entry of the backend `merged` array returned by
+/// `POST /api/customers/{id}/batch-merge`. Each entry reports the effect of
+/// merging one source customer into the target (reusing
+/// `_merge_customer_into_target()`), so each step is independently auditable.
+class BatchMergeSourceResult {
+  const BatchMergeSourceResult({
+    required this.sourceId,
+    required this.movedOrders,
+    required this.addedPhones,
+    required this.recomputedYears,
+  });
+
+  final int sourceId;
+  final int movedOrders;
+  final int addedPhones;
+  final List<int> recomputedYears;
+
+  factory BatchMergeSourceResult.fromJson(Map<String, dynamic> json) {
+    return BatchMergeSourceResult(
+      sourceId: (json['sourceId'] as num?)?.toInt() ?? 0,
+      movedOrders: (json['movedOrders'] as num?)?.toInt() ?? 0,
+      addedPhones: (json['addedPhones'] as num?)?.toInt() ?? 0,
+      recomputedYears: ((json['recomputedYears'] as List?) ?? const [])
+          .map((e) => (e as num).toInt())
+          .toList(),
+    );
+  }
+}
+
+/// Response envelope for `POST /api/customers/{id}/batch-merge` (DG-369 FR4/AC2).
+///
+/// Carries the merged target customer, the list of source ids that were
+/// merged (and then hard-deleted), the per-source merge effect breakdown
+/// (`merged`), and the batch totals (`totalMovedOrders`, `totalAddedPhones`,
+/// `recomputedYears`) returned by the backend.
+class BatchMergeResult {
+  const BatchMergeResult({
+    required this.ok,
+    required this.targetId,
+    required this.sourceIds,
+    required this.customer,
+    required this.merged,
+    required this.totalMovedOrders,
+    required this.totalAddedPhones,
+    required this.recomputedYears,
+  });
+
+  final bool ok;
+  final int targetId;
+  final List<int> sourceIds;
+  final Customer customer;
+  final List<BatchMergeSourceResult> merged;
+  final int totalMovedOrders;
+  final int totalAddedPhones;
+  final List<int> recomputedYears;
+
+  factory BatchMergeResult.fromJson(Map<String, dynamic> json) {
+    final sourceIds = ((json['sourceIds'] as List?) ?? const [])
+        .map((e) => (e as num).toInt())
+        .toList();
+    final mergedRaw = json['merged'] as List? ?? const [];
+    final merged = mergedRaw
+        .map((e) => BatchMergeSourceResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return BatchMergeResult(
+      ok: (json['ok'] as bool?) ?? false,
+      targetId: (json['targetId'] as num?)?.toInt() ?? 0,
+      sourceIds: sourceIds,
+      customer: Customer.fromJson(
+        (json['customer'] as Map<String, dynamic>?) ?? const {},
+      ),
+      merged: merged,
+      totalMovedOrders: (json['totalMovedOrders'] as num?)?.toInt() ?? 0,
+      totalAddedPhones: (json['totalAddedPhones'] as num?)?.toInt() ?? 0,
+      recomputedYears: ((json['recomputedYears'] as List?) ?? const [])
+          .map((e) => (e as num).toInt())
+          .toList(),
+    );
+  }
+}
+
 class CustomerService {
   final Dio _dio;
 
@@ -231,6 +314,31 @@ class CustomerService {
       data: {'sourceCustomerId': sourceId},
     );
     return MergeResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Batch-merge multiple source customers into one target in a single
+  /// atomic action (DG-369 FR4/AC1/AC2). Admin-only on the backend. Reuses
+  /// the backend's existing `_merge_customer_into_target()` for each source
+  /// inside one SQLite transaction, so any failure rolls back completely
+  /// (NFR1). Each source is hard-deleted after relink; one audit-log entry
+  /// is written per source merge.
+  ///
+  /// [targetId] is the customer to keep (path param); [sourceCustomerIds] is
+  /// the list of customers to merge into the target and then delete (body
+  /// `sourceCustomerIds`). The backend rejects an empty list, duplicate
+  /// source ids, and self-merge (any source equal to the target) with 400,
+  /// and returns 404 if the target or any source id is not found.
+  ///
+  /// Existing [mergeCustomers] (single-pair) is preserved unchanged (NFR2).
+  Future<BatchMergeResult> batchMergeCustomers({
+    required int targetId,
+    required List<int> sourceCustomerIds,
+  }) async {
+    final response = await _dio.post(
+      '/api/customers/$targetId/batch-merge',
+      data: {'sourceCustomerIds': sourceCustomerIds},
+    );
+    return BatchMergeResult.fromJson(response.data as Map<String, dynamic>);
   }
 
   CustomerMutationResult _parseMutationResult(Map<String, dynamic> json) {
