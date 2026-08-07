@@ -51,6 +51,15 @@ class VN {
   static const orderDetailTabWorkItems = 'Sản xuất';
   static const orderDetailTabTransactions = 'Giao dịch';
   static const customer = 'Khách hàng';
+
+  // Order detail — Customer tab (DG-371 Phase 1 — FR8/FR9/FR10, AC7/AC8)
+  /// 4th tab title on the order detail screen. Reuses [customer] wording so
+  /// the tab label stays consistent with the customer list/management copy.
+  static const orderDetailTabCustomer = 'Khách hàng';
+  /// Section header above the customer profile card (name, phone, created).
+  static const orderDetailCustomerInfoTitle = 'Thông tin khách hàng';
+  /// Empty state shown when an order has no linked `customerId` (FR10/AC8).
+  static const orderDetailCustomerEmpty = 'Chưa có khách hàng';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
   static const paid = 'Đã thanh toán';
