@@ -1246,3 +1246,187 @@ def test_dg280_extras_and_gifts_not_treated_as_main_items(api_client):
 
     statuses = _dg280_item_statuses(api_client, ref)
     assert statuses["Bánh chính 1"] == "delivered"
+
+
+# --- DG-248: public_order_code CLI lookup + multi-match picker (Phases 1+2) ---
+
+
+def _dg248_insert_order(conn, *, order_ref, customer_name, public_order_code,
+                        due_date="2026-08-10", due_time="10:00", status="new",
+                        created_at=None, total_price=0):
+    from baker.utils.time import now_utc
+    conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status, "
+        "due_date, due_time, public_order_code, created_at, updated_at) "
+        "VALUES (?, ?, '[]', ?, ?, ?, ?, ?, ?, ?)",
+        (order_ref, customer_name, total_price, status, due_date, due_time,
+         public_order_code, created_at or now_utc(), created_at or now_utc()),
+    )
+    conn.commit()
+
+
+def test_public_code_single_match_show():
+    """AC1: single public_code match -> order show displays detail directly."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-001", customer_name="Alpha",
+                            public_order_code="A56-T")
+    result = runner.invoke(app, ["order", "show", "A56-T"])
+    assert result.exit_code == 0
+    assert "Alpha" in result.output
+    assert "Select order number" not in result.output
+
+
+def test_public_code_multi_match_show_picker():
+    """AC2: multi public_code match -> picker displayed, selection shows order."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-010", customer_name="Older",
+                            public_order_code="V96-T", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-011", customer_name="Newer",
+                            public_order_code="V96-T", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "V96-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Older" in result.output
+    assert "Newer" in result.output
+    assert "Select order number" in result.output
+
+
+def test_public_code_multi_match_show_picker_second_select():
+    """AC2: selecting the second order shows that order's detail."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-020", customer_name="First",
+                            public_order_code="W22-X", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-021", customer_name="Second",
+                            public_order_code="W22-X", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    # Newer (Second) is first in DESC order, so choosing 2 selects First.
+    result = runner.invoke(app, ["order", "show", "W22-X"], input="2\n")
+    assert result.exit_code == 0
+    assert "First" in result.output
+
+
+def test_public_code_single_match_status():
+    """AC3: single public_code match -> order status proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-030", customer_name="StatusOne",
+                            public_order_code="S11-T", status="new")
+    result = runner.invoke(app, ["order", "status", "S11-T", "confirmed"])
+    assert result.exit_code == 0
+    assert "confirmed" in result.output
+
+
+def test_public_code_single_match_edit():
+    """AC4: single public_code match -> order edit proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-040", customer_name="EditOne",
+                            public_order_code="E33-T", status="new")
+    result = runner.invoke(app, ["order", "edit", "E33-T", "--note", "hello"])
+    assert result.exit_code == 0
+    assert "Updated" in result.output
+
+
+def test_order_ref_lookup_unchanged():
+    """AC5: order_ref lookup unchanged (backward compatibility)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-050", customer_name="RefTest",
+                            public_order_code="R99-T")
+    result = runner.invoke(app, ["order", "show", "ORD-248-050"])
+    assert result.exit_code == 0
+    assert "RefTest" in result.output
+
+
+def test_numeric_id_lookup_unchanged():
+    """AC5: numeric id lookup unchanged (backward compatibility)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cursor = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+            "VALUES ('ORD-248-060', 'IdTest', '[]', 0, 'new')"
+        )
+        oid = cursor.lastrowid
+        conn.commit()
+    result = runner.invoke(app, ["order", "show", str(oid)])
+    assert result.exit_code == 0
+    assert "IdTest" in result.output
+
+
+def test_public_code_not_found():
+    """AC6: non-matching public_code -> 'not found' message."""
+    result = runner.invoke(app, ["order", "show", "XYZ-99"])
+    assert result.exit_code == 0
+    assert "not found" in result.output
+
+
+def test_public_code_multi_match_status_picker():
+    """AC7: multi public_code match in status -> picker then transition proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-070", customer_name="StatusA",
+                            public_order_code="P77-T", status="new", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-071", customer_name="StatusB",
+                            public_order_code="P77-T", status="new", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "status", "P77-T", "confirmed"], input="1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+    assert "confirmed" in result.output
+
+
+def test_public_code_multi_match_edit_picker():
+    """AC8: multi public_code match in edit -> picker then edit proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-080", customer_name="EditA",
+                            public_order_code="Q88-T", status="new", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-081", customer_name="EditB",
+                            public_order_code="Q88-T", status="new", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "edit", "Q88-T", "--note", "x"], input="1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+    assert "Updated" in result.output
+
+
+def test_public_code_multi_match_invalid_then_valid_input():
+    """FR2: invalid number re-prompts, then valid selection proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-090", customer_name="Inv1",
+                            public_order_code="I55-T", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-091", customer_name="Inv2",
+                            public_order_code="I55-T", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    # 9 invalid, then 1 valid.
+    result = runner.invoke(app, ["order", "show", "I55-T"], input="9\n1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+
+
+def test_resolve_order_ref_helper_directly():
+    """Unit test the helper: single public_code match returns the row."""
+    from baker.commands.order import _resolve_order_ref
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-100", customer_name="HelperTest",
+                            public_order_code="H44-T")
+        row = _resolve_order_ref(conn, "H44-T")
+        assert row is not None
+        assert row["customer_name"] == "HelperTest"
+        # order_ref lookup
+        row = _resolve_order_ref(conn, "ORD-248-100")
+        assert row is not None
+        # not found
+        row = _resolve_order_ref(conn, "NOPE")
+        assert row is None
