@@ -4,15 +4,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/customer_service.dart';
 import '../../providers/customers_provider.dart';
 import '../../shared/labels/customers.dart';
+import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
 
-/// Admin-only duplicate-finder + merge screen (DG-252 Phase 7 — FR7/AC4).
+/// Admin-only duplicate-finder + merge screen (DG-252 Phase 7 — FR7/AC4,
+/// extended by DG-369 Phase 3 for batch merge of 3+ members).
 ///
 /// Lists duplicate candidate groups returned by `GET /api/customers/duplicates`
-/// (admin-only on the backend). Each group offers a merge action that opens
-/// [DuplicateMergeDialog] showing both records' order counts; confirming
-/// calls `POST /api/customers/{id}/merge` and refreshes the list.
+/// (admin-only on the backend). Each group offers a merge action:
+/// - **2 selected members** → opens [DuplicateMergeDialog] (single-pair merge
+///   with swap affordance) calling `POST /api/customers/{id}/merge`.
+/// - **3+ selected members** → opens [DuplicateBatchMergeDialog] (batch
+///   confirmation listing primary + all sources) calling
+///   `POST /api/customers/{id}/batch-merge`.
+///
+/// On success the customer list is invalidated and the duplicate groups are
+/// refreshed (AC6).
 ///
 /// Route-gated by the router redirect guard via `_adminOnlyRoutes`
 /// (`app_router.dart`). Staff users hitting `/customers/duplicates` are
@@ -57,6 +65,45 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
       if (mounted) {
         showTopSnackBar(context, CustomersLabels.duplicateFinderMergeFailed);
         debugPrint('duplicate_finder merge failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _mergingKey = null);
+      }
+    }
+  }
+
+  Future<void> _onBatchMerge(
+    DuplicateGroup group,
+    DuplicateCustomerEntry primary,
+    List<DuplicateCustomerEntry> sources,
+  ) async {
+    final choice = await showDialog<BatchMergeChoice>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => DuplicateBatchMergeDialog(
+            primary: primary,
+            sources: sources,
+          ),
+        );
+    if (choice == null) return;
+    setState(() => _mergingKey = group.key);
+    try {
+      await ref.read(customerServiceProvider).batchMergeCustomers(
+            targetId: choice.primary.id,
+            sourceCustomerIds: choice.sources.map((s) => s.id).toList(),
+          );
+      ref.invalidate(customerListProvider);
+      await ref.read(duplicateGroupsProvider.notifier).refresh();
+      if (mounted) {
+        showTopSnackBar(
+            context, CustomersLabels.duplicateFinderBatchMergeSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(
+            context, CustomersLabels.duplicateFinderBatchMergeFailed);
+        debugPrint('duplicate_finder batch merge failed: $e');
       }
     } finally {
       if (mounted) {
@@ -130,6 +177,8 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
                 merging: _mergingKey == group.key,
                 onMerge: (keep, mergeFrom) =>
                     _onMerge(group, keep, mergeFrom),
+                onBatchMerge: (primary, sources) =>
+                    _onBatchMerge(group, primary, sources),
               );
             },
           );
