@@ -94,4 +94,24 @@ class CustomersLabels {
     }
     return '$memberCount khách — chạm để chọn khách giữ, rồi chọn khách gộp';
   }
+
+  // Batch merge UI (DG-369 Phase 3 — FR5/FR6/AC3/AC4/AC6).
+  // Extends the two-tap selection model to multi-select: first tap = primary
+  // (keep), subsequent taps = sources (merge-from). Tapping a selected member
+  // deselects it. When 2+ members are selected (1 primary + ≥1 source) the
+  // merge button appears. For 3+ selections the batch confirmation dialog is
+  // shown; for exactly 2 the existing single-pair dialog (with swap) is used
+  // so the two-tap flow keeps working for 2-member groups.
+  static const duplicateFinderBatchMergeDialogTitle =
+      'Xác nhận gộp hàng loạt';
+  static const duplicateFinderBatchMergeDialogBody =
+      'Tất cả đơn hàng và số điện thoại của các khách "gộp vào" sẽ được chuyển sang khách "giữ". Các khách "gộp vào" sẽ bị xóa. Hành động này không thể hoàn tác.';
+  static const duplicateFinderBatchMergeConfirm = 'Xác nhận gộp';
+  static const duplicateFinderBatchMergeCancel = 'Hủy';
+  static const duplicateFinderBatchMergeSourcesLabel = 'Các khách gộp vào';
+  static const duplicateFinderBatchMergePrimaryLabel =
+      duplicateFinderMergeIntoLabel;
+  static const duplicateFinderBatchMergeSuccess =
+      'Đã gộp hàng loạt khách hàng';
+  static const duplicateFinderBatchMergeFailed = 'Gộp hàng loạt thất bại';
 }
