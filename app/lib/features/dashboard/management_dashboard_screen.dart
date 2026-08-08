@@ -160,12 +160,6 @@ class _ManagementDashboardBodyState
         : 0;
 
     final revenueStock = revenueStockAsync.asData?.value;
-    // Progressive loading (NFR2): metrics stay as skeletons until the
-    // summary + stock calls resolve. Order count includes completed POS
-    // orders (Bug 1 fix); revenue is journal 4100 credits only (Bug 3 fix).
-    final ordersToday = (revenueStock == null || revenueStockAsync.isRefreshing)
-        ? null
-        : revenueStock.orderCount;
     final revenueToday = revenueStock == null
         ? null
         : formatVND(revenueStock.revenueToday);

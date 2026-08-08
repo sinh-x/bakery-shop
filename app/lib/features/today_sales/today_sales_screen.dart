@@ -172,6 +172,7 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
             failed = true;
             return const DashboardRevenueStock(
               revenueToday: 0,
+              orderCount: 0,
               lowStockCount: 0,
             );
           }),

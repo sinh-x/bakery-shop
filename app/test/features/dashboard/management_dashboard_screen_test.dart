@@ -148,24 +148,6 @@ Future<void> _pump(
   await tester.pumpAndSettle(const Duration(seconds: 1));
 }
 
-StockOverviewItem _stockItem(String name, int qty) {
-  return StockOverviewItem(
-    productId: 1,
-    productName: name,
-    category: 'Bánh',
-    quantity: qty,
-    basePrice: null,
-    perChip: [
-      StockOverviewOption(
-        normalizedPrice: 0,
-        quantity: qty,
-        chipLabels: const [],
-        chipLabel: null,
-      ),
-    ],
-  );
-}
-
 TodaySummary _summary({
   double revenue = 0,
   int orderCount = 0,
@@ -250,21 +232,10 @@ void main() {
 
   // Phase 3 — real API wiring (FR2/FR4/AC2/AC3). DG-376: metrics now come
   // from the today-summary API (single source of truth).
-  testWidgets('orders-today metric reflects API order count (Bug 1 — '
-      'includes completed POS orders)', (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(orderCount: 5, orders: [
-        _order(ref: 'POS1', status: 'completed'),
-        _order(ref: 'POS2', status: 'completed'),
-        _order(ref: 'A', status: 'new'),
-        _order(ref: 'B', status: 'delivered'),
-        _order(ref: 'C', status: 'cancelled'),
-      ]),
-    );
-    expect(find.text('5'), findsOneWidget);
-  });
-
+  // Note: The individual order-count and low-stock MetricCards were replaced
+  // by DG-374's single "Xem doanh số hôm nay" entry-point card. The
+  // underlying providers remain covered by dashboard_metrics_provider_test.dart
+  // and today_order_list_test.dart.
   testWidgets(
       'revenue-today metric comes from API summary only (Bug 3 — no double-count)',
       (tester) async {
@@ -281,25 +252,6 @@ void main() {
     );
     // 175000 (API journal-only) — NOT 250000 (old double-count behavior).
     expect(find.text('175.000đ'), findsOneWidget);
-  });
-
-  testWidgets('low-stock metric counts items at or below threshold (FR2/AC3)',
-      (tester) async {
-    await _pump(
-      tester,
-      stock: [
-        _stockItem('Bánh mì', 3),
-        _stockItem('Bánh bao', 5),
-        _stockItem('Bánh kem', 20),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardMetricLowStock),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    // Two items (3 and 5) are ≤ lowStockThreshold (5).
-    expect(find.text('2'), findsOneWidget);
   });
 
   testWidgets('critical-order alert banner shows when urgency=critical (FR5/AC9)',
