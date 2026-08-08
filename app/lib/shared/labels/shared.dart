@@ -175,8 +175,12 @@ class SharedLabels {
   static const dashboardShortcutCustomers = 'Quản lý khách hàng';
   static const dashboardShortcutExpenses = 'Chi phí';
   static const dashboardShortcutBlanks = 'Quản lý phôi bánh';
+  static const dashboardShortcutCashDrawer = 'Tiền tại quầy';
   static String dashboardCriticalOrdersAlert(int count) =>
       'Có $count đơn hàng khẩn cấp cần xử lý';
+
+  // Today Sales entry point (DG-374 Phase 1)
+  static const dashboardMetricViewTodaySales = 'Xem doanh số hôm nay';
 
   // Bulk selection
   static const chonAnh = 'Chọn';

@@ -11,7 +11,6 @@ import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/utils/date_formatting.dart';
 
 Order _order({
   required String ref,
@@ -93,6 +92,10 @@ GoRouter _router() => GoRouter(
           path: '/stock',
           builder: (_, _) => const SizedBox(child: Text('stock-page')),
         ),
+        GoRoute(
+          path: '/today-sales',
+          builder: (_, _) => const SizedBox(child: Text('today-sales-page')),
+        ),
       ],
       initialLocation: '/dashboard',
     );
@@ -120,59 +123,17 @@ Future<void> _pump(
   await tester.pumpAndSettle(const Duration(seconds: 1));
 }
 
-JournalEntry _journalEntryWithCredit(double credit, String accountCode) {
-  return JournalEntry(
-    id: 'j1',
-    lines: [
-      JournalLine(
-        id: 'l1',
-        journalEntryId: 'j1',
-        accountId: accountCode,
-        accountCode: accountCode,
-        credit: credit,
-      ),
-    ],
-    createdAt: DateTime(2026, 8, 5),
-  );
-}
-
-StockOverviewItem _stockItem(String name, int qty) {
-  return StockOverviewItem(
-    productId: 1,
-    productName: name,
-    category: 'Bánh',
-    quantity: qty,
-    basePrice: null,
-    // totalQuantity folds perChip quantities, so route qty through one option
-    // to make the item's total equal qty.
-    perChip: [
-      StockOverviewOption(
-        normalizedPrice: 0,
-        quantity: qty,
-        chipLabels: const [],
-        chipLabel: null,
-      ),
-    ],
-  );
-}
-
 void main() {
-  final todayStr = formatApiDate(DateTime(2026, 8, 5));
 
-  testWidgets('renders app bar, section titles, and three metric cards',
+  testWidgets(
+      'renders app bar, section titles, and the Xem doanh số hôm nay entry card',
       (tester) async {
     await _pump(tester);
     expect(find.text(SharedLabels.tabManagement), findsOneWidget);
     expect(find.text(SharedLabels.dashboardSectionMetrics), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardMetricViewTodaySales),
+        findsOneWidget);
     expect(find.text(SharedLabels.dashboardSectionShortcuts), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardMetricOrdersToday), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardMetricRevenueToday), findsOneWidget);
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardMetricLowStock),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text(SharedLabels.dashboardMetricLowStock), findsOneWidget);
     await tester.dragUntilVisible(
       find.text(SharedLabels.dashboardSectionAlerts),
       find.byType(Scrollable).first,
@@ -181,7 +142,8 @@ void main() {
     expect(find.text(SharedLabels.dashboardSectionAlerts), findsOneWidget);
   });
 
-  testWidgets('renders five shortcut tiles', (tester) async {
+  testWidgets('renders six shortcut tiles including Tiền tại quầy',
+      (tester) async {
     await _pump(tester);
     expect(find.text(SharedLabels.dashboardShortcutStock), findsOneWidget);
     expect(find.text(SharedLabels.dashboardShortcutCategories), findsOneWidget);
@@ -190,11 +152,23 @@ void main() {
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
     await tester.pump();
     expect(find.text(SharedLabels.dashboardShortcutBlanks), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutCashDrawer),
+        findsOneWidget);
+  });
+
+  testWidgets('Xem doanh số hôm nay card tap navigates to /today-sales',
+      (tester) async {
+    await _pump(tester);
+    await tester.tap(
+        find.text(SharedLabels.dashboardMetricViewTodaySales));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.text('today-sales-page'), findsOneWidget);
   });
 
   testWidgets('shortcut tap navigates via go router', (tester) async {
     await _pump(tester);
-    await tester.tap(find.text(SharedLabels.dashboardShortcutStock), warnIfMissed: false);
+    await tester.tap(find.text(SharedLabels.dashboardShortcutStock),
+        warnIfMissed: false);
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text('stock-page'), findsOneWidget);
   });
@@ -215,52 +189,11 @@ void main() {
   });
 
   // Phase 3 — real API wiring (FR2/FR4/AC2/AC3).
-  testWidgets('orders-today metric reflects real order count (FR2/AC2)',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(ref: 'A', dueDate: todayStr),
-        _order(ref: 'B', dueDate: todayStr),
-        _order(ref: 'C', dueDate: '2026-08-06'),
-      ],
-    );
-    expect(find.text('2'), findsOneWidget);
-  });
-
-  testWidgets(
-      'revenue-today metric combines journal 4100 credits + orders totalPrice (FR4/AC3)',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(ref: 'A', dueDate: todayStr, totalPrice: 50000),
-        _order(ref: 'B', dueDate: todayStr, totalPrice: 25000),
-      ],
-      journal: [_journalEntryWithCredit(100000, '4100')],
-    );
-    // 100000 (journal) + 75000 (orders) = 175000đ
-    expect(find.text('175.000đ'), findsOneWidget);
-  });
-
-  testWidgets('low-stock metric counts items at or below threshold (FR2/AC3)',
-      (tester) async {
-    await _pump(
-      tester,
-      stock: [
-        _stockItem('Bánh mì', 3),
-        _stockItem('Bánh bao', 5),
-        _stockItem('Bánh kem', 20),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardMetricLowStock),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    // Two items (3 and 5) are ≤ lowStockThreshold (5).
-    expect(find.text('2'), findsOneWidget);
-  });
+  // Note: The former orders-today / revenue-today / low-stock MetricCard tests
+  // were removed in DG-374 Phase 1 because FR2 replaces the three "Chỉ số hôm
+  // nay" cards with a single "Xem doanh số hôm nay" entry-point card. The
+  // underlying providers (orderListProvider, dashboardRevenueStockProvider)
+  // remain covered by dashboard_metrics_provider_test.dart.
 
   testWidgets('critical-order alert banner shows when urgency=critical (FR5/AC9)',
       (tester) async {

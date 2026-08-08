@@ -127,22 +127,17 @@ class _ManagementDashboardBody extends ConsumerWidget {
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
 
     final orders = ordersAsync.asData?.value ?? const <Order>[];
-    final ordersToday = ordersAsync.isRefreshing
-        ? null
-        : countOrdersToday(orders);
     final criticalCount = ordersAsync.asData != null
         ? countCriticalOrders(orders)
         : 0;
 
     final revenueStock = revenueStockAsync.asData?.value;
-    // Progressive loading (NFR2): revenue + low-stock stay as skeletons
-    // until both journal + stock calls resolve; null while loading/refreshing.
+    // Progressive loading (NFR2): revenue stays as a skeleton until both
+    // journal + stock calls resolve; null while loading/refreshing. Shown as
+    // a live preview on the "Xem doanh số hôm nay" entry-point card.
     final revenueToday = revenueStock == null
         ? null
         : formatVND(revenueStock.revenueToday);
-    final lowStockCount = revenueStock == null
-        ? null
-        : '${revenueStock.lowStockCount}';
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -163,10 +158,9 @@ class _ManagementDashboardBody extends ConsumerWidget {
         children: [
           const _SectionTitle(title: SharedLabels.dashboardSectionMetrics),
           const SizedBox(height: 8),
-          _MetricRow(
-            ordersToday: ordersToday == null ? null : '$ordersToday',
+          _TodaySalesEntryCard(
             revenueToday: revenueToday,
-            lowStockCount: lowStockCount,
+            onTap: () => context.push('/today-sales'),
           ),
           const SizedBox(height: 20),
           const _SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
@@ -191,50 +185,22 @@ class _ManagementDashboardBody extends ConsumerWidget {
   }
 }
 
-class _MetricRow extends StatelessWidget {
-  const _MetricRow({
-    required this.ordersToday,
-    required this.revenueToday,
-    required this.lowStockCount,
-  });
+/// Single entry-point card replacing the former three "Chỉ số hôm nay"
+/// MetricCards (DG-374 Phase 1 / FR2). Tapping navigates to `/today-sales`.
+/// Shows today's revenue as a live preview value when available.
+class _TodaySalesEntryCard extends StatelessWidget {
+  const _TodaySalesEntryCard({required this.revenueToday, required this.onTap});
 
-  final String? ordersToday;
   final String? revenueToday;
-  final String? lowStockCount;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: MetricCard(
-              icon: Icons.receipt_outlined,
-              label: SharedLabels.dashboardMetricOrdersToday,
-              value: ordersToday,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: MetricCard(
-              icon: Icons.payments_outlined,
-              label: SharedLabels.dashboardMetricRevenueToday,
-              value: revenueToday,
-              color: Colors.green,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: MetricCard(
-              icon: Icons.inventory_outlined,
-              label: SharedLabels.dashboardMetricLowStock,
-              value: lowStockCount,
-              color: Colors.red,
-            ),
-          ),
-        ],
-      ),
+    return MetricCard(
+      icon: Icons.attach_money_outlined,
+      label: SharedLabels.dashboardMetricViewTodaySales,
+      value: revenueToday,
+      onTap: onTap,
     );
   }
 }
