@@ -4,11 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:bakery_app/data/api/accounting_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
-import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -52,21 +52,21 @@ class _FakeOrderService extends OrderService {
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
 }
 
-class _FakeAccountingService extends AccountingService {
-  _FakeAccountingService() : super(Dio());
-  List<JournalEntry> entries = const [];
+class _FakeReportService extends ReportService {
+  _FakeReportService() : super(Dio());
+  TodaySummary? summary;
 
   @override
-  Future<JournalListResponse> listJournal({
-    String? since,
-    String? until,
-    int? accountId,
-    String? sourceType,
-    int? sourceId,
-    int limit = 100,
-    int offset = 0,
-  }) async {
-    return JournalListResponse(total: entries.length, items: entries);
+  Future<TodaySummary> getTodaySummary({String? date}) async {
+    return summary ??
+        const TodaySummary(
+          date: '2026-08-05',
+          revenue: 0,
+          orderCount: 0,
+          cashTotal: 0,
+          bankTransferTotal: 0,
+          orders: [],
+        );
   }
 }
 
@@ -103,24 +103,59 @@ GoRouter _router() => GoRouter(
 Future<void> _pump(
   WidgetTester tester, {
   List<Order> orders = const [],
-  List<JournalEntry> journal = const [],
+  TodaySummary? summary,
   List<StockOverviewItem> stock = const [],
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
-  final accountingService = _FakeAccountingService()..entries = journal;
+  final reportService = _FakeReportService()..summary = summary;
   final stockService = _FakeStockService()..items = stock;
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         orderServiceProvider.overrideWithValue(orderService),
-        accountingServiceProvider.overrideWithValue(accountingService),
+        reportServiceProvider.overrideWithValue(reportService),
         stockServiceProvider.overrideWithValue(stockService),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
   );
   await tester.pumpAndSettle(const Duration(seconds: 1));
+}
+
+StockOverviewItem _stockItem(String name, int qty) {
+  return StockOverviewItem(
+    productId: 1,
+    productName: name,
+    category: 'Bánh',
+    quantity: qty,
+    basePrice: null,
+    perChip: [
+      StockOverviewOption(
+        normalizedPrice: 0,
+        quantity: qty,
+        chipLabels: const [],
+        chipLabel: null,
+      ),
+    ],
+  );
+}
+
+TodaySummary _summary({
+  double revenue = 0,
+  int orderCount = 0,
+  double cashTotal = 0,
+  double bankTransferTotal = 0,
+  List<Order> orders = const [],
+}) {
+  return TodaySummary(
+    date: '2026-08-05',
+    revenue: revenue,
+    orderCount: orderCount,
+    cashTotal: cashTotal,
+    bankTransferTotal: bankTransferTotal,
+    orders: orders,
+  );
 }
 
 void main() {
@@ -188,12 +223,59 @@ void main() {
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
-  // Phase 3 — real API wiring (FR2/FR4/AC2/AC3).
-  // Note: The former orders-today / revenue-today / low-stock MetricCard tests
-  // were removed in DG-374 Phase 1 because FR2 replaces the three "Chỉ số hôm
-  // nay" cards with a single "Xem doanh số hôm nay" entry-point card. The
-  // underlying providers (orderListProvider, dashboardRevenueStockProvider)
-  // remain covered by dashboard_metrics_provider_test.dart.
+  // Phase 3 — real API wiring (FR2/FR4/AC2/AC3). DG-376: metrics now come
+  // from the today-summary API (single source of truth).
+  testWidgets('orders-today metric reflects API order count (Bug 1 — '
+      'includes completed POS orders)', (tester) async {
+    await _pump(
+      tester,
+      summary: _summary(orderCount: 5, orders: [
+        _order(ref: 'POS1', status: 'completed'),
+        _order(ref: 'POS2', status: 'completed'),
+        _order(ref: 'A', status: 'new'),
+        _order(ref: 'B', status: 'delivered'),
+        _order(ref: 'C', status: 'cancelled'),
+      ]),
+    );
+    expect(find.text('5'), findsOneWidget);
+  });
+
+  testWidgets(
+      'revenue-today metric comes from API summary only (Bug 3 — no double-count)',
+      (tester) async {
+    await _pump(
+      tester,
+      summary: _summary(
+        revenue: 175000,
+        orderCount: 2,
+        orders: [
+          _order(ref: 'A', dueDate: '2026-08-05', totalPrice: 50000),
+          _order(ref: 'B', dueDate: '2026-08-05', totalPrice: 25000),
+        ],
+      ),
+    );
+    // 175000 (API journal-only) — NOT 250000 (old double-count behavior).
+    expect(find.text('175.000đ'), findsOneWidget);
+  });
+
+  testWidgets('low-stock metric counts items at or below threshold (FR2/AC3)',
+      (tester) async {
+    await _pump(
+      tester,
+      stock: [
+        _stockItem('Bánh mì', 3),
+        _stockItem('Bánh bao', 5),
+        _stockItem('Bánh kem', 20),
+      ],
+    );
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.dashboardMetricLowStock),
+      find.byType(Scrollable).first,
+      const Offset(0, -200),
+    );
+    // Two items (3 and 5) are ≤ lowStockThreshold (5).
+    expect(find.text('2'), findsOneWidget);
+  });
 
   testWidgets('critical-order alert banner shows when urgency=critical (FR5/AC9)',
       (tester) async {

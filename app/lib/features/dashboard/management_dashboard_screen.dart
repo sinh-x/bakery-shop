@@ -18,14 +18,17 @@ import 'widgets/shortcut_grid.dart';
 /// Management dashboard screen — admin-facing "Quản lý" tab.
 ///
 /// Phase 3 wires the real API providers and progressive loading:
-/// - `orderListProvider` (orders today + critical count) — fires first so
-///   the "Đơn hàng hôm nay" metric renders within NFR1's ≤2s budget.
-/// - `dashboardRevenueStockProvider` (journal 4100 + stock overview) — runs
-///   in parallel with the orders fetch; revenue + low-stock metrics fill in
-///   as soon as both API calls resolve (NFR2 — no UI blocking).
+/// - `orderListProvider` (active orders + critical count) — fires first so
+///   the critical-order alert banner renders within NFR1's ≤2s budget.
+/// - `dashboardRevenueStockProvider` (today-summary API + stock overview) —
+///   runs in parallel; revenue, today's order count, and low-stock metrics
+///   fill in as soon as both API calls resolve (NFR2 — no UI blocking). The
+///   today-summary API is the single source of truth for revenue (journal
+///   4100 credits only) and order count (all orders due today, including
+///   completed POS orders) — DG-376 Bug 1 + Bug 3 fixes.
 /// - `critical_alert_provider.checkAndShowCriticalAlert` — reused unchanged
 ///   for the popup mechanism (FR5/AC9). The persistent [AlertSection] banner
-///   is fed by [countCriticalOrders] from the live order list.
+///   is fed by [countCriticalOrders] from the live active order list.
 ///
 /// Coding standards (FR6/NFR3/AC12): the screen file is ≤300 lines; inner
 /// widget classes are extracted to `widgets/` (metric_card, shortcut_grid,
@@ -138,7 +141,8 @@ class _ManagementDashboardBodyState
   @override
   Widget build(BuildContext context) {
     // Orders fetch fires first (NFR1 — first metric within ≤2s). Revenue +
-    // low-stock run in parallel via dashboardRevenueStockProvider (NFR2).
+    // order count + low-stock run in parallel via dashboardRevenueStockProvider
+    // (NFR2 — today-summary API + stock overview).
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
 
@@ -148,9 +152,14 @@ class _ManagementDashboardBodyState
         : 0;
 
     final revenueStock = revenueStockAsync.asData?.value;
-    // Progressive loading (NFR2): revenue stays as a skeleton until both
-    // journal + stock calls resolve; null while loading/refreshing. Shown as
-    // a live preview on the "Xem doanh số hôm nay" entry-point card.
+    // Progressive loading (NFR2): revenue + order count + low-stock stay as
+    // skeletons until the summary + stock calls resolve; null while
+    // loading/refreshing. Order count comes from the today-summary API
+    // (includes completed POS orders — Bug 1 fix). Revenue comes from the
+    // same API (journal 4100 credits only — Bug 3 double-count fix).
+    final ordersToday = (revenueStock == null || revenueStockAsync.isRefreshing)
+        ? null
+        : revenueStock.orderCount;
     final revenueToday = revenueStock == null
         ? null
         : formatVND(revenueStock.revenueToday);
@@ -174,6 +183,7 @@ class _ManagementDashboardBodyState
             failed = true;
             return const DashboardRevenueStock(
               revenueToday: 0,
+              orderCount: 0,
               lowStockCount: 0,
             );
           }),
