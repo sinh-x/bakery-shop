@@ -12,9 +12,9 @@ def _resolve_order_ref(conn, ref):
     """Resolve a REF argument to a single order row.
 
     Lookup order (per FR1):
-      1. Exact match on ``order_ref``.
-      2. Numeric ``id`` (``CAST(id AS TEXT) = ref``).
-      3. ``public_order_code`` exact match.
+      1. ``public_order_code`` exact match.
+      2. Exact match on ``order_ref``.
+      3. Numeric ``id`` (``CAST(id AS TEXT) = ref``).
 
     When ``public_order_code`` matches multiple orders (FR2), display an
     interactive numbered list sorted by ``created_at`` descending (customer
@@ -22,24 +22,25 @@ def _resolve_order_ref(conn, ref):
 
     Returns the selected ``sqlite3.Row`` or ``None`` when not found.
     """
-    row = conn.execute(
-        "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
-        (ref, ref),
-    ).fetchone()
-    if row is not None:
-        return row
-
     matches = conn.execute(
         "SELECT * FROM orders WHERE public_order_code = ? ORDER BY created_at DESC",
         (ref,),
     ).fetchall()
 
-    if not matches:
-        return None
+    if matches:
+        if len(matches) == 1:
+            return matches[0]
+        return _pick_order(matches, ref)
 
-    if len(matches) == 1:
-        return matches[0]
+    row = conn.execute(
+        "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+        (ref, ref),
+    ).fetchone()
+    return row
 
+
+def _pick_order(matches, ref):
+    """Display an interactive numbered picker for multiple public_code matches."""
     console.print(f"  [cyan]Found {len(matches)} orders for public code '{ref}':[/cyan]")
     table = Table(show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=4)
