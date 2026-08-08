@@ -2,8 +2,8 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
-import 'package:bakery_app/features/pos/widgets/pos_product_grid.dart';
 import 'package:bakery_app/features/pos/pos_screen.dart';
+import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -260,11 +260,11 @@ void main() {
     final chip130 = product.priceChips[0];
     final chip140 = product.priceChips[1];
 
-    expect(posBaseStockQty(product), 8);
-    expect(posBackendChipIdForSelection(product, chip130), isNull);
-    expect(posChipDisplayStockQty(product, chip130), 8);
-    expect(posBackendChipIdForSelection(product, chip140), 16);
-    expect(posChipDisplayStockQty(product, chip140), 2);
+    expect(baseStockQty(product), 8);
+    expect(backendChipIdForSelection(product, chip130), isNull);
+    expect(chipDisplayStockQty(product, chip130), 8);
+    expect(backendChipIdForSelection(product, chip140), 16);
+    expect(chipDisplayStockQty(product, chip140), 2);
   });
 
   testWidgets('chip picker shows per-option stock counts', (tester) async {

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../data/models/price_chip.dart';
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../providers/products_provider.dart';
 import '../../orders/utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 /// 2-column product grid with stock badges for POS screen.
@@ -307,7 +307,7 @@ class PosProductGrid extends ConsumerWidget {
                   final isSelectedOptionOutOfStock =
                       selectedStockQty != null && selectedStockQty <= 0;
                   final isManualBaseOutOfStock =
-                      selectedOption == null && posBaseStockQty(product) <= 0;
+                      selectedOption == null && baseStockQty(product) <= 0;
                   final assignedForCart = assignedPrice;
                   if (isOutOfStock ||
                       isSelectedOptionOutOfStock ||
@@ -421,7 +421,7 @@ List<_PosChipOption> _posChipOptions(
   );
 
   if (!hasBasePriceChip && product.basePrice > 0) {
-    final baseStock = posBaseStockQty(product);
+    final baseStock = baseStockQty(product);
     if (showOutOfStockProducts || baseStock > 0) {
       options.add(
         _PosChipOption(
@@ -437,7 +437,7 @@ List<_PosChipOption> _posChipOptions(
   }
 
   for (final chip in product.priceChips) {
-    final displayStock = posChipDisplayStockQty(product, chip);
+    final displayStock = chipDisplayStockQty(product, chip);
     if (!showOutOfStockProducts && displayStock <= 0) {
       continue;
     }
@@ -448,7 +448,7 @@ List<_PosChipOption> _posChipOptions(
         cartLabel: chip.label,
         price: chip.price,
         stockQty: displayStock,
-        backendChipId: posBackendChipIdForSelection(product, chip),
+        backendChipId: backendChipIdForSelection(product, chip),
       ),
     );
   }
@@ -461,32 +461,6 @@ String posStockStatusLabel(int qty) {
   if (qty > 3) return VN.availableStock(qty);
   if (qty >= 1) return VN.lowStock(qty);
   return VN.outOfStock;
-}
-
-@visibleForTesting
-int posBaseStockQty(Product product) {
-  final totalStock = product.stockQty ?? 0;
-  final chipStock = product.priceChips.fold<int>(
-    0,
-    (sum, chip) => sum + (chip.stockQty ?? 0),
-  );
-  final baseStock = totalStock - chipStock;
-  return baseStock > 0 ? baseStock : 0;
-}
-
-@visibleForTesting
-int? posBackendChipIdForSelection(Product product, PriceChip chip) {
-  if (chip.price == product.basePrice) return null;
-  return chip.id;
-}
-
-@visibleForTesting
-int posChipDisplayStockQty(Product product, PriceChip chip) {
-  final chipStock = chip.stockQty ?? 0;
-  if (posBackendChipIdForSelection(product, chip) == null) {
-    return chipStock + posBaseStockQty(product);
-  }
-  return chipStock;
 }
 
 @visibleForTesting
