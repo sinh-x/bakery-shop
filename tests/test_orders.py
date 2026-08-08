@@ -1430,3 +1430,68 @@ def test_resolve_order_ref_helper_directly():
         # not found
         row = _resolve_order_ref(conn, "NOPE")
         assert row is None
+
+
+def test_public_code_collision_with_order_ref_picks_public_code():
+    """DG-373 collision case: value matches both an order_ref and multiple
+    public_order_codes — public_code must win, triggering the picker.
+
+    Order A has order_ref='L57-T' (no public_code set to that value).
+    Orders B and C both share public_order_code='L57-T'.
+    Old lookup (order_ref first) returned Order A directly, bypassing the
+    picker. New lookup (public_code first) shows the picker for B and C.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="L57-T", customer_name="RefOrder",
+                            public_order_code="OTHER-1")
+        _dg248_insert_order(conn, order_ref="ORD-248-111", customer_name="PubA",
+                            public_order_code="L57-T",
+                            due_date="2026-08-02", created_at="2026-07-21T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-112", customer_name="PubB",
+                            public_order_code="L57-T",
+                            due_date="2026-08-03", created_at="2026-07-22T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "L57-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Select order number" in result.output
+    assert "RefOrder" not in result.output
+
+
+def test_public_code_collision_with_order_ref_single_match():
+    """DG-373 collision case (single): value matches both an order_ref and
+    exactly one public_order_code — public_code single match returns it
+    directly (FR3), not the order_ref row.
+    """
+    from baker.commands.order import _resolve_order_ref
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="M88-T", customer_name="RefOrder",
+                            public_order_code="OTHER-2")
+        _dg248_insert_order(conn, order_ref="ORD-248-120", customer_name="PubSingle",
+                            public_order_code="M88-T")
+        row = _resolve_order_ref(conn, "M88-T")
+        assert row is not None
+        assert row["customer_name"] == "PubSingle"
+        assert row["customer_name"] != "RefOrder"
+
+
+def test_public_code_collision_picker_via_cli():
+    """DG-373 collision via CLI: order show with a value that is both an
+    order_ref and a multi-match public_code triggers the picker (FR1+FR2).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="N99-T", customer_name="RefOrder",
+                            public_order_code="OTHER-3")
+        _dg248_insert_order(conn, order_ref="ORD-248-130", customer_name="CliPubA",
+                            public_order_code="N99-T",
+                            due_date="2026-08-01", created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-131", customer_name="CliPubB",
+                            public_order_code="N99-T",
+                            due_date="2026-08-09", created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "N99-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Select order number" in result.output
+    assert "RefOrder" not in result.output
