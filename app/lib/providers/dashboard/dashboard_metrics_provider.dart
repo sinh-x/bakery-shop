@@ -76,10 +76,14 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
     FutureProvider<DashboardRevenueStock>((ref) async {
   final stock = ref.watch(stockServiceProvider);
 
-  // Today's journal entries are fetched once and shared with
-  // todayPaymentSplitProvider via todayJournalProvider (C3-2). Filter the
-  // shared entries to the revenue account (4100) here.
-  final allEntries = await ref.watch(todayJournalProvider.future);
+  // Fire both the journal and stock fetches in parallel (FR4/NFR2). The
+  // journal fetch is shared with todayPaymentSplitProvider via
+  // todayJournalProvider (C3-2) so a single pull-to-refresh only issues one
+  // journal API call instead of one per consumer.
+  final journalFuture = ref.watch(todayJournalProvider.future);
+  final stockFuture = stock.getStockOverview();
+
+  final allEntries = await journalFuture;
   final journalEntries = allEntries
       .where((e) => e.lines.any(
             (l) => l.accountCode == revenueAccountCode ||
@@ -87,9 +91,7 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
           ))
       .toList();
 
-  // Low-stock count from stock overview (runs in parallel with the journal
-  // fetch via Riverpod's watch).
-  final items = await stock.getStockOverview();
+  final items = await stockFuture;
   final lowStock = items
       .where((i) => i.totalQuantity <= lowStockThreshold)
       .length;
