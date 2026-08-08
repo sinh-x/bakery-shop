@@ -192,6 +192,10 @@ class SharedLabels {
   static const todaySalesBankTransferTotal = 'Chuyển khoản';
   static const todaySalesEmptyOrders = 'Không có đơn hàng hôm nay';
 
+  // Today Sales screen — cashflow breakdown (DG-374 Phase 3)
+  static const todaySalesCashflowSection = 'Dòng tiền';
+  static const todaySalesNoActiveDrawer = 'Chưa mở quầy hôm nay';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';

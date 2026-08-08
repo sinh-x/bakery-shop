@@ -5,12 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:bakery_app/data/api/accounting_service.dart';
+import 'package:bakery_app/data/api/cash_drawer_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
+import 'package:bakery_app/data/models/cash_drawer.dart';
+import 'package:bakery_app/data/models/cash_drawer_transaction.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_card.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
+import 'package:bakery_app/providers/cash_drawer_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Order _order({
   required String ref,
@@ -80,6 +86,29 @@ class _FakeStockService extends StockService {
   Future<List<StockOverviewItem>> getStockOverview() async => items;
 }
 
+class _FakeCashDrawerService extends CashDrawerService {
+  _FakeCashDrawerService() : super(Dio());
+  CashDrawer? activeDrawer;
+  List<CashDrawerTransaction> transactions = const [];
+
+  @override
+  Future<CashDrawer?> getDrawerStatus() async => activeDrawer;
+
+  @override
+  Future<CashDrawerTransactionResponse> getDrawerTransactions(
+    int drawerId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    return CashDrawerTransactionResponse(
+      total: transactions.length,
+      limit: limit,
+      offset: offset,
+      items: transactions,
+    );
+  }
+}
+
 JournalLine _line(String accountCode, double debit, double credit) =>
     JournalLine(
       id: 'l-$accountCode-$debit-$credit',
@@ -116,10 +145,15 @@ Future<void> _pump(
   List<Order> orders = const [],
   List<JournalEntry> journal = const [],
   List<StockOverviewItem> stock = const [],
+  CashDrawer? activeDrawer,
+  List<CashDrawerTransaction> drawerTransactions = const [],
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
   final accountingService = _FakeAccountingService()..entries = journal;
   final stockService = _FakeStockService()..items = stock;
+  final cashDrawerService = _FakeCashDrawerService()
+    ..activeDrawer = activeDrawer
+    ..transactions = drawerTransactions;
 
   await tester.pumpWidget(
     ProviderScope(
@@ -127,6 +161,7 @@ Future<void> _pump(
         orderServiceProvider.overrideWithValue(orderService),
         accountingServiceProvider.overrideWithValue(accountingService),
         stockServiceProvider.overrideWithValue(stockService),
+        cashDrawerServiceProvider.overrideWithValue(cashDrawerService),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -257,5 +292,68 @@ void main() {
   testWidgets('refresh button is present', (tester) async {
     await _pump(tester);
     expect(find.byIcon(Icons.refresh), findsOneWidget);
+  });
+
+  // DG-374 Phase 3 / AC7: active drawer → cashflow breakdown card renders.
+  testWidgets(
+      'shows cashflow breakdown card with all 8 categories when an active '
+      'drawer exists (AC7)', (tester) async {
+    await _pump(
+      tester,
+      activeDrawer: const CashDrawer(
+        id: '1',
+        status: 'open',
+        openingBalance: 1000000,
+        expectedBalance: 1250000,
+      ),
+      drawerTransactions: [
+        const CashDrawerTransaction(
+          id: '1',
+          type: 'cash_drawer_open',
+          amount: 1000000,
+        ),
+        const CashDrawerTransaction(
+          id: '2',
+          type: 'payment_transaction',
+          amount: 50000,
+        ),
+        const CashDrawerTransaction(
+          id: '3',
+          type: 'cash_drawer_cash_out',
+          amount: -200000,
+        ),
+      ],
+    );
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesCashflowSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -400),
+    );
+    expect(find.text(SharedLabels.todaySalesCashflowSection), findsOneWidget);
+    // The breakdown card renders all 8 category labels.
+    expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeRefund), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeExpense), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeCashIn), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
+    expect(find.text(VN.cashDrawerTxnTypeBusShipping), findsOneWidget);
+    expect(find.byType(CashDrawerBreakdownCard), findsOneWidget);
+  });
+
+  // DG-374 Phase 3 / AC8: no active drawer → placeholder message.
+  testWidgets(
+      'shows "Chưa mở quầy hôm nay" placeholder when no active drawer '
+      '(AC8)', (tester) async {
+    await _pump(tester, activeDrawer: null);
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesNoActiveDrawer),
+      find.byType(Scrollable).first,
+      const Offset(0, -400),
+    );
+    expect(find.text(SharedLabels.todaySalesNoActiveDrawer), findsOneWidget);
+    // The breakdown card must not render when there is no active drawer.
+    expect(find.byType(CashDrawerBreakdownCard), findsNothing);
   });
 }

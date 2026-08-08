@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
+import '../../providers/cash_drawer_provider.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/order_list_providers.dart';
 import '../../providers/today_sales_provider.dart';
@@ -10,6 +11,7 @@ import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'widgets/cashflow_breakdown_section.dart';
 import 'widgets/revenue_summary_section.dart';
 import 'widgets/today_order_list.dart';
 
@@ -42,6 +44,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     ref.invalidate(orderListProvider);
     ref.invalidate(dashboardRevenueStockProvider);
     ref.invalidate(todayPaymentSplitProvider);
+    ref.invalidate(cashDrawerStatusProvider);
   }
 
   @override
@@ -118,6 +121,16 @@ class _TodaySalesBody extends ConsumerWidget {
         ref.invalidate(orderListProvider);
         ref.invalidate(dashboardRevenueStockProvider);
         ref.invalidate(todayPaymentSplitProvider);
+        ref.invalidate(cashDrawerStatusProvider);
+        // Invalidate the active drawer's first transaction page so the
+        // cashflow breakdown refreshes alongside the other sections.
+        final activeDrawerId =
+            int.tryParse(ref.read(cashDrawerStatusProvider).asData?.value?.id ?? '');
+        if (activeDrawerId != null) {
+          ref.invalidate(cashDrawerTransactionsProvider(
+            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+          ));
+        }
         await Future.wait([
           ref.read(orderListProvider.future).catchError((_) => <Order>[]),
           ref
@@ -132,6 +145,9 @@ class _TodaySalesBody extends ConsumerWidget {
                     cashTotal: 0,
                     bankTransferTotal: 0,
                   )),
+          ref
+              .read(cashDrawerStatusProvider.future)
+              .catchError((_) => null),
         ]);
       },
       child: ListView(
@@ -150,6 +166,8 @@ class _TodaySalesBody extends ConsumerWidget {
             error: ordersAsync.hasError ? ordersAsync.error : null,
             onRetry: () => ref.invalidate(orderListProvider),
           ),
+          const SizedBox(height: 20),
+          const CashflowBreakdownSection(),
         ],
       ),
     );
