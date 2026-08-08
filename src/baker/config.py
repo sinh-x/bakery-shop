@@ -111,6 +111,24 @@ def reload(config_path: Path | str | None = None) -> None:
     else:
         CORS_ORIGINS = [_default_cors_origin]
 
+    # SEC-1 (DG-345 review r2): warn on origins missing a URL scheme ("://")
+    # so operators catch typos at startup (e.g. "lily.tail10c2c6.ts.net"
+    # without a scheme is silently treated as an origin but browsers reject it).
+    import warnings
+
+    for _origin in CORS_ORIGINS:
+        if "://" not in _origin:
+            _logger.warning(
+                "CORS origin %r has no URL scheme (missing '://') — "
+                "browsers will reject this origin. Prefix with 'https://' "
+                "or 'http://' as appropriate.",
+                _origin,
+            )
+            warnings.warn(
+                f"CORS origin {_origin!r} has no URL scheme — browsers will reject it.",
+                stacklevel=2,
+            )
+
     # bcrypt work factor for password hashing (NFR4: production default 12).
     # Override via BAKER_BCRYPT_ROUNDS for TEST environments only — lowering this
     # in production weakens password security and violates NFR4. Tests set this
