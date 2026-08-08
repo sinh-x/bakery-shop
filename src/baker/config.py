@@ -114,18 +114,16 @@ def reload(config_path: Path | str | None = None) -> None:
     # SEC-1 (DG-345 review r2): warn on origins missing a URL scheme ("://")
     # so operators catch typos at startup (e.g. "lily.tail10c2c6.ts.net"
     # without a scheme is silently treated as an origin but browsers reject it).
+    # Emit a single warnings.warn() per bad origin — do NOT also log via
+    # _logger.warning, which produced a duplicate emission (cycle 2 review).
     import warnings
 
     for _origin in CORS_ORIGINS:
         if "://" not in _origin:
-            _logger.warning(
-                "CORS origin %r has no URL scheme (missing '://') — "
-                "browsers will reject this origin. Prefix with 'https://' "
-                "or 'http://' as appropriate.",
-                _origin,
-            )
             warnings.warn(
-                f"CORS origin {_origin!r} has no URL scheme — browsers will reject it.",
+                f"CORS origin {_origin!r} has no URL scheme (missing '://') "
+                "— browsers will reject this origin. Prefix with 'https://' "
+                "or 'http://' as appropriate.",
                 stacklevel=2,
             )
 
