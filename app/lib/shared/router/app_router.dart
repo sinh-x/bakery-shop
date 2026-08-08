@@ -15,6 +15,7 @@ import '../../features/cash_drawer/cash_drawer_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/knowledge/knowledge_list_screen.dart';
 import '../../features/pos/pos_screen.dart';
+import '../../features/today_sales/today_sales_screen.dart';
 import '../widgets/admin_guard.dart';
 import 'auth_guard.dart';
 import 'routes/blanks_routes.dart';
@@ -118,6 +119,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/pos',
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: PosScreen()),
+          ),
+          GoRoute(
+            path: '/today-sales',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: TodaySalesScreen()),
           ),
         ],
       ),

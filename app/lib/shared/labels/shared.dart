@@ -182,6 +182,16 @@ class SharedLabels {
   // Today Sales entry point (DG-374 Phase 1)
   static const dashboardMetricViewTodaySales = 'Xem doanh số hôm nay';
 
+  // Today Sales screen (DG-374 Phase 2)
+  static const todaySalesTitle = 'Doanh số hôm nay';
+  static const todaySalesRevenueSection = 'Tổng quan doanh thu';
+  static const todaySalesOrderListSection = 'Đơn hàng hôm nay';
+  static const todaySalesTotalRevenue = 'Tổng doanh thu';
+  static const todaySalesOrderCount = 'Số đơn hàng';
+  static const todaySalesCashTotal = 'Tiền mặt';
+  static const todaySalesBankTransferTotal = 'Chuyển khoản';
+  static const todaySalesEmptyOrders = 'Không có đơn hàng hôm nay';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';
