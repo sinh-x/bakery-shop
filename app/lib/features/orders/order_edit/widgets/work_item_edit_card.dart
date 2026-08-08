@@ -12,6 +12,7 @@ import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class WorkItemEditCard extends ConsumerStatefulWidget {
@@ -334,8 +335,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
         runSpacing: 4,
         children: product.priceChips.map((chip) {
           final isSelected = selectedLabel == chip.label;
-          final stockLabel =
-              chip.stockQty != null ? ' (${chip.stockQty})' : '';
+          final displayStock = chipDisplayStockQty(product, chip);
+          final stockLabel = displayStock > 0 ? ' ($displayStock)' : '';
           return ChoiceChip(
             label: Text(
               '${chip.label} · ${formatVND(chip.price)}$stockLabel',
