@@ -34,6 +34,7 @@ JWT_SECRET_EPHEMERAL: bool
 AUTH_REQUIRED: bool
 BCRYPT_ROUNDS: int
 DELIVERY_CRITICAL_THRESHOLD_MINUTES: int
+CORS_ORIGINS: list[str]
 
 
 def _load_from(path: Path) -> dict:
@@ -49,7 +50,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS, DELIVERY_CRITICAL_THRESHOLD_MINUTES
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS, DELIVERY_CRITICAL_THRESHOLD_MINUTES, CORS_ORIGINS
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -94,6 +95,21 @@ def reload(config_path: Path | str | None = None) -> None:
     AUTH_REQUIRED = (
         os.environ.get("BAKER_AUTH_REQUIRED", "false").strip().lower() in ("1", "true", "yes", "on")
     )
+
+    # CORS allowed origins (DG-345 Phase 1).
+    # Comma-separated list via BAKER_CORS_ORIGINS, whitespace stripped per
+    # origin (NFR1). Empty/unset falls back to the default production origin
+    # so existing deployments keep working unchanged (NFR2, NFR3).
+    _default_cors_origin = "https://lily.tail10c2c6.ts.net"
+    _raw_cors = os.environ.get("BAKER_CORS_ORIGINS", "")
+    if _raw_cors.strip():
+        _parsed = [o.strip() for o in _raw_cors.split(",") if o.strip()]
+        if _parsed:
+            CORS_ORIGINS = _parsed
+        else:
+            CORS_ORIGINS = [_default_cors_origin]
+    else:
+        CORS_ORIGINS = [_default_cors_origin]
 
     # bcrypt work factor for password hashing (NFR4: production default 12).
     # Override via BAKER_BCRYPT_ROUNDS for TEST environments only — lowering this
