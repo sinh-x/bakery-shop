@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/accounting_service.dart';
 import '../../data/models/journal_entry.dart';
+import '../../shared/constants/journal.dart';
 import '../../shared/utils/date_formatting.dart';
 
 /// Asset account codes used to split today's inbound payments into cash vs
@@ -36,12 +37,6 @@ class TodayPaymentSplit {
   final double cashTotal;
   final double bankTransferTotal;
 }
-
-/// Page size used when fetching today's journal entries for the payment split.
-/// A single bakery day rarely exceeds a few hundred entries, but high-volume
-/// days can surpass the API's default page size. We page through the journal
-/// in batches of this size so totals are never silently truncated (CQ-1 fix).
-const int journalFetchPageSize = 500;
 
 /// Computes today's cash vs bank transfer inbound payment totals from the
 /// journal (DG-374 Phase 2 / FR3 / NFR1 — parallel API calls).

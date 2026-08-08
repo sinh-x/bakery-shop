@@ -4,6 +4,7 @@ import '../../data/api/accounting_service.dart';
 import '../../data/api/stock_service.dart';
 import '../../data/models/journal_entry.dart';
 import '../../data/models/order.dart';
+import '../../shared/constants/journal.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../order/order_list_providers.dart';
 
@@ -136,12 +137,6 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
     lowStockCount: lowStockCount,
   );
 });
-
-/// Page size used when fetching today's journal entries for the revenue
-/// account (4100). Pages through the journal in batches so high-volume days
-/// do not silently truncate the revenue total (CQ-1 fix — keeps the revenue
-/// provider consistent with [todayPaymentSplitProvider]).
-const int journalFetchPageSize = 500;
 
 /// Sums the credit amounts of journal lines whose account code/id matches
 /// [accountCode]. Revenue accounts (4xxx) are credit-normal, so credits to
