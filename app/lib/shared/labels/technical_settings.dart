@@ -22,4 +22,5 @@ class TechnicalSettingsLabels {
   static const urlSaved = 'Đã lưu địa chỉ máy chủ';
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const back = 'Quay lại';
+  static const openSettingsTooltip = 'Mở cài đặt kết nối';
 }

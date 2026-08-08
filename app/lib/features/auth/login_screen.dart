@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../shared/labels/auth.dart';
+import '../../shared/labels/technical_settings.dart';
 import 'auth_provider.dart';
 
 /// Login screen (FR14).
@@ -69,6 +71,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            key: const Key('preLoginSettingsButton'),
+            icon: const Icon(Icons.settings),
+            tooltip: TechnicalSettingsLabels.openSettingsTooltip,
+            onPressed: () => context.go('/settings/connection'),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
