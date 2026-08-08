@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
+import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 Order _order({
@@ -18,11 +21,12 @@ Order _order({
   String urgency = 'normal',
   String? dueDate,
   double totalPrice = 0,
+  String customerName = 'Test',
 }) {
   return Order(
     id: ref,
     orderRef: ref,
-    customerName: 'Test',
+    customerName: customerName,
     status: status,
     urgency: urgency,
     dueDate: dueDate,
@@ -78,6 +82,18 @@ class _FakeStockService extends StockService {
   Future<List<StockOverviewItem>> getStockOverview() async => items;
 }
 
+class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
+  @override
+  String build() => 'http://test.local';
+}
+
+class _FakeOrderPhotosNotifier extends OrderPhotosNotifier {
+  _FakeOrderPhotosNotifier() : super('unused');
+
+  @override
+  Future<List<OrderPhoto>> build() async => const [];
+}
+
 GoRouter _router() => GoRouter(
       routes: [
         GoRoute(
@@ -109,6 +125,11 @@ Future<void> _pump(
   final orderService = _FakeOrderService()..orders = orders;
   final reportService = _FakeReportService()..summary = summary;
   final stockService = _FakeStockService()..items = stock;
+  final summaryOrders = summary?.orders ?? const <Order>[];
+  final allRefs = <String>{
+    ...orders.map((o) => o.orderRef),
+    ...summaryOrders.map((o) => o.orderRef),
+  };
 
   await tester.pumpWidget(
     ProviderScope(
@@ -116,6 +137,10 @@ Future<void> _pump(
         orderServiceProvider.overrideWithValue(orderService),
         reportServiceProvider.overrideWithValue(reportService),
         stockServiceProvider.overrideWithValue(stockService),
+        apiBaseUrlProvider.overrideWith(_FakeApiBaseUrlNotifier.new),
+        for (final ref in allRefs)
+          orderPhotosProvider(ref)
+              .overrideWith(_FakeOrderPhotosNotifier.new),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -303,5 +328,49 @@ void main() {
       orders: [_order(ref: 'A', urgency: 'normal')],
     );
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+  });
+
+  // DG-376 Phase 5/6 — Today's orders section (FR6/AC6).
+  testWidgets('today orders section groups orders by status with a count '
+      '(FR6/AC6)', (tester) async {
+    await _pump(
+      tester,
+      summary: _summary(orderCount: 4, orders: [
+        _order(ref: 'A', status: 'new', customerName: 'An'),
+        _order(ref: 'B', status: 'new', customerName: 'Bình'),
+        _order(ref: 'C', status: 'completed', customerName: 'Cúc'),
+        _order(ref: 'D', status: 'cancelled', customerName: 'Dung'),
+      ]),
+    );
+    // Scroll the today-orders section into view (it sits below metrics +
+    // shortcuts).
+    await tester.dragUntilVisible(
+      find.text('An'),
+      find.byType(Scrollable).first,
+      const Offset(0, -500),
+    );
+    // Section title renders.
+    expect(find.text(VN.todayOrders), findsOneWidget);
+    // Status group headers (some may be off-screen, so use findWidgets).
+    expect(find.text(VN.statusNew), findsWidgets);
+    expect(find.text(VN.statusCompleted), findsWidgets);
+    expect(find.text(VN.statusCancelled), findsWidgets);
+    // Order rows render.
+    expect(find.text('An'), findsOneWidget);
+    expect(find.text('Bình'), findsOneWidget);
+    expect(find.text('Cúc'), findsOneWidget);
+    expect(find.text('Dung'), findsOneWidget);
+  });
+
+  testWidgets('today orders section shows empty state when no orders (FR6)',
+      (tester) async {
+    await _pump(tester, summary: _summary(orderCount: 0, orders: const []));
+    await tester.dragUntilVisible(
+      find.text(VN.khongCoDonHomNay),
+      find.byType(Scrollable).first,
+      const Offset(0, -400),
+    );
+    expect(find.text(VN.todayOrders), findsOneWidget);
+    expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
   });
 }

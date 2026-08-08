@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
+import '../../data/models/today_summary.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -14,6 +15,7 @@ import '../../providers/today_journal_provider.dart';
 import 'widgets/alert_section.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/shortcut_grid.dart';
+import 'widgets/today_order_list.dart';
 
 /// Management dashboard screen — admin-facing "Quản lý" tab.
 ///
@@ -26,13 +28,15 @@ import 'widgets/shortcut_grid.dart';
 ///   today-summary API is the single source of truth for revenue (journal
 ///   4100 credits only) and order count (all orders due today, including
 ///   completed POS orders) — DG-376 Bug 1 + Bug 3 fixes.
+/// - `todaySummaryProvider` feeds the [TodayOrderList] section (FR6/AC6):
+///   today's orders grouped by status with a count per group.
 /// - `critical_alert_provider.checkAndShowCriticalAlert` — reused unchanged
 ///   for the popup mechanism (FR5/AC9). The persistent [AlertSection] banner
 ///   is fed by [countCriticalOrders] from the live active order list.
 ///
 /// Coding standards (FR6/NFR3/AC12): the screen file is ≤300 lines; inner
 /// widget classes are extracted to `widgets/` (metric_card, shortcut_grid,
-/// alert_section).
+/// alert_section, today_order_list).
 class ManagementDashboardScreen extends ConsumerStatefulWidget {
   const ManagementDashboardScreen({super.key});
 
@@ -51,9 +55,11 @@ class _ManagementDashboardScreenState
   void invalidateProviders() {
     // Phase 3 — invalidate the dashboard metric providers so auto-refresh
     // (15s timer / route re-entry / app resume) re-fetches fresh data.
+    // todaySummaryProvider is also invalidated (DG-376 Phase 5 — FR6/AC6).
     ref.invalidate(orderListProvider);
     ref.invalidate(todayJournalProvider);
     ref.invalidate(dashboardRevenueStockProvider);
+    ref.invalidate(todaySummaryProvider);
   }
 
   @override
@@ -140,11 +146,13 @@ class _ManagementDashboardBodyState
 
   @override
   Widget build(BuildContext context) {
-    // Orders fetch fires first (NFR1 — first metric within ≤2s). Revenue +
-    // order count + low-stock run in parallel via dashboardRevenueStockProvider
-    // (NFR2 — today-summary API + stock overview).
+    // NFR1: orders fetch fires first. NFR2: revenue + order count + low-stock
+    // run in parallel via dashboardRevenueStockProvider (today-summary API +
+    // stock overview). todaySummaryProvider feeds the TodayOrderList section
+    // (FR6/AC6 — today's orders grouped by status).
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
+    final summaryAsync = ref.watch(todaySummaryProvider);
 
     final orders = ordersAsync.asData?.value ?? const <Order>[];
     final criticalCount = ordersAsync.asData != null
@@ -152,11 +160,9 @@ class _ManagementDashboardBodyState
         : 0;
 
     final revenueStock = revenueStockAsync.asData?.value;
-    // Progressive loading (NFR2): revenue + order count + low-stock stay as
-    // skeletons until the summary + stock calls resolve; null while
-    // loading/refreshing. Order count comes from the today-summary API
-    // (includes completed POS orders — Bug 1 fix). Revenue comes from the
-    // same API (journal 4100 credits only — Bug 3 double-count fix).
+    // Progressive loading (NFR2): metrics stay as skeletons until the
+    // summary + stock calls resolve. Order count includes completed POS
+    // orders (Bug 1 fix); revenue is journal 4100 credits only (Bug 3 fix).
     final ordersToday = (revenueStock == null || revenueStockAsync.isRefreshing)
         ? null
         : revenueStock.orderCount;
@@ -173,6 +179,7 @@ class _ManagementDashboardBodyState
         ref.invalidate(orderListProvider);
         ref.invalidate(todayJournalProvider);
         ref.invalidate(dashboardRevenueStockProvider);
+        ref.invalidate(todaySummaryProvider);
         var failed = false;
         await Future.wait<void>([
           ref.read(orderListProvider.future).catchError((_) {
@@ -185,6 +192,17 @@ class _ManagementDashboardBodyState
               revenueToday: 0,
               orderCount: 0,
               lowStockCount: 0,
+            );
+          }),
+          ref.read(todaySummaryProvider.future).catchError((_) {
+            failed = true;
+            return const TodaySummary(
+              date: '',
+              revenue: 0,
+              orderCount: 0,
+              cashTotal: 0,
+              bankTransferTotal: 0,
+              orders: [],
             );
           }),
         ]);
@@ -221,6 +239,8 @@ class _ManagementDashboardBodyState
             revenueToday: revenueToday,
             onTap: () => context.push('/today-sales'),
           ),
+          const SizedBox(height: 20),
+          _TodayOrdersSection(summaryAsync: summaryAsync),
           const SizedBox(height: 20),
           const SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
           const SizedBox(height: 8),
@@ -260,6 +280,28 @@ class _TodaySalesEntryCard extends StatelessWidget {
       label: SharedLabels.dashboardMetricViewTodaySales,
       value: revenueToday,
       onTap: onTap,
+    );
+  }
+}
+
+/// Today's orders section (FR6/AC6): today's orders grouped by status.
+/// Extracted to keep the body widget under the 300-line screen threshold
+/// (flutter-coding-standards §1).
+class _TodayOrdersSection extends StatelessWidget {
+  const _TodayOrdersSection({required this.summaryAsync});
+
+  final AsyncValue<TodaySummary> summaryAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final todayOrders = summaryAsync.asData?.value.orders ?? const <Order>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionTitle(title: VN.todayOrders),
+        const SizedBox(height: 8),
+        TodayOrderList(orders: todayOrders),
+      ],
     );
   }
 }
