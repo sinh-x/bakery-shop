@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'candle_type_radio_group.dart';
 import 'rut_tien_editor.dart';
@@ -137,12 +138,14 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   String get _stockInlineText {
     final selectedChipId = widget.item.priceChipId;
     if (selectedChipId == null) return widget.item.product.stockInlineText;
-    final selectedChip = widget.item.product.priceChips
+    final product = widget.item.product;
+    final selectedChip = product.priceChips
         .where((chip) => chip.id == selectedChipId)
         .firstOrNull;
-    final chipQty = selectedChip?.stockQty;
-    if (chipQty == null) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $chipQty';
+    if (selectedChip == null) return VN.stockUnknown;
+    final displayQty = chipDisplayStockQty(product, selectedChip);
+    if (displayQty <= 0) return VN.stockUnknown;
+    return '${VN.stockRemaining}: $displayQty';
   }
 
   @override
@@ -231,8 +234,10 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         final isSelected =
                             widget.item.attributes['price_chip_label'] ==
                                 chip.label;
-                        final stockLabel = chip.stockQty != null
-                            ? ' (${chip.stockQty})'
+                        final displayStock =
+                            chipDisplayStockQty(widget.item.product, chip);
+                        final stockLabel = displayStock > 0
+                            ? ' ($displayStock)'
                             : '';
                         return ChoiceChip(
                           label: Text(
