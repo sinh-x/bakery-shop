@@ -35,7 +35,7 @@ from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
 from baker.api.users import router as users_router
 from baker.api.work_items import router as work_items_router
-from baker.config import BUILD_FINGERPRINT, VERSION
+from baker.config import BUILD_FINGERPRINT, CORS_ORIGINS, VERSION
 from baker.db.connection import checkpoint_wal
 from baker.logging import setup_logging
 
@@ -85,10 +85,11 @@ def create_app() -> FastAPI:
     # DG-029 Phase 2: JWT validation, role extraction, denylist check (FR2/FR6).
     app.add_middleware(AuthMiddleware)
 
-    # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
+    # CORS origins are configurable via BAKER_CORS_ORIGINS env var (DG-345 Phase 2).
+    # Default to the production domain for backward compatibility (NFR2).
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=['https://lily.tail10c2c6.ts.net'],
+        allow_origins=CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=['*'],
         allow_headers=[

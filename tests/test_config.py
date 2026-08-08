@@ -18,7 +18,7 @@ _CONFIG_GLOBALS = [
     "DATA_DIR", "DB_PATH", "PHOTOS_DIR", "HOST", "PORT", "LOG_LEVEL", "LOG_DIR",
     "BUILD_FINGERPRINT", "PRINT_IPP_URL", "TIMEZONE", "JWT_SECRET",
     "JWT_SECRET_EPHEMERAL", "AUTH_REQUIRED", "BCRYPT_ROUNDS",
-    "DELIVERY_CRITICAL_THRESHOLD_MINUTES",
+    "DELIVERY_CRITICAL_THRESHOLD_MINUTES", "CORS_ORIGINS",
 ]
 
 
@@ -123,6 +123,90 @@ def test_reload_delivery_threshold_valid(monkeypatch):
     monkeypatch.setenv("BAKER_DELIVERY_CRITICAL_THRESHOLD_MINUTES", "120")
     baker.config.reload()
     assert baker.config.DELIVERY_CRITICAL_THRESHOLD_MINUTES == 120
+
+
+# --- CORS_ORIGINS parsing tests (DG-345 review r2 CQ-2) ---
+
+
+def test_cors_origins_default_fallback(monkeypatch):
+    """Unset BAKER_CORS_ORIGINS falls back to the default production origin."""
+    monkeypatch.delenv("BAKER_CORS_ORIGINS", raising=False)
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == ["https://lily.tail10c2c6.ts.net"]
+
+
+def test_cors_origins_comma_separated(monkeypatch):
+    """Comma-separated origins are parsed into a list."""
+    monkeypatch.setenv(
+        "BAKER_CORS_ORIGINS",
+        "https://lily.tail10c2c6.ts.net,http://localhost:2380,https://bakery.example.com",
+    )
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == [
+        "https://lily.tail10c2c6.ts.net",
+        "http://localhost:2380",
+        "https://bakery.example.com",
+    ]
+
+
+def test_cors_origins_whitespace_trimming(monkeypatch):
+    """Whitespace around origins is stripped."""
+    monkeypatch.setenv(
+        "BAKER_CORS_ORIGINS",
+        "  https://lily.tail10c2c6.ts.net ,  http://localhost:2380  ",
+    )
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == [
+        "https://lily.tail10c2c6.ts.net",
+        "http://localhost:2380",
+    ]
+
+
+def test_cors_origins_trailing_comma_empty_segments(monkeypatch):
+    """Trailing commas and empty segments are dropped."""
+    monkeypatch.setenv(
+        "BAKER_CORS_ORIGINS",
+        "https://lily.tail10c2c6.ts.net,,  ,http://localhost:2380,",
+    )
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == [
+        "https://lily.tail10c2c6.ts.net",
+        "http://localhost:2380",
+    ]
+
+
+def test_cors_origins_whitespace_only_falls_back(monkeypatch):
+    """Whitespace-only input falls back to the default origin."""
+    monkeypatch.setenv("BAKER_CORS_ORIGINS", "   ")
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == ["https://lily.tail10c2c6.ts.net"]
+
+
+def test_cors_origins_scheme_missing_warns(monkeypatch, recwarn):
+    """SEC-1: origins without a URL scheme trigger a warning."""
+    monkeypatch.setenv("BAKER_CORS_ORIGINS", "lily.tail10c2c6.ts.net,http://ok:2380")
+    baker.config.reload()
+    assert baker.config.CORS_ORIGINS == ["lily.tail10c2c6.ts.net", "http://ok:2380"]
+    # At least one warning about the schemeless origin should be emitted.
+    scheme_warnings = [
+        w for w in recwarn.list
+        if "no URL scheme" in str(w.message)
+    ]
+    assert len(scheme_warnings) >= 1
+
+
+def test_cors_origins_all_valid_no_warning(monkeypatch, recwarn):
+    """No scheme warning when all origins have valid schemes."""
+    monkeypatch.setenv(
+        "BAKER_CORS_ORIGINS",
+        "https://lily.tail10c2c6.ts.net,http://localhost:2380",
+    )
+    baker.config.reload()
+    scheme_warnings = [
+        w for w in recwarn.list
+        if "no URL scheme" in str(w.message)
+    ]
+    assert len(scheme_warnings) == 0
 
 
 def test_reload_from_yaml_file(tmp_path, monkeypatch):
