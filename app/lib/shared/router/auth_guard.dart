@@ -4,8 +4,8 @@ import '../../features/auth/auth_provider.dart';
 
 /// Auth-redirect guard (FR14/FR15, AC8/AC9, DG-319 Phase 5 force-change AC7).
 ///
-/// - When the auth state is `unauthenticated`, any route other than `/login`
-///   redirects to `/login`.
+/// - When the auth state is `unauthenticated`, any route other than the ones
+///   in [unauthenticatedRoutes] redirects to `/login`.
 /// - When the auth state is `authenticated`, `/login` redirects to `/orders`
 ///   (the main shell).
 /// - When the auth state is `authenticated` with `forcePasswordChange=true`,
@@ -47,11 +47,20 @@ String? authRedirect(
       }
       return null;
     case AuthStatus.unauthenticated:
-      return onLogin ? null : '/login';
+      return unauthenticatedRoutes.contains(location) ? null : '/login';
     case AuthStatus.unknown:
       return null;
   }
 }
+
+/// Routes an unauthenticated user may access without being redirected to
+/// `/login` (DG-367 Phase 1 / FR4 / AC5). `/login` is the original member;
+/// `/settings/connection` is the pre-login technical settings route so users
+/// can fix a broken server URL before authenticating.
+const Set<String> unauthenticatedRoutes = {
+  '/login',
+  '/settings/connection',
+};
 
 /// Admin-only routes (FR16). Staff users are redirected away from these.
 ///

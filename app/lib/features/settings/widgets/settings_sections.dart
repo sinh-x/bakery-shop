@@ -6,9 +6,10 @@ import '../../../providers/paper_mode_provider.dart';
 import '../../../shared/labels/shared.dart';
 
 class ConnectionResult {
-  const ConnectionResult({required this.success});
+  const ConnectionResult({required this.success, this.errorMessage});
 
   final bool success;
+  final String? errorMessage;
 }
 
 class InfoRow extends StatelessWidget {
