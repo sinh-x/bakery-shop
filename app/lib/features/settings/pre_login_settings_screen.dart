@@ -9,7 +9,7 @@ import '../../shared/labels/technical_settings.dart';
 import 'widgets/settings_sections.dart';
 
 /// Factory that builds a standalone [Dio] instance for pre-login connection
-/// tests (no auth interceptor). Overridable in tests via [testDioFactoryProvider].
+/// tests (no auth interceptor). Overridable in tests via [preLoginDioFactoryProvider].
 typedef DioFactory = Dio Function();
 
 /// Default factory used in production — mirrors `settings_screen.dart`'s
@@ -85,11 +85,14 @@ class _PreLoginSettingsScreenState
           _testResult = ConnectionResult(success: response.statusCode == 200);
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _testing = false;
-          _testResult = const ConnectionResult(success: false);
+          _testResult = ConnectionResult(
+            success: false,
+            errorMessage: e.toString(),
+          );
         });
       }
     }
@@ -192,15 +195,31 @@ class _PreLoginSettingsScreenState
                           : Colors.red,
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      _testResult!.success
-                          ? TechnicalSettingsLabels.connectionSuccess
-                          : TechnicalSettingsLabels.connectionFailed,
-                      style: TextStyle(
-                        color: _testResult!.success
-                            ? Colors.green.shade800
-                            : Colors.red.shade800,
-                        fontWeight: FontWeight.w500,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _testResult!.success
+                                ? TechnicalSettingsLabels.connectionSuccess
+                                : TechnicalSettingsLabels.connectionFailed,
+                            style: TextStyle(
+                              color: _testResult!.success
+                                  ? Colors.green.shade800
+                                  : Colors.red.shade800,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (!_testResult!.success &&
+                              _testResult!.errorMessage != null)
+                            Text(
+                              _testResult!.errorMessage!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ],
