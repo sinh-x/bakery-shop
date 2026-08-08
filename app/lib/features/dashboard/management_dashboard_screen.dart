@@ -300,7 +300,13 @@ class _TodayOrdersSection extends StatelessWidget {
       children: [
         const SectionTitle(title: VN.todayOrders),
         const SizedBox(height: 8),
-        TodayOrderList(orders: todayOrders),
+        if (summaryAsync.isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else
+          TodayOrderList(orders: todayOrders),
       ],
     );
   }

@@ -10,12 +10,13 @@ non-payment journal noise in cash/bank totals).
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
 from baker.db.schema import _account_id_by_code
 from baker.models.order import Order
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -39,7 +40,11 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
 
 @router.get("/today-summary")
 def get_today_summary(
-    date: Optional[str] = Query(None, description="Ngày báo cáo (YYYY-MM-DD), mặc định hôm nay"),
+    date: Optional[str] = Query(
+        None,
+        description="Ngày báo cáo (YYYY-MM-DD), mặc định hôm nay",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
 ):
     """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal, bankTransferTotal, orders.
 
@@ -55,10 +60,16 @@ def get_today_summary(
     Order count = tất cả đơn hàng có dueDate == date (không lọc theo status),
     bao gồm cả đơn POS có due_date rỗng (match theo created_at).
     """
-    from baker.utils.time import now_utc
-
     if date is None:
         date = now_utc()[:10]
+    else:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="date phải có định dạng YYYY-MM-DD",
+            )
 
     day_start, day_end = _day_bounds(date)
 

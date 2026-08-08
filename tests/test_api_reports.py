@@ -10,7 +10,6 @@ Covers:
 
 import pytest
 
-from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
 
@@ -37,28 +36,6 @@ def _create_order(client, customer="Nguyễn Văn A", total=300000, items=None, 
 def _create_txn(client, ref, amount=100000, **kwargs):
     payload = {"amount": amount, **kwargs}
     resp = client.post(f"/api/orders/{ref}/transactions", json=payload)
-    assert resp.status_code == 201
-    return resp.json()
-
-
-def _create_expense(client, amount=50000, category="Nguyên liệu",
-                    payment_source="Tiền mặt tại quầy", paid_by_name="Phượng",
-                    vendor="Chợ", note="ghi chu", summary="Chi phí test",
-                    payment_method="Tiền mặt"):
-    payload = {
-        "summary": summary,
-        "type": "expense",
-        "data": {
-            "amount_vnd": amount,
-            "category": category,
-            "payment_method": payment_method,
-            "payment_source": payment_source,
-            "vendor": vendor,
-            "note": note,
-            "paid_by_name": paid_by_name,
-        },
-    }
-    resp = client.post("/api/events", json=payload)
     assert resp.status_code == 201
     return resp.json()
 
