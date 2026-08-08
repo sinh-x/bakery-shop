@@ -1,9 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/accounting_service.dart';
-import '../../data/models/journal_entry.dart';
-import '../../shared/constants/journal.dart';
-import '../../shared/utils/date_formatting.dart';
+import 'today_journal_provider.dart';
 
 /// Asset account codes used to split today's inbound payments into cash vs
 /// bank transfer totals for the Today Sales revenue summary (DG-374 Phase 2 /
@@ -41,35 +38,18 @@ class TodayPaymentSplit {
 /// Computes today's cash vs bank transfer inbound payment totals from the
 /// journal (DG-374 Phase 2 / FR3 / NFR1 — parallel API calls).
 ///
-/// Fetches today's journal entries once and sums the debit side of lines
-/// hitting the cash (1101) and bank (1200 family) asset accounts. Revenue
-/// (account 4100 credits) and order count are reused from the existing
-/// [dashboardRevenueStockProvider] and [orderListProvider] so this provider
-/// only adds the cash/bank split, not a duplicate revenue fetch.
+/// Reuses the shared [todayJournalProvider] (DG-374 cycle-3 C3-2) so today's
+/// journal entries are fetched once and shared with
+/// [dashboardRevenueStockProvider]. This provider only folds the shared entry
+/// list into the cash (1101) and bank (1200 family) debit totals — no
+/// duplicate journal API call.
 ///
-/// Pagination (CQ-1): pages through the journal in [journalFetchPageSize]
-/// batches until the API reports no more entries for the day, so totals stay
-/// complete on high-volume days (>500 entries).
+/// Pagination (CQ-1): handled by [todayJournalProvider], which pages through
+/// the journal in [journalFetchPageSize] batches so totals stay complete on
+/// high-volume days (>500 entries).
 final FutureProvider<TodayPaymentSplit> todayPaymentSplitProvider =
     FutureProvider<TodayPaymentSplit>((ref) async {
-  final accounting = ref.watch(accountingServiceProvider);
-  final todayStr = formatApiDate(DateTime.now());
-
-  final entries = <JournalEntry>[];
-  int offset = 0;
-  while (true) {
-    final resp = await accounting.listJournal(
-      since: todayStr,
-      until: todayStr,
-      limit: journalFetchPageSize,
-      offset: offset,
-    );
-    entries.addAll(resp.items);
-    if (resp.items.length < journalFetchPageSize) {
-      break;
-    }
-    offset += journalFetchPageSize;
-  }
+  final entries = await ref.watch(todayJournalProvider.future);
 
   double cashTotal = 0;
   double bankTotal = 0;

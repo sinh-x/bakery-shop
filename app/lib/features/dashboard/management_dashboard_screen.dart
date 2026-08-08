@@ -10,6 +10,7 @@ import '../../shared/widgets/section_title.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import '../../providers/order/order_list_providers.dart';
+import '../../providers/today_journal_provider.dart';
 import 'widgets/alert_section.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/shortcut_grid.dart';
@@ -48,6 +49,7 @@ class _ManagementDashboardScreenState
     // Phase 3 — invalidate the dashboard metric providers so auto-refresh
     // (15s timer / route re-entry / app resume) re-fetches fresh data.
     ref.invalidate(orderListProvider);
+    ref.invalidate(todayJournalProvider);
     ref.invalidate(dashboardRevenueStockProvider);
   }
 
@@ -114,14 +116,27 @@ class _ManagementDashboardScreenState
   }
 }
 
-class _ManagementDashboardBody extends ConsumerWidget {
+class _ManagementDashboardBody extends ConsumerStatefulWidget {
   const _ManagementDashboardBody();
+
+  @override
+  ConsumerState<_ManagementDashboardBody> createState() =>
+      _ManagementDashboardBodyState();
+}
+
+class _ManagementDashboardBodyState
+    extends ConsumerState<_ManagementDashboardBody> {
+  /// Set when the most recent pull-to-refresh failed; cleared on the next
+  /// successful refresh. Surfaced via a [SnackBar] so the user knows the
+  /// displayed values may be stale (DG-374 cycle-3 C3-3 — the previous
+  /// `catchError` fallbacks silently swallowed API errors).
+  bool _refreshError = false;
 
   void _handleShortcutTap(BuildContext context, String route) =>
       context.push(route);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     // Orders fetch fires first (NFR1 — first metric within ≤2s). Revenue +
     // low-stock run in parallel via dashboardRevenueStockProvider (NFR2).
     final ordersAsync = ref.watch(orderListProvider);
@@ -142,23 +157,56 @@ class _ManagementDashboardBody extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async {
+        // Capture the messenger before the async gap so the SnackBar can be
+        // shown after the refresh completes without tripping the
+        // use_build_context_synchronously lint (C3-3).
+        final messenger = ScaffoldMessenger.maybeOf(context);
         ref.invalidate(orderListProvider);
+        ref.invalidate(todayJournalProvider);
         ref.invalidate(dashboardRevenueStockProvider);
-        await Future.wait([
-          ref.read(orderListProvider.future).catchError((_) => <Order>[]),
-          ref
-              .read(dashboardRevenueStockProvider.future)
-              .catchError((_) => const DashboardRevenueStock(
-                    revenueToday: 0,
-                    lowStockCount: 0,
-                  )),
+        var failed = false;
+        await Future.wait<void>([
+          ref.read(orderListProvider.future).catchError((_) {
+            failed = true;
+            return <Order>[];
+          }),
+          ref.read(dashboardRevenueStockProvider.future).catchError((_) {
+            failed = true;
+            return const DashboardRevenueStock(
+              revenueToday: 0,
+              lowStockCount: 0,
+            );
+          }),
         ]);
+        if (!mounted) return;
+        if (failed) {
+          setState(() => _refreshError = true);
+          messenger?.showSnackBar(
+            const SnackBar(
+              content: Text(SharedLabels.refreshFailed),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else if (_refreshError) {
+          setState(() => _refreshError = false);
+        }
       },
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const SectionTitle(title: SharedLabels.dashboardSectionMetrics),
           const SizedBox(height: 8),
+          if (_refreshError)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                SharedLabels.refreshFailed,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           _TodaySalesEntryCard(
             revenueToday: revenueToday,
             onTap: () => context.push('/today-sales'),

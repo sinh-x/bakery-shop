@@ -47,6 +47,7 @@ class SharedLabels {
 
   // Refresh
   static const lamMoi = 'Làm mới';
+  static const refreshFailed = 'Làm mới thất bại, dữ liệu có thể cũ';
 
   // Settings
   static const settings = 'Cài đặt';

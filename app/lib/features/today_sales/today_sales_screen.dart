@@ -6,6 +6,7 @@ import '../../data/models/order.dart';
 import '../../providers/cash_drawer_provider.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/order_list_providers.dart';
+import '../../providers/today_journal_provider.dart';
 import '../../providers/today_sales_provider.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
@@ -48,6 +49,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   @override
   void invalidateProviders() {
     ref.invalidate(orderListProvider);
+    ref.invalidate(todayJournalProvider);
     ref.invalidate(dashboardRevenueStockProvider);
     ref.invalidate(todayPaymentSplitProvider);
     ref.invalidate(cashDrawerStatusProvider);
@@ -98,7 +100,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   }
 }
 
-class _TodaySalesBody extends ConsumerWidget {
+class _TodaySalesBody extends ConsumerStatefulWidget {
   const _TodaySalesBody({required this.todayStr});
 
   /// Stable today-date string (API format) captured once by the parent
@@ -107,14 +109,25 @@ class _TodaySalesBody extends ConsumerWidget {
   final String todayStr;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TodaySalesBody> createState() => _TodaySalesBodyState();
+}
+
+class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
+  /// Set when the most recent pull-to-refresh failed; cleared on the next
+  /// successful refresh. Surfaced via a [SnackBar] so the user knows the
+  /// displayed values may be stale (DG-374 cycle-3 C3-3 — the previous
+  /// `catchError` fallbacks silently swallowed API errors).
+  bool _refreshError = false;
+
+  @override
+  Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
     final paymentSplitAsync = ref.watch(todayPaymentSplitProvider);
 
     final orders = ordersAsync.asData?.value ?? const <Order>[];
     final todayOrders =
-        orders.where((o) => o.dueDate == todayStr).toList();
+        orders.where((o) => o.dueDate == widget.todayStr).toList();
 
     final revenueStock = revenueStockAsync.asData?.value;
     final totalRevenue = revenueStock?.revenueToday;
@@ -128,7 +141,12 @@ class _TodaySalesBody extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async {
+        // Capture the messenger before the async gap so the SnackBar can be
+        // shown after the refresh completes without tripping the
+        // use_build_context_synchronously lint (C3-3).
+        final messenger = ScaffoldMessenger.maybeOf(context);
         ref.invalidate(orderListProvider);
+        ref.invalidate(todayJournalProvider);
         ref.invalidate(dashboardRevenueStockProvider);
         ref.invalidate(todayPaymentSplitProvider);
         ref.invalidate(cashDrawerStatusProvider);
@@ -141,28 +159,61 @@ class _TodaySalesBody extends ConsumerWidget {
             CashDrawerTransactionsFilter(drawerId: activeDrawerId),
           ));
         }
-        await Future.wait([
-          ref.read(orderListProvider.future).catchError((_) => <Order>[]),
-          ref
-              .read(dashboardRevenueStockProvider.future)
-              .catchError((_) => const DashboardRevenueStock(
-                    revenueToday: 0,
-                    lowStockCount: 0,
-                  )),
-          ref
-              .read(todayPaymentSplitProvider.future)
-              .catchError((_) => const TodayPaymentSplit(
-                    cashTotal: 0,
-                    bankTransferTotal: 0,
-                  )),
-          ref
-              .read(cashDrawerStatusProvider.future)
-              .catchError((_) => null),
+        // Track per-future errors so we can surface a single SnackBar when
+        // any refresh leg failed (C3-3), while keeping graceful fallback
+        // values so existing data remains visible.
+        var failed = false;
+        await Future.wait<void>([
+          ref.read(orderListProvider.future).catchError((_) {
+            failed = true;
+            return <Order>[];
+          }),
+          ref.read(dashboardRevenueStockProvider.future).catchError((_) {
+            failed = true;
+            return const DashboardRevenueStock(
+              revenueToday: 0,
+              lowStockCount: 0,
+            );
+          }),
+          ref.read(todayPaymentSplitProvider.future).catchError((_) {
+            failed = true;
+            return const TodayPaymentSplit(
+              cashTotal: 0,
+              bankTransferTotal: 0,
+            );
+          }),
+          ref.read(cashDrawerStatusProvider.future).catchError((_) {
+            failed = true;
+            return null;
+          }),
         ]);
+        if (!mounted) return;
+        if (failed) {
+          setState(() => _refreshError = true);
+          messenger?.showSnackBar(
+            const SnackBar(
+              content: Text(SharedLabels.refreshFailed),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else if (_refreshError) {
+          setState(() => _refreshError = false);
+        }
       },
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_refreshError)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                SharedLabels.refreshFailed,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           RevenueSummarySection(
             totalRevenue: totalRevenue,
             orderCount: orderCount,

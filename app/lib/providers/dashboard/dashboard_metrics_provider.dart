@@ -1,12 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/accounting_service.dart';
 import '../../data/api/stock_service.dart';
 import '../../data/models/journal_entry.dart';
 import '../../data/models/order.dart';
-import '../../shared/constants/journal.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../order/order_list_providers.dart';
+import '../today_journal_provider.dart';
 
 /// Revenue-account code used to compute today's revenue from the journal
 /// (FR4 — "tổng từ journal (account 4100)"). Credits to this account sum to
@@ -69,60 +68,34 @@ class DashboardRevenueStock {
 /// stock overview in parallel, then folds them into a [DashboardRevenueStock]
 /// (FR4/NFR2). Errors from either call are propagated so the UI can show a
 /// retry affordance — partial failure is not silently swallowed.
+///
+/// The journal fetch is shared via [todayJournalProvider] (DG-374 cycle-3
+/// C3-2) so a single pull-to-refresh only issues one journal API call instead
+/// of one per consumer.
 final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
     FutureProvider<DashboardRevenueStock>((ref) async {
-  final accounting = ref.watch(accountingServiceProvider);
   final stock = ref.watch(stockServiceProvider);
 
-  final todayStr = formatApiDate(DateTime.now());
+  // Today's journal entries are fetched once and shared with
+  // todayPaymentSplitProvider via todayJournalProvider (C3-2). Filter the
+  // shared entries to the revenue account (4100) here.
+  final allEntries = await ref.watch(todayJournalProvider.future);
+  final journalEntries = allEntries
+      .where((e) => e.lines.any(
+            (l) => l.accountCode == revenueAccountCode ||
+                l.accountId == revenueAccountCode,
+          ))
+      .toList();
 
-  // Fire both calls simultaneously (FR4/NFR2 — parallel API calls).
-  final results = await Future.wait<
-      ({
-        double journalRevenue,
-        int lowStockCount,
-      })>([
-    // Journal revenue: sum credits to account 4100 for today. Pages through
-    // the journal so high-volume days do not truncate the total (CQ-1).
-    () async {
-      final entries = <JournalEntry>[];
-      int offset = 0;
-      while (true) {
-        final resp = await accounting.listJournal(
-          since: todayStr,
-          until: todayStr,
-          accountId: int.parse(revenueAccountCode),
-          limit: journalFetchPageSize,
-          offset: offset,
-        );
-        entries.addAll(resp.items);
-        if (resp.items.length < journalFetchPageSize) {
-          break;
-        }
-        offset += journalFetchPageSize;
-      }
-      final journalRevenue = _sumRevenueCredits(entries, revenueAccountCode);
-      return (
-        journalRevenue: journalRevenue,
-        lowStockCount: 0,
-      );
-    }(),
-    // Low-stock count from stock overview.
-    () async {
-      final items = await stock.getStockOverview();
-      final lowStock = items
-          .where((i) => i.totalQuantity <= lowStockThreshold)
-          .length;
-      return (
-        journalRevenue: 0.0,
-        lowStockCount: lowStock,
-      );
-    }(),
-  ]);
+  // Low-stock count from stock overview (runs in parallel with the journal
+  // fetch via Riverpod's watch).
+  final items = await stock.getStockOverview();
+  final lowStock = items
+      .where((i) => i.totalQuantity <= lowStockThreshold)
+      .length;
 
-  final journalRevenue = results
-      .fold<double>(0.0, (sum, r) => sum + r.journalRevenue);
-  final lowStockCount = results.fold<int>(0, (sum, r) => sum + r.lowStockCount);
+  final journalRevenue =
+      _sumRevenueCredits(journalEntries, revenueAccountCode);
 
   // Add the orders revenue half (FR4 — combined journal + orders). The
   // orders list is watched separately via orderListProvider in the screen;
@@ -134,7 +107,7 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
 
   return DashboardRevenueStock(
     revenueToday: journalRevenue + ordersRevenue,
-    lowStockCount: lowStockCount,
+    lowStockCount: lowStock,
   );
 });
 
