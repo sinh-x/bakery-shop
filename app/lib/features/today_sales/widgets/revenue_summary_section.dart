@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/labels/shared.dart';
+import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/metric_card.dart';
 
 /// Revenue summary section for the Today Sales screen (DG-374 Phase 2 / FR3).
@@ -44,7 +45,7 @@ class RevenueSummarySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle(title: SharedLabels.todaySalesRevenueSection),
+        const SectionTitle(title: SharedLabels.todaySalesRevenueSection),
         const SizedBox(height: 8),
         GridView.count(
           crossAxisCount: 2,
@@ -81,23 +82,6 @@ class RevenueSummarySection extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import '../../data/models/order.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/section_title.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import '../../providers/order/order_list_providers.dart';
@@ -156,20 +157,20 @@ class _ManagementDashboardBody extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _SectionTitle(title: SharedLabels.dashboardSectionMetrics),
+          const SectionTitle(title: SharedLabels.dashboardSectionMetrics),
           const SizedBox(height: 8),
           _TodaySalesEntryCard(
             revenueToday: revenueToday,
             onTap: () => context.push('/today-sales'),
           ),
           const SizedBox(height: 20),
-          const _SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
+          const SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
           const SizedBox(height: 8),
           ShortcutGrid(
             onNavigate: (route) => _handleShortcutTap(context, route),
           ),
           const SizedBox(height: 20),
-          const _SectionTitle(title: SharedLabels.dashboardSectionAlerts),
+          const SectionTitle(title: SharedLabels.dashboardSectionAlerts),
           const SizedBox(height: 8),
           AlertSection(
             count: criticalCount,
@@ -201,23 +202,6 @@ class _TodaySalesEntryCard extends StatelessWidget {
       label: SharedLabels.dashboardMetricViewTodaySales,
       value: revenueToday,
       onTap: onTap,
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-      ),
     );
   }
 }

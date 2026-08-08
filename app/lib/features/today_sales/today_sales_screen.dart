@@ -36,6 +36,12 @@ class TodaySalesScreen extends ConsumerStatefulWidget {
 
 class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
+  /// Today's date (API format), captured once in [initState] so it stays
+  /// stable for the screen's lifetime. Recomputing `DateTime.now()` in
+  /// `build` would let the date roll past midnight while provider caches
+  /// still hold the prior day's data, causing an empty order list (CQ-5).
+  late final String todayStr = formatApiDate(DateTime.now());
+
   @override
   String screenRoutePath() => '/today-sales';
 
@@ -85,15 +91,20 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
           const AppBarOverflowMenu(),
         ],
       ),
-      body: const SafeArea(
-        child: _TodaySalesBody(),
+      body: SafeArea(
+        child: _TodaySalesBody(todayStr: todayStr),
       ),
     );
   }
 }
 
 class _TodaySalesBody extends ConsumerWidget {
-  const _TodaySalesBody();
+  const _TodaySalesBody({required this.todayStr});
+
+  /// Stable today-date string (API format) captured once by the parent
+  /// [TodaySalesScreen] state. Used to filter orders to today's set without
+  /// recomputing `DateTime.now()` on every rebuild (CQ-5).
+  final String todayStr;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -101,7 +112,6 @@ class _TodaySalesBody extends ConsumerWidget {
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
     final paymentSplitAsync = ref.watch(todayPaymentSplitProvider);
 
-    final todayStr = formatApiDate(DateTime.now());
     final orders = ordersAsync.asData?.value ?? const <Order>[];
     final todayOrders =
         orders.where((o) => o.dueDate == todayStr).toList();

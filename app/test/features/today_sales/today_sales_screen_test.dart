@@ -14,9 +14,7 @@ import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_card.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
-import 'package:bakery_app/providers/cash_drawer_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Order _order({
   required String ref,

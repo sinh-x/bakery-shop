@@ -81,15 +81,26 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
         double journalRevenue,
         int lowStockCount,
       })>([
-    // Journal revenue: sum credits to account 4100 for today.
+    // Journal revenue: sum credits to account 4100 for today. Pages through
+    // the journal so high-volume days do not truncate the total (CQ-1).
     () async {
-      final resp = await accounting.listJournal(
-        since: todayStr,
-        until: todayStr,
-        accountId: int.parse(revenueAccountCode),
-        limit: 500,
-      );
-      final journalRevenue = _sumRevenueCredits(resp.items, revenueAccountCode);
+      final entries = <JournalEntry>[];
+      int offset = 0;
+      while (true) {
+        final resp = await accounting.listJournal(
+          since: todayStr,
+          until: todayStr,
+          accountId: int.parse(revenueAccountCode),
+          limit: journalFetchPageSize,
+          offset: offset,
+        );
+        entries.addAll(resp.items);
+        if (resp.items.length < journalFetchPageSize) {
+          break;
+        }
+        offset += journalFetchPageSize;
+      }
+      final journalRevenue = _sumRevenueCredits(entries, revenueAccountCode);
       return (
         journalRevenue: journalRevenue,
         lowStockCount: 0,
@@ -125,6 +136,12 @@ final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
     lowStockCount: lowStockCount,
   );
 });
+
+/// Page size used when fetching today's journal entries for the revenue
+/// account (4100). Pages through the journal in batches so high-volume days
+/// do not silently truncate the revenue total (CQ-1 fix — keeps the revenue
+/// provider consistent with [todayPaymentSplitProvider]).
+const int journalFetchPageSize = 500;
 
 /// Sums the credit amounts of journal lines whose account code/id matches
 /// [accountCode]. Revenue accounts (4xxx) are credit-normal, so credits to

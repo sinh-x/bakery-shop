@@ -5,6 +5,7 @@ import '../../../data/models/cash_drawer.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../providers/cash_drawer_provider.dart';
 import '../../../shared/labels/shared.dart';
+import '../../../shared/widgets/section_title.dart';
 import '../../cash_drawer/widgets/cash_drawer_breakdown_card.dart';
 
 /// Cashflow breakdown section for the Today Sales screen
@@ -34,7 +35,7 @@ class CashflowBreakdownSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle(title: SharedLabels.todaySalesCashflowSection),
+        const SectionTitle(title: SharedLabels.todaySalesCashflowSection),
         const SizedBox(height: 8),
         if (drawer == null)
           const _NoActiveDrawerPlaceholder()
@@ -109,23 +110,6 @@ class _NoActiveDrawerPlaceholder extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
       ),
     );
   }

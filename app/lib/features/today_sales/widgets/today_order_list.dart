@@ -4,6 +4,7 @@ import '../../../data/models/order.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
+import '../../../shared/widgets/section_title.dart';
 
 /// Today's order list for the Today Sales screen (DG-374 Phase 2 / FR4).
 ///
@@ -56,56 +57,54 @@ class TodayOrderList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle(title: SharedLabels.todaySalesOrderListSection),
+        const SectionTitle(title: SharedLabels.todaySalesOrderListSection),
         const SizedBox(height: 8),
         for (final order in orders)
-          _TodayOrderRow(order: order, onTap: onTapOrder),
+          _TodayOrderRow(
+            order: order,
+            paymentBadge: _paymentBadgeFor(order),
+            onTap: onTapOrder,
+          ),
       ],
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-      ),
-    );
+/// Computes the (color, label) payment-status badge for [order] once, so the
+/// row widget does not recompute it on every build pass (CQ-6).
+(Color, String) _paymentBadgeFor(Order order) {
+  if (order.isPaid) {
+    return (Colors.green, VN.paid);
+  } else if (order.amountPaid > 0) {
+    return (Colors.orange, VN.partialPaid);
+  } else {
+    return (Colors.red, VN.unpaid);
   }
 }
 
 class _TodayOrderRow extends StatelessWidget {
-  const _TodayOrderRow({required this.order, this.onTap});
+  const _TodayOrderRow({
+    required this.order,
+    required this.paymentBadge,
+    this.onTap,
+  });
 
   final Order order;
-  final void Function(Order order)? onTap;
 
-  (Color, String) _paymentBadge() {
-    if (order.isPaid) {
-      return (Colors.green, VN.paid);
-    } else if (order.amountPaid > 0) {
-      return (Colors.orange, VN.partialPaid);
-    } else {
-      return (Colors.red, VN.unpaid);
-    }
-  }
+  /// Precomputed (color, label) pair for the payment-status badge. Computed
+  /// once by the parent [TodayOrderList] so the row's `build` does not
+  /// re-evaluate it on every layout pass (CQ-6).
+  final (Color, String) paymentBadge;
+
+  final void Function(Order order)? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
-    final payment = _paymentBadge();
-    final paymentColor = payment.$1;
-    final paymentLabel = payment.$2;
+    final paymentColor = paymentBadge.$1;
+    final paymentLabel = paymentBadge.$2;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
