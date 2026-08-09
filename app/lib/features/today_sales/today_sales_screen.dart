@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/models/order.dart';
 import '../../data/models/today_summary.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
-import '../../providers/order/order_list_providers.dart';
-import '../../providers/today_journal_provider.dart';
-import '../../providers/today_sales_provider.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -23,6 +19,15 @@ import 'widgets/revenue_summary_section.dart';
 /// time ordering. A date picker in the app bar switches the order-list view
 /// to historical days. Revenue/cashflow sections always reflect today's live
 /// data regardless of the selected date.
+///
+/// DG-378 Phase 3 / FR4 / AC5: all metrics — revenue, order count, cash,
+/// bank, cash-in, cash-out — come from the backend
+/// `GET /api/reports/today-summary` API via [todaySummaryProvider]
+/// (today) or [dateSummaryProvider] (historical). The legacy
+/// `todayPaymentSplitProvider` and the dashboard's
+/// `dashboardRevenueStockProvider` are no longer consulted for any metric
+/// on this screen — the summary API is the single source of truth for both
+/// today and historical dates.
 class TodaySalesScreen extends ConsumerStatefulWidget {
   const TodaySalesScreen({super.key});
 
@@ -51,10 +56,8 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
 
   @override
   void invalidateProviders() {
-    ref.invalidate(orderListProvider);
-    ref.invalidate(todayJournalProvider);
-    ref.invalidate(dashboardRevenueStockProvider);
-    ref.invalidate(todayPaymentSplitProvider);
+    ref.invalidate(todaySummaryProvider);
+    ref.invalidate(dateSummaryProvider);
   }
 
   @override
@@ -129,75 +132,43 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
 
   @override
   Widget build(BuildContext context) {
-    final ordersAsync = ref.watch(orderListProvider);
-    final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
-    final paymentSplitAsync = ref.watch(todayPaymentSplitProvider);
-    final summaryAsync = ref.watch(dateSummaryProvider(widget.selectedDate));
-
-    final orders = ordersAsync.asData?.value ?? const <Order>[];
-    final todayOrders =
-        orders.where((o) => o.dueDate == widget.selectedDate).toList();
-
-    final revenueStock = revenueStockAsync.asData?.value;
-    final paymentSplit = paymentSplitAsync.asData?.value;
+    // DG-378 Phase 3 / FR4 / AC5: all metrics (revenue, order count, cash,
+    // bank, cash-in, cash-out) come from the backend `today-summary` API —
+    // `todaySummaryProvider` for today, `dateSummaryProvider(<date>)` for
+    // historical days. The legacy `todayPaymentSplitProvider` and
+    // `dashboardRevenueStockProvider` are no longer consulted on this
+    // screen.
+    final summaryProvider = widget.isToday
+        ? todaySummaryProvider
+        : dateSummaryProvider(widget.selectedDate);
+    final summaryAsync = ref.watch(summaryProvider);
     final summary = summaryAsync.asData?.value;
 
-    // Today: live providers. Historical: summary API (which includes
-    // revenue, cash, and bank totals for the queried date).
-    final totalRevenue = widget.isToday
-        ? revenueStock?.revenueToday
-        : summary?.revenue;
-    final orderCount = widget.isToday
-        ? (ordersAsync.asData != null ? todayOrders.length : null)
-        : summary?.orderCount;
-    final cashTotal = widget.isToday
-        ? paymentSplit?.cashTotal
-        : summary?.cashTotal;
-    final bankTransferTotal = widget.isToday
-        ? paymentSplit?.bankTransferTotal
-        : summary?.bankTransferTotal;
+    final totalRevenue = summary?.revenue;
+    final orderCount = summary?.orderCount;
+    final cashTotal = summary?.cashTotal;
+    final bankTransferTotal = summary?.bankTransferTotal;
+    final cashInTotal = summary?.cashInTotal;
+    final cashOutTotal = summary?.cashOutTotal;
 
     return RefreshIndicator(
       onRefresh: () async {
         final messenger = ScaffoldMessenger.maybeOf(context);
-        ref.invalidate(orderListProvider);
-        ref.invalidate(todayJournalProvider);
-        ref.invalidate(dashboardRevenueStockProvider);
-        ref.invalidate(todayPaymentSplitProvider);
-        ref.invalidate(dateSummaryProvider(widget.selectedDate));
+        ref.invalidate(summaryProvider);
         var failed = false;
-        await Future.wait<void>([
-          ref.read(orderListProvider.future).catchError((_) {
-            failed = true;
-            return <Order>[];
-          }),
-          ref.read(dashboardRevenueStockProvider.future).catchError((_) {
-            failed = true;
-            return const DashboardRevenueStock(
-              revenueToday: 0,
-              orderCount: 0,
-              lowStockCount: 0,
-            );
-          }),
-          ref.read(todayPaymentSplitProvider.future).catchError((_) {
-            failed = true;
-            return const TodayPaymentSplit(
-              cashTotal: 0,
-              bankTransferTotal: 0,
-            );
-          }),
-          ref.read(dateSummaryProvider(widget.selectedDate).future).catchError((_) {
-            failed = true;
-            return const TodaySummary(
-              date: '',
-              revenue: 0,
-              orderCount: 0,
-              cashTotal: 0,
-              bankTransferTotal: 0,
-              orders: [],
-            );
-          }),
-        ]);
+        await ref.read(summaryProvider.future).catchError((_) {
+          failed = true;
+          return const TodaySummary(
+            date: '',
+            revenue: 0,
+            orderCount: 0,
+            cashTotal: 0,
+            bankTransferTotal: 0,
+            cashInTotal: 0,
+            cashOutTotal: 0,
+            orders: [],
+          );
+        });
         if (!mounted) return;
         if (failed) {
           setState(() => _refreshError = true);
@@ -230,6 +201,8 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
             orderCount: orderCount,
             cashTotal: cashTotal,
             bankTransferTotal: bankTransferTotal,
+            cashInTotal: cashInTotal,
+            cashOutTotal: cashOutTotal,
           ),
           const SizedBox(height: 20),
           _OrderListSection(summaryAsync: summaryAsync),

@@ -4,15 +4,20 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/metric_card.dart';
 
-/// Revenue + payment summary for the Today Sales screen (DG-374 Phase 2 / FR3).
+/// Revenue + payment summary for the Today Sales screen (DG-374 Phase 2 /
+/// FR3), extended in DG-378 Phase 3 to add a cash-source breakdown.
 ///
-/// Split into two groups:
+/// Split into three groups:
 /// - "Tổng doanh thu": revenue + order count
-/// - "Tổng tiền nhận được": cash + bank transfer
+/// - "Tổng tiền nhận được": cash + bank transfer (sales payment totals)
+/// - "Nguồn tiền mặt" (DG-378 / FR3 / AC3): sales cash, cash-in, cash-out,
+///   net cash. Net cash = `cashTotal + cashInTotal - cashOutTotal` (§14
+///   default) — reflects the actual drawer inflow from sales plus owner
+///   capital injections minus owner draws.
 ///
-/// Loading state: each card whose value is `null` shows a skeleton placeholder
-/// (NFR2 — per-section loading indicators) via [MetricCard]'s `value == null`
-/// behavior.
+/// Loading state: each card whose value is `null` shows a skeleton
+/// placeholder (NFR2 — per-section loading indicators) via [MetricCard]'s
+/// `value == null` behavior.
 class RevenueSummarySection extends StatelessWidget {
   const RevenueSummarySection({
     super.key,
@@ -20,6 +25,8 @@ class RevenueSummarySection extends StatelessWidget {
     required this.orderCount,
     required this.cashTotal,
     required this.bankTransferTotal,
+    required this.cashInTotal,
+    required this.cashOutTotal,
   });
 
   final double? totalRevenue;
@@ -27,10 +34,25 @@ class RevenueSummarySection extends StatelessWidget {
   final double? cashTotal;
   final double? bankTransferTotal;
 
+  /// Owner/employee/equity capital injections into the drawer for the day
+  /// (journal `source_type = 'cash_drawer_cash_in'`). DG-378.
+  final double? cashInTotal;
+
+  /// Owner draws from the drawer for the day (journal
+  /// `source_type = 'cash_drawer_cash_out'`). DG-378.
+  final double? cashOutTotal;
+
   @override
   Widget build(BuildContext context) {
     final totalReceived = (cashTotal != null && bankTransferTotal != null)
         ? cashTotal! + bankTransferTotal!
+        : null;
+
+    // Net cash = sales cash + capital injections − owner draws (§14 default).
+    // Only compute when all three components are loaded; otherwise leave null
+    // so the net cash card shows the same loading skeleton as its siblings.
+    final netCash = (cashTotal != null && cashInTotal != null && cashOutTotal != null)
+        ? cashTotal! + cashInTotal! - cashOutTotal!
         : null;
 
     return Column(
@@ -76,6 +98,38 @@ class RevenueSummarySection extends StatelessWidget {
           value:
               totalReceived == null ? null : formatVND(totalReceived),
           color: Colors.teal,
+        ),
+        const SizedBox(height: 20),
+        const SectionTitle(title: SharedLabels.todaySalesCashSourceSection),
+        const SizedBox(height: 8),
+        _MetricPair(
+          a: MetricCard(
+            icon: Icons.point_of_sale_outlined,
+            label: SharedLabels.todaySalesCashSourceSalesCash,
+            value: cashTotal == null ? null : formatVND(cashTotal!),
+            color: Colors.green,
+          ),
+          b: MetricCard(
+            icon: Icons.south_west_outlined,
+            label: SharedLabels.todaySalesCashSourceCashIn,
+            value: cashInTotal == null ? null : formatVND(cashInTotal!),
+            color: Colors.teal,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _MetricPair(
+          a: MetricCard(
+            icon: Icons.north_east_outlined,
+            label: SharedLabels.todaySalesCashSourceCashOut,
+            value: cashOutTotal == null ? null : formatVND(cashOutTotal!),
+            color: Colors.deepOrange,
+          ),
+          b: MetricCard(
+            icon: Icons.account_balance_wallet_outlined,
+            label: SharedLabels.todaySalesCashSourceNetCash,
+            value: netCash == null ? null : formatVND(netCash),
+            color: Colors.indigo,
+          ),
         ),
       ],
     );

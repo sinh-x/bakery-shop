@@ -52,7 +52,16 @@ def test_today_summary_response_structure(api_client):
     assert resp.status_code == 200
     body = resp.json()
     # All required keys present
-    for key in ("date", "revenue", "orderCount", "cashTotal", "bankTransferTotal", "orders"):
+    for key in (
+        "date",
+        "revenue",
+        "orderCount",
+        "cashTotal",
+        "bankTransferTotal",
+        "cashInTotal",
+        "cashOutTotal",
+        "orders",
+    ):
         assert key in body, f"Missing key: {key}"
     # Correct types
     assert body["date"] == _today()
@@ -60,6 +69,8 @@ def test_today_summary_response_structure(api_client):
     assert isinstance(body["orderCount"], int)
     assert isinstance(body["cashTotal"], (int, float))
     assert isinstance(body["bankTransferTotal"], (int, float))
+    assert isinstance(body["cashInTotal"], (int, float))
+    assert isinstance(body["cashOutTotal"], (int, float))
     assert isinstance(body["orders"], list)
 
 
@@ -84,6 +95,8 @@ def test_today_summary_empty_day(api_client):
     assert body["orderCount"] == 0
     assert body["cashTotal"] == 0
     assert body["bankTransferTotal"] == 0
+    assert body["cashInTotal"] == 0
+    assert body["cashOutTotal"] == 0
     assert body["orders"] == []
 
 
@@ -284,4 +297,117 @@ def test_today_summary_isolated_date(api_client):
     assert body["revenue"] == 0
     assert body["cashTotal"] == 0
     assert body["bankTransferTotal"] == 0
+    assert body["cashInTotal"] == 0
+    assert body["cashOutTotal"] == 0
     assert body["orders"] == []
+
+
+# ---------------------------------------------------------------------------
+# DG-378 Phase 1 — cashInTotal / cashOutTotal extension (FR1, NFR1)
+# ---------------------------------------------------------------------------
+
+
+def _open_drawer(client, opening_balance=1_000_000):
+    resp = client.post(
+        "/api/cash-drawer/open", json={"openingBalance": opening_balance}
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def test_today_summary_includes_cash_in_and_cash_out_keys(api_client):
+    """FR1: response now includes cashInTotal and cashOutTotal fields."""
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": _today()}
+    ).json()
+    assert "cashInTotal" in body
+    assert "cashOutTotal" in body
+    assert isinstance(body["cashInTotal"], (int, float))
+    assert isinstance(body["cashOutTotal"], (int, float))
+
+
+def test_today_summary_cash_in_total_sums_cash_drawer_cash_in_entries(api_client):
+    """FR1/AC1: cashInTotal = sum of 1101 debits where
+    source_type='cash_drawer_cash_in'.
+
+    Two cash-in operations of 200000 and 300000 (default equity source)
+    must produce cashInTotal = 500000.
+    """
+    _open_drawer(api_client, opening_balance=1_000_000)
+    r1 = api_client.post(
+        "/api/cash-drawer/cash-in", json={"amount": 200_000}
+    )
+    assert r1.status_code == 200, r1.text
+    r2 = api_client.post(
+        "/api/cash-drawer/cash-in",
+        json={"amount": 300_000, "source": "owner"},
+    )
+    assert r2.status_code == 200, r2.text
+
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": _today()}
+    ).json()
+    assert body["cashInTotal"] == pytest.approx(500000.0)
+
+
+def test_today_summary_cash_out_total_sums_cash_drawer_cash_out_entries(api_client):
+    """FR1/AC2: cashOutTotal = sum of 1101 credits where
+    source_type='cash_drawer_cash_out'.
+
+    Two cash-out operations of 100000 and 50000 must produce
+    cashOutTotal = 150000.
+    """
+    _open_drawer(api_client, opening_balance=1_000_000)
+    r1 = api_client.post(
+        "/api/cash-drawer/cash-out", json={"amount": 100_000}
+    )
+    assert r1.status_code == 200, r1.text
+    r2 = api_client.post(
+        "/api/cash-drawer/cash-out",
+        json={"amount": 50_000, "destination": "owner"},
+    )
+    assert r2.status_code == 200, r2.text
+
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": _today()}
+    ).json()
+    assert body["cashOutTotal"] == pytest.approx(150000.0)
+
+
+def test_today_summary_cash_in_out_excludes_payment_transaction_entries(api_client):
+    """NFR1/FR1: cashInTotal/cashOutTotal use the source_type filter —
+    payment_transaction cash debits must still flow to cashTotal, NOT to
+    cashInTotal. Conversely cash_drawer_cash_in entries must NOT inflate
+    cashTotal.
+    """
+    _open_drawer(api_client, opening_balance=500_000)
+    # cash-in (cash_drawer_cash_in) — should count toward cashInTotal only
+    api_client.post(
+        "/api/cash-drawer/cash-in", json={"amount": 400_000}
+    )
+    # cash payment transaction (payment_transaction) — counts toward cashTotal only
+    order = _create_order(api_client, total=250_000)
+    _create_txn(
+        api_client, order["orderRef"], amount=250_000, type="payment", method="cash"
+    )
+
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": _today()}
+    ).json()
+    # cashTotal only counts the payment_transaction debit (250000), NOT the
+    # cash_drawer_cash_in debit (400000).
+    assert body["cashTotal"] == pytest.approx(250000.0)
+    # cashInTotal only counts the cash_drawer_cash_in debit (400000), NOT the
+    # payment_transaction debit (250000).
+    assert body["cashInTotal"] == pytest.approx(400000.0)
+    # No cash-out → cashOutTotal stays at 0.
+    assert body["cashOutTotal"] == pytest.approx(0.0)
+
+
+def test_today_summary_cash_in_out_zero_on_empty_day(api_client):
+    """Empty day → cashInTotal and cashOutTotal are both 0."""
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": _today()}
+    ).json()
+    assert body["cashInTotal"] == 0
+    assert body["cashOutTotal"] == 0

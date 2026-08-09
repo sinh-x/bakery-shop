@@ -200,6 +200,21 @@ class SharedLabels {
   static const todaySalesCashflowSection = 'Dòng tiền';
   static const todaySalesNoActiveDrawer = 'Chưa mở quầy hôm nay';
 
+  // Today Sales screen — cash-source breakdown (DG-378 Phase 3 / FR3, AC3)
+  //
+  // Separate from the "Tổng tiền nhận được" payment group: this breakdown
+  // details the composition of cash at the drawer — sales cash (existing
+  // `cashTotal`), owner/employee capital injections (`cashInTotal`), owner
+  // draws (`cashOutTotal`), and the resulting net cash
+  // (`cashTotal + cashInTotal - cashOutTotal`). Labels are intentionally
+  // distinct from `VN.cashDrawerTxnTypeCashIn/CashOut` because the breakdown
+  // is a summary context, not a per-transaction chip.
+  static const todaySalesCashSourceSection = 'Nguồn tiền mặt';
+  static const todaySalesCashSourceSalesCash = 'Tiền bán hàng';
+  static const todaySalesCashSourceCashIn = 'Nạp vào quầy';
+  static const todaySalesCashSourceCashOut = 'Rút khỏi quầy';
+  static const todaySalesCashSourceNetCash = 'Tiền mặt ròng';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';
