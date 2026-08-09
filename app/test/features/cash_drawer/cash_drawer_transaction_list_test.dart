@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 /// Dio interceptor that serves a fixed transaction page for a single drawer
 /// id. Captures the request path so tests can assert on the wiring.
@@ -471,6 +472,208 @@ void main() {
       await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
       await tester.pumpAndSettle();
       expect(find.text(VN.save), findsNothing);
+    });
+  });
+
+  group('CashDrawerTransactionList (DG-381 Phase 1 — sale row navigation)', () {
+    /// Test router mirroring the app's `/orders/:id` route so the cash
+    /// drawer's `context.push('/orders/${reference}')` navigation is
+    /// observable. The order route renders a sentinel text so the test can
+    /// assert the navigation landed on the chosen order.
+    GoRouter buildRouter() {
+      return GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => const Scaffold(
+              body: CashDrawerTransactionList(drawerId: 1, poll: false),
+            ),
+          ),
+          GoRoute(
+            path: '/orders/:id',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return Scaffold(body: Text('order-detail-$id'));
+            },
+          ),
+        ],
+        initialLocation: '/',
+      );
+    }
+
+    Future<void> pumpWithRouter(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        'AC1/AC2/FR2: tapping a "Bán hàng" row with an order ref navigates '
+        'to OrderDetailScreen', (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '5',
+            type: 'payment_transaction',
+            amount: 75000,
+            note: 'Bán bánh mì',
+            reference: 'BKS-16-001',
+            referenceDetail: 'Khách A',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await pumpWithRouter(tester, container);
+
+      // The chevron is shown on the navigable sale row (FR1 affordance).
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+      // Tap the sale row.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.pumpAndSettle();
+
+      // Navigation landed on the order detail route with the order ref.
+      expect(find.text('order-detail-BKS-16-001'), findsOneWidget);
+    });
+
+    testWidgets(
+        'AC4/FR4: "Bán hàng" row with empty reference is not tappable for '
+        'navigation', (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '5',
+            type: 'payment_transaction',
+            amount: 75000,
+            note: 'Bán bánh mì',
+            reference: '',
+            referenceDetail: '',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await pumpWithRouter(tester, container);
+
+      // No chevron on a sale row with an empty reference (FR4).
+      expect(find.byIcon(Icons.chevron_right), findsNothing);
+      // Tapping the row does not navigate.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('order-detail-'), findsNothing);
+    });
+
+    testWidgets(
+        'AC5/FR5: non-"Bán hàng" rows retain existing behavior (no '
+        'navigation, no edit affordance for non-open/close types)',
+        (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '1',
+            type: 'cash_drawer_cash_in',
+            amount: 200000,
+            note: 'bổ sung quỹ',
+          ),
+          _txn(
+            id: '2',
+            type: 'expense',
+            amount: -50000,
+            note: 'Chi phí vận chuyển',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await pumpWithRouter(tester, container);
+
+      // No navigation chevrons and no edit icons on non-navigable,
+      // non-editable rows.
+      expect(find.byIcon(Icons.chevron_right), findsNothing);
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      // Tapping each row does not navigate. Tap by the unique note text so
+      // the finder is unambiguous (the type label is also rendered).
+      await tester.tap(find.text('bổ sung quỹ'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('order-detail-'), findsNothing);
+      await tester.tap(find.text('Chi phí vận chuyển'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('order-detail-'), findsNothing);
+    });
+
+    testWidgets(
+        'FR1/FR5: navigable sale row is tappable even when the drawer is '
+        'reconciled (navigation is read-only, not edit)',
+        (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '5',
+            type: 'payment_transaction',
+            amount: 75000,
+            note: 'Bán bánh mì',
+            reference: 'BKS-16-001',
+          ),
+          _txn(
+            id: '12',
+            type: 'cash_drawer_open',
+            amount: 1000000,
+            note: 'Mở quầy sáng',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            routerConfig: GoRouter(
+              routes: [
+                GoRoute(
+                  path: '/',
+                  builder: (context, state) => const Scaffold(
+                    body: CashDrawerTransactionList(
+                      drawerId: 1,
+                      poll: false,
+                      reconciled: true,
+                    ),
+                  ),
+                ),
+                GoRoute(
+                  path: '/orders/:id',
+                  builder: (context, state) {
+                    final id = state.pathParameters['id']!;
+                    return Scaffold(body: Text('order-detail-$id'));
+                  },
+                ),
+              ],
+              initialLocation: '/',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Reconciled drawer: no edit icon on the open row (AC5 lock), but the
+      // sale row still shows the navigation chevron (read-only navigation).
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+      // Tapping the sale row navigates despite the reconciled state.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.pumpAndSettle();
+      expect(find.text('order-detail-BKS-16-001'), findsOneWidget);
     });
   });
 }
