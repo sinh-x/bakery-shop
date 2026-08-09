@@ -1,143 +1,95 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/accounting_service.dart';
+import '../../data/api/report_service.dart';
 import '../../data/api/stock_service.dart';
-import '../../data/models/journal_entry.dart';
 import '../../data/models/order.dart';
+import '../../data/models/today_summary.dart';
 import '../../shared/utils/date_formatting.dart';
-import '../order/order_list_providers.dart';
-
-/// Revenue-account code used to compute today's revenue from the journal
-/// (FR4 — "tổng từ journal (account 4100)"). Credits to this account sum to
-/// the day's sales revenue.
-const String revenueAccountCode = '4100';
 
 /// Low-stock threshold (units). An item is "tồn kho thấp" when its total
 /// quantity (sum of per-chip options) is ≤ this value. Open question
 /// §14 suggested ≤5; this constant makes the threshold adjustable.
 const int lowStockThreshold = 5;
 
-/// Number of active orders whose `dueDate` is today — "số đơn hàng hôm nay"
-/// (FR2/NFR1). Uses the `dueDate == today` convention to filter the active
-/// order list down to today's orders.
-int countOrdersToday(List<Order> orders) {
-  final todayStr = formatApiDate(DateTime.now());
-  return orders.where((o) => o.dueDate == todayStr).length;
-}
-
 /// Number of active orders currently marked `urgency=critical` — drives the
 /// `AlertSection` banner count (FR5/AC9). The popup mechanism
 /// (`checkAndShowCriticalAlert`) is reused unchanged from
 /// `critical_alert_provider.dart`; this helper only supplies the persistent
-/// banner count shown on the dashboard.
+/// banner count shown on the dashboard. Derived from the live active order
+/// list (separate from today's order count, which now comes from the API).
 int countCriticalOrders(List<Order> orders) {
-  return orders
-      .where((o) => o.urgency == 'critical')
-      .length;
+  return orders.where((o) => o.urgency == 'critical').length;
 }
 
-/// Sum of `totalPrice` for today's active orders — the "orders" half of
-/// today's revenue (FR4). Mirrors [countOrdersToday]'s day filter so the two
-/// revenue sources share the same definition of "hôm nay".
-double sumOrdersRevenueToday(List<Order> orders) {
-  final todayStr = formatApiDate(DateTime.now());
-  return orders
-      .where((o) => o.dueDate == todayStr)
-      .fold(0.0, (sum, o) => sum + o.totalPrice);
-}
-
-/// Revenue + low-stock result computed in parallel (FR4/NFR2).
+/// Today's day-summary report from the backend (DG-376 Phase 3).
 ///
-/// `revenueToday` combines the journal credit total for account 4100 with the
-/// sum of `totalPrice` from today's active orders. `lowStockCount` is the
-/// number of stock-overview items whose total quantity is ≤
-/// [lowStockThreshold]. Both values are fetched concurrently via
-/// `Future.wait` so the journal and stock APIs fire in parallel; the orders
-/// API runs in parallel too (watched via [orderListProvider] in the screen).
+/// Single source of truth for revenue, order count, and cash/bank totals.
+/// Replaces the former client-side computation (`sumOrdersRevenueToday`,
+/// `countOrdersToday`, journal 4100 summation) that caused the three
+/// confirmed bugs: completed POS orders excluded from the count, revenue
+/// double-count for partially-paid delivered orders, and non-payment journal
+/// noise in cash/bank totals.
+final FutureProvider<TodaySummary> todaySummaryProvider =
+    FutureProvider<TodaySummary>((ref) async {
+  final reports = ref.watch(reportServiceProvider);
+  final todayStr = formatApiDate(DateTime.now());
+  return reports.getTodaySummary(date: todayStr);
+});
+
+/// Today-summary report for an arbitrary date (date picker support).
+///
+/// Same backend endpoint as [todaySummaryProvider] but parameterized by date
+/// so callers can retrieve summaries for historical or future days.
+final dateSummaryProvider =
+    FutureProvider.family<TodaySummary, String>((ref, date) async {
+  final reports = ref.watch(reportServiceProvider);
+  return reports.getTodaySummary(date: date);
+});
+
+/// Revenue + order count + low-stock result computed in parallel
+/// (FR4/NFR2/NFR3).
+///
+/// `revenueToday` and `orderCount` come from [todaySummaryProvider] (the
+/// backend `GET /api/reports/today-summary` endpoint — journal 4100 credits
+/// only, no `totalPrice` double-count; order count includes all orders due
+/// today regardless of status, including completed POS orders).
+/// `lowStockCount` is the number of stock-overview items whose total
+/// quantity is ≤ [lowStockThreshold]. The summary and stock APIs fire
+/// concurrently via `Future.wait` (NFR3 — parallel-fetch pattern preserved).
 class DashboardRevenueStock {
   const DashboardRevenueStock({
     required this.revenueToday,
+    required this.orderCount,
     required this.lowStockCount,
   });
 
   final double revenueToday;
+  final int orderCount;
   final int lowStockCount;
 }
 
-/// Fetches today's journal entries for the revenue account (4100) and the
-/// stock overview in parallel, then folds them into a [DashboardRevenueStock]
-/// (FR4/NFR2). Errors from either call are propagated so the UI can show a
-/// retry affordance — partial failure is not silently swallowed.
+/// Fetches the today-summary report and stock overview in parallel, then
+/// folds them into a [DashboardRevenueStock] (FR4/NFR2/NFR3). Errors from
+/// either call are propagated so the UI can show a retry affordance —
+/// partial failure is not silently swallowed.
 final FutureProvider<DashboardRevenueStock> dashboardRevenueStockProvider =
     FutureProvider<DashboardRevenueStock>((ref) async {
-  final accounting = ref.watch(accountingServiceProvider);
   final stock = ref.watch(stockServiceProvider);
 
-  final todayStr = formatApiDate(DateTime.now());
+  // Fire both calls simultaneously (NFR3 — parallel API calls).
+  final summaryFuture = ref.watch(todaySummaryProvider.future);
+  final stockFuture = stock.getStockOverview();
+  final results = await Future.wait<dynamic>([summaryFuture, stockFuture]);
 
-  // Fire both calls simultaneously (FR4/NFR2 — parallel API calls).
-  final results = await Future.wait<
-      ({
-        double journalRevenue,
-        int lowStockCount,
-      })>([
-    // Journal revenue: sum credits to account 4100 for today.
-    () async {
-      final resp = await accounting.listJournal(
-        since: todayStr,
-        until: todayStr,
-        accountId: int.parse(revenueAccountCode),
-        limit: 500,
-      );
-      final journalRevenue = _sumRevenueCredits(resp.items, revenueAccountCode);
-      return (
-        journalRevenue: journalRevenue,
-        lowStockCount: 0,
-      );
-    }(),
-    // Low-stock count from stock overview.
-    () async {
-      final items = await stock.getStockOverview();
-      final lowStock = items
-          .where((i) => i.totalQuantity <= lowStockThreshold)
-          .length;
-      return (
-        journalRevenue: 0.0,
-        lowStockCount: lowStock,
-      );
-    }(),
-  ]);
-
-  final journalRevenue = results
-      .fold<double>(0.0, (sum, r) => sum + r.journalRevenue);
-  final lowStockCount = results.fold<int>(0, (sum, r) => sum + r.lowStockCount);
-
-  // Add the orders revenue half (FR4 — combined journal + orders). The
-  // orders list is watched separately via orderListProvider in the screen;
-  // here we re-read its current value to fold in the orders' totalPrice sum
-  // without making a second orders API call.
-  final ordersAsync = ref.read(orderListProvider);
-  final orders = ordersAsync.asData?.value ?? const <Order>[];
-  final ordersRevenue = sumOrdersRevenueToday(orders);
+  final summary = results[0] as TodaySummary;
+  final stockItems = results[1] as List<StockOverviewItem>;
+  final lowStockCount = stockItems
+      .where((i) => i.totalQuantity <= lowStockThreshold)
+      .length;
 
   return DashboardRevenueStock(
-    revenueToday: journalRevenue + ordersRevenue,
+    revenueToday: summary.revenue,
+    orderCount: summary.orderCount,
     lowStockCount: lowStockCount,
   );
 });
-
-/// Sums the credit amounts of journal lines whose account code/id matches
-/// [accountCode]. Revenue accounts (4xxx) are credit-normal, so credits to
-/// account 4100 represent sales revenue.
-double _sumRevenueCredits(List<JournalEntry> entries, String accountCode) {
-  double total = 0;
-  for (final entry in entries) {
-    for (final line in entry.lines) {
-      if (line.accountCode == accountCode ||
-          line.accountId == accountCode) {
-        total += line.credit;
-      }
-    }
-  }
-  return total;
-}

@@ -55,9 +55,9 @@ class ShortcutTile extends StatelessWidget {
 
 /// The shortcut grid for the management dashboard.
 ///
-/// Displays the five management navigation shortcuts in a 2-column grid:
-/// Kho hàng, Quản lý danh mục, Quản lý khách hàng, Chi phí, Quản lý phôi bánh
-/// (FR3). Each tile navigates via `context.go()`.
+/// Displays the six management navigation shortcuts in a 2-column grid:
+/// Kho hàng, Quản lý danh mục, Quản lý khách hàng, Chi phí, Quản lý phôi bánh,
+/// Tiền tại quầy (FR1). Each tile navigates via `context.go()`.
 class ShortcutGrid extends StatelessWidget {
   const ShortcutGrid({
     super.key,
@@ -93,6 +93,11 @@ class ShortcutGrid extends StatelessWidget {
       icon: Icons.cake_outlined,
       label: SharedLabels.dashboardShortcutBlanks,
       route: '/blanks',
+    ),
+    _ShortcutDef(
+      icon: Icons.monetization_on_outlined,
+      label: SharedLabels.dashboardShortcutCashDrawer,
+      route: '/cash-drawer',
     ),
   ];
 

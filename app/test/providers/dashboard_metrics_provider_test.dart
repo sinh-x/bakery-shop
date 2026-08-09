@@ -2,17 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:bakery_app/data/api/accounting_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
-import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/providers/dashboard/dashboard_metrics_provider.dart';
-import 'package:bakery_app/providers/order/order_list_providers.dart';
-import 'package:bakery_app/shared/utils/date_formatting.dart';
 
 Order _order({
   required String ref,
+  String status = 'new',
   String urgency = 'normal',
   String? dueDate,
   double totalPrice = 0,
@@ -21,7 +20,7 @@ Order _order({
     id: ref,
     orderRef: ref,
     customerName: 'Test',
-    status: 'new',
+    status: status,
     urgency: urgency,
     dueDate: dueDate,
     totalPrice: totalPrice,
@@ -50,23 +49,23 @@ class _FakeOrderService extends OrderService {
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
 }
 
-class _FakeAccountingService extends AccountingService {
-  _FakeAccountingService() : super(Dio());
-  List<JournalEntry> entries = const [];
-  int listJournalCalls = 0;
+class _FakeReportService extends ReportService {
+  _FakeReportService() : super(Dio());
+  TodaySummary? summary;
+  int getTodaySummaryCalls = 0;
 
   @override
-  Future<JournalListResponse> listJournal({
-    String? since,
-    String? until,
-    int? accountId,
-    String? sourceType,
-    int? sourceId,
-    int limit = 100,
-    int offset = 0,
-  }) async {
-    listJournalCalls++;
-    return JournalListResponse(total: entries.length, items: entries);
+  Future<TodaySummary> getTodaySummary({String? date}) async {
+    getTodaySummaryCalls++;
+    return summary ??
+        const TodaySummary(
+          date: '2026-08-05',
+          revenue: 0,
+          orderCount: 0,
+          cashTotal: 0,
+          bankTransferTotal: 0,
+          orders: [],
+        );
   }
 }
 
@@ -80,22 +79,6 @@ class _FakeStockService extends StockService {
     getStockOverviewCalls++;
     return items;
   }
-}
-
-JournalEntry _journalEntryWithCredit(double credit, String accountCode) {
-  return JournalEntry(
-    id: 'j1',
-    lines: [
-      JournalLine(
-        id: 'l1',
-        journalEntryId: 'j1',
-        accountId: accountCode,
-        accountCode: accountCode,
-        credit: credit,
-      ),
-    ],
-    createdAt: DateTime(2026, 8, 5),
-  );
 }
 
 StockOverviewItem _stockItem(int qty) {
@@ -116,20 +99,25 @@ StockOverviewItem _stockItem(int qty) {
   );
 }
 
+TodaySummary _summary({
+  double revenue = 0,
+  int orderCount = 0,
+  double cashTotal = 0,
+  double bankTransferTotal = 0,
+  List<Order> orders = const [],
+}) {
+  return TodaySummary(
+    date: '2026-08-05',
+    revenue: revenue,
+    orderCount: orderCount,
+    cashTotal: cashTotal,
+    bankTransferTotal: bankTransferTotal,
+    orders: orders,
+  );
+}
+
 void main() {
-  final todayStr = formatApiDate(DateTime(2026, 8, 5));
-
   group('dashboard_metrics_provider pure helpers', () {
-    test('countOrdersToday counts only orders with dueDate == today', () {
-      final orders = [
-        _order(ref: 'A', dueDate: todayStr),
-        _order(ref: 'B', dueDate: todayStr),
-        _order(ref: 'C', dueDate: '2026-08-06'),
-        _order(ref: 'D'),
-      ];
-      expect(countOrdersToday(orders), 2);
-    });
-
     test('countCriticalOrders counts only urgency=critical', () {
       final orders = [
         _order(ref: 'A', urgency: 'critical'),
@@ -139,94 +127,124 @@ void main() {
       ];
       expect(countCriticalOrders(orders), 2);
     });
-
-    test('sumOrdersRevenueToday sums totalPrice for today orders', () {
-      final orders = [
-        _order(ref: 'A', dueDate: todayStr, totalPrice: 50000),
-        _order(ref: 'B', dueDate: todayStr, totalPrice: 25000),
-        _order(ref: 'C', dueDate: '2026-08-06', totalPrice: 999999),
-      ];
-      expect(sumOrdersRevenueToday(orders), 75000);
-    });
   });
 
   group('dashboardRevenueStockProvider', () {
-    test('fires journal + stock calls in parallel (FR4/NFR2)', () async {
-      final accounting = _FakeAccountingService()
-        ..entries = [_journalEntryWithCredit(100000, '4100')];
+    test('fires today-summary + stock calls in parallel (NFR3)', () async {
+      final reports = _FakeReportService()
+        ..summary = _summary(
+          revenue: 100000,
+          orderCount: 4,
+          orders: [_order(ref: 'A'), _order(ref: 'B')],
+        );
       final stock = _FakeStockService()..items = [_stockItem(3), _stockItem(20)];
-      final orders = _FakeOrderService()
-        ..orders = [_order(ref: 'A', dueDate: todayStr, totalPrice: 50000)];
+      final orders = _FakeOrderService()..orders = const [];
 
       final container = ProviderContainer(overrides: [
         orderServiceProvider.overrideWithValue(orders),
-        accountingServiceProvider.overrideWithValue(accounting),
+        reportServiceProvider.overrideWithValue(reports),
         stockServiceProvider.overrideWithValue(stock),
       ]);
       addTearDown(container.dispose);
 
-      // Prime orderListProvider so the revenue provider can read its value.
-      await container.read(orderListProvider.future);
       final result = await container.read(dashboardRevenueStockProvider.future);
 
       // Both parallel calls fired exactly once each.
-      expect(accounting.listJournalCalls, 1);
+      expect(reports.getTodaySummaryCalls, 1);
       expect(stock.getStockOverviewCalls, 1);
 
-      // Revenue = journal 100000 + orders 50000 = 150000.
-      expect(result.revenueToday, 150000);
+      // Revenue comes from the API summary (journal 4100 only — no
+      // totalPrice double-count), order count from the API (all statuses).
+      expect(result.revenueToday, 100000);
+      expect(result.orderCount, 4);
       // Only one stock item (qty 3) is ≤ lowStockThreshold (5).
       expect(result.lowStockCount, 1);
     });
 
-    test('combines journal 4100 credits with orders totalPrice (FR4/AC3)',
+    test('revenue comes from API summary only (Bug 3 — no double-count)',
         () async {
-      final accounting = _FakeAccountingService()
-        ..entries = [
-          _journalEntryWithCredit(200000, '4100'),
-          _journalEntryWithCredit(50000, '4100'),
-        ];
-      final stock = _FakeStockService()..items = const [];
-      final orders = _FakeOrderService()
-        ..orders = [
-          _order(ref: 'A', dueDate: todayStr, totalPrice: 30000),
-          _order(ref: 'B', dueDate: todayStr, totalPrice: 20000),
-        ];
-
-      final container = ProviderContainer(overrides: [
-        orderServiceProvider.overrideWithValue(orders),
-        accountingServiceProvider.overrideWithValue(accounting),
-        stockServiceProvider.overrideWithValue(stock),
-      ]);
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
-      final result = await container.read(dashboardRevenueStockProvider.future);
-
-      // 250000 (journal) + 50000 (orders) = 300000.
-      expect(result.revenueToday, 300000);
-    });
-
-    test('ignores journal lines for non-revenue accounts', () async {
-      final accounting = _FakeAccountingService()
-        ..entries = [
-          _journalEntryWithCredit(100000, '4100'),
-          _journalEntryWithCredit(999999, '1101'),
-        ];
+      // The API returns revenue = 250000 (journal 4100 credits). Even though
+      // orders carry totalPrice, the provider must NOT add it (Bug 3 fix).
+      final reports = _FakeReportService()
+        ..summary = _summary(
+          revenue: 250000,
+          orderCount: 2,
+          orders: [
+            _order(ref: 'A', dueDate: '2026-08-05', totalPrice: 30000),
+            _order(ref: 'B', dueDate: '2026-08-05', totalPrice: 20000),
+          ],
+        );
       final stock = _FakeStockService()..items = const [];
       final orders = _FakeOrderService()..orders = const [];
 
       final container = ProviderContainer(overrides: [
         orderServiceProvider.overrideWithValue(orders),
-        accountingServiceProvider.overrideWithValue(accounting),
+        reportServiceProvider.overrideWithValue(reports),
         stockServiceProvider.overrideWithValue(stock),
       ]);
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
       final result = await container.read(dashboardRevenueStockProvider.future);
 
-      expect(result.revenueToday, 100000);
+      // 250000 (API journal-only) — NOT 300000 (old double-count behavior).
+      expect(result.revenueToday, 250000);
+      expect(result.orderCount, 2);
+    });
+
+    test('order count includes completed POS orders (Bug 1)', () async {
+      // The API counts all orders due today regardless of status. The provider
+      // surfaces that count directly; it no longer filters the active order
+      // list client-side (which excluded completed POS orders).
+      final reports = _FakeReportService()
+        ..summary = _summary(
+          orderCount: 5,
+          orders: [
+            _order(ref: 'POS1', status: 'completed'),
+            _order(ref: 'POS2', status: 'completed'),
+            _order(ref: 'A', status: 'new'),
+            _order(ref: 'B', status: 'delivered'),
+            _order(ref: 'C', status: 'cancelled'),
+          ],
+        );
+      final stock = _FakeStockService()..items = const [];
+      final orders = _FakeOrderService()..orders = const [];
+
+      final container = ProviderContainer(overrides: [
+        orderServiceProvider.overrideWithValue(orders),
+        reportServiceProvider.overrideWithValue(reports),
+        stockServiceProvider.overrideWithValue(stock),
+      ]);
+      addTearDown(container.dispose);
+
+      final result = await container.read(dashboardRevenueStockProvider.future);
+
+      expect(result.orderCount, 5);
+    });
+  });
+
+  group('todaySummaryProvider', () {
+    test('returns the API today-summary unchanged', () async {
+      final reports = _FakeReportService()
+        ..summary = _summary(
+          revenue: 320000,
+          orderCount: 7,
+          cashTotal: 150000,
+          bankTransferTotal: 170000,
+          orders: [_order(ref: 'A'), _order(ref: 'B')],
+        );
+
+      final container = ProviderContainer(overrides: [
+        reportServiceProvider.overrideWithValue(reports),
+      ]);
+      addTearDown(container.dispose);
+
+      final summary = await container.read(todaySummaryProvider.future);
+
+      expect(summary.revenue, 320000);
+      expect(summary.orderCount, 7);
+      expect(summary.cashTotal, 150000);
+      expect(summary.bankTransferTotal, 170000);
+      expect(summary.orders.length, 2);
     });
   });
 }

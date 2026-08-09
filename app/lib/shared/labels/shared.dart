@@ -47,6 +47,7 @@ class SharedLabels {
 
   // Refresh
   static const lamMoi = 'Làm mới';
+  static const refreshFailed = 'Làm mới thất bại, dữ liệu có thể cũ';
 
   // Settings
   static const settings = 'Cài đặt';
@@ -175,8 +176,29 @@ class SharedLabels {
   static const dashboardShortcutCustomers = 'Quản lý khách hàng';
   static const dashboardShortcutExpenses = 'Chi phí';
   static const dashboardShortcutBlanks = 'Quản lý phôi bánh';
+  static const dashboardShortcutCashDrawer = 'Tiền tại quầy';
   static String dashboardCriticalOrdersAlert(int count) =>
       'Có $count đơn hàng khẩn cấp cần xử lý';
+
+  // Today Sales entry point (DG-374 Phase 1)
+  static const dashboardMetricViewTodaySales = 'Xem doanh số hôm nay';
+
+  // Today Sales screen (DG-374 Phase 2)
+  static const todaySalesTitle = 'Doanh số hôm nay';
+  static const todaySalesRevenueSection = 'Tổng quan doanh thu';
+  static const todaySalesRevenueGroup = 'Tổng doanh thu';
+  static const todaySalesPaymentGroup = 'Tổng tiền nhận được';
+  static const todaySalesOrderListSection = 'Đơn hàng hôm nay';
+  static const todaySalesTotalRevenue = 'Tổng doanh thu';
+  static const todaySalesOrderCount = 'Số đơn hàng';
+  static const todaySalesCashTotal = 'Tiền mặt';
+  static const todaySalesBankTransferTotal = 'Chuyển khoản';
+  static const todaySalesTotalReceived = 'Tổng nhận';
+  static const todaySalesEmptyOrders = 'Không có đơn hàng hôm nay';
+
+  // Today Sales screen — cashflow breakdown (DG-374 Phase 3)
+  static const todaySalesCashflowSection = 'Dòng tiền';
+  static const todaySalesNoActiveDrawer = 'Chưa mở quầy hôm nay';
 
   // Bulk selection
   static const chonAnh = 'Chọn';

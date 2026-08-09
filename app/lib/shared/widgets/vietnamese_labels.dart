@@ -177,10 +177,13 @@ class VN {
   static const eventPhotosUploadFailed = 'Đã lưu sự kiện nhưng không tải được ảnh';
 
   // Dashboard
+  static const chonNgay = 'Chọn ngày';
   static const todayOrders = 'Đơn hàng hôm nay';
   static const upcomingDue = 'Sắp đến hạn';
   static const overdueOrders = 'Quá hạn';
   static const recentActivity = 'Sự kiện gần đây';
+  // Today's order list empty state (DG-376 Phase 5 — FR6/AC6).
+  static const khongCoDonHomNay = 'Không có đơn hàng hôm nay';
 
   // Packing items
   static const packCandles = 'Nến';

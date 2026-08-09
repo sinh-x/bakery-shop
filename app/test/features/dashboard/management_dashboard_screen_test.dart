@@ -4,14 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:bakery_app/data/api/accounting_service.dart';
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
-import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/order_photo.dart';
+import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
+import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/utils/date_formatting.dart';
 
 Order _order({
   required String ref,
@@ -19,11 +21,12 @@ Order _order({
   String urgency = 'normal',
   String? dueDate,
   double totalPrice = 0,
+  String customerName = 'Test',
 }) {
   return Order(
     id: ref,
     orderRef: ref,
-    customerName: 'Test',
+    customerName: customerName,
     status: status,
     urgency: urgency,
     dueDate: dueDate,
@@ -53,21 +56,21 @@ class _FakeOrderService extends OrderService {
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
 }
 
-class _FakeAccountingService extends AccountingService {
-  _FakeAccountingService() : super(Dio());
-  List<JournalEntry> entries = const [];
+class _FakeReportService extends ReportService {
+  _FakeReportService() : super(Dio());
+  TodaySummary? summary;
 
   @override
-  Future<JournalListResponse> listJournal({
-    String? since,
-    String? until,
-    int? accountId,
-    String? sourceType,
-    int? sourceId,
-    int limit = 100,
-    int offset = 0,
-  }) async {
-    return JournalListResponse(total: entries.length, items: entries);
+  Future<TodaySummary> getTodaySummary({String? date}) async {
+    return summary ??
+        const TodaySummary(
+          date: '2026-08-05',
+          revenue: 0,
+          orderCount: 0,
+          cashTotal: 0,
+          bankTransferTotal: 0,
+          orders: [],
+        );
   }
 }
 
@@ -77,6 +80,18 @@ class _FakeStockService extends StockService {
 
   @override
   Future<List<StockOverviewItem>> getStockOverview() async => items;
+}
+
+class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
+  @override
+  String build() => 'http://test.local';
+}
+
+class _FakeOrderPhotosNotifier extends OrderPhotosNotifier {
+  _FakeOrderPhotosNotifier() : super('unused');
+
+  @override
+  Future<List<OrderPhoto>> build() async => const [];
 }
 
 GoRouter _router() => GoRouter(
@@ -93,6 +108,10 @@ GoRouter _router() => GoRouter(
           path: '/stock',
           builder: (_, _) => const SizedBox(child: Text('stock-page')),
         ),
+        GoRoute(
+          path: '/today-sales',
+          builder: (_, _) => const SizedBox(child: Text('today-sales-page')),
+        ),
       ],
       initialLocation: '/dashboard',
     );
@@ -100,19 +119,28 @@ GoRouter _router() => GoRouter(
 Future<void> _pump(
   WidgetTester tester, {
   List<Order> orders = const [],
-  List<JournalEntry> journal = const [],
+  TodaySummary? summary,
   List<StockOverviewItem> stock = const [],
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
-  final accountingService = _FakeAccountingService()..entries = journal;
+  final reportService = _FakeReportService()..summary = summary;
   final stockService = _FakeStockService()..items = stock;
+  final summaryOrders = summary?.orders ?? const <Order>[];
+  final allRefs = <String>{
+    ...orders.map((o) => o.orderRef),
+    ...summaryOrders.map((o) => o.orderRef),
+  };
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         orderServiceProvider.overrideWithValue(orderService),
-        accountingServiceProvider.overrideWithValue(accountingService),
+        reportServiceProvider.overrideWithValue(reportService),
         stockServiceProvider.overrideWithValue(stockService),
+        apiBaseUrlProvider.overrideWith(_FakeApiBaseUrlNotifier.new),
+        for (final ref in allRefs)
+          orderPhotosProvider(ref)
+              .overrideWith(_FakeOrderPhotosNotifier.new),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -120,59 +148,34 @@ Future<void> _pump(
   await tester.pumpAndSettle(const Duration(seconds: 1));
 }
 
-JournalEntry _journalEntryWithCredit(double credit, String accountCode) {
-  return JournalEntry(
-    id: 'j1',
-    lines: [
-      JournalLine(
-        id: 'l1',
-        journalEntryId: 'j1',
-        accountId: accountCode,
-        accountCode: accountCode,
-        credit: credit,
-      ),
-    ],
-    createdAt: DateTime(2026, 8, 5),
-  );
-}
-
-StockOverviewItem _stockItem(String name, int qty) {
-  return StockOverviewItem(
-    productId: 1,
-    productName: name,
-    category: 'Bánh',
-    quantity: qty,
-    basePrice: null,
-    // totalQuantity folds perChip quantities, so route qty through one option
-    // to make the item's total equal qty.
-    perChip: [
-      StockOverviewOption(
-        normalizedPrice: 0,
-        quantity: qty,
-        chipLabels: const [],
-        chipLabel: null,
-      ),
-    ],
+TodaySummary _summary({
+  double revenue = 0,
+  int orderCount = 0,
+  double cashTotal = 0,
+  double bankTransferTotal = 0,
+  List<Order> orders = const [],
+}) {
+  return TodaySummary(
+    date: '2026-08-05',
+    revenue: revenue,
+    orderCount: orderCount,
+    cashTotal: cashTotal,
+    bankTransferTotal: bankTransferTotal,
+    orders: orders,
   );
 }
 
 void main() {
-  final todayStr = formatApiDate(DateTime(2026, 8, 5));
 
-  testWidgets('renders app bar, section titles, and three metric cards',
+  testWidgets(
+      'renders app bar, section titles, and the Xem doanh số hôm nay entry card',
       (tester) async {
     await _pump(tester);
     expect(find.text(SharedLabels.tabManagement), findsOneWidget);
     expect(find.text(SharedLabels.dashboardSectionMetrics), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardMetricViewTodaySales),
+        findsOneWidget);
     expect(find.text(SharedLabels.dashboardSectionShortcuts), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardMetricOrdersToday), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardMetricRevenueToday), findsOneWidget);
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardMetricLowStock),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text(SharedLabels.dashboardMetricLowStock), findsOneWidget);
     await tester.dragUntilVisible(
       find.text(SharedLabels.dashboardSectionAlerts),
       find.byType(Scrollable).first,
@@ -181,7 +184,8 @@ void main() {
     expect(find.text(SharedLabels.dashboardSectionAlerts), findsOneWidget);
   });
 
-  testWidgets('renders five shortcut tiles', (tester) async {
+  testWidgets('renders six shortcut tiles including Tiền tại quầy',
+      (tester) async {
     await _pump(tester);
     expect(find.text(SharedLabels.dashboardShortcutStock), findsOneWidget);
     expect(find.text(SharedLabels.dashboardShortcutCategories), findsOneWidget);
@@ -190,11 +194,23 @@ void main() {
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
     await tester.pump();
     expect(find.text(SharedLabels.dashboardShortcutBlanks), findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutCashDrawer),
+        findsOneWidget);
+  });
+
+  testWidgets('Xem doanh số hôm nay card tap navigates to /today-sales',
+      (tester) async {
+    await _pump(tester);
+    await tester.tap(
+        find.text(SharedLabels.dashboardMetricViewTodaySales));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.text('today-sales-page'), findsOneWidget);
   });
 
   testWidgets('shortcut tap navigates via go router', (tester) async {
     await _pump(tester);
-    await tester.tap(find.text(SharedLabels.dashboardShortcutStock), warnIfMissed: false);
+    await tester.tap(find.text(SharedLabels.dashboardShortcutStock),
+        warnIfMissed: false);
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text('stock-page'), findsOneWidget);
   });
@@ -214,52 +230,28 @@ void main() {
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
-  // Phase 3 — real API wiring (FR2/FR4/AC2/AC3).
-  testWidgets('orders-today metric reflects real order count (FR2/AC2)',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(ref: 'A', dueDate: todayStr),
-        _order(ref: 'B', dueDate: todayStr),
-        _order(ref: 'C', dueDate: '2026-08-06'),
-      ],
-    );
-    expect(find.text('2'), findsOneWidget);
-  });
-
+  // Phase 3 — real API wiring (FR2/FR4/AC2/AC3). DG-376: metrics now come
+  // from the today-summary API (single source of truth).
+  // Note: The individual order-count and low-stock MetricCards were replaced
+  // by DG-374's single "Xem doanh số hôm nay" entry-point card. The
+  // underlying providers remain covered by dashboard_metrics_provider_test.dart
+  // and today_order_list_test.dart.
   testWidgets(
-      'revenue-today metric combines journal 4100 credits + orders totalPrice (FR4/AC3)',
+      'revenue-today metric comes from API summary only (Bug 3 — no double-count)',
       (tester) async {
     await _pump(
       tester,
-      orders: [
-        _order(ref: 'A', dueDate: todayStr, totalPrice: 50000),
-        _order(ref: 'B', dueDate: todayStr, totalPrice: 25000),
-      ],
-      journal: [_journalEntryWithCredit(100000, '4100')],
+      summary: _summary(
+        revenue: 175000,
+        orderCount: 2,
+        orders: [
+          _order(ref: 'A', dueDate: '2026-08-05', totalPrice: 50000),
+          _order(ref: 'B', dueDate: '2026-08-05', totalPrice: 25000),
+        ],
+      ),
     );
-    // 100000 (journal) + 75000 (orders) = 175000đ
+    // 175000 (API journal-only) — NOT 250000 (old double-count behavior).
     expect(find.text('175.000đ'), findsOneWidget);
-  });
-
-  testWidgets('low-stock metric counts items at or below threshold (FR2/AC3)',
-      (tester) async {
-    await _pump(
-      tester,
-      stock: [
-        _stockItem('Bánh mì', 3),
-        _stockItem('Bánh bao', 5),
-        _stockItem('Bánh kem', 20),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardMetricLowStock),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    // Two items (3 and 5) are ≤ lowStockThreshold (5).
-    expect(find.text('2'), findsOneWidget);
   });
 
   testWidgets('critical-order alert banner shows when urgency=critical (FR5/AC9)',
@@ -288,5 +280,49 @@ void main() {
       orders: [_order(ref: 'A', urgency: 'normal')],
     );
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+  });
+
+  // DG-376 Phase 5/6 — Today's orders section (FR6/AC6).
+  testWidgets('today orders section groups orders by status with a count '
+      '(FR6/AC6)', (tester) async {
+    await _pump(
+      tester,
+      summary: _summary(orderCount: 4, orders: [
+        _order(ref: 'A', status: 'new', customerName: 'An'),
+        _order(ref: 'B', status: 'new', customerName: 'Bình'),
+        _order(ref: 'C', status: 'completed', customerName: 'Cúc'),
+        _order(ref: 'D', status: 'cancelled', customerName: 'Dung'),
+      ]),
+    );
+    // Scroll the today-orders section into view (it sits below metrics +
+    // shortcuts).
+    await tester.dragUntilVisible(
+      find.text('An'),
+      find.byType(Scrollable).first,
+      const Offset(0, -500),
+    );
+    // Section title renders.
+    expect(find.text(VN.todayOrders), findsOneWidget);
+    // Status group headers (some may be off-screen, so use findWidgets).
+    expect(find.text(VN.statusNew), findsWidgets);
+    expect(find.text(VN.statusCompleted), findsWidgets);
+    expect(find.text(VN.statusCancelled), findsWidgets);
+    // Order rows render.
+    expect(find.text('An'), findsOneWidget);
+    expect(find.text('Bình'), findsOneWidget);
+    expect(find.text('Cúc'), findsOneWidget);
+    expect(find.text('Dung'), findsOneWidget);
+  });
+
+  testWidgets('today orders section shows empty state when no orders (FR6)',
+      (tester) async {
+    await _pump(tester, summary: _summary(orderCount: 0, orders: const []));
+    await tester.dragUntilVisible(
+      find.text(VN.khongCoDonHomNay),
+      find.byType(Scrollable).first,
+      const Offset(0, -400),
+    );
+    expect(find.text(VN.todayOrders), findsOneWidget);
+    expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
   });
 }
