@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/api/cash_drawer_service.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../providers/cash_drawer_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'cash_drawer_edit_dialog.dart';
 
 /// Cash-drawer transaction list with infinite-scroll pagination (DG-343
 /// Phase 3, FR3/FR4/FR5, AC1–AC5).
@@ -27,12 +29,20 @@ import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 /// newest-first view refreshes within 30 seconds of a new transaction —
 /// mirroring the existing [cashDrawerStatusProvider] polling pattern in
 /// `_CashDrawerScreenState`. Closed-drawer views do not poll.
+///
+/// DG-379 Phase 4.3 (FR1-FR3, AC1/AC2/AC4/AC5/AC7): when [reconciled] is
+/// `false`, tapping an open (`cash_drawer_open`) or close
+/// (`cash_drawer_close_adjust`) transaction card opens the edit dialog. On
+/// save the service PATCHes the entry and the list refreshes immediately
+/// (AC7). When [reconciled] is `true` (AC5), the edit affordance is hidden —
+/// tapping a card shows a lock-notice snackbar instead of the dialog.
 class CashDrawerTransactionList extends ConsumerStatefulWidget {
   const CashDrawerTransactionList({
     super.key,
     required this.drawerId,
     this.poll = false,
     this.pageSize = 50,
+    this.reconciled = false,
   });
 
   /// The drawer whose transactions are displayed. The active drawer (when
@@ -47,6 +57,11 @@ class CashDrawerTransactionList extends ConsumerStatefulWidget {
   /// Page size used for each [cashDrawerTransactionsProvider] request.
   /// Defaults to 50 to match the backend default and the history list.
   final int pageSize;
+
+  /// DG-379 Phase 4.3 (FR7, AC5): whether the drawer is reconciled. When
+  /// `true`, transaction cards are not tappable for editing — a lock-notice
+  /// snackbar is shown instead. Defaults to `false` (editable).
+  final bool reconciled;
 
   @override
   ConsumerState<CashDrawerTransactionList> createState() =>
@@ -209,6 +224,61 @@ class _CashDrawerTransactionListState
     }
   }
 
+  /// DG-379 Phase 4.3 (FR1-FR3, AC1/AC2/AC5/AC7): tap handler for open/close
+  /// transaction cards. When the drawer is reconciled (AC5), shows a
+  /// lock-notice snackbar and returns. Otherwise opens the edit dialog; on
+  /// save, PATCHes the entry via [CashDrawerService.editTransaction] and
+  /// refreshes the list (AC7). Non-editable types (cash-in, cash-out, sale,
+  /// expense) are ignored — only `cash_drawer_open` and
+  /// `cash_drawer_close_adjust` are editable per the backend.
+  Future<void> _handleTransactionTap(
+    BuildContext context,
+    CashDrawerTransaction transaction,
+  ) async {
+    // Only open/close transactions are editable (FR1/FR2).
+    final editable = transaction.type == 'cash_drawer_open' ||
+        transaction.type == 'cash_drawer_close_adjust';
+    if (!editable) return;
+    // AC5: reconciled drawers lock editing.
+    if (widget.reconciled) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(VN.cashDrawerEditLockedReconciled)),
+      );
+      return;
+    }
+    final entryId = int.tryParse(transaction.id);
+    if (entryId == null) return;
+    // amount is signed; the edit dialog edits the absolute magnitude.
+    final currentAmount = transaction.amount.abs();
+    final result = await showEditTransactionDialog(
+      context,
+      currentAmount: currentAmount,
+      currentNotes: transaction.note,
+      txnTypeLabel: VN.cashDrawerTxnTypeLabel(transaction.type),
+    );
+    if (result == null || !context.mounted) return;
+    try {
+      await ref.read(cashDrawerServiceProvider).editTransaction(
+            widget.drawerId,
+            entryId,
+            amount: result.amount,
+            notes: result.notes,
+          );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(VN.cashDrawerEditTxnSaved)),
+      );
+      // AC7: auto-refresh the transaction list after a successful edit.
+      _resetAndRefresh();
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${VN.apiError}: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadedItems.isEmpty && _isLoadingPage) {
@@ -248,7 +318,11 @@ class _CashDrawerTransactionListState
       itemCount: _loadedItems.length + _tailItemCount,
       itemBuilder: (context, index) {
         if (index < _loadedItems.length) {
-          return _TransactionCard(transaction: _loadedItems[index]);
+          return _TransactionCard(
+            transaction: _loadedItems[index],
+            reconciled: widget.reconciled,
+            onTap: _handleTransactionTap,
+          );
         }
         // Tail row: loading indicator, retry row, or end-of-list marker for
         // the next page.
@@ -297,10 +371,33 @@ class _CashDrawerTransactionListState
 ///   title  — type label (short VN, e.g. "Mở quầy", "Bán hàng")
 ///   amount — signed VND with `+`/`-` prefix, green for inflow / red for outflow
 ///   subtitle — timestamp (dd/MM/yyyy HH:mm) and note when present
+///
+/// DG-379 Phase 4.3 (FR1-FR3, AC1/AC2/AC5): when [onTap] is non-null and the
+/// transaction type is editable (open/close), the card is tappable. A small
+/// edit icon is shown on editable rows so the owner discovers the affordance.
+/// When [reconciled] is `true` (AC5) the edit icon is hidden (the [onTap]
+/// still fires to show the lock-notice snackbar via the parent handler).
 class _TransactionCard extends StatelessWidget {
-  const _TransactionCard({required this.transaction});
+  const _TransactionCard({
+    required this.transaction,
+    this.reconciled = false,
+    this.onTap,
+  });
 
   final CashDrawerTransaction transaction;
+
+  /// Whether the owning drawer is reconciled (hides the edit icon, AC5).
+  final bool reconciled;
+
+  /// Invoked when the card is tapped. The parent decides whether to open the
+  /// edit dialog or show the reconciled lock notice.
+  final Future<void> Function(BuildContext context, CashDrawerTransaction txn)?
+      onTap;
+
+  /// Whether this transaction type is editable (open/close only, FR1/FR2).
+  bool get _isEditableType =>
+      transaction.type == 'cash_drawer_open' ||
+      transaction.type == 'cash_drawer_close_adjust';
 
   @override
   Widget build(BuildContext context) {
@@ -310,68 +407,92 @@ class _TransactionCard extends StatelessWidget {
         ? '+${formatVND(transaction.amount.toDouble())}'
         : '-${formatVND(transaction.amount.abs().toDouble())}';
     final amountColor = inflow ? Colors.green.shade700 : theme.colorScheme.error;
-    return Card(
+    // Wrap the card content so the whole row is tappable when an edit
+    // affordance is available (open/close type + a non-null tap handler).
+    final canEdit = _isEditableType && onTap != null;
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    VN.cashDrawerTxnTypeLabel(transaction.type),
-                    style: theme.textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    formatDisplay(transaction.timestamp),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+      child: InkWell(
+        onTap: canEdit ? () => onTap!(context, transaction) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            VN.cashDrawerTxnTypeLabel(transaction.type),
+                            style: theme.textTheme.titleSmall,
+                          ),
                         ),
-                  ),
-                  if (transaction.note.isNotEmpty) ...[
+                        // AC5: hide the edit icon when the drawer is
+                        // reconciled. The tap still fires so the parent can
+                        // surface the lock-notice snackbar.
+                        if (canEdit && !reconciled) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.edit_outlined,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 4),
                     Text(
-                      transaction.note,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                  // DG-343 Phase 4: reference information (order ref + customer
-                  // name for payment transactions; summary + staff/provider for
-                  // expenses) shown below the note in smaller, lighter text.
-                  if (transaction.reference.isNotEmpty ||
-                      transaction.referenceDetail.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      [
-                        if (transaction.reference.isNotEmpty)
-                          transaction.reference,
-                        if (transaction.referenceDetail.isNotEmpty)
-                          transaction.referenceDetail,
-                      ].join(' — '),
-                      style: theme.textTheme.labelSmall?.copyWith(
+                      formatDisplay(transaction.timestamp),
+                      style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                     ),
+                    if (transaction.note.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        transaction.note,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                    // DG-343 Phase 4: reference information (order ref + customer
+                    // name for payment transactions; summary + staff/provider for
+                    // expenses) shown below the note in smaller, lighter text.
+                    if (transaction.reference.isNotEmpty ||
+                        transaction.referenceDetail.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if (transaction.reference.isNotEmpty)
+                            transaction.reference,
+                          if (transaction.referenceDetail.isNotEmpty)
+                            transaction.referenceDetail,
+                        ].join(' — '),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              signedAmount,
-              style: theme.textTheme.titleMedium?.copyWith(
-                    color: amountColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Text(
+                signedAmount,
+                style: theme.textTheme.titleMedium?.copyWith(
+                      color: amountColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+    return card;
   }
 }
 

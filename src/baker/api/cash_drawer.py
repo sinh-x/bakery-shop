@@ -46,7 +46,16 @@ from baker.db.schema import (
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
-from baker.models.cash_drawer import CashDrawer
+from baker.models.cash_drawer import (
+    CashDrawer,
+    CloseEditRequiresClosedDrawer,
+    DrawerNotFound,
+    DrawerReconciled,
+    IntegrityError,
+    InvalidAmount,
+    InvalidTransactionType,
+    TransactionNotFound,
+)
 from baker.models.journal_entry import JournalEntry, JournalLine
 from baker.utils.time import now_utc
 
@@ -218,6 +227,27 @@ class CashOutRequest(BaseModel):
         None,
         description="Tên nhân viên — bắt buộc khi destination='employee'. "
         "Sub-account 23XX được tạo lần đầu qua _ensure_staff_payable_sub_account.",
+    )
+
+
+class EditTransactionRequest(BaseModel):
+    """DG-379 Phase 4.2 (FR1-FR3): edit an open/close transaction's amount
+    and/or notes.
+
+    Both fields are optional — send only ``amount`` to edit the amount, only
+    ``notes`` to edit the description, or both. ``amount`` must be > 0 when
+    provided.
+    """
+
+    amount: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Số tiền mới (VND) — phải > 0. Bỏ qua để giữ nguyên amount.",
+    )
+    notes: Optional[str] = Field(
+        None,
+        description="Ghi chú mới cho giao dịch (cập nhật journal description). "
+        "Bỏ qua để giữ nguyên notes.",
     )
 
 
@@ -969,6 +999,111 @@ def drawer_transactions(
             "limit": limit,
             "offset": offset,
             "items": items,
+        }
+
+
+@router.patch("/{drawer_id}/transactions/{entry_id}", status_code=200)
+def edit_transaction(
+    drawer_id: int,
+    entry_id: int,
+    body: EditTransactionRequest,
+):
+    """DG-379 Phase 4.2 (FR1-FR5, AC1-AC4): edit an open/close transaction's
+    amount and/or notes in-place.
+
+    - Updates ``journal_entries.description`` (notes) in-place (FR3).
+    - Updates ``journal_lines.debit``/``credit`` (amount) in-place (FR1/FR2).
+    - Recalculates ``closing_balance``, ``counted_amount``, ``discrepancy`` and
+      regenerates the breakdown snapshot when editing a close transaction (FR5/FR6).
+    - All updates run in a single DB transaction (FR9, NFR2: debit == credit).
+    - 409 if the drawer is reconciled (FR7); 404 if drawer or entry missing;
+      400 if the entry is not an open/close type or amount <= 0.
+    """
+    if body.amount is None and body.notes is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Phải cung cấp ít nhất một trường: amount hoặc notes.",
+        )
+    with get_db() as conn:
+        try:
+            result = CashDrawer.edit_transaction(
+                conn,
+                drawer_id,
+                entry_id,
+                amount=body.amount,
+                notes=body.notes,
+            )
+        except DrawerNotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Không tìm thấy quầy tiền mặt id={exc.drawer_id}.",
+            ) from exc
+        except DrawerReconciled as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Quầy tiền mặt id={exc.drawer_id} đã được đối soát (reconciled) — "
+                    "không thể sửa giao dịch."
+                ),
+            ) from exc
+        except TransactionNotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Không tìm thấy giao dịch id={exc.entry_id} "
+                    f"thuộc quầy id={exc.drawer_id}."
+                ),
+            ) from exc
+        except InvalidTransactionType as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Không thể sửa giao dịch loại '{exc.source_type}'. "
+                    "Chỉ giao dịch Mở quầy (cash_drawer_open) và Đóng quầy "
+                    "(cash_drawer_close_adjust) mới có thể sửa."
+                ),
+            ) from exc
+        except CloseEditRequiresClosedDrawer as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Không thể sửa giao dịch đóng quầy khi quầy id={exc.drawer_id} "
+                    "vẫn đang mở."
+                ),
+            ) from exc
+        except InvalidAmount as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Số tiền phải > 0 (nhận được {exc.amount}).",
+            ) from exc
+        except IntegrityError as exc:
+            logger.error("edit_transaction integrity error: %s (%s)", exc.entry_id, exc.reason)
+            raise HTTPException(
+                status_code=500,
+                detail="Lỗi toàn vẹn dữ liệu — vui lòng liên hệ hỗ trợ.",
+            ) from exc
+        return result
+
+
+@router.patch("/{drawer_id}/reconcile", status_code=200)
+def reconcile_drawer(drawer_id: int):
+    """DG-379 Phase 4.2 (FR8, AC6): mark a drawer as reconciled.
+
+    Sets ``cash_drawer.reconciled = 1`` so further transaction edits are
+    rejected with 409. Idempotent — re-reconciling an already-reconciled
+    drawer is a no-op and returns 200.
+    """
+    with get_db() as conn:
+        try:
+            reconciled = CashDrawer.reconcile(conn, drawer_id)
+        except DrawerNotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Không tìm thấy quầy tiền mặt id={exc.drawer_id}.",
+            ) from exc
+        return {
+            "id": str(drawer_id),
+            "reconciled": bool(reconciled),
         }
 
 

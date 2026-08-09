@@ -157,6 +157,14 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     return int.tryParse(drawer.id);
   }
 
+  /// DG-379 Phase 4.3 (FR7, AC5): whether the active drawer is reconciled.
+  /// When `true`, the transaction list hides the edit affordance and shows a
+  /// lock-notice snackbar on tap. Defaults to `false` when no drawer is open.
+  bool get _activeDrawerReconciled {
+    final drawer = ref.read(cashDrawerStatusProvider).value;
+    return drawer?.reconciled ?? false;
+  }
+
   @override
   void dispose() {
     // DG-331 FR11/AC11: cancel the polling timer when the screen is removed.
@@ -265,6 +273,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
               : CashDrawerTransactionList(
                   drawerId: activeDrawerId,
                   poll: true,
+                  reconciled: _activeDrawerReconciled,
                 ),
         ],
       ),
@@ -862,6 +871,7 @@ class _DrawerTransactionsScreen extends StatelessWidget {
       body: CashDrawerTransactionList(
         drawerId: drawerId,
         poll: false,
+        reconciled: drawer.reconciled,
       ),
     );
   }

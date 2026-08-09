@@ -436,6 +436,94 @@ class CashDrawerService {
       response.data as Map<String, dynamic>,
     );
   }
+
+  /// DG-379 Phase 4.2/4.3 (FR1-FR3): edit an open/close transaction's amount
+  /// and/or notes in-place. Calls
+  /// `PATCH /api/cash-drawer/{drawer_id}/transactions/{entry_id}` with a JSON
+  /// body containing the optional `amount` (VND, > 0) and `notes`. The backend
+  /// updates `journal_entries.description` and `journal_lines.debit`/`credit`
+  /// in a single DB transaction, recalculates drawer balances for close
+  /// edits, and returns a dict describing the updated entry + drawer.
+  ///
+  /// Both [amount] and [notes] are optional — pass `null` to leave a field
+  /// unchanged. At least one must be non-null (the backend rejects an empty
+  /// body with 400). Throws [DioException] on 404 (drawer/entry missing),
+  /// 409 (drawer reconciled or close-edit-while-open), 400 (invalid type or
+  /// amount).
+  Future<CashDrawerEditResult> editTransaction(
+    int drawerId,
+    int entryId, {
+    int? amount,
+    String? notes,
+  }) async {
+    final response = await _dio.patch(
+      '/api/cash-drawer/$drawerId/transactions/$entryId',
+      data: {
+        if (amount != null) 'amount': amount,
+        if (notes != null) 'notes': notes,
+      },
+    );
+    return CashDrawerEditResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// DG-379 Phase 4.2/4.3 (FR8, AC6): mark a drawer as reconciled. Calls
+  /// `PATCH /api/cash-drawer/{drawer_id}/reconcile` (no body). Sets
+  /// `cash_drawer.reconciled = 1` so further transaction edits are rejected
+  /// with 409. Idempotent — re-reconciling an already-reconciled drawer
+  /// returns 200 with `reconciled: true`. Throws [DioException] on 404
+  /// (drawer missing).
+  Future<bool> reconcileDrawer(int drawerId) async {
+    final response = await _dio.patch('/api/cash-drawer/$drawerId/reconcile');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) return false;
+    return (data['reconciled'] as bool?) ?? false;
+  }
+}
+
+/// DG-379 Phase 4.3: result of [CashDrawerService.editTransaction]. Mirrors
+/// the backend `CashDrawer.edit_transaction` response dict:
+///
+///   {
+///     "drawerId": "1",
+///     "entryId": "12",
+///     "sourceType": "cash_drawer_open",
+///     "amount": 1500000,          // null when amount was not edited
+///     "notes": "Mở quầy sáng",      // the updated (or unchanged) description
+///     "drawer": { ...CashDrawer... } // full recalculated drawer
+///   }
+///
+/// The [drawer] field carries the recalculated expected/closing balance and
+/// the up-to-date `reconciled` flag so the caller can refresh the status
+/// card and transaction list without a second round-trip.
+class CashDrawerEditResult {
+  const CashDrawerEditResult({
+    required this.drawerId,
+    required this.entryId,
+    required this.sourceType,
+    required this.amount,
+    required this.notes,
+    required this.drawer,
+  });
+
+  final String drawerId;
+  final String entryId;
+  final String sourceType;
+  final int? amount;
+  final String notes;
+  final CashDrawer drawer;
+
+  factory CashDrawerEditResult.fromJson(Map<String, dynamic> json) {
+    return CashDrawerEditResult(
+      drawerId: (json['drawerId'] as String?) ?? '',
+      entryId: (json['entryId'] as String?) ?? '',
+      sourceType: (json['sourceType'] as String?) ?? '',
+      amount: (json['amount'] as num?)?.toInt(),
+      notes: (json['notes'] as String?) ?? '',
+      drawer: CashDrawer.fromJson((json['drawer'] as Map<String, dynamic>?) ?? const {}),
+    );
+  }
 }
 
 final cashDrawerServiceProvider = Provider<CashDrawerService>((ref) {

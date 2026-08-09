@@ -2824,3 +2824,341 @@ def test_status_breakdown_snapshot_empty_when_open_drawer_exists(api_client):
     body = resp.json()
     assert body.get("status") == "open"
     assert body["breakdownSnapshot"] == []
+
+
+# ---------------------------------------------------------------------------
+# DG-379 Phase 4.2 — edit_transaction + reconcile endpoints
+# (FR1-FR9, AC1-AC7)
+# ---------------------------------------------------------------------------
+
+
+def _open_drawer_entry_id(api_client, source_type: str = "cash_drawer_open") -> int:
+    """Return the journal entry id of the open transaction (source_type
+    ``cash_drawer_open``) for the currently active drawer."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT je.id FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje ON cdje.journal_entry_id = je.id
+            JOIN cash_drawer cd ON cd.id = cdje.cash_drawer_id
+            WHERE je.source_type = ? AND cd.status = 'open'
+            ORDER BY je.id DESC LIMIT 1
+            """,
+            (source_type,),
+        ).fetchone()
+    assert row is not None, f"no {source_type} entry found for active drawer"
+    return int(row["id"])
+
+
+def _active_drawer_id(api_client) -> int:
+    with get_db() as conn:
+        drawer = CashDrawer.get_active(conn)
+        assert drawer is not None, "no active drawer"
+        return int(drawer.id)
+
+
+def _close_entry_id(drawer_id: int) -> int:
+    """Return the cash_drawer_close_adjust journal entry id for a closed
+    drawer (assumes a close-adjust entry was created at close time)."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT je.id FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje ON cdje.journal_entry_id = je.id
+            WHERE je.source_type = 'cash_drawer_close_adjust'
+              AND cdje.cash_drawer_id = ?
+            ORDER BY je.id DESC LIMIT 1
+            """,
+            (drawer_id,),
+        ).fetchone()
+    assert row is not None, "no close-adjust entry for drawer"
+    return int(row["id"])
+
+
+def test_edit_open_transaction_amount_success(api_client):
+    """FR1/AC3: edit the amount of an open transaction when the drawer is
+    active — updates journal_lines debit/credit in-place."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 1_500_000},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["amount"] == 1_500_000
+    # Verify the journal lines were updated in-place.
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT debit, credit FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+            (entry_id,),
+        ).fetchall()
+        debit = sum(float(r["debit"]) for r in rows)
+        credit = sum(float(r["credit"]) for r in rows)
+        assert debit == 1_500_000.0
+        assert credit == 1_500_000.0
+        # expected_balance should reflect the new amount (opening_balance 0 + 1,500,000).
+        drawer = CashDrawer.get_by_id(conn, drawer_id)
+        assert drawer.expected_balance(conn) == 1_500_000
+
+
+def test_edit_open_transaction_notes_success(api_client):
+    """FR3/AC4: edit the notes (description) of an open transaction —
+    updates journal_entries.description in-place."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 500_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"notes": "Ghi chú đã sửa"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["notes"] == "Ghi chú đã sửa"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT description FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        assert row["description"] == "Ghi chú đã sửa"
+
+
+def test_edit_close_transaction_recalculates_balances(api_client):
+    """FR2/FR5/FR6/AC3: edit a close transaction (close_adjust entry) —
+    recalculates closing_balance, counted_amount, discrepancy, and regenerates
+    the breakdown snapshot."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    # expected = 1,200,000; counted = 1,300,000 → surplus 100,000 → close_adjust
+    resp_close = api_client.post(
+        "/api/cash-drawer/close",
+        json={"countedAmount": 1_300_000, "surplusConfirmed": True, "surplusSource": "owner_cash"},
+    )
+    assert resp_close.status_code == 200, resp_close.text
+    close_body = resp_close.json()
+    drawer_id = int(close_body["id"])
+    close_entry_id = _close_entry_id(drawer_id)
+    # Original discrepancy = 100,000
+    assert close_body["discrepancy"] == 100_000
+    # Edit the close-adjust amount to 50,000 (smaller surplus)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{close_entry_id}",
+        json={"amount": 50_000},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    drawer = body["drawer"]
+    # New closing_balance = pre-adjust expected (1,200,000) + 50,000 = 1,250,000
+    assert drawer["closingBalance"] == 1_250_000
+    assert drawer["countedAmount"] == 1_250_000
+    assert drawer["discrepancy"] == 50_000
+    # Verify the breakdown snapshot was regenerated (close category updated).
+    with get_db() as conn:
+        snap = CashDrawer.get_breakdown_snapshot(conn, drawer_id)
+        cats = {s["category"]: s for s in snap}
+        assert cats["close"]["totalAmount"] == 50_000.0
+
+
+def test_edit_reconciled_drawer_returns_409(api_client):
+    """FR7/AC5: editing a transaction on a reconciled drawer returns 409."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    # Reconcile the drawer first.
+    rec = api_client.patch(f"/api/cash-drawer/{drawer_id}/reconcile")
+    assert rec.status_code == 200, rec.text
+    # Now an edit should be rejected with 409.
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 2_000_000},
+    )
+    assert resp.status_code == 409, resp.text
+    assert "reconciled" in resp.json()["detail"].lower() or "đối soát" in resp.json()["detail"].lower()
+
+
+def test_edit_nonexistent_transaction_returns_404(api_client):
+    """Editing a journal entry that does not belong to the drawer returns 404."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/999999",
+        json={"amount": 2_000_000},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+def test_edit_nonexistent_drawer_returns_404(api_client):
+    """Editing a transaction on a drawer that does not exist returns 404."""
+    resp = api_client.patch(
+        "/api/cash-drawer/999999/transactions/1",
+        json={"amount": 2_000_000},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+def test_edit_cash_in_transaction_returns_400_wrong_type(api_client):
+    """Editing a cash-in transaction (not open/close type) returns 400."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    api_client.post("/api/cash-drawer/cash-in", json={"amount": 200_000})
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT je.id FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje ON cdje.journal_entry_id = je.id
+            WHERE je.source_type = 'cash_drawer_cash_in'
+            ORDER BY je.id DESC LIMIT 1
+            """
+        ).fetchone()
+    assert row is not None
+    entry_id = int(row["id"])
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 500_000},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "cash_drawer_cash_in" in resp.json()["detail"]
+
+
+def test_reconcile_endpoint_success(api_client):
+    """FR8/AC6: PATCH /reconcile sets reconciled=true on the drawer."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(f"/api/cash-drawer/{drawer_id}/reconcile")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["reconciled"] is True
+    # Verify persisted.
+    with get_db() as conn:
+        drawer = CashDrawer.get_by_id(conn, drawer_id)
+        assert drawer.reconciled == 1
+    # Also reflected in to_api_dict.
+    status = api_client.get("/api/cash-drawer/status")
+    assert status.json()["reconciled"] is True
+
+
+def test_reconcile_idempotent_double_reconcile(api_client):
+    """Reconciling an already-reconciled drawer is idempotent (returns 200,
+    reconciled stays true)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _active_drawer_id(api_client)
+    r1 = api_client.patch(f"/api/cash-drawer/{drawer_id}/reconcile")
+    assert r1.status_code == 200
+    r2 = api_client.patch(f"/api/cash-drawer/{drawer_id}/reconcile")
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["reconciled"] is True
+
+
+def test_reconcile_nonexistent_drawer_returns_404(api_client):
+    """Reconciling a non-existent drawer returns 404."""
+    resp = api_client.patch("/api/cash-drawer/999999/reconcile")
+    assert resp.status_code == 404, resp.text
+
+
+def test_edit_amount_zero_rejected(api_client):
+    """Editing the amount to 0 is rejected (amount must be > 0)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 0},
+    )
+    # Pydantic gt=0 → 422 validation error.
+    assert resp.status_code == 422, resp.text
+
+
+def test_edit_amount_negative_rejected(api_client):
+    """Editing the amount to a negative value is rejected."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": -100},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_edit_no_fields_returns_400(api_client):
+    """Sending an empty body (no amount, no notes) returns 400."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={},
+    )
+    assert resp.status_code == 400, resp.text
+
+
+def test_edit_open_and_amount_combined_success(api_client):
+    """Editing both amount and notes in one request updates both."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 800_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 900_000, "notes": "Sửa cả hai"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["amount"] == 900_000
+    assert body["notes"] == "Sửa cả hai"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT description FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        assert row["description"] == "Sửa cả hai"
+        rows = conn.execute(
+            "SELECT debit, credit FROM journal_lines WHERE journal_entry_id = ?", (entry_id,)
+        ).fetchall()
+        debit = sum(float(r["debit"]) for r in rows)
+        credit = sum(float(r["credit"]) for r in rows)
+        assert debit == 900_000.0
+        assert credit == 900_000.0
+
+
+def test_edit_debit_equals_credit_integrity_after_edit(api_client):
+    """NFR2: after editing, debit always equals credit (balanced entry)."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    entry_id = _open_drawer_entry_id(api_client)
+    drawer_id = _active_drawer_id(api_client)
+    api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 1_234_567},
+    )
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+            "FROM journal_lines WHERE journal_entry_id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert abs(float(row["d"]) - float(row["c"])) < 0.005
+
+
+def test_edit_close_transaction_on_open_drawer_returns_409(api_client):
+    """Editing a close-adjust entry while the drawer is still open returns
+    409 (close edits require a closed drawer). We fabricate a close_adjust
+    entry by linking one manually because the normal close flow closes the
+    drawer first."""
+    api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
+    drawer_id = _active_drawer_id(api_client)
+    # Insert a fake close_adjust entry linked to the open drawer.
+    with get_db() as conn:
+        from baker.db.schema import _insert_journal_entry, _account_id_by_code
+        cash = _account_id_by_code(conn, "1101")
+        owner = _account_id_by_code(conn, "1102")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Fake close adjust",
+            source_type="cash_drawer_close_adjust",
+            source_id=None,
+            lines=[(cash, 100.0, 0.0, "x"), (owner, 0.0, 100.0, "x")],
+            drawer_id=drawer_id,
+        )
+    resp = api_client.patch(
+        f"/api/cash-drawer/{drawer_id}/transactions/{entry_id}",
+        json={"amount": 200},
+    )
+    assert resp.status_code == 409, resp.text

@@ -770,11 +770,13 @@ CREATE TABLE IF NOT EXISTS cash_drawer (
     counted_opening_balance INTEGER DEFAULT NULL,
     closing_balance         INTEGER DEFAULT NULL,
     counted_amount          INTEGER,
-    discrepancy             INTEGER
+    discrepancy             INTEGER,
+    reconciled              INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_opened_at ON cash_drawer(opened_at);
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_reconciled ON cash_drawer(reconciled);
 """
 
 CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA = """

@@ -29,6 +29,10 @@ class CashDrawer:
     discrepancy: Optional[int] = None
     closing_balance: Optional[int] = None
     counted_opening_balance: Optional[int] = None
+    # DG-379 Phase 4.1 (FR7): reconciled=1 locks a drawer from further
+    # transaction edits. Defaults to 0 (editable). Set via PATCH
+    # /api/cash-drawer/{id}/reconcile (Phase 4.2).
+    reconciled: int = 0
     id: Optional[int] = None
 
     def expected_balance(self, conn=None) -> int:
@@ -95,6 +99,7 @@ class CashDrawer:
                 if row["counted_opening_balance"] is not None
                 else None
             ),
+            reconciled=int(row["reconciled"]) if row["reconciled"] is not None else 0,
         )
 
     def to_api_dict(self, conn=None) -> dict:
@@ -109,6 +114,7 @@ class CashDrawer:
             "discrepancy": self.discrepancy,
             "closingBalance": self.closing_balance,
             "expectedBalance": self.expected_balance(conn),
+            "reconciled": bool(self.reconciled),
         }
 
     @staticmethod
@@ -568,3 +574,363 @@ class CashDrawer:
                 }
             )
         return result
+
+    # ------------------------------------------------------------------
+    # DG-379 Phase 4.2 — transaction edit + reconcile (FR1-FR9, AC1-AC7)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def edit_transaction(
+        conn,
+        drawer_id: int,
+        entry_id: int,
+        *,
+        amount: Optional[int] = None,
+        notes: Optional[str] = None,
+    ) -> dict:
+        """FR1-FR5: edit an open/close transaction's amount and/or notes in a
+        single DB transaction (FR9). Returns a dict describing the updated
+        journal entry and the recalculated drawer state.
+
+        Validation (FR7, FR2, FR3):
+            - Drawer must exist (raises :class:`DrawerNotFound`).
+            - Drawer must not be reconciled (raises :class:`DrawerReconciled`).
+            - Journal entry must exist and be linked to the drawer (raises
+              :class:`TransactionNotFound`).
+            - Journal entry ``source_type`` must be ``cash_drawer_open`` or
+              ``cash_drawer_close_adjust`` (raises :class:`InvalidTransactionType`).
+            - For close (``cash_drawer_close_adjust``) entries, the drawer
+              must be closed (raises :class:`CloseEditRequiresClosedDrawer`).
+            - ``amount`` must be > 0 when provided (raises
+              :class:`InvalidAmount`).
+            - After the line update, debit must equal credit (NFR2); raises
+              :class:`IntegrityError` if not (defensive — should not happen).
+
+        Recalculation (FR4-FR6):
+            - For a close transaction edit, the drawer's ``closing_balance``,
+              ``counted_amount``, and ``discrepancy`` are recalculated in-place
+              from the new expected_balance and the edited close entry amount,
+              and the breakdown snapshot is regenerated.
+            - For an open transaction edit, ``expected_balance`` is naturally
+              derived from the updated 1101 lines on next read (no
+              ``closing_balance`` to update because the drawer is open).
+
+        All updates run inside the caller's transaction (FR9). The caller is
+        responsible for commit/rollback (the ``get_db()`` context commits on
+        success and rolls back on exception).
+        """
+        drawer = CashDrawer.get_by_id(conn, int(drawer_id))
+        if drawer is None:
+            raise DrawerNotFound(int(drawer_id))
+        if drawer.reconciled:
+            raise DrawerReconciled(int(drawer_id))
+
+        # Fetch the journal entry and verify it is linked to this drawer.
+        row = conn.execute(
+            """
+            SELECT je.* FROM journal_entries je
+            JOIN cash_drawer_journal_entries cdje
+                 ON cdje.journal_entry_id = je.id
+            WHERE je.id = ? AND cdje.cash_drawer_id = ?
+            """,
+            (int(entry_id), int(drawer_id)),
+        ).fetchone()
+        if row is None:
+            raise TransactionNotFound(int(entry_id), int(drawer_id))
+        source_type = row["source_type"]
+        if source_type not in ("cash_drawer_open", "cash_drawer_close_adjust"):
+            raise InvalidTransactionType(source_type)
+        if source_type == "cash_drawer_close_adjust" and drawer.status != "closed":
+            raise CloseEditRequiresClosedDrawer(int(drawer_id))
+
+        new_amount: Optional[int] = None
+        if amount is not None:
+            new_amount = int(amount)
+            if new_amount <= 0:
+                raise InvalidAmount(new_amount)
+
+        new_notes: Optional[str] = None
+        if notes is not None:
+            new_notes = str(notes)
+
+        # ------------------------------------------------------------------
+        # Update the journal entry description (notes) when provided (FR3).
+        # ------------------------------------------------------------------
+        if new_notes is not None:
+            conn.execute(
+                "UPDATE journal_entries SET description = ? WHERE id = ?",
+                (new_notes, int(entry_id)),
+            )
+
+        # ------------------------------------------------------------------
+        # Update journal_lines debit/credit when a new amount is provided
+        # (FR1/FR2). The line update scales the existing lines so the entry
+        # remains balanced (NFR2):
+        #   - For a 2-line DR/CR entry, both lines are set to ``new_amount``.
+        #   - For a 4-line compound ``unidentified_sale`` entry (DR 1101/CR 4100
+        #     + DR 5900/CR 1300 at 50% COGS), the 1101/4100 lines are set to
+        #     ``new_amount`` and the 5900/1300 lines are set to 50% of it.
+        # The original balance (sum of debit lines) is used to derive the
+        # scale factor so compound entries stay proportional.
+        # ------------------------------------------------------------------
+        if new_amount is not None:
+            lines = conn.execute(
+                "SELECT id, debit, credit FROM journal_lines "
+                "WHERE journal_entry_id = ? ORDER BY id",
+                (int(entry_id),),
+            ).fetchall()
+            if not lines:
+                raise IntegrityError(int(entry_id), "journal entry has no lines")
+            original_total = sum(float(r["debit"]) for r in lines)
+            if original_total <= 0:
+                raise IntegrityError(int(entry_id), "non-positive original debit total")
+            # Determine if this is a compound (4-line) unidentified_sale entry
+            # by checking for the 5900/1300 accounts. When present, the COGS
+            # portion is 50% of the sale portion; scale both groups so the
+            # 50% ratio is preserved.
+            has_cogs = len(lines) == 4
+            new_debit_total = float(new_amount)
+            if has_cogs:
+                # 1101 + 4100 lines get new_amount; 5900 + 1300 get 50%.
+                sale_lines = lines[:2]
+                cogs_lines = lines[2:]
+                sale_amt = float(new_amount)
+                cogs_amt = float(new_amount) * 0.5
+                for r in sale_lines:
+                    _update_line_amount(conn, int(r["id"]), float(r["debit"]), float(r["credit"]), sale_amt)
+                for r in cogs_lines:
+                    _update_line_amount(conn, int(r["id"]), float(r["debit"]), float(r["credit"]), cogs_amt)
+            else:
+                # 2-line entry: set both lines to new_amount (preserve DR/CR
+                # orientation).
+                for r in lines:
+                    _update_line_amount(conn, int(r["id"]), float(r["debit"]), float(r["credit"]), new_debit_total)
+            # NFR2: verify debit == credit after the update.
+            check = conn.execute(
+                "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+                "FROM journal_lines WHERE journal_entry_id = ?",
+                (int(entry_id),),
+            ).fetchone()
+            if abs(float(check["d"]) - float(check["c"])) > 0.005:
+                raise IntegrityError(int(entry_id), "debit != credit after edit")
+
+        # ------------------------------------------------------------------
+        # FR5/FR6: recalculate closing_balance, counted_amount, discrepancy
+        # and regenerate the breakdown snapshot when editing a close
+        # transaction. The close entry's 1101 line amount is the counted
+        # adjustment; the drawer's expected_balance (recomputed from the
+        # now-updated 1101 lines) is the book balance. The new
+        # ``counted_amount`` = expected_balance (pre-close-adjust) + the
+        # edited close-adjust amount when surplus, or expected_balance - the
+        # edited amount when shortage. Because the close entry is the only
+        # delta between expected (pre-close) and counted, we re-derive:
+        #   counted_amount = expected_balance (which already includes the
+        #   close-adjust entry because it is linked to the drawer)
+        #   discrepancy = counted_amount - expected_balance_before_adjust
+        # Simpler and robust: recompute closing_balance = expected_balance
+        # (authoritative, includes all linked 1101 lines incl. the edited
+        # close entry), and counted_amount = closing_balance (zero
+        # discrepancy by construction for an auto-close; for a manual close
+        # with a counted amount we preserve the original discrepancy
+        # direction by re-deriving counted_amount from the close-adjust sign).
+        # ------------------------------------------------------------------
+        if source_type == "cash_drawer_close_adjust" and new_amount is not None:
+            # The drawer's expected_balance (from closing_balance field for a
+            # closed drawer) was persisted at close time as the
+            # pre-close-adjust expected. The close-adjust entry then adds the
+            # surplus (or subtracts the shortage) so the final 1101 balance
+            # equals counted_amount. After editing the close-adjust amount,
+            # the new closing_balance = pre-adjust expected + signed new
+            # amount, and the new counted_amount = closing_balance (the
+            # physical count equals the book balance plus the adjustment).
+            #
+            # Recover the pre-adjust expected from the original
+            # closing_balance minus the original close-adjust 1101 movement.
+            # Then add the new close-adjust 1101 movement to get the new
+            # closing_balance.
+            original_closing = int(drawer.closing_balance or 0)
+            # Original signed 1101 movement of the close entry (before edit)
+            # — we already overwrote the lines, so recover from
+            # opening_balance + (original closing - opening) ... simpler:
+            # the close entry's original 1101 movement = original closing -
+            # pre-adjust expected. We don't have pre-adjust expected stored,
+            # so derive the new closing_balance directly: it is the
+            # opening_balance plus the SUM of all linked 1101 lines (which
+            # now includes the edited close entry). This is exactly
+            # expected_balance() but the drawer is closed so
+            # expected_balance() returns the persisted closing_balance. We
+            # therefore recompute it from the journal lines directly.
+            row2 = conn.execute(
+                """
+                SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+                FROM cash_drawer_journal_entries cdje
+                JOIN journal_lines jl ON jl.journal_entry_id = cdje.journal_entry_id
+                JOIN accounts a ON a.id = jl.account_id AND a.code = '1101'
+                WHERE cdje.cash_drawer_id = ?
+                """,
+                (int(drawer_id),),
+            ).fetchone()
+            new_closing = int(drawer.opening_balance) + int(row2["balance"])
+            # Determine the close-adjust sign: a surplus close entry debits
+            # 1101 (positive 1101 movement); a shortage credits 1101
+            # (negative). We infer the sign from the edited 1101 line.
+            close_line = conn.execute(
+                """
+                SELECT jl.debit, jl.credit FROM journal_lines jl
+                JOIN accounts a ON a.id = jl.account_id AND a.code = '1101'
+                WHERE jl.journal_entry_id = ?
+                """,
+                (int(entry_id),),
+            ).fetchone()
+            if close_line is None:
+                raise IntegrityError(int(entry_id), "close entry has no 1101 line")
+            signed_adjust = float(close_line["debit"]) - float(close_line["credit"])
+            # The pre-adjust expected = new_closing - signed_adjust. The new
+            # counted_amount = pre-adjust expected + signed_adjust = new_closing
+            # only if discrepancy was zero; for a manual close the counted
+            # amount is the physical count, which differs from the book
+            # balance by the discrepancy. We preserve the original
+            # discrepancy by re-deriving counted_amount = new_closing + 0
+            # (discrepancy is recomputed below from the original counted
+            # minus the original pre-adjust expected, but we don't have the
+            # original pre-adjust expected). The simplest correct behavior:
+            # the close-adjust entry IS the discrepancy booking, so after
+            # editing it, the new discrepancy is the new close-adjust amount
+            # (signed) and the new counted_amount = new_closing (the books now
+            # match the count by construction).
+            new_counted = new_closing
+            new_discrepancy = int(round(signed_adjust))
+            conn.execute(
+                "UPDATE cash_drawer "
+                "SET closing_balance = ?, counted_amount = ?, discrepancy = ? "
+                "WHERE id = ?",
+                (new_closing, new_counted, new_discrepancy, int(drawer_id)),
+            )
+            # FR6: regenerate the breakdown snapshot from the updated lines.
+            CashDrawer.save_breakdown_snapshot(conn, int(drawer_id))
+
+        # ------------------------------------------------------------------
+        # Build the response: updated journal entry + recalculated drawer.
+        # ------------------------------------------------------------------
+        updated_entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE id = ?", (int(entry_id),)
+        ).fetchone()
+        return {
+            "drawerId": str(drawer_id),
+            "entryId": str(entry_id),
+            "sourceType": source_type,
+            "amount": new_amount,
+            "notes": new_notes if new_notes is not None else (updated_entry["description"] or ""),
+            "drawer": CashDrawer.get_by_id(conn, int(drawer_id)).to_api_dict(conn),
+        }
+
+    @staticmethod
+    def reconcile(conn, drawer_id: int) -> int:
+        """FR8/AC6: mark a drawer as reconciled (``reconciled = 1``).
+
+        Idempotent: re-reconciling an already-reconciled drawer is a no-op
+        (returns 1 without changing state). Returns the new ``reconciled``
+        value (1). Raises :class:`DrawerNotFound` if the drawer does not
+        exist.
+        """
+        drawer = CashDrawer.get_by_id(conn, int(drawer_id))
+        if drawer is None:
+            raise DrawerNotFound(int(drawer_id))
+        conn.execute(
+            "UPDATE cash_drawer SET reconciled = 1 WHERE id = ?",
+            (int(drawer_id),),
+        )
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# DG-379 Phase 4.2 — exceptions for edit_transaction / reconcile
+# ---------------------------------------------------------------------------
+
+
+class DrawerNotFound(Exception):
+    """Raised when a drawer id does not exist (HTTP 404)."""
+
+    def __init__(self, drawer_id: int):
+        self.drawer_id = drawer_id
+        super().__init__(f"Cash drawer id={drawer_id} not found")
+
+
+class DrawerReconciled(Exception):
+    """Raised when an edit is attempted on a reconciled drawer (HTTP 409)."""
+
+    def __init__(self, drawer_id: int):
+        self.drawer_id = drawer_id
+        super().__init__(f"Cash drawer id={drawer_id} is reconciled — edits are locked")
+
+
+class TransactionNotFound(Exception):
+    """Raised when a journal entry is not linked to the drawer (HTTP 404)."""
+
+    def __init__(self, entry_id: int, drawer_id: int):
+        self.entry_id = entry_id
+        self.drawer_id = drawer_id
+        super().__init__(
+            f"Journal entry id={entry_id} not found for drawer id={drawer_id}"
+        )
+
+
+class InvalidTransactionType(Exception):
+    """Raised when the entry source_type is not open/close (HTTP 400)."""
+
+    def __init__(self, source_type: str):
+        self.source_type = source_type
+        super().__init__(
+            f"Transaction type '{source_type}' is not editable — "
+            "only cash_drawer_open and cash_drawer_close_adjust can be edited"
+        )
+
+
+class CloseEditRequiresClosedDrawer(Exception):
+    """Raised when editing a close entry on an open drawer (HTTP 409)."""
+
+    def __init__(self, drawer_id: int):
+        self.drawer_id = drawer_id
+        super().__init__(
+            f"Close-adjust entries can only be edited when the drawer is closed "
+            f"(drawer id={drawer_id} is open)"
+        )
+
+
+class InvalidAmount(Exception):
+    """Raised when the amount is <= 0 (HTTP 400)."""
+
+    def __init__(self, amount: int):
+        self.amount = amount
+        super().__init__(f"Amount must be > 0 (got {amount})")
+
+
+class IntegrityError(Exception):
+    """Raised when debit != credit after an edit (HTTP 500 — defensive)."""
+
+    def __init__(self, entry_id: int, reason: str):
+        self.entry_id = entry_id
+        self.reason = reason
+        super().__init__(f"Journal entry id={entry_id} integrity error: {reason}")
+
+
+def _update_line_amount(conn, line_id: int, debit: float, credit: float, new_amount: float) -> None:
+    """Update a journal line's debit or credit to ``new_amount`` preserving
+    the DR/CR orientation. The non-zero side is set to ``new_amount``; the
+    zero side stays zero."""
+    if debit > 0:
+        conn.execute(
+            "UPDATE journal_lines SET debit = ? WHERE id = ?",
+            (float(new_amount), line_id),
+        )
+    elif credit > 0:
+        conn.execute(
+            "UPDATE journal_lines SET credit = ? WHERE id = ?",
+            (float(new_amount), line_id),
+        )
+    else:
+        # Both zero (should not happen for a balanced entry) — defensive.
+        conn.execute(
+            "UPDATE journal_lines SET debit = ? WHERE id = ?",
+            (float(new_amount), line_id),
+        )
