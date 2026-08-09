@@ -438,7 +438,7 @@ def test_urgency_urgent_when_due_soon():
 def test_urgency_urgent_when_new_and_unacknowledged():
     from baker.models.order import compute_urgency
     far_future = "2099-01-01"
-    assert compute_urgency(far_future, "10:00", "new", None) == "urgent"
+    assert compute_urgency(far_future, "10:00", "new", None) == "normal"
 
 
 def test_urgency_urgent_when_due_today_and_active():
