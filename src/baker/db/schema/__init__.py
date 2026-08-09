@@ -196,6 +196,7 @@ from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance  # noqa: F
 from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance  # noqa: F401
 from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot  # noqa: F401
 from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs  # noqa: F401
+from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -370,6 +371,7 @@ __all__ = [
     '_migrate_v96_cash_drawer_counted_opening_balance',
     '_migrate_v97_cash_drawer_breakdown_snapshot',
     '_migrate_v98_reconciliation_sale_rows_linked_order_refs',
+    '_migrate_v99_cash_drawer_reconciled_column',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

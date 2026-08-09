@@ -453,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -472,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -488,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3498,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         _assert_users_role_check_constraint(conn)
 
 
@@ -3564,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3687,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3761,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3788,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4191,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         indexes = {
             r["name"]
@@ -4274,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4286,6 +4286,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
             "closing_balance",
             "counted_amount",
             "discrepancy",
+            "reconciled",
         }
         assert expected <= set(cols), f"missing columns: {expected - set(cols)}"
 
@@ -4385,7 +4386,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4460,7 +4461,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4594,7 +4595,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4719,7 +4720,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4728,7 +4729,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4878,7 +4879,7 @@ def test_v98_adds_linked_order_refs_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 98
+        assert _migrated_version(conn) == 99
         cols = {
             r[1]: r
             for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
@@ -4971,6 +4972,91 @@ def test_v98_idempotent_on_already_migrated_db():
         after = conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
         assert before == after
         assert _migrated_version(conn) == 98
+
+
+# ---------------------------------------------------------------------------
+# v99 — cash_drawer.reconciled column (DG-379 Phase 4.1)
+# FR7/FR8/AC5/AC6 (partial — column existence only; guard + API in Phase 4.2)
+# NFR3 — existing drawers default to reconciled = 0 (editable)
+# ---------------------------------------------------------------------------
+
+
+def test_v99_registered_in_migration_chain():
+    """v99 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 99 in MIGRATIONS
+    assert (
+        MIGRATIONS[99]["description"]
+        == "Add reconciled INTEGER NOT NULL DEFAULT 0 column to cash_drawer for edit-lock on reconciled drawers (DG-379 Phase 4.1)"
+    )
+    assert MIGRATIONS[99]["callable"].__name__ == "_migrate_v99_cash_drawer_reconciled_column"
+
+
+def test_v99_adds_reconciled_column_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the ``reconciled`` column on
+    ``cash_drawer`` stored as INTEGER NOT NULL DEFAULT 0 per NFR3.
+
+    FR7/FR8 (partial): the column exists; the 409 guard and PATCH
+    /reconcile endpoint are built in Phase 4.2.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 99
+
+        cols = _schema_columns(conn, "cash_drawer")
+        assert "reconciled" in cols
+        # INTEGER NOT NULL DEFAULT 0 (NFR3 — existing drawers stay editable).
+        assert cols["reconciled"]["type"] == "INTEGER"
+        assert cols["reconciled"]["notnull"] == 1
+        assert cols["reconciled"]["dflt_value"] == "0"
+
+        # Covering index for the 409 guard lookup (Phase 4.2).
+        indexes = {
+            r[1]
+            for r in conn.execute(
+                "PRAGMA index_list('cash_drawer')"
+            ).fetchall()
+        }
+        assert "idx_cash_drawer_reconciled" in indexes
+
+
+def test_v99_existing_drawers_default_to_editable():
+    """NFR3 — after the migration, every pre-existing drawer row has
+    ``reconciled = 0`` (editable). SQLite ALTER TABLE ADD COLUMN with a
+    constant DEFAULT back-fills the default for all existing rows.
+    """
+    with get_db() as conn:
+        # Migrate to v98 (pre-v99), insert a drawer, then run v99.
+        _migrate_to_version(conn, 98)
+        conn.execute(
+            "INSERT INTO cash_drawer (opening_balance, status) VALUES (1000000, 'closed')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 99)
+        row = conn.execute(
+            "SELECT reconciled FROM cash_drawer WHERE id = 1"
+        ).fetchone()
+        assert row["reconciled"] == 0
+
+
+def test_v99_idempotent_on_already_migrated_db():
+    """Re-running v99 on a DB that already ran it is a no-op (the
+    ``_guard_add_column`` PRAGMA guard skips columns that already exist,
+    and ``CREATE INDEX IF NOT EXISTS`` skips the index).
+    """
+    from baker.db.schema import _migrate_v99_cash_drawer_reconciled_column
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        before = conn.execute("PRAGMA table_info('cash_drawer')").fetchall()
+        idx_before = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v99_cash_drawer_reconciled_column(conn)
+        after = conn.execute("PRAGMA table_info('cash_drawer')").fetchall()
+        idx_after = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
+        assert before == after
+        assert idx_before == idx_after
+        assert _migrated_version(conn) == 99
 
 
 def test_schema_all_matches_imported_symbols():
