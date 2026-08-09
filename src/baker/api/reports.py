@@ -5,6 +5,13 @@ order count, cash/bank payment totals, and the full order list for a given
 day. This eliminates the client-side metric computation that caused the
 three confirmed bugs (completed POS orders excluded, revenue double-count,
 non-payment journal noise in cash/bank totals).
+
+DG-378 Phase 1: extends the endpoint with ``cashInTotal`` and
+``cashOutTotal`` — owner-driven drawer inflows/outflows tracked under
+``source_type='cash_drawer_cash_in'`` (1101 debits) and
+``source_type='cash_drawer_cash_out'`` (1101 credits). Same
+``journal_lines`` + ``journal_entries`` join pattern as the existing
+cash/bank totals, with a different ``source_type`` filter (NFR1).
 """
 
 from datetime import datetime, timedelta
@@ -46,7 +53,8 @@ def get_today_summary(
         pattern=r"^\d{4}-\d{2}-\d{2}$",
     ),
 ):
-    """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal, bankTransferTotal, orders.
+    """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal,
+    bankTransferTotal, cashInTotal, cashOutTotal, orders.
 
     Revenue = tổng credit tài khoản 4100 (Doanh thu bán hàng) trong ngày
     (single source of truth, không cộng thêm order totalPrice).
@@ -56,6 +64,12 @@ def get_today_summary(
 
     Bank transfer total = tổng debit tài khoản 1200/1210/1220/1290 từ journal entries
     có source_type = 'payment_transaction'.
+
+    Cash-in total (DG-378) = tổng debit tài khoản 1101 từ journal entries
+    có source_type = 'cash_drawer_cash_in' (owner/employee/equity đưa tiền vào quầy).
+
+    Cash-out total (DG-378) = tổng credit tài khoản 1101 từ journal entries
+    có source_type = 'cash_drawer_cash_out' (owner rút tiền khỏi quầy).
 
     Order count = tất cả đơn hàng có dueDate == date (không lọc theo status),
     bao gồm cả đơn POS có due_date rỗng (match theo created_at).
@@ -116,6 +130,34 @@ def get_today_summary(
         ).fetchone()
         bank_total = float(bank_row["total"] or 0)
 
+        # --- Cash-in total: debits to 1101 where source_type = 'cash_drawer_cash_in' (DG-378) ---
+        # Same journal_lines + journal_entries join pattern as cash_total above,
+        # filtering by the drawer cash-in source type instead of payment_transaction.
+        cash_in_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.debit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.source_type = 'cash_drawer_cash_in'
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (cash_acc_id, day_start, day_end),
+        ).fetchone()
+        cash_in_total = float(cash_in_row["total"] or 0)
+
+        # --- Cash-out total: credits to 1101 where source_type = 'cash_drawer_cash_out' (DG-378) ---
+        cash_out_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.source_type = 'cash_drawer_cash_out'
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (cash_acc_id, day_start, day_end),
+        ).fetchone()
+        cash_out_total = float(cash_out_row["total"] or 0)
+
         # --- Orders: all orders due on `date` (no status filter) ---
         # POS orders with empty due_date are matched by created_at within
         # the day bounds (same pattern as GET /api/orders?due_date=...).
@@ -154,5 +196,7 @@ def get_today_summary(
             "orderCount": len(orders),
             "cashTotal": cash_total,
             "bankTransferTotal": bank_total,
+            "cashInTotal": cash_in_total,
+            "cashOutTotal": cash_out_total,
             "orders": orders,
         }
