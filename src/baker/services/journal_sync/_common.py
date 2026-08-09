@@ -140,6 +140,7 @@ def _is_locked(conn, entry_id: int) -> bool:
 def _delete_journal_entry_cascade(conn, entry_id: int) -> None:
     """Delete a journal entry and its lines (CASCADE handled by DB, but be explicit)."""
     conn.execute("DELETE FROM journal_lines WHERE journal_entry_id = ?", (entry_id,))
+    conn.execute("DELETE FROM cash_drawer_journal_entries WHERE journal_entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM journal_entries WHERE id = ?", (entry_id,))
 
 def _reverse_journal_entry(conn, entry_id: int) -> Optional[int]:
