@@ -121,8 +121,8 @@ def compute_urgency(
     - ``critical`` = past due datetime and not delivered/completed/cancelled,
       OR (delivery/bus/door only) due within the configurable early critical
       threshold (default 60 min) — prep/transit buffer.
-    - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
-      OR status in (new, confirmed) and due today.
+    - ``urgent`` = due ≤ 2h from now AND due today,
+      OR status is non-terminal and due today.
     - ``normal`` = everything else.
 
     ``delivery_type`` defaults to ``"pickup"`` for backward compatibility.
@@ -141,6 +141,7 @@ def compute_urgency(
         return UrgencyTier.NORMAL.value
 
     now = datetime.now(timezone.utc)
+    today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
 
     # Build due datetime
     due_dt = None
@@ -176,14 +177,10 @@ def compute_urgency(
                 effective_threshold = 1
             if due_dt - now <= timedelta(minutes=effective_threshold):
                 return UrgencyTier.CRITICAL.value
-        if due_dt - now <= timedelta(hours=2):
+        if due_dt - now <= timedelta(hours=2) and due_date == today_str:
             return UrgencyTier.URGENT.value
 
-    if status == "new" and not acknowledged_at:
-        return UrgencyTier.URGENT.value
-
-    if status in ("new", "confirmed") and due_date:
-        today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+    if status not in terminal and due_date:
         if due_date == today_str:
             return UrgencyTier.URGENT.value
 

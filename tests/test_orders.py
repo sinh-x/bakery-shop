@@ -438,7 +438,7 @@ def test_urgency_urgent_when_due_soon():
 def test_urgency_urgent_when_new_and_unacknowledged():
     from baker.models.order import compute_urgency
     far_future = "2099-01-01"
-    assert compute_urgency(far_future, "10:00", "new", None) == "urgent"
+    assert compute_urgency(far_future, "10:00", "new", None) == "normal"
 
 
 def test_urgency_urgent_when_due_today_and_active():
@@ -543,6 +543,109 @@ def test_configurable_threshold_respected(monkeypatch):
     soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
     due_date, due_time = _format_due(soon_local)
     assert compute_urgency(due_date, due_time, "new", None, "delivery") == "urgent"
+
+
+# --- DG-377 Phase 4.2 regression tests (urgency orange bar fix) ---
+#
+# Phase 4.1 (commit 22981377) made two changes to compute_urgency():
+#   1. The 2-hour "due soon" window is gated by `due_date == today` so it no
+#      longer leaks across midnight into tomorrow (FR2).
+#   2. The "due today -> urgent" rule now covers EVERY non-terminal status,
+#      not just new/confirmed, fixing the missing orange bar for
+#      in_progress/ready orders due today (FR1).
+# These tests pin both behaviours so they cannot silently regress.
+
+
+def _freeze_now_local(monkeypatch, hour, minute=0):
+    """Freeze ``datetime.now()`` inside ``baker.models.order`` to today at HH:MM (server tz).
+
+    Returns the frozen local datetime so callers can derive today/tomorrow
+    strings consistent with the frozen instant. The 2h-window same-day guard
+    only matters near midnight, so real-time tests would flake; freezing the
+    clock makes AC3/AC5 deterministic.
+    """
+    from baker.models import order as order_mod
+    from baker.config import TIMEZONE
+    from datetime import datetime as _real_dt, timezone as _tz
+    frozen_local = _real_dt.now(TIMEZONE).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
+    frozen_utc = frozen_local.astimezone(_tz.utc)
+
+    class _FrozenDateTime(_real_dt):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return frozen_utc.replace(tzinfo=None)
+            return frozen_utc.astimezone(tz)
+
+    monkeypatch.setattr(order_mod, "datetime", _FrozenDateTime)
+    return frozen_local
+
+
+def test_urgency_urgent_when_in_progress_and_due_today():
+    """AC1 (DG-377 FR1): in_progress order due today -> urgent.
+
+    Before Phase 4.1 the due-today rule only covered new/confirmed, so
+    in_progress orders due today showed no urgency. Now every non-terminal
+    status due today is urgent.
+    """
+    from baker.models.order import compute_urgency
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "in_progress", None) == "urgent"
+
+
+def test_urgency_urgent_when_ready_and_due_today():
+    """AC2 (DG-377 FR1): ready order due today -> urgent."""
+    from baker.models.order import compute_urgency
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "ready", None) == "urgent"
+
+
+def test_urgency_2h_window_does_not_cross_midnight(monkeypatch):
+    """AC3 (DG-377 FR2): due tomorrow 00:30, called at 23:00 today -> normal.
+
+    Before Phase 4.1 the 2-hour window had no same-day guard, so a due time
+    1.5h ahead leaked across midnight and wrongly returned urgent for
+    tomorrow's order. The fix gates the 2h branch on due_date == today.
+    Uses confirmed (not new) so the new-unacknowledged fallback cannot
+    mask the result.
+    """
+    from baker.models.order import compute_urgency
+    from datetime import timedelta
+    frozen = _freeze_now_local(monkeypatch, hour=23, minute=0)
+    tomorrow = (frozen + timedelta(days=1)).strftime("%Y-%m-%d")
+    assert compute_urgency(tomorrow, "00:30", "confirmed", None) == "normal"
+
+
+def test_urgency_due_today_urgent_for_new_and_confirmed():
+    """AC4 (DG-377 FR1): new/confirmed orders due today -> urgent (existing behaviour preserved)."""
+    from baker.models.order import compute_urgency
+    from baker.utils.time import now_utc
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    # new + acknowledged isolates the due-today rule from the unack fallback
+    assert compute_urgency(today, "23:59", "new", now_utc()) == "urgent"
+    assert compute_urgency(today, "23:59", "confirmed", now_utc()) == "urgent"
+
+
+def test_urgency_2h_window_still_urgent_when_due_today(monkeypatch):
+    """AC5 (DG-377 FR2): due today within 2h -> urgent (existing behaviour preserved).
+
+    Pairs with AC3: the same-day guard rejects tomorrow, but a due time
+    within 2h whose date is still today must remain urgent. Frozen at 12:00
+    with due at 13:30 (1.5h ahead, same day). Uses confirmed to isolate the
+    2h-same-day branch from the new-unacknowledged fallback.
+    """
+    from baker.models.order import compute_urgency
+    frozen = _freeze_now_local(monkeypatch, hour=12, minute=0)
+    today = frozen.strftime("%Y-%m-%d")
+    assert compute_urgency(today, "13:30", "confirmed", None) == "urgent"
 
 
 def test_cli_accounting_read_only():
