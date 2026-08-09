@@ -9,6 +9,7 @@ Covers:
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 from baker.services.journal_sync import _JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS, _log_journal_sync_failure, run_journal_sync
+from baker.services.journal_sync._common import _delete_journal_entry_cascade
 
 
 def _table_exists(conn, name: str) -> bool:
@@ -197,3 +198,114 @@ def test_audit_log_returns_ok_when_sync_succeeds():
             log_label="test ok return",
         )
         assert result == "ok"
+
+
+def test_delete_journal_entry_cascade_removes_drawer_link():
+    """DG-380 Phase 2 / AC1 + AC6: a journal entry linked to a cash drawer via
+    ``cash_drawer_journal_entries`` must be fully cleaned up by
+    ``_delete_journal_entry_cascade`` — the drawer link is deleted before the
+    ``journal_entries`` row so no FOREIGN KEY violation occurs.
+
+    Regression coverage for the Phase 1 fix that added the
+    ``DELETE FROM cash_drawer_journal_entries`` step before the
+    ``DELETE FROM journal_entries`` step.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+
+        # Fixture: open a cash drawer to link the journal entry against.
+        drawer_row = conn.execute(
+            "INSERT INTO cash_drawer (opening_balance, status) VALUES (0, 'open')"
+        )
+        drawer_id = int(drawer_row.lastrowid)
+
+        # Fixture: pick two real account IDs (cash-on-hand 1101 debit, revenue
+        # credit) so the journal entry satisfies double-entry integrity.
+        cash_account_id = int(
+            conn.execute("SELECT id FROM accounts WHERE code = '1101'").fetchone()[0]
+        )
+        revenue_account_id = int(
+            conn.execute("SELECT id FROM accounts WHERE code = '4000'").fetchone()[0]
+        )
+
+        entry_id = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("drawer-linked test entry", "order", 4242),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, cash_account_id, 100.0, 0.0, "cash debit"),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, revenue_account_id, 0.0, 100.0, "revenue credit"),
+        )
+        conn.execute(
+            "INSERT INTO cash_drawer_journal_entries "
+            "(cash_drawer_id, journal_entry_id) VALUES (?, ?)",
+            (drawer_id, entry_id),
+        )
+
+        # Sanity: all three rows exist before the cascade delete.
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM journal_entries WHERE id = ?", (entry_id,)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM journal_lines WHERE journal_entry_id = ?",
+                (entry_id,),
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM cash_drawer_journal_entries "
+                "WHERE journal_entry_id = ?",
+                (entry_id,),
+            ).fetchone()[0]
+            == 1
+        )
+
+        # AC1: deleting the drawer-linked entry must not raise an FK violation
+        # (this is the exact failure the Phase 1 fix addresses).
+        _delete_journal_entry_cascade(conn, entry_id)
+
+        # All three tables cleaned up.
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM journal_entries WHERE id = ?", (entry_id,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM journal_lines WHERE journal_entry_id = ?",
+                (entry_id,),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM cash_drawer_journal_entries "
+                "WHERE journal_entry_id = ?",
+                (entry_id,),
+            ).fetchone()[0]
+            == 0
+        )
+
+        # The cash drawer itself must be untouched (cascade targets the link
+        # table, not the drawer).
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM cash_drawer WHERE id = ?", (drawer_id,)
+            ).fetchone()[0]
+            == 1
+        )
