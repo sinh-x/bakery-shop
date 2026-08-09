@@ -20,6 +20,13 @@ import 'order.dart';
 /// - `bankTransferTotal` — sum of debits to accounts 1200/1210/1220/1290
 ///                       from journal entries with
 ///                       `source_type = 'payment_transaction'`.
+/// - `cashInTotal`     — sum of debits to account 1101 from journal entries
+///                       with `source_type = 'cash_drawer_cash_in'`
+///                       (owner/employee/equity capital injections into the
+///                       drawer; DG-378).
+/// - `cashOutTotal`    — sum of credits to account 1101 from journal entries
+///                       with `source_type = 'cash_drawer_cash_out'`
+///                       (owner draws from the drawer; DG-378).
 /// - `orders`          — all orders due on `date` (no status filter), each
 ///                       decoded into an [Order].
 class TodaySummary {
@@ -28,6 +35,8 @@ class TodaySummary {
   final int orderCount;
   final double cashTotal;
   final double bankTransferTotal;
+  final double cashInTotal;
+  final double cashOutTotal;
   final List<Order> orders;
 
   const TodaySummary({
@@ -36,6 +45,8 @@ class TodaySummary {
     required this.orderCount,
     required this.cashTotal,
     required this.bankTransferTotal,
+    required this.cashInTotal,
+    required this.cashOutTotal,
     required this.orders,
   });
 
@@ -47,6 +58,8 @@ class TodaySummary {
       orderCount: (json['orderCount'] as num?)?.toInt() ?? 0,
       cashTotal: (json['cashTotal'] as num?)?.toDouble() ?? 0,
       bankTransferTotal: (json['bankTransferTotal'] as num?)?.toDouble() ?? 0,
+      cashInTotal: (json['cashInTotal'] as num?)?.toDouble() ?? 0,
+      cashOutTotal: (json['cashOutTotal'] as num?)?.toDouble() ?? 0,
       orders: ordersRaw
           .map((o) => Order.fromJson(o as Map<String, dynamic>))
           .toList(growable: false),

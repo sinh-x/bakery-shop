@@ -7,7 +7,6 @@ import '../../data/models/today_summary.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/order_list_providers.dart';
 import '../../providers/today_journal_provider.dart';
-import '../../providers/today_sales_provider.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -54,7 +53,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     ref.invalidate(orderListProvider);
     ref.invalidate(todayJournalProvider);
     ref.invalidate(dashboardRevenueStockProvider);
-    ref.invalidate(todayPaymentSplitProvider);
+    ref.invalidate(todaySummaryProvider);
   }
 
   @override
@@ -131,31 +130,29 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
-    final paymentSplitAsync = ref.watch(todayPaymentSplitProvider);
-    final summaryAsync = ref.watch(dateSummaryProvider(widget.selectedDate));
+    final summaryAsync = widget.isToday
+        ? ref.watch(todaySummaryProvider)
+        : ref.watch(dateSummaryProvider(widget.selectedDate));
 
     final orders = ordersAsync.asData?.value ?? const <Order>[];
     final todayOrders =
         orders.where((o) => o.dueDate == widget.selectedDate).toList();
 
     final revenueStock = revenueStockAsync.asData?.value;
-    final paymentSplit = paymentSplitAsync.asData?.value;
     final summary = summaryAsync.asData?.value;
 
-    // Today: live providers. Historical: summary API (which includes
-    // revenue, cash, and bank totals for the queried date).
+    // Today: revenue from dashboardRevenueStockProvider (shares the same
+    // today-summary API call) and cash/bank from the summary API. Historical:
+    // everything from the summary API (revenue, cash, bank, cash-in,
+    // cash-out, order count for the queried date).
     final totalRevenue = widget.isToday
         ? revenueStock?.revenueToday
         : summary?.revenue;
     final orderCount = widget.isToday
         ? (ordersAsync.asData != null ? todayOrders.length : null)
         : summary?.orderCount;
-    final cashTotal = widget.isToday
-        ? paymentSplit?.cashTotal
-        : summary?.cashTotal;
-    final bankTransferTotal = widget.isToday
-        ? paymentSplit?.bankTransferTotal
-        : summary?.bankTransferTotal;
+    final cashTotal = summary?.cashTotal;
+    final bankTransferTotal = summary?.bankTransferTotal;
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -163,7 +160,7 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
         ref.invalidate(orderListProvider);
         ref.invalidate(todayJournalProvider);
         ref.invalidate(dashboardRevenueStockProvider);
-        ref.invalidate(todayPaymentSplitProvider);
+        ref.invalidate(todaySummaryProvider);
         ref.invalidate(dateSummaryProvider(widget.selectedDate));
         var failed = false;
         await Future.wait<void>([
@@ -179,14 +176,12 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
               lowStockCount: 0,
             );
           }),
-          ref.read(todayPaymentSplitProvider.future).catchError((_) {
-            failed = true;
-            return const TodayPaymentSplit(
-              cashTotal: 0,
-              bankTransferTotal: 0,
-            );
-          }),
-          ref.read(dateSummaryProvider(widget.selectedDate).future).catchError((_) {
+          ref.read(
+                  (widget.isToday
+                          ? todaySummaryProvider
+                          : dateSummaryProvider(widget.selectedDate))
+                      .future)
+              .catchError((_) {
             failed = true;
             return const TodaySummary(
               date: '',
@@ -194,6 +189,8 @@ class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
               orderCount: 0,
               cashTotal: 0,
               bankTransferTotal: 0,
+              cashInTotal: 0,
+              cashOutTotal: 0,
               orders: [],
             );
           }),

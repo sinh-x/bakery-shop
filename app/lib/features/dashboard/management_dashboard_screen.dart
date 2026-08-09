@@ -196,6 +196,8 @@ class _ManagementDashboardBodyState
               orderCount: 0,
               cashTotal: 0,
               bankTransferTotal: 0,
+              cashInTotal: 0,
+              cashOutTotal: 0,
               orders: [],
             );
           }),

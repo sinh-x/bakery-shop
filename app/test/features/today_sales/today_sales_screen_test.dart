@@ -75,6 +75,8 @@ class _FakeReportService extends ReportService {
           orderCount: 0,
           cashTotal: 0,
           bankTransferTotal: 0,
+          cashInTotal: 0,
+          cashOutTotal: 0,
           orders: [],
         );
   }
@@ -152,6 +154,8 @@ TodaySummary _summary({
   int orderCount = 0,
   double cashTotal = 0,
   double bankTransferTotal = 0,
+  double cashInTotal = 0,
+  double cashOutTotal = 0,
 }) {
   return TodaySummary(
     date: _today,
@@ -159,6 +163,8 @@ TodaySummary _summary({
     orderCount: orderCount,
     cashTotal: cashTotal,
     bankTransferTotal: bankTransferTotal,
+    cashInTotal: cashInTotal,
+    cashOutTotal: cashOutTotal,
     orders: orders,
   );
 }

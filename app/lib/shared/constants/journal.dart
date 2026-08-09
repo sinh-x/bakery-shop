@@ -2,9 +2,9 @@
 /// Today Sales providers (DG-374 Phase 5.6-c2-fix / C2-2, C3-1).
 ///
 /// Extracted from the duplicate `journalFetchPageSize` definitions that
-/// existed in both `dashboard_metrics_provider.dart` and
-/// `today_sales_provider.dart` so the two providers share a single source of
-/// truth for the journal page size.
+/// existed in both `dashboard_metrics_provider.dart` and the former
+/// `today_sales_provider.dart` (removed in DG-378 Phase 2) so the providers
+/// share a single source of truth for the journal page size.
 library;
 
 import '../../data/api/accounting_service.dart';
@@ -15,8 +15,8 @@ const int journalFetchPageSize = 500;
 /// Fetches all journal entries for the given day, paging through the API in
 /// [journalFetchPageSize] batches until the server reports no more entries
 /// (DG-374 cycle-3 C3-1 — extracted from the duplicate pagination loops that
-/// existed verbatim in `dashboardRevenueStockProvider` and
-/// `todayPaymentSplitProvider`).
+/// existed verbatim in `dashboardRevenueStockProvider` and the former
+/// `todayPaymentSplitProvider` removed in DG-378 Phase 2).
 ///
 /// [since]/[until] are the inclusive day bounds in API date format
 /// (`YYYY-MM-DD`). When [accountId] is non-null the API filters to lines for
