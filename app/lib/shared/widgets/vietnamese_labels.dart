@@ -1268,6 +1268,19 @@ class VN {
   /// "Phí ship bus" — bus-shipping portion split out of a payment inflow.
   static const cashDrawerTxnTypeBusShipping = 'Phí ship bus';
 
+  // ── Cash-drawer transaction edit (DG-379 Phase 4.3 — FR1-FR3, AC1/AC2/AC4
+  // /AC5/AC7) ────────────────────────────────────────────────────────────
+  /// "Sửa giao dịch" — title of the edit-transaction dialog shown when the
+  /// owner taps an open/close transaction card (AC1/AC2).
+  static const cashDrawerEditTxnTitle = 'Sửa giao dịch';
+  /// "Đã lưu giao dịch" — snackbar shown after a successful edit so the
+  /// owner knows the journal entry + drawer balances were updated (AC7).
+  static const cashDrawerEditTxnSaved = 'Đã lưu giao dịch';
+  /// "Quầy đã đối soát — không thể sửa giao dịch" — lock notice shown when
+  /// the owner taps a transaction belonging to a reconciled drawer (AC5).
+  static const cashDrawerEditLockedReconciled =
+      'Quầy đã đối soát — không thể sửa giao dịch';
+
   // ── Cash-drawer breakdown card (DG-359 Phase 1, DG-363 Phase 3) ────────
   /// Section title for the categorized in/out breakdown shown inside the
   /// active-drawer status card. Sits directly under the opening-balance row.

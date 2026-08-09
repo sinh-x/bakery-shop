@@ -79,6 +79,14 @@ class CashDrawer {
   /// responses, history rows).
   final int accountingBalance1101;
 
+  /// DG-379 Phase 4.1 (FR7): whether the drawer has been reconciled. The
+  /// backend persists `cash_drawer.reconciled` (0/1) and exposes it as
+  /// `reconciled` (bool) in `to_api_dict`. Reconciled drawers are locked —
+  /// transaction edits are rejected with 409 by the backend and the edit
+  /// affordance is hidden in the UI (AC5). Defaults to `false` for older
+  /// responses that omit the field.
+  final bool reconciled;
+
   /// Optional journal entry returned by mutation endpoints (open, cash-in,
   /// cash-out, close-with-discrepancy). Null for the status/history GETs.
   final JournalEntry? journalEntry;
@@ -109,6 +117,7 @@ class CashDrawer {
     required this.expectedBalance,
     this.closingBalance,
     this.accountingBalance1101 = 0,
+    this.reconciled = false,
     this.journalEntry,
     this.breakdownSnapshot = const [],
   });
@@ -139,6 +148,7 @@ class CashDrawer {
       closingBalance: (json['closingBalance'] as num?)?.toInt(),
       accountingBalance1101:
           (json['accountingBalance1101'] as num?)?.toInt() ?? 0,
+      reconciled: (json['reconciled'] as bool?) ?? false,
       journalEntry: journalJson is Map<String, dynamic>
           ? JournalEntry.fromJson(journalJson)
           : null,
@@ -163,6 +173,7 @@ class CashDrawer {
         'expectedBalance': expectedBalance,
         'closingBalance': closingBalance,
         'accountingBalance1101': accountingBalance1101,
+        'reconciled': reconciled,
         if (journalEntry != null) 'journalEntry': journalEntry!.toJson(),
         'breakdownSnapshot': [
           for (final r in breakdownSnapshot) r.toJson(),

@@ -72,7 +72,7 @@ Future<void> _pump(WidgetTester tester, Widget widget,
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(home: widget),
+      child: MaterialApp(home: Scaffold(body: widget)),
     ),
   );
   await tester.pumpAndSettle();
@@ -314,6 +314,165 @@ void main() {
       expect(find.textContaining(' — '), findsNothing);
     });
   });
+
+  group('CashDrawerTransactionList (DG-379 Phase 4.3 — edit tap handler)', () {
+    testWidgets(
+        'AC1/AC2: tapping an open transaction card opens the edit dialog with '
+        'pre-filled amount + notes', (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '12',
+            type: 'cash_drawer_open',
+            amount: 1000000,
+            note: 'Mở quầy sáng',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(drawerId: 1, poll: false),
+        container: container,
+      );
+
+      // The edit icon is rendered on the open transaction row.
+      expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+      // Tap the open transaction card to open the edit dialog.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.pumpAndSettle();
+
+      // The dialog title includes the edit label + transaction type.
+      expect(
+        find.textContaining(VN.cashDrawerEditTxnTitle),
+        findsOneWidget,
+      );
+      // The amount field is pre-filled with the current amount (formatted).
+      expect(find.text('1,000,000'), findsOneWidget);
+      // The notes field is pre-filled (the second EditableText in the dialog).
+      final editableTexts =
+          tester.widgetList<EditableText>(find.byType(EditableText));
+      final notesField = editableTexts.last;
+      expect(notesField.controller.text, 'Mở quầy sáng');
+    });
+
+    testWidgets(
+        'AC7: saving the edit PATCHes the entry and refreshes the list',
+        (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '12',
+            type: 'cash_drawer_open',
+            amount: 1000000,
+            note: 'Mở quầy sáng',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(drawerId: 1, poll: false),
+        container: container,
+      );
+
+      // Tap to open the edit dialog.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.pumpAndSettle();
+      // Change the notes field (clear + enter new text).
+      await tester.enterText(find.byType(TextFormField).last, 'ghi chú mới');
+      // Tap Save.
+      await tester.tap(find.text(VN.save));
+      await tester.pumpAndSettle();
+
+      // A PATCH request was recorded against the edit endpoint.
+      expect(interceptor.patchRequests, hasLength(1));
+      expect(
+        interceptor.patchRequests.last.path,
+        '/api/cash-drawer/1/transactions/12',
+      );
+      expect(interceptor.patchRequests.last.body, {'notes': 'ghi chú mới'});
+      // The success snackbar is shown.
+      expect(find.text(VN.cashDrawerEditTxnSaved), findsOneWidget);
+    });
+
+    testWidgets(
+        'AC5: reconciled drawer shows lock-notice snackbar on tap (no dialog)',
+        (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+            id: '12',
+            type: 'cash_drawer_open',
+            amount: 1000000,
+            note: 'ca sáng',
+          ),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(
+          drawerId: 1,
+          poll: false,
+          reconciled: true,
+        ),
+        container: container,
+      );
+
+      // No edit icon on a reconciled drawer (AC5).
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      // Tap the open transaction card (the type label is unique to the row).
+      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.pumpAndSettle();
+
+      // The lock-notice snackbar is shown, not the edit dialog.
+      expect(find.text(VN.cashDrawerEditLockedReconciled), findsOneWidget);
+      expect(find.text(VN.save), findsNothing);
+      // No PATCH request was sent.
+      expect(interceptor.patchRequests, isEmpty);
+    });
+
+    testWidgets(
+        'non-editable transaction types (sale, expense, cash-in, cash-out) '
+        'are not tappable for editing', (tester) async {
+      final interceptor = _EditInterceptor(
+        items: [
+          _txn(
+              id: '1',
+              type: 'payment_transaction',
+              amount: 50000,
+              note: 'bán bánh mì'),
+          _txn(
+              id: '2',
+              type: 'cash_drawer_cash_in',
+              amount: 200000,
+              note: 'Nạp tiền'),
+        ],
+      );
+      final container = _containerWith(interceptor);
+      addTearDown(container.dispose);
+
+      await _pump(
+        tester,
+        const CashDrawerTransactionList(drawerId: 1, poll: false),
+        container: container,
+      );
+
+      // No edit icon on non-editable rows.
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      // Tapping the sale row does not open the edit dialog.
+      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.pumpAndSettle();
+      expect(find.text(VN.save), findsNothing);
+    });
+  });
 }
 
 /// Multi-page interceptor: returns each page in sequence based on the
@@ -343,6 +502,73 @@ class _PagedTxnInterceptor extends Interceptor {
           'limit': options.queryParameters['limit'] ?? 50,
           'offset': offset,
           'items': page,
+        },
+      ),
+    );
+  }
+}
+
+/// Captured PATCH request for the edit-transaction tests. Mirrors the
+/// recording pattern used elsewhere in the suite.
+class _PatchRequest {
+  _PatchRequest({required this.path, required this.body});
+
+  final String path;
+  final Map<String, dynamic>? body;
+}
+
+/// DG-379 Phase 4.3: interceptor that serves the GET transactions list for a
+/// single drawer and records PATCH edit-transaction requests. The GET
+/// response is static (a single page with [items]); the PATCH response is a
+/// fixed edit-result dict so the edit flow completes without error.
+class _EditInterceptor extends Interceptor {
+  _EditInterceptor({required this.items});
+
+  final List<Map<String, dynamic>> items;
+  final List<_PatchRequest> patchRequests = [];
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.method == 'PATCH') {
+      patchRequests.add(_PatchRequest(
+        path: options.path,
+        body: options.data is Map<String, dynamic>
+            ? Map<String, dynamic>.from(options.data as Map)
+            : null,
+      ));
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'drawerId': '1',
+            'entryId': '12',
+            'sourceType': 'cash_drawer_open',
+            'amount': 1500000,
+            'notes': 'ghi chú mới',
+            'drawer': {
+              'id': '1',
+              'openedAt': '2026-08-01T00:00:00Z',
+              'closedAt': null,
+              'status': 'open',
+              'openingBalance': 1000000,
+              'expectedBalance': 1500000,
+              'reconciled': false,
+            },
+          },
+        ),
+      );
+      return;
+    }
+    handler.resolve(
+      Response<Map<String, dynamic>>(
+        requestOptions: options,
+        statusCode: 200,
+        data: {
+          'total': items.length,
+          'limit': options.queryParameters['limit'] ?? 50,
+          'offset': options.queryParameters['offset'] ?? 0,
+          'items': items,
         },
       ),
     );

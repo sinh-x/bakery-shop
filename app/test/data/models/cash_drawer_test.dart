@@ -8,6 +8,7 @@ Map<String, dynamic> _drawerJson({
   int? countedAmount,
   int? discrepancy,
   int? closingBalance,
+  bool? reconciled,
   Map<String, dynamic>? journalEntry,
 }) {
   final json = <String, dynamic>{
@@ -21,6 +22,7 @@ Map<String, dynamic> _drawerJson({
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
     'closingBalance': closingBalance,
+    if (reconciled != null) 'reconciled': reconciled,
     'journalEntry': journalEntry,
   };
   return json;
@@ -265,6 +267,25 @@ void main() {
       expect(roundTripped.breakdownSnapshot.first.category, 'sale');
       expect(roundTripped.breakdownSnapshot.first.totalAmount, 100);
       expect(roundTripped.breakdownSnapshot.first.count, 1);
+    });
+
+    test(
+        'DG-379 Phase 4.1 / FR7: fromJson parses reconciled when present', () {
+      final drawer = CashDrawer.fromJson(_drawerJson(reconciled: true));
+      expect(drawer.reconciled, isTrue);
+    });
+
+    test(
+        'DG-379 Phase 4.1 / FR7: fromJson defaults reconciled to false when '
+        'omitted (older responses)', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+      expect(drawer.reconciled, isFalse);
+    });
+
+    test('DG-379 Phase 4.1 / FR7: toJson round-trips reconciled', () {
+      final original = CashDrawer.fromJson(_drawerJson(reconciled: true));
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+      expect(roundTripped.reconciled, isTrue);
     });
   });
 
