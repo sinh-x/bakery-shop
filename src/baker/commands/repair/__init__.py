@@ -106,6 +106,7 @@ from .unallocated_transfers import repair_unallocated_transfers_cmd  # noqa: F40
 from .bank_account_1200 import repair_bank_account_1200_cmd  # noqa: F401
 from .drawer_accounting import repair_drawer_accounting_cmd  # noqa: F401
 from .drawer_journal_backfill import repair_drawer_journal_backfill_cmd  # noqa: F401
+from .journal_sync_fk import repair_journal_sync_fk_cmd  # noqa: F401
 
 __all__ = [
     'ACCOUNTS_PAYABLE_CODE',
@@ -204,5 +205,6 @@ __all__ = [
     'repair_payment_journal_cmd',
     'repair_tien_rut_gap_cmd',
     'repair_unallocated_transfers_cmd',
+    'repair_journal_sync_fk_cmd',
     'run_journal_sync',
 ]
