@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../data/api/cash_drawer_service.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
@@ -224,18 +225,36 @@ class _CashDrawerTransactionListState
     }
   }
 
-  /// DG-379 Phase 4.3 (FR1-FR3, AC1/AC2/AC5/AC7): tap handler for open/close
-  /// transaction cards. When the drawer is reconciled (AC5), shows a
-  /// lock-notice snackbar and returns. Otherwise opens the edit dialog; on
-  /// save, PATCHes the entry via [CashDrawerService.editTransaction] and
-  /// refreshes the list (AC7). Non-editable types (cash-in, cash-out, sale,
-  /// expense) are ignored — only `cash_drawer_open` and
-  /// `cash_drawer_close_adjust` are editable per the backend.
+  /// DG-379 Phase 4.3 + DG-381 Phase 1 tap handler.
+  ///
+  /// DG-381 Phase 1 (FR1/FR2/FR4/FR5, AC1/AC2/AC4/AC5): for `payment_transaction`
+  /// rows with a non-empty [CashDrawerTransaction.reference], navigates to
+  /// `/orders/:id` via `context.push()`. Back returns to the originating cash
+  /// drawer screen (go_router stacks the pushed route on top of the current
+  /// route). Rows with an empty `reference` are not tappable (FR4). The
+  /// reconciled state does not affect navigation — `payment_transaction` rows
+  /// are read-only order references, not editable drawer entries.
+  ///
+  /// DG-379 Phase 4.3 (FR1-FR3, AC1/AC2/AC5/AC7): for open/close transaction
+  /// cards, when the drawer is reconciled (AC5), shows a lock-notice snackbar
+  /// and returns. Otherwise opens the edit dialog; on save, PATCHes the entry
+  /// via [CashDrawerService.editTransaction] and refreshes the list (AC7).
+  /// Non-editable, non-navigable types (cash-in, cash-out, expense) are
+  /// ignored — only `cash_drawer_open` and `cash_drawer_close_adjust` are
+  /// editable per the backend; only `payment_transaction` is navigable.
   Future<void> _handleTransactionTap(
     BuildContext context,
     CashDrawerTransaction transaction,
   ) async {
-    // Only open/close transactions are editable (FR1/FR2).
+    // DG-381 FR2/FR4: payment_transaction rows navigate to order detail when
+    // an order ref is present. Checked first so sale rows never fall through
+    // to the edit path (which would no-op them anyway).
+    if (transaction.type == 'payment_transaction') {
+      if (transaction.reference.isEmpty) return; // FR4: no ref → not tappable
+      context.push('/orders/${transaction.reference}');
+      return;
+    }
+    // Only open/close transactions are editable (DG-379 FR1/FR2).
     final editable = transaction.type == 'cash_drawer_open' ||
         transaction.type == 'cash_drawer_close_adjust';
     if (!editable) return;
@@ -377,6 +396,12 @@ class _CashDrawerTransactionListState
 /// edit icon is shown on editable rows so the owner discovers the affordance.
 /// When [reconciled] is `true` (AC5) the edit icon is hidden (the [onTap]
 /// still fires to show the lock-notice snackbar via the parent handler).
+///
+/// DG-381 Phase 1 (FR1/FR2/FR4, AC1/AC2/AC4): `payment_transaction` rows with
+/// a non-empty [CashDrawerTransaction.reference] are tappable for navigation
+/// to `OrderDetailScreen`. A small chevron icon is shown on navigable rows so
+/// the user discovers the affordance. Rows with an empty `reference` are not
+/// tappable (FR4).
 class _TransactionCard extends StatelessWidget {
   const _TransactionCard({
     required this.transaction,
@@ -390,7 +415,8 @@ class _TransactionCard extends StatelessWidget {
   final bool reconciled;
 
   /// Invoked when the card is tapped. The parent decides whether to open the
-  /// edit dialog or show the reconciled lock notice.
+  /// edit dialog, show the reconciled lock notice, or navigate to order
+  /// detail.
   final Future<void> Function(BuildContext context, CashDrawerTransaction txn)?
       onTap;
 
@@ -398,6 +424,12 @@ class _TransactionCard extends StatelessWidget {
   bool get _isEditableType =>
       transaction.type == 'cash_drawer_open' ||
       transaction.type == 'cash_drawer_close_adjust';
+
+  /// DG-381 FR1/FR4: whether this row is navigable to order detail. Only
+  /// `payment_transaction` rows with a non-empty `reference` are navigable.
+  bool get _isNavigableType =>
+      transaction.type == 'payment_transaction' &&
+      transaction.reference.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -410,10 +442,14 @@ class _TransactionCard extends StatelessWidget {
     // Wrap the card content so the whole row is tappable when an edit
     // affordance is available (open/close type + a non-null tap handler).
     final canEdit = _isEditableType && onTap != null;
+    // DG-381 FR1: navigable sale rows are tappable for navigation.
+    final canNavigate = _isNavigableType && onTap != null;
     final card = Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: canEdit ? () => onTap!(context, transaction) : null,
+        onTap: (canEdit || canNavigate)
+            ? () => onTap!(context, transaction)
+            : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -439,6 +475,16 @@ class _TransactionCard extends StatelessWidget {
                           Icon(
                             Icons.edit_outlined,
                             size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                        // DG-381 FR1: show a chevron on navigable sale rows
+                        // so the user discovers the navigation affordance.
+                        if (canNavigate) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 18,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ],
