@@ -122,7 +122,7 @@ def compute_urgency(
       OR (delivery/bus/door only) due within the configurable early critical
       threshold (default 60 min) — prep/transit buffer.
     - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
-      OR status in (new, confirmed) and due today.
+      OR status is non-terminal and due today.
     - ``normal`` = everything else.
 
     ``delivery_type`` defaults to ``"pickup"`` for backward compatibility.
