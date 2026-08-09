@@ -186,11 +186,14 @@ class SharedLabels {
   // Today Sales screen (DG-374 Phase 2)
   static const todaySalesTitle = 'Doanh số hôm nay';
   static const todaySalesRevenueSection = 'Tổng quan doanh thu';
+  static const todaySalesRevenueGroup = 'Tổng doanh thu';
+  static const todaySalesPaymentGroup = 'Tổng tiền nhận được';
   static const todaySalesOrderListSection = 'Đơn hàng hôm nay';
   static const todaySalesTotalRevenue = 'Tổng doanh thu';
   static const todaySalesOrderCount = 'Số đơn hàng';
   static const todaySalesCashTotal = 'Tiền mặt';
   static const todaySalesBankTransferTotal = 'Chuyển khoản';
+  static const todaySalesTotalReceived = 'Tổng nhận';
   static const todaySalesEmptyOrders = 'Không có đơn hàng hôm nay';
 
   // Today Sales screen — cashflow breakdown (DG-374 Phase 3)

@@ -36,6 +36,16 @@ final FutureProvider<TodaySummary> todaySummaryProvider =
   return reports.getTodaySummary(date: todayStr);
 });
 
+/// Today-summary report for an arbitrary date (date picker support).
+///
+/// Same backend endpoint as [todaySummaryProvider] but parameterized by date
+/// so callers can retrieve summaries for historical or future days.
+final dateSummaryProvider =
+    FutureProvider.family<TodaySummary, String>((ref, date) async {
+  final reports = ref.watch(reportServiceProvider);
+  return reports.getTodaySummary(date: date);
+});
+
 /// Revenue + order count + low-stock result computed in parallel
 /// (FR4/NFR2/NFR3).
 ///

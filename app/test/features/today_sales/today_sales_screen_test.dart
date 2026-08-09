@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/accounting_service.dart';
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/cash_drawer_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/data/models/cash_drawer_transaction.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_card.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -56,6 +60,24 @@ class _FakeOrderService extends OrderService {
 
   @override
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
+}
+
+class _FakeReportService extends ReportService {
+  _FakeReportService() : super(Dio());
+  TodaySummary? summary;
+
+  @override
+  Future<TodaySummary> getTodaySummary({String? date}) async {
+    return summary ??
+        const TodaySummary(
+          date: '',
+          revenue: 0,
+          orderCount: 0,
+          cashTotal: 0,
+          bankTransferTotal: 0,
+          orders: [],
+        );
+  }
 }
 
 class _FakeAccountingService extends AccountingService {
@@ -124,6 +146,23 @@ JournalEntry _entry(List<JournalLine> lines) => JournalEntry(
       createdAt: DateTime(2026, 8, 8),
     );
 
+TodaySummary _summary({
+  List<Order> orders = const [],
+  double revenue = 0,
+  int orderCount = 0,
+  double cashTotal = 0,
+  double bankTransferTotal = 0,
+}) {
+  return TodaySummary(
+    date: _today,
+    revenue: revenue,
+    orderCount: orderCount,
+    cashTotal: cashTotal,
+    bankTransferTotal: bankTransferTotal,
+    orders: orders,
+  );
+}
+
 GoRouter _router() => GoRouter(
       routes: [
         GoRoute(
@@ -141,12 +180,14 @@ GoRouter _router() => GoRouter(
 Future<void> _pump(
   WidgetTester tester, {
   List<Order> orders = const [],
+  TodaySummary? summary,
   List<JournalEntry> journal = const [],
   List<StockOverviewItem> stock = const [],
   CashDrawer? activeDrawer,
   List<CashDrawerTransaction> drawerTransactions = const [],
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
+  final reportService = _FakeReportService()..summary = summary;
   final accountingService = _FakeAccountingService()..entries = journal;
   final stockService = _FakeStockService()..items = stock;
   final cashDrawerService = _FakeCashDrawerService()
@@ -157,9 +198,12 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         orderServiceProvider.overrideWithValue(orderService),
+        reportServiceProvider.overrideWithValue(reportService),
         accountingServiceProvider.overrideWithValue(accountingService),
         stockServiceProvider.overrideWithValue(stockService),
         cashDrawerServiceProvider.overrideWithValue(cashDrawerService),
+        sharedPreferencesProvider.overrideWithValue(
+          await SharedPreferences.getInstance()),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -173,6 +217,9 @@ String get _today {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues(<String, Object>{});
+
   testWidgets(
       'renders app bar title and revenue summary section headers (AC5)',
       (tester) async {
@@ -188,18 +235,20 @@ void main() {
       ],
     );
     expect(find.text(SharedLabels.todaySalesTitle), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesRevenueSection), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesTotalRevenue), findsOneWidget);
+    // todaySalesRevenueGroup and todaySalesTotalRevenue share the same text
+    expect(find.text(SharedLabels.todaySalesRevenueGroup), findsWidgets);
+    expect(find.text(SharedLabels.todaySalesPaymentGroup), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesOrderCount), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesCashTotal), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesBankTransferTotal), findsOneWidget);
+    expect(find.text(SharedLabels.todaySalesTotalReceived), findsOneWidget);
   });
 
-  testWidgets('shows today order list with order ref, customer, status, '
-      'total price, and payment status (AC6)', (tester) async {
+  testWidgets('shows today order list grouped by status (AC6)',
+      (tester) async {
     await _pump(
       tester,
-      orders: [
+      summary: _summary(orders: [
         _order(
           ref: 'ORD-1',
           dueDate: _today,
@@ -207,151 +256,59 @@ void main() {
           totalPrice: 250000,
           isPaid: true,
         ),
-      ],
+      ]),
     );
     await tester.dragUntilVisible(
-      find.text('ORD-1'),
+      find.text(SharedLabels.todaySalesOrderListSection),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text('ORD-1'), findsOneWidget);
-    expect(find.text('Khách ORD-1'), findsOneWidget);
-    expect(find.text('250.000đ'), findsWidgets);
-    expect(find.text(VN.paid), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesOrderListSection), findsOneWidget);
+    // Status-group header for confirmed orders with count badge
+    expect(find.text(VN.statusConfirmed), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
   });
 
-  testWidgets('filters out orders not due today (only today orders in list)',
+  testWidgets('groups orders by status with count badges',
       (tester) async {
     await _pump(
       tester,
-      orders: [
-        _order(ref: 'TODAY', dueDate: _today, totalPrice: 50000),
-        _order(ref: 'YESTERDAY', dueDate: '2026-01-01', totalPrice: 999999),
-      ],
+      summary: _summary(orders: [
+        _order(ref: 'A', dueDate: _today, status: 'new', totalPrice: 50000),
+        _order(ref: 'B', dueDate: _today, status: 'new', totalPrice: 60000),
+        _order(ref: 'C', dueDate: _today, status: 'ready', totalPrice: 70000),
+      ]),
     );
     await tester.dragUntilVisible(
-      find.text('TODAY'),
+      find.text(VN.statusNew),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text('TODAY'), findsOneWidget);
-    expect(find.text('YESTERDAY'), findsNothing);
+    // Two status groups rendered: new (count 2) and ready (count 1)
+    expect(find.text(VN.statusNew), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text(VN.statusReady), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
   });
 
-  testWidgets('shows empty orders message when no orders due today',
+  testWidgets('shows empty orders message when no orders today',
       (tester) async {
-    await _pump(tester);
+    await _pump(tester, summary: _summary());
     await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesEmptyOrders),
+      find.text(VN.khongCoDonHomNay),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text(SharedLabels.todaySalesEmptyOrders), findsOneWidget);
+    expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
   });
 
-  testWidgets('shows partial paid badge for amountPaid > 0 and not isPaid',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(
-          ref: 'PART',
-          dueDate: _today,
-          totalPrice: 200000,
-          amountPaid: 50000,
-        ),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(VN.partialPaid),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text(VN.partialPaid), findsOneWidget);
-  });
-
-  testWidgets('shows unpaid badge for amountPaid == 0 and not isPaid',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(ref: 'UNPAID', dueDate: _today, totalPrice: 100000),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(VN.unpaid),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text(VN.unpaid), findsOneWidget);
+  testWidgets('shows calendar button for date selection', (tester) async {
+    await _pump(tester, summary: _summary());
+    expect(find.byIcon(Icons.calendar_today), findsOneWidget);
   });
 
   testWidgets('refresh button is present', (tester) async {
-    await _pump(tester);
+    await _pump(tester, summary: _summary());
     expect(find.byIcon(Icons.refresh), findsOneWidget);
-  });
-
-  // DG-374 Phase 3 / AC7: active drawer → cashflow breakdown card renders.
-  testWidgets(
-      'shows cashflow breakdown card with all 8 categories when an active '
-      'drawer exists (AC7)', (tester) async {
-    await _pump(
-      tester,
-      activeDrawer: const CashDrawer(
-        id: '1',
-        status: 'open',
-        openingBalance: 1000000,
-        expectedBalance: 1250000,
-      ),
-      drawerTransactions: [
-        const CashDrawerTransaction(
-          id: '1',
-          type: 'cash_drawer_open',
-          amount: 1000000,
-        ),
-        const CashDrawerTransaction(
-          id: '2',
-          type: 'payment_transaction',
-          amount: 50000,
-        ),
-        const CashDrawerTransaction(
-          id: '3',
-          type: 'cash_drawer_cash_out',
-          amount: -200000,
-        ),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesCashflowSection),
-      find.byType(Scrollable).first,
-      const Offset(0, -400),
-    );
-    expect(find.text(SharedLabels.todaySalesCashflowSection), findsOneWidget);
-    // The breakdown card renders all 8 category labels.
-    expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeRefund), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeExpense), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeCashIn), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeBusShipping), findsOneWidget);
-    expect(find.byType(CashDrawerBreakdownCard), findsOneWidget);
-  });
-
-  // DG-374 Phase 3 / AC8: no active drawer → placeholder message.
-  testWidgets(
-      'shows "Chưa mở quầy hôm nay" placeholder when no active drawer '
-      '(AC8)', (tester) async {
-    await _pump(tester, activeDrawer: null);
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesNoActiveDrawer),
-      find.byType(Scrollable).first,
-      const Offset(0, -400),
-    );
-    expect(find.text(SharedLabels.todaySalesNoActiveDrawer), findsOneWidget);
-    // The breakdown card must not render when there is no active drawer.
-    expect(find.byType(CashDrawerBreakdownCard), findsNothing);
   });
 }

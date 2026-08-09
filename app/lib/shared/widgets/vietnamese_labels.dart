@@ -177,6 +177,7 @@ class VN {
   static const eventPhotosUploadFailed = 'Đã lưu sự kiện nhưng không tải được ảnh';
 
   // Dashboard
+  static const chonNgay = 'Chọn ngày';
   static const todayOrders = 'Đơn hàng hôm nay';
   static const upcomingDue = 'Sắp đến hạn';
   static const overdueOrders = 'Quá hạn';
