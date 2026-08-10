@@ -453,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -472,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -488,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3498,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         _assert_users_role_check_constraint(conn)
 
 
@@ -3564,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3687,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3761,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3788,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4191,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         indexes = {
             r["name"]
@@ -4274,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4386,7 +4386,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4461,7 +4461,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4595,7 +4595,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4720,7 +4720,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4729,7 +4729,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4879,7 +4879,7 @@ def test_v98_adds_linked_order_refs_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
         cols = {
             r[1]: r
             for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
@@ -5000,7 +5000,7 @@ def test_v99_adds_reconciled_column_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
 
         cols = _schema_columns(conn, "cash_drawer")
         assert "reconciled" in cols
@@ -5056,7 +5056,90 @@ def test_v99_idempotent_on_already_migrated_db():
         idx_after = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
         assert before == after
         assert idx_before == idx_after
-        assert _migrated_version(conn) == 99
+        assert _migrated_version(conn) == 100
+
+
+def test_v100_registered_in_migration_chain():
+    """v100 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 100 in MIGRATIONS
+    assert (
+        MIGRATIONS[100]["description"]
+        == "Message templates table + seed 8 default built-in templates across 6 scenarios (DG-375 Phase 4.1)"
+    )
+    assert MIGRATIONS[100]["callable"].__name__ == "_migrate_v100_message_templates"
+
+
+def test_v100_creates_message_templates_table_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the ``message_templates`` table
+    with all expected columns (FR1/FR4/FR6/FR7)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 100
+
+        cols = _schema_columns(conn, "message_templates")
+        expected = {
+            "id", "scenario", "name", "body", "is_system",
+            "created_by_staff_id", "sort_order", "active",
+            "created_at", "updated_at",
+        }
+        assert set(cols) >= expected, f"missing cols: {expected - set(cols)}"
+
+        # FK to staff(id) ON DELETE SET NULL
+        fk_rows = conn.execute("PRAGMA foreign_key_list('message_templates')").fetchall()
+        assert any(
+            r["table"] == "staff" and r["from"] == "created_by_staff_id" and r["on_delete"] == "SET NULL"
+            for r in fk_rows
+        ), f"no staff FK found: {fk_rows}"
+
+        # Indexes
+        indexes = {
+            r[1]
+            for r in conn.execute("PRAGMA index_list('message_templates')").fetchall()
+        }
+        assert "idx_message_templates_scenario" in indexes
+        assert "idx_message_templates_is_system" in indexes
+        assert "idx_message_templates_created_by_staff" in indexes
+        # Partial unique index dedupes system-template seeds (idempotent re-run)
+        assert "idx_message_templates_system_scenario_name_unique" in indexes
+
+
+def test_v100_seeds_eight_default_templates():
+    """FR9/AC9/NFR3: v100 seeds 8 default system templates across 6 scenarios."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM message_templates WHERE is_system = 1"
+        ).fetchone()[0]
+        assert count == 8, f"expected 8 seeded system templates, got {count}"
+
+        scenarios = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT scenario FROM message_templates WHERE is_system = 1"
+            ).fetchall()
+        }
+        expected = {"ask_info", "confirm_order", "final_message", "follow_up", "status_update", "payment_request"}
+        assert scenarios == expected, f"scenario mismatch: {scenarios ^ expected}"
+
+        # 3 confirm_order variants
+        confirm_count = conn.execute(
+            "SELECT COUNT(*) FROM message_templates WHERE scenario = 'confirm_order' AND is_system = 1"
+        ).fetchone()[0]
+        assert confirm_count == 3, f"expected 3 confirm_order variants, got {confirm_count}"
+
+
+def test_v100_idempotent_on_already_migrated_db():
+    """Re-running v100 on a DB that already ran it is a no-op (INSERT OR IGNORE)."""
+    from baker.db.schema import _migrate_v100_message_templates
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        before = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
+        # Re-running the callable must not raise and must not change count.
+        _migrate_v100_message_templates(conn)
+        after = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
+        assert before == after, f"re-running v100 changed count: {before} -> {after}"
+        assert _migrated_version(conn) == 100
 
 
 def test_schema_all_matches_imported_symbols():

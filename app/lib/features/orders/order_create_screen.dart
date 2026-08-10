@@ -6,8 +6,10 @@ import '../../data/api/customer_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/order/order_draft_provider.dart';
+import '../../shared/labels/templates.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import '../templates/widgets/template_picker_modal.dart';
+import 'template_context_builder.dart';
 import 'widgets/order_creation_config.dart';
 import 'widgets/order_creation_orchestrator.dart';
 import 'widgets/stage1_product_selection_screen.dart';
@@ -58,6 +60,22 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     super.dispose();
   }
 
+  /// DG-375 Phase 4.3 / FR2 / AC2: opens the template picker modal filled
+  /// from the current create-wizard state. Used by the overflow menu and the
+  /// review-stage button.
+  void _openTemplatePicker() {
+    final state = ref.read(orderCreateStateProvider);
+    final ctx = buildTemplateContextFromCreateWizard(
+      items: state.items,
+      wizardData: state.wizardData,
+      dueDate: state.dueDate,
+      dueTime: state.dueTime,
+      source: state.source,
+      createdBy: ref.read(loggedByProvider),
+    );
+    TemplatePickerModal.show(context, templateContext: ctx);
+  }
+
   OrderCreationConfig _buildConfig() {
     return OrderCreationConfig(
       orderStateProvider: orderCreateStateProvider,
@@ -94,6 +112,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         onSubmit: controller.submit,
         isProcessing: controller.isSubmitting,
         orderStateProvider: orderCreateStateProvider,
+        onOpenTemplates: _openTemplatePicker,
       ),
       stageContainerBuilder: (ctx, stages, _) => PageView(
         controller: _pageController,
@@ -135,7 +154,19 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.createOrder),
-        actions: const [AppBarOverflowMenu()],
+        actions: [
+          AppBarOverflowMenu(
+            items: const [
+              PopupMenuItem<String>(
+                value: 'messageTemplates',
+                child: Text(TemplatesLabels.overflowMenuOpenPicker),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'messageTemplates') _openTemplatePicker();
+            },
+          ),
+        ],
       ),
       body: OrderCreationOrchestrator(
         config: _buildConfig(),

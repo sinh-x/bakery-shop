@@ -1228,6 +1228,108 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_order_item_blanks_item_blank_unique
 """
 
 
+MESSAGE_TEMPLATES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS message_templates (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario            TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    body                TEXT NOT NULL,
+    is_system           INTEGER NOT NULL DEFAULT 0,
+    created_by_staff_id INTEGER REFERENCES staff(id) ON DELETE SET NULL,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    active              INTEGER NOT NULL DEFAULT 1,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+CREATE INDEX IF NOT EXISTS idx_message_templates_scenario ON message_templates(scenario);
+CREATE INDEX IF NOT EXISTS idx_message_templates_is_system ON message_templates(is_system);
+CREATE INDEX IF NOT EXISTS idx_message_templates_created_by_staff ON message_templates(created_by_staff_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_message_templates_system_scenario_name_unique
+    ON message_templates(scenario, name) WHERE is_system = 1;
+"""
+
+# Default built-in message templates (DG-375 FR9 / AC9).
+# 8 templates across 6 scenarios. All seeded as system templates (is_system=1).
+# Template bodies use placeholder syntax ({customer_name}, {order_code}, …)
+# resolved client-side; the backend stores the raw body verbatim (FR4).
+SEED_MESSAGE_TEMPLATES = [
+    (
+        "ask_info",
+        "Hỏi thông tin đặt bánh",
+        "Dạ mình đặt bánh khi nào lấy ạ? Cho shop xin nội dung ghi kèm bánh và số điện thoại để ghi đơn nhé.",
+        1,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Pickup",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Mình nhận bánh ở tiệm Đoàn Gia - Ninh Diêm, 61 Hòn Khói vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        2,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Delivery",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Shop sẽ giao bánh tới {delivery_address} vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        3,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Gửi xe buýt",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Shop sẽ gửi bánh qua xe buýt vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        4,
+    ),
+    (
+        "final_message",
+        "Bánh đã sẵn sàng",
+        "Dạ bánh của mình đã sẵn sàng ạ. Mã đơn {public_order_code}.\n"
+        "{items_list}\n"
+        "{delivery_type, select: pickup: Mình qua tiệm Đoàn Gia - Ninh Diêm, 61 Hòn Khói nhận bánh nha. | delivery: Shop đang giao bánh tới {delivery_address} ạ.}\n"
+        "Mình nhận bánh kiểm tra giúp shop nha. Cảm ơn mình nhiều ạ!",
+        5,
+    ),
+    (
+        "follow_up",
+        "Cảm ơn khách hàng",
+        "Dạ shop cảm ơn mình đã ủng hộ Đoàn Gia ạ. Bánh mình dùng có ngon không ạ? "
+        "Có gì mình góp ý giúp shop nha. Lần sau mình cần bánh cứ nhắn shop ạ!",
+        6,
+    ),
+    (
+        "status_update",
+        "Cập nhật trạng thái đơn",
+        "Dạ shop cập nhật đơn bánh mã {public_order_code} của mình: "
+        "{status, select: confirmed: đã xác nhận | in_progress: đang làm | ready: đã sẵn sàng | delivering: đang giao} ạ.\n"
+        "Dự kiến {delivery_type, select: pickup: mình qua nhận lúc {due_date} {due_time} | delivery: giao tới {delivery_address} lúc {due_date} {due_time}} ạ.",
+        7,
+    ),
+    (
+        "payment_request",
+        "Yêu cầu thanh toán",
+        "Dạ shop gửi mình thông tin thanh toán đơn bánh mã {public_order_code} ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "{notes, if: Đã ghi chú: {notes}}\n"
+        "Mình chuyển khoản giúp shop qua:\n"
+        "- Ngân hàng: ...\n"
+        "- Số tài khoản: ...\n"
+        "- Chủ tài khoản: ...\n"
+        "Mình chuyển xong nhắn shop xác nhận nha. Cảm ơn mình ạ!",
+        8,
+    ),
+]
+
+
 __all__ = [
     'INITIAL_SCHEMA',
     'STAFF_AND_PEOPLE_SCHEMA',
@@ -1314,4 +1416,6 @@ __all__ = [
     'SESSIONS_SCHEMA',
     'BLANKS_SCHEMA',
     'ORDER_ITEM_BLANKS_SCHEMA',
+    'MESSAGE_TEMPLATES_SCHEMA',
+    'SEED_MESSAGE_TEMPLATES',
 ]

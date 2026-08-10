@@ -9,10 +9,13 @@ import '../../data/models/payment_transaction.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:bakery_app/shared/utils/api_error.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
+import '../templates/template_context.dart';
+import '../templates/widgets/template_picker_modal.dart';
 import 'providers/delivery_claim_handler.dart';
 import 'providers/delivery_claim_providers.dart';
 import 'widgets/google_maps_modal.dart';
@@ -228,6 +231,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           value: 'googleMaps',
           child: Text(OrdersLabels.googleMapsContextMenuLabel),
         ),
+        const PopupMenuItem<String>(
+          value: 'messageTemplates',
+          child: Text(TemplatesLabels.overflowMenuOpenPicker),
+        ),
       ]);
 
       if (staff != null &&
@@ -319,6 +326,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                     orderRef: order.orderRef,
                     initialUrl: order.googleMapsUrl,
                   ),
+                );
+              } else if (value == 'messageTemplates') {
+                final order = orderAsync.asData!.value;
+                TemplatePickerModal.show(
+                  context,
+                  templateContext: TemplateContext.fromOrder(order),
                 );
               } else if (value == 'claim' || value == 'unclaim') {
                 _handleClaimMenuSelection(context, ref, value);

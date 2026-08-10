@@ -10,6 +10,7 @@ import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/auth.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/templates.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
@@ -201,6 +202,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   title: const Text(AuthLabels.changePasswordTitle),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/change-password'),
+                ),
+                const SizedBox(height: 16),
+                // Message template management (DG-375 Phase 4 / FR10).
+                ListTile(
+                  leading: const Icon(Icons.message_outlined),
+                  title: const Text(TemplatesLabels.managementTitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/templates/manage'),
                 ),
                 const SizedBox(height: 16),
                 // Logout (DG-319 Phase 6 / FR6 / AC6).

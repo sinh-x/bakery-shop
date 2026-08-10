@@ -7,16 +7,20 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/labels/templates.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import '../templates/widgets/template_picker_modal.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
 import 'order_edit/utils/edit_summary_helpers.dart';
+import 'template_context_builder.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_stage_indicator.dart';
 import 'widgets/order_wizard.dart';
@@ -348,6 +352,27 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         googleMapsUrl: _existingGoogleMapsUrl,
       );
 
+  /// DG-375 Phase 4.3 / FR3 / AC3: opens the template picker modal filled
+  /// from the current edit-wizard state + the saved order's codes. Used by
+  /// the overflow menu and the review-stage button.
+  void _openTemplatePicker() {
+    final order = ref.read(orderDetailProvider(widget.orderRef)).asData?.value;
+    if (order == null) return;
+    final workItemsAsync =
+        ref.read(orderWorkItemsProvider(widget.orderRef));
+    final summaryItems =
+        summaryItemsFromWorkItems(workItemsAsync.value ?? const []);
+    final ctx = buildTemplateContextFromEditWizard(
+      order: order,
+      summaryItems: summaryItems,
+      wizardSnapshot: _wizardSnapshot,
+      dueDate: _dueDate,
+      dueTime: _dueTime,
+      createdBy: ref.read(loggedByProvider),
+    );
+    TemplatePickerModal.show(context, templateContext: ctx);
+  }
+
   void _onCustomerSelected(Customer? c) {
     setState(() {
       _selectedCustomer = c;
@@ -396,7 +421,17 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   )
                 : const Text(VN.save),
           ),
-          const AppBarOverflowMenu(),
+          AppBarOverflowMenu(
+            items: const [
+              PopupMenuItem<String>(
+                value: 'messageTemplates',
+                child: Text(TemplatesLabels.overflowMenuOpenPicker),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'messageTemplates') _openTemplatePicker();
+            },
+          ),
         ],
       ),
       body: orderAsync.when(
@@ -480,6 +515,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onSave: _save,
                         onBack: () => _goToStage(3),
                         isProcessing: _saving,
+                        onOpenTemplates: _openTemplatePicker,
                       ),
                     ],
                   ),
