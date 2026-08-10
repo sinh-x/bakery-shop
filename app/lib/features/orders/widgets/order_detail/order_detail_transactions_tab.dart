@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
+import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/payment_transaction.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_payment_history.dart';
 import 'order_payment_row.dart';
+import 'order_photo_thumbnail.dart';
+import '../order_photo_section.dart';
 
 /// Transactions tab content: payment summary at the top (total, paid,
 /// remaining), an "add transaction" button that opens
-/// [OrderRecordPaymentSheet], then the existing [OrderPaymentHistory] list.
+/// [OrderRecordPaymentSheet], then the existing [OrderPaymentHistory] list,
+/// followed by a photo section showing `chuyen-khoan` tagged photos.
 ///
 /// The summary reuses the [OrderPaymentRow] pattern from
 /// [OrderPaymentSummary] (NFR1: no extra network fetch on tab switch — the
-/// `order`, `amountPaid`, and `remaining` values are forwarded from the
-/// parent [OrderDetailScreen] which already watches
-/// `orderPaymentTransactionsProvider`).
+/// `order`, `amountPaid`, `remaining`, and `transferPhotos` values are
+/// forwarded from the parent [OrderDetailScreen] which already watches
+/// `orderPhotosProvider`).
 class OrderDetailTransactionsTab extends StatelessWidget {
   const OrderDetailTransactionsTab({
     super.key,
@@ -24,6 +28,8 @@ class OrderDetailTransactionsTab extends StatelessWidget {
     required this.txns,
     required this.onAddPayment,
     required this.onTransactionTap,
+    required this.transferPhotos,
+    required this.baseUrl,
   });
 
   final Order order;
@@ -32,6 +38,14 @@ class OrderDetailTransactionsTab extends StatelessWidget {
   final List<PaymentTransaction> txns;
   final VoidCallback onAddPayment;
   final void Function(PaymentTransaction txn) onTransactionTap;
+
+  /// Order photos tagged `chuyen-khoan` to display as transfer proof below
+  /// the payment history. Filtered and forwarded by the parent
+  /// [OrderDetailScreen] from `orderPhotosProvider` (NFR1).
+  final List<OrderPhoto> transferPhotos;
+
+  /// Base API URL used to build photo thumbnail URLs.
+  final String baseUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +65,11 @@ class OrderDetailTransactionsTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         OrderPaymentHistory(txns: txns, onTransactionTap: onTransactionTap),
+        const SizedBox(height: 16),
+        _TransferPhotoSection(
+          photos: transferPhotos,
+          baseUrl: baseUrl,
+        ),
       ],
     );
   }
@@ -111,6 +130,75 @@ class _TransactionsSummary extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Photo section shown below the payment history in the Transactions tab.
+/// Displays order photos tagged `chuyen-khoan` as a horizontal thumbnail
+/// strip with tag chips, reusing the [OrderPhotoThumbnail] widget and
+/// [OrderPhotoViewer] from [order_photo_section.dart] (FR1 / AC1).
+///
+/// NFR1: the [photos] list is forwarded by the parent — this widget performs
+/// no network fetch of its own.
+class _TransferPhotoSection extends StatelessWidget {
+  const _TransferPhotoSection({required this.photos, required this.baseUrl});
+
+  final List<OrderPhoto> photos;
+  final String baseUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          VN.transferPhotosSection,
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (photos.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              VN.noTransferPhotos,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: 134,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(bottom: 4),
+              itemCount: photos.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (ctx, index) {
+                final photo = photos[index];
+                final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
+                return OrderPhotoThumbnail(
+                  url: url,
+                  tags: photo.tags,
+                  onTap: () => Navigator.of(ctx).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OrderPhotoViewer(
+                        photos: photos,
+                        initialIndex: index,
+                        baseUrl: baseUrl,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 }

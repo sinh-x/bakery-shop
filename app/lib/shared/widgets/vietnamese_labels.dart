@@ -567,6 +567,14 @@ class VN {
   static const birthdayWithAge = 'Sinh nhật';
   static const orderPhotosSection = 'Ảnh đơn hàng (chung)';
 
+  /// Header for the chuyen-khoan tagged photo section shown in the
+  /// Transactions tab of OrderDetailScreen. DG-364 Phase 4.2.
+  static const transferPhotosSection = 'Ảnh chuyển khoản';
+
+  /// Empty-state hint shown when an order has no chuyen-khoan tagged photos
+  /// in the Transactions tab. DG-364 Phase 4.2.
+  static const noTransferPhotos = 'Chưa có ảnh chuyển khoản';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

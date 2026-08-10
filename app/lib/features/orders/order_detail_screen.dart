@@ -14,6 +14,7 @@ import 'package:bakery_app/shared/utils/api_error.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
+import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
 import '../templates/template_context.dart';
 import '../templates/widgets/template_picker_modal.dart';
 import 'providers/delivery_claim_handler.dart';
@@ -383,6 +384,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           final amountPaid =
               txnsAsync.hasValue ? computePaid(txns) : order.amountPaid;
           final remaining = order.totalPrice - amountPaid;
+          // NFR1: parent fetches order photos once and forwards the
+          // chuyen-khoan tagged subset to the Transactions tab — no extra
+          // network fetch on tab switch (DG-364 Phase 4.2 / FR1 / AC1).
+          final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
+          final transferPhotos = (photosAsync.value ?? const [])
+              .where((p) => p.tags
+                  .split(',')
+                  .map((t) => t.trim())
+                  .contains('chuyen-khoan'))
+              .toList();
+          final baseUrl = ref.watch(apiBaseUrlProvider);
           final paymentColor = amountPaid >= order.totalPrice
               ? Colors.green
               : amountPaid > 0
@@ -427,6 +439,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       txns: txns,
                       onAddPayment: () => _openAddPaymentSheet(remaining),
                       onTransactionTap: _openTransactionDetail,
+                      transferPhotos: transferPhotos,
+                      baseUrl: baseUrl,
                     ),
                     OrderDetailCustomerTab(customerId: order.customerId),
                   ],

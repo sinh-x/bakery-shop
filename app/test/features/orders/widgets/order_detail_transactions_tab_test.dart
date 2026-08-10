@@ -1,6 +1,8 @@
 import 'package:bakery_app/data/models/payment_transaction.dart';
+import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_detail_transactions_tab.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_payment_history.dart';
+import 'package:bakery_app/features/orders/widgets/order_detail/order_photo_thumbnail.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +53,8 @@ Future<void> _pump(
   required double amountPaid,
   required double remaining,
   List<PaymentTransaction> txns = const [],
+  List<OrderPhoto> transferPhotos = const [],
+  String baseUrl = 'http://test',
   VoidCallback? onAddPayment,
 }) async {
   await tester.pumpWidget(
@@ -63,6 +67,8 @@ Future<void> _pump(
           txns: txns,
           onAddPayment: onAddPayment ?? () {},
           onTransactionTap: (_) {},
+          transferPhotos: transferPhotos,
+          baseUrl: baseUrl,
         ),
       ),
     ),
@@ -137,5 +143,55 @@ void main() {
     // Total + paid both show 500.000đ; remaining shows 0đ.
     expect(find.text('500.000đ'), findsNWidgets(2));
     expect(find.text('0đ'), findsOneWidget);
+  });
+
+  testWidgets(
+      'renders transfer photo section with thumbnails and tag chips when '
+      'chuyen-khoan photos are provided (FR1/AC1)', (tester) async {
+    final photos = [
+      const OrderPhoto(
+        id: 10,
+        orderId: 1,
+        photoHash: 'hashA',
+        tags: 'chuyen-khoan',
+      ),
+      const OrderPhoto(
+        id: 11,
+        orderId: 1,
+        photoHash: 'hashB',
+        tags: 'chuyen-khoan',
+      ),
+    ];
+    await _pump(
+      tester,
+      order: _order(totalPrice: 500000),
+      amountPaid: 100000,
+      remaining: 400000,
+      transferPhotos: photos,
+    );
+
+    // Section header.
+    expect(find.text(VN.transferPhotosSection), findsOneWidget);
+    // Two thumbnails rendered.
+    expect(find.byType(OrderPhotoThumbnail), findsNWidgets(2));
+    // The "Chuyển khoản" tag chip label (from kOrderPhotoTags) is rendered
+    // for both photos.
+    expect(find.text('Chuyển khoản'), findsNWidgets(2));
+  });
+
+  testWidgets(
+      'renders empty-state hint when no chuyen-khoan photos are provided '
+      '(FR1/AC1)', (tester) async {
+    await _pump(
+      tester,
+      order: _order(totalPrice: 500000),
+      amountPaid: 100000,
+      remaining: 400000,
+      transferPhotos: const [],
+    );
+
+    expect(find.text(VN.transferPhotosSection), findsOneWidget);
+    expect(find.text(VN.noTransferPhotos), findsOneWidget);
+    expect(find.byType(OrderPhotoThumbnail), findsNothing);
   });
 }
