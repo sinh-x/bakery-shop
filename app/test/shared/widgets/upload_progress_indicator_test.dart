@@ -34,8 +34,8 @@ void main() {
         UploadProgressIndicator(states: states),
       ));
 
-      expect(find.byIcon(Icons.radio_button_unchecked), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
       expect(find.byIcon(Icons.error), findsOneWidget);
 

@@ -122,10 +122,13 @@ class _PhotoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final icon = switch (state.status) {
-      PhotoUploadStatus.pending => Icon(
-          Icons.radio_button_unchecked,
-          size: 16,
-          color: theme.colorScheme.outline,
+      PhotoUploadStatus.pending => SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: theme.colorScheme.primary,
+          ),
         ),
       PhotoUploadStatus.uploading => SizedBox(
           width: 14,

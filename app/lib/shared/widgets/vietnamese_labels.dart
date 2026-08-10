@@ -434,7 +434,7 @@ class VN {
 
   /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
   static const photoUploadStatusLabels = <String, String>{
-    'pending': 'Đang chờ',
+    'pending': 'Đang xử lý',
     'uploading': 'Đang tải',
     'success': 'Đã xong',
     'error': 'Lỗi',
