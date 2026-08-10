@@ -24,6 +24,7 @@ import 'routes/expenses_routes.dart';
 import 'routes/misc_routes.dart';
 import 'routes/orders_routes.dart';
 import 'routes/products_routes.dart';
+import 'routes/templates_routes.dart';
 import 'widgets/shell_scaffold.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -133,6 +134,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ...eventsRoutes(),
       ...expensesRoutes(),
       ...blanksRoutes(),
+      ...templatesRoutes(),
       ...miscRoutes(),
     ],
   );

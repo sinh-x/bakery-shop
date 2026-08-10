@@ -8,6 +8,7 @@ import '../../../shared/labels/templates.dart';
 import '../../orders/widgets/section_header.dart';
 import '../message_template_resolver.dart';
 import '../template_context.dart';
+import '../template_management_screen.dart';
 
 /// Template picker modal (DG-375 Phase 4.3 / FR1, FR5, AC1, AC4, AC5).
 ///
@@ -30,6 +31,7 @@ class TemplatePickerModal extends ConsumerStatefulWidget {
     super.key,
     required this.context,
     this.title,
+    this.onManage,
   });
 
   /// The resolved order/wizard fields used to fill template placeholders.
@@ -38,12 +40,18 @@ class TemplatePickerModal extends ConsumerStatefulWidget {
   /// Optional override for the modal title (defaults to the VN label).
   final String? title;
 
+  /// Optional callback invoked when the user taps the "Manage Templates"
+  /// footer button (FR10). When `null`, the modal pushes the
+  /// [TemplateManagementScreen] via the root navigator and closes itself.
+  final VoidCallback? onManage;
+
   /// Convenience method to open the modal as a scrollable bottom sheet.
   /// Returns a [Future] that completes when the sheet is dismissed.
   static Future<void> show(
     BuildContext context, {
     required TemplateContext templateContext,
     String? title,
+    VoidCallback? onManage,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -55,6 +63,7 @@ class TemplatePickerModal extends ConsumerStatefulWidget {
       builder: (_) => TemplatePickerModal(
         context: templateContext,
         title: title,
+        onManage: onManage,
       ),
     );
   }
@@ -97,6 +106,7 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
                 },
               ),
             ),
+            _buildFooter(theme),
           ],
         ),
       ),
@@ -126,6 +136,36 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFooter(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: _openManagement,
+          icon: const Icon(Icons.settings_outlined, size: 18),
+          label: const Text(TemplatesLabels.manageTemplatesButton),
+        ),
+      ),
+    );
+  }
+
+  void _openManagement() {
+    if (widget.onManage != null) {
+      widget.onManage!();
+      return;
+    }
+    // Default behavior: push the management screen on the root navigator
+    // and close the picker modal (FR10).
+    final navigator = Navigator.of(context, rootNavigator: true);
+    Navigator.of(context).maybePop();
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const TemplateManagementScreen(),
+      ),
     );
   }
 
