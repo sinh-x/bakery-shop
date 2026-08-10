@@ -13,6 +13,7 @@ import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:bakery_app/shared/utils/api_error.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/utils/order_photo_tags.dart';
 import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
 import '../templates/template_context.dart';
@@ -389,10 +390,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           // network fetch on tab switch (DG-364 Phase 4.2 / FR1 / AC1).
           final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
           final transferPhotos = (photosAsync.value ?? const [])
-              .where((p) => p.tags
-                  .split(',')
-                  .map((t) => t.trim())
-                  .contains('chuyen-khoan'))
+              .where((p) => parseOrderPhotoTags(p.tags).contains('chuyen-khoan'))
               .toList();
           final baseUrl = ref.watch(apiBaseUrlProvider);
           final paymentColor = amountPaid >= order.totalPrice
