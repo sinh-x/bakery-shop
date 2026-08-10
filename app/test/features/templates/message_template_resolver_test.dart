@@ -246,6 +246,31 @@ void main() {
     });
   });
 
+  group('MessageTemplateResolver — convergence guard (CQ-ResolveLoop)', () {
+    test('emits warning and sets lastNonConvergedBody on non-converging input',
+        () {
+      // 6-level-deep nested select: each pass resolves the innermost matchable
+      // level, so 5 passes are not enough (level 1 remains unresolved). The
+      // probe pass mutates the body, so a convergence warning is emitted and
+      // [lastNonConvergedBody] is set.
+      const body = '{status, select: x: {status, select: x: {status, select: '
+          'x: {status, select: x: {status, select: x: {status, select: x: '
+          'done}}}}}}';
+      MessageTemplateResolver.lastNonConvergedBody = null;
+      MessageTemplateResolver(_ctx(status: 'confirmed')).resolveBody(body);
+      expect(MessageTemplateResolver.lastNonConvergedBody, isNotNull);
+      expect(MessageTemplateResolver.lastNonConvergedBody, contains('select'));
+    });
+
+    test('does not set lastNonConvergedBody when body converges', () {
+      const body = '{delivery_type, select: pickup: ok | delivery: x}';
+      MessageTemplateResolver.lastNonConvergedBody = null;
+      MessageTemplateResolver(_ctx(deliveryType: 'pickup'))
+          .resolveBody(body);
+      expect(MessageTemplateResolver.lastNonConvergedBody, isNull);
+    });
+  });
+
   group('MessageTemplateResolverExt', () {
     test('template.resolvePlaceholders(context) resolves body', () {
       final tmpl = _tmpl('Xin chào {customer_name}');

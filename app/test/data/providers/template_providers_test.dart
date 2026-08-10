@@ -265,6 +265,35 @@ void main() {
       );
     });
 
+    test('parity with backend SEED_MESSAGE_TEMPLATES (CQ-DupSeed)', () {
+      // Mirrors `SEED_MESSAGE_TEMPLATES` in
+      // `src/baker/db/schema/_constants.py` (scenario, name, body, sort_order).
+      // The Flutter fallback must match the backend seed on scenario + name +
+      // sortOrder so the offline fallback (NFR3) shows the same templates as
+      // a freshly migrated backend (FR9 / AC9).
+      const backendSeed = <(String, String, int)>[
+        ('ask_info', 'Hỏi thông tin đặt bánh', 1),
+        ('confirm_order', 'Xác nhận đơn — Pickup', 2),
+        ('confirm_order', 'Xác nhận đơn — Delivery', 3),
+        ('confirm_order', 'Xác nhận đơn — Gửi xe buýt', 4),
+        ('final_message', 'Bánh đã sẵn sàng', 5),
+        ('follow_up', 'Cảm ơn khách hàng', 6),
+        ('status_update', 'Cập nhật trạng thái đơn', 7),
+        ('payment_request', 'Yêu cầu thanh toán', 8),
+      ];
+
+      expect(defaultTemplatesFallback, hasLength(backendSeed.length));
+      for (var i = 0; i < backendSeed.length; i++) {
+        final fallback = defaultTemplatesFallback[i];
+        final (scenario, name, sortOrder) = backendSeed[i];
+        expect(fallback.scenario, scenario,
+            reason: 'scenario mismatch at index $i');
+        expect(fallback.name, name, reason: 'name mismatch at index $i');
+        expect(fallback.sortOrder, sortOrder,
+            reason: 'sortOrder mismatch at index $i');
+      }
+    });
+
     test('template bodies preserve placeholder syntax (FR4)', () {
       final bodyWithPlaceholders = defaultTemplatesFallback
           .where((t) => t.scenario == 'confirm_order')

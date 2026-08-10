@@ -40,6 +40,20 @@ _ALLOWED_SCENARIOS = {
 }
 
 
+# Allowlist of column names that may appear in the dynamic SET clause built
+# by ``update_template`` (SEC-SetClause, review cycle 1). Any other key in
+# the ``fields`` dict would be concatenated into raw SQL and must be rejected.
+ALLOWED_UPDATE_FIELDS = {
+    "scenario",
+    "name",
+    "body",
+    "is_system",
+    "sort_order",
+    "active",
+    "updated_at",
+}
+
+
 # ── Pydantic models ──────────────────────────────────────────────────────────
 
 
@@ -104,6 +118,16 @@ def list_templates(
     ``scenario`` is provided, filters to that scenario. Templates are
     ordered by scenario, sort_order, id so the client can group them by
     scenario for the picker modal.
+
+    NOTE (SEC-PublicEndpoint, review cycle 1): The unauthenticated fallback
+    below is by design. When no auth token is present, the endpoint returns
+    only the seeded system templates with placeholder metadata
+    (``created_by_staff_id = NULL``); no personal templates are surfaced
+    because ``staff_id`` is ``None`` and the SQL filters on
+    ``created_by_staff_id = ?``. This keeps the public discovery path safe
+    while letting the Flutter client bootstrap offline against the bundled
+    defaults. Mutating endpoints (POST/PATCH/DELETE) require a real staff
+    session and reject anonymous callers.
     """
     staff_id = None
     if request is not None:
@@ -278,6 +302,15 @@ def update_template(
 
         if fields:
             fields["updated_at"] = now_utc()
+            # SEC-SetClause (review cycle 1): guard the dynamic SET clause.
+            # Column names are concatenated into raw SQL, so reject any key
+            # not in the allowlist before constructing the statement.
+            unknown = set(fields) - ALLOWED_UPDATE_FIELDS
+            if unknown:
+                raise ValueError(
+                    "Unknown update fields: "
+                    f"{sorted(unknown)}. Allowed: {sorted(ALLOWED_UPDATE_FIELDS)}"
+                )
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             values = list(fields.values()) + [template_id]
             conn.execute(

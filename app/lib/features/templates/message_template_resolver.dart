@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../data/models/message_template.dart';
 import '../../shared/labels/templates.dart';
 import 'template_context.dart';
@@ -28,6 +30,20 @@ class MessageTemplateResolver {
   /// Centralized in [TemplatesLabels.emptyFieldPlaceholder] (NFR4).
   static const emptyPlaceholder = TemplatesLabels.emptyFieldPlaceholder;
 
+  /// Maximum number of conditional resolution passes (CQ-ResolveLoop).
+  ///
+  /// Branch text in ``{field, select: ...}`` / ``{field, if: ...}`` may
+  /// itself contain nested conditionals. Each pass resolves one nesting
+  /// level. If the body still changes after this many passes, it has not
+  /// converged (likely a recursive/self-referential template) and a
+  /// warning is emitted via [debugPrint]. The last mutated value is
+  /// returned unchanged.
+  static const int _maxConditionalDepth = 5;
+
+  /// Last non-converging body, exposed for tests (CQ-ResolveLoop).
+  @visibleForTesting
+  static String? lastNonConvergedBody;
+
   /// Resolves all placeholders in [template.body] using [context].
   String resolvePlaceholders(MessageTemplate template) {
     return _resolveBody(template.body);
@@ -38,15 +54,29 @@ class MessageTemplateResolver {
 
   String _resolveBody(String body) {
     var result = body;
+    lastNonConvergedBody = null;
     // Resolve conditional (select / if) placeholders first, because their
     // branch text may contain simple placeholders that the simple pass would
     // otherwise double-resolve. Loop until no conditional placeholders remain
     // (branch text may itself contain nested conditionals, though the seeded
-    // templates do not nest them).
-    for (var i = 0; i < 5; i++) {
+    // templates do not nest them). Bounded by [_maxConditionalDepth] to guard
+    // against non-converging (recursive) templates (CQ-ResolveLoop).
+    for (var i = 0; i < _maxConditionalDepth; i++) {
       final next = _resolveConditionals(result);
       if (next == result) break;
       result = next;
+    }
+    // CQ-ResolveLoop: if a final pass still mutates the body, it has not
+    // converged — emit a warning so recursive/self-referential templates
+    // surface during development instead of silently looping.
+    final probe = _resolveConditionals(result);
+    if (probe != result) {
+      lastNonConvergedBody = result;
+      debugPrint(
+        'Warning: message template body did not converge after '
+        '$_maxConditionalDepth conditional resolution passes. '
+        'Possible recursive placeholder reference.',
+      );
     }
     // Then resolve any remaining simple placeholders (including those inside
     // previously-selected branch text).

@@ -499,3 +499,53 @@ def test_audit_log_recorded_on_template_delete(auth_client):
         rows = conn.execute("SELECT * FROM audit_log WHERE entity_type = 'message_template'").fetchall()
         matches = [r for r in rows if r["action"] == "delete"]
         assert matches, f"no message_template delete audit row found; rows={rows}"
+
+# ── SEC-SetClause (review cycle 1) ───────────────────────────────────────────
+
+
+def test_update_template_allows_known_fields(auth_client):
+    """SEC-SetClause: a normal admin update with allowed fields succeeds.
+
+    This pins that ``ALLOWED_UPDATE_FIELDS`` does not reject the legitimate
+    fields produced by ``TemplateUpdate`` (name, sort_order, active).
+    """
+    with get_db() as conn:
+        token = _seed_user(conn, "setclauseadmin", "admin")
+        sys_id = conn.execute(
+            "SELECT id FROM message_templates WHERE is_system = 1 LIMIT 1"
+        ).fetchone()["id"]
+
+    resp = auth_client.patch(
+        f"/api/templates/{sys_id}",
+        json={"name": "Renamed by admin", "sort_order": 99, "active": False},
+        headers=_auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["name"] == "Renamed by admin"
+    assert data["sort_order"] == 99
+    assert data["active"] is False
+
+
+def test_allowed_update_fields_is_strict_allowlist():
+    """SEC-SetClause: ALLOWED_UPDATE_FIELDS contains exactly the columns the
+    route may legitimately build, and nothing else.
+
+    Any key outside this set would be concatenated into raw SQL by the
+    dynamic SET clause, so the allowlist must not grow accidentally.
+    """
+    from baker.api.templates import ALLOWED_UPDATE_FIELDS
+
+    assert ALLOWED_UPDATE_FIELDS == {
+        "scenario",
+        "name",
+        "body",
+        "is_system",
+        "sort_order",
+        "active",
+        "updated_at",
+    }
+    # Sanity: no dangerous meta-columns are allowed.
+    assert "id" not in ALLOWED_UPDATE_FIELDS
+    assert "created_at" not in ALLOWED_UPDATE_FIELDS
+    assert "created_by_staff_id" not in ALLOWED_UPDATE_FIELDS

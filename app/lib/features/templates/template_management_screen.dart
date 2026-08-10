@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -212,10 +213,11 @@ class _TemplateGroupedList extends StatelessWidget {
         ),
       );
     }
-    final grouped = <String, List<MessageTemplate>>{};
-    for (final t in templates) {
-      grouped.putIfAbsent(t.scenario, () => []).add(t);
-    }
+    // Memoize the scenario grouping so it only recomputes when the templates
+    // list actually changes (CQ-Grouping), rather than on every frame. We
+    // store the previous source list and grouped result on the State so a
+    // rebuild with identical templates reuses the cached grouping.
+    final grouped = _groupedCache(templates);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
@@ -241,4 +243,31 @@ class _TemplateGroupedList extends StatelessWidget {
       ],
     );
   }
+
+  static _GroupedCache? _cache;
+
+  /// Returns the cached grouping for [templates], recomputing only when the
+  /// list identity or contents change (CQ-Grouping).
+  static Map<String, List<MessageTemplate>> _groupedCache(
+      List<MessageTemplate> templates) {
+    final cached = _cache;
+    if (cached != null && listEquals(cached.templates, templates)) {
+      return cached.grouped;
+    }
+    final grouped = <String, List<MessageTemplate>>{};
+    for (final t in templates) {
+      grouped.putIfAbsent(t.scenario, () => []).add(t);
+    }
+    _cache = _GroupedCache(templates, grouped);
+    return grouped;
+  }
+}
+
+/// Cached (source list, scenario-grouped result) pair used by
+/// [_TemplateGroupedList._groupedCache] (CQ-Grouping).
+class _GroupedCache {
+  const _GroupedCache(this.templates, this.grouped);
+
+  final List<MessageTemplate> templates;
+  final Map<String, List<MessageTemplate>> grouped;
 }
