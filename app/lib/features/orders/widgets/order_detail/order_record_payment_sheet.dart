@@ -9,6 +9,25 @@ import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
+/// Sanitizes an account name for use as a photo tag: spaces → hyphens,
+/// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
+/// Unicode letters/digits are preserved; only ASCII punctuation/symbols
+/// (other than hyphen) are stripped.
+@visibleForTesting
+String sanitizeAccountTag(String? account) {
+  if (account == null || account.isEmpty) return '';
+  var sanitized = account.replaceAll(' ', '-');
+  // Strip any character that is not a Unicode letter, digit, or hyphen.
+  sanitized = sanitized.replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '');
+  // Collapse repeated hyphens and trim leading/trailing hyphens.
+  sanitized = sanitized.replaceAll(RegExp(r'-+'), '-');
+  if (sanitized.startsWith('-')) sanitized = sanitized.substring(1);
+  if (sanitized.endsWith('-')) {
+    sanitized = sanitized.substring(0, sanitized.length - 1);
+  }
+  return sanitized;
+}
+
 /// Bottom sheet for recording a new payment transaction against an order.
 class OrderRecordPaymentSheet extends ConsumerStatefulWidget {
   const OrderRecordPaymentSheet({
@@ -77,24 +96,6 @@ class _OrderRecordPaymentSheetState
     setState(() => _pendingTransferPhoto = image);
   }
 
-  /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
-  /// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
-  /// Unicode letters/digits are preserved; only ASCII punctuation/symbols
-  /// (other than hyphen) are stripped.
-  static String _sanitizeAccountTag(String? account) {
-    if (account == null || account.isEmpty) return '';
-    var sanitized = account.replaceAll(' ', '-');
-    // Strip any character that is not a Unicode letter, digit, or hyphen.
-    sanitized = sanitized.replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '');
-    // Collapse repeated hyphens and trim leading/trailing hyphens.
-    sanitized = sanitized.replaceAll(RegExp(r'-+'), '-');
-    if (sanitized.startsWith('-')) sanitized = sanitized.substring(1);
-    if (sanitized.endsWith('-')) {
-      sanitized = sanitized.substring(0, sanitized.length - 1);
-    }
-    return sanitized;
-  }
-
   @override
   void dispose() {
     _amountCtrl.dispose();
@@ -122,7 +123,7 @@ class _OrderRecordPaymentSheetState
       // is best-effort: a failure does not roll back the recorded payment.
       final pendingPhoto = _pendingTransferPhoto;
       if (_method == 'transfer' && pendingPhoto != null) {
-        final accountTag = _sanitizeAccountTag(_paymentSource);
+        final accountTag = sanitizeAccountTag(_paymentSource);
         final tags = accountTag.isEmpty
             ? 'chuyen-khoan'
             : 'chuyen-khoan,$accountTag';
