@@ -575,6 +575,26 @@ class VN {
   /// in the Transactions tab. DG-364 Phase 4.2.
   static const noTransferPhotos = 'Chưa có ảnh chuyển khoản';
 
+  /// Tooltip for the photo attachment button shown in the record-payment sheet
+  /// when method = transfer. DG-364 Phase 4.3 / FR2.
+  static const attachTransferPhotoTooltip = 'Đính kèm ảnh chuyển khoản';
+
+  /// Label for the photo attachment button shown in the record-payment sheet
+  /// when method = transfer. DG-364 Phase 4.3 / FR2.
+  static const attachTransferPhoto = 'Ảnh chuyển khoản';
+
+  /// Caption shown next to the selected transfer photo file name in the
+  /// record-payment sheet. DG-364 Phase 4.3 / FR2.
+  static const transferPhotoSelected = 'Đã chọn ảnh';
+
+  /// SnackBar shown when the transfer photo is uploaded after the payment
+  /// is recorded. DG-364 Phase 4.3 / FR3.
+  static const transferPhotoUploaded = 'Đã tải lên ảnh chuyển khoản';
+
+  /// SnackBar shown when the transfer photo upload fails after the payment
+  /// is recorded. DG-364 Phase 4.3 / FR3.
+  static const transferPhotoUploadFailed = 'Không tải được ảnh chuyển khoản';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';
