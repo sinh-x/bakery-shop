@@ -42,6 +42,23 @@ final customerListProvider =
   CustomerListNotifier.new,
 );
 
+/// Current search query for the admin duplicate-finder screen
+/// (DG-372 Phase 4.2 — FR1/FR5). Empty string = no filter; the screen
+/// filters the already-fetched `List<DuplicateGroup>` client-side, so
+/// changing this does NOT re-fetch from the backend.
+class DuplicateFinderSearchNotifier extends Notifier<String> {
+  @override
+  String build() => '';
+
+  void set(String query) => state = query;
+
+  void clear() => state = '';
+}
+
+final duplicateFinderSearchProvider = NotifierProvider<DuplicateFinderSearchNotifier, String>(
+  DuplicateFinderSearchNotifier.new,
+);
+
 /// Fetches a single customer by id (FR3).
 final customerProvider =
     FutureProvider.family<Customer, int>((ref, id) async {

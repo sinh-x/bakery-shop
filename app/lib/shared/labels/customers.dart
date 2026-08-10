@@ -114,4 +114,17 @@ class CustomersLabels {
   static const duplicateFinderBatchMergeSuccess =
       'Đã gộp hàng loạt khách hàng';
   static const duplicateFinderBatchMergeFailed = 'Gộp hàng loạt thất bại';
+
+  // Duplicate-finder search/filter (DG-372 Phase 4.1 — FR3/NFR2).
+  // Client-side filter on the duplicate finder screen lets the admin search
+  // duplicate groups by customer name or phone. Diacritic-insensitive
+  // matching reuses `stripDiacritics` from `shared/utils/diacritics.dart`.
+  // `duplicateFinderSearchHint` is shown as the TextField hint text;
+  // `duplicateFinderSearchNoResults` is the empty state shown only when the
+  // filter query matches no groups (distinct from `duplicateFinderEmpty`,
+  // which is the "no duplicates exist" state).
+  static const duplicateFinderSearchHint =
+      'Tìm theo tên hoặc số điện thoại';
+  static const duplicateFinderSearchNoResults =
+      'Không tìm thấy nhóm trùng lặp nào';
 }

@@ -4,9 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/customer_service.dart';
 import '../../providers/customers_provider.dart';
 import '../../shared/labels/customers.dart';
+import '../../shared/utils/diacritics.dart';
 import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
+
+/// Returns `true` if any member of [group] matches [query]
+/// (case-insensitive, diacritic-insensitive) against `name` or `phone`.
+///
+/// The group is the atomic display unit: a single matching member shows the
+/// entire group (FR3/FR4). Reuses `stripDiacritics` from
+/// `shared/utils/diacritics.dart` (extracted in Phase 4.1).
+bool _groupMatches(DuplicateGroup group, String query) {
+  final q = stripDiacritics(query.trim().toLowerCase());
+  if (q.isEmpty) return true;
+  for (final m in group.customers) {
+    final name = stripDiacritics(m.name.trim().toLowerCase());
+    if (name.contains(q)) return true;
+    final phone = m.phone.trim().toLowerCase();
+    if (phone.contains(q)) return true;
+  }
+  return false;
+}
 
 /// Admin-only duplicate-finder + merge screen (DG-252 Phase 7 — FR7/AC4,
 /// extended by DG-369 Phase 3 for batch merge of 3+ members).
@@ -37,6 +56,23 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
   /// Group key currently in flight (DG-252 review Mn7 — in-flight guard
   /// against double merge taps). `null` when no merge is running.
   String? _mergingKey;
+
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    ref.read(duplicateFinderSearchProvider.notifier).set(query);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    ref.read(duplicateFinderSearchProvider.notifier).clear();
+  }
 
   Future<void> _onMerge(
     DuplicateGroup group,
@@ -115,6 +151,7 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(duplicateGroupsProvider);
+    final search = ref.watch(duplicateFinderSearchProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text(CustomersLabels.duplicateFinderTitle),
@@ -127,62 +164,103 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
           ),
         ],
       ),
-      body: async.when(
-        loading: () => const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 12),
-              Text(CustomersLabels.duplicateFinderLoadingGroups),
-            ],
-          ),
-        ),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text(VN.apiError),
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: () =>
-                    ref.read(duplicateGroupsProvider.notifier).refresh(),
-                icon: const Icon(Icons.refresh),
-                label: const Text(CustomersLabels.duplicateFinderRetry),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: CustomersLabels.duplicateFinderSearchHint,
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: search.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearch,
+                        tooltip: VN.clear,
+                      ),
+                border: const OutlineInputBorder(),
               ),
-            ],
+            ),
           ),
-        ),
-        data: (groups) {
-          if (groups.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle_outline, size: 48, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text(CustomersLabels.duplicateFinderEmpty),
-                ],
+          Expanded(
+            child: async.when(
+              loading: () => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(CustomersLabels.duplicateFinderLoadingGroups),
+                  ],
+                ),
               ),
-            );
-          }
-          return ListView.builder(
-            itemCount: groups.length,
-            itemBuilder: (context, index) {
-              final group = groups[index];
-              return DuplicateGroupTile(
-                group: group,
-                merging: _mergingKey == group.key,
-                onMerge: (keep, mergeFrom) =>
-                    _onMerge(group, keep, mergeFrom),
-                onBatchMerge: (primary, sources) =>
-                    _onBatchMerge(group, primary, sources),
-              );
-            },
-          );
-        },
+              error: (e, _) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text(VN.apiError),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () =>
+                          ref.read(duplicateGroupsProvider.notifier).refresh(),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(CustomersLabels.duplicateFinderRetry),
+                    ),
+                  ],
+                ),
+              ),
+              data: (groups) {
+                if (groups.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            size: 48, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text(CustomersLabels.duplicateFinderEmpty),
+                      ],
+                    ),
+                  );
+                }
+                final filtered = search.isEmpty
+                    ? groups
+                    : groups.where((g) => _groupMatches(g, search)).toList();
+                if (filtered.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text(CustomersLabels.duplicateFinderSearchNoResults),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final group = filtered[index];
+                    return DuplicateGroupTile(
+                      group: group,
+                      merging: _mergingKey == group.key,
+                      onMerge: (keep, mergeFrom) =>
+                          _onMerge(group, keep, mergeFrom),
+                      onBatchMerge: (primary, sources) =>
+                          _onBatchMerge(group, primary, sources),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -124,6 +124,12 @@ Future<void> _pumpScreen(
   await tester.pumpAndSettle();
 }
 
+/// Finds only [Text] widgets (not [EditableText]) displaying [text].
+/// Use in filter tests where the search query would also appear in the
+/// search field's [EditableText], causing `find.text` to match twice.
+Finder _findLabel(String text) =>
+    find.byWidgetPredicate((w) => w is Text && w.data == text);
+
 /// Two-tap selection flow used by the merge tests: tap [keep] then [mergeFrom]
 /// to set the keep/merge-from roles, then tap the merge button to open the
 /// confirmation dialog. Mirrors the DG-252 review M3 selection model.
@@ -869,5 +875,285 @@ void main() {
         find.text(CustomersLabels.duplicateFinderBatchMergeCancel));
     await tester.pumpAndSettle();
     expect(result, isNull);
+  });
+
+  // ---------------------------------------------------------------------------
+  // DG-372 Phase 4.3 — duplicate finder filter tests
+  // (FR1–FR6/AC1–AC6/NFR2)
+  // ---------------------------------------------------------------------------
+
+  testWidgets(
+      'search field renders at the top with a search icon and hint text (FR1/AC1/NFR2)',
+      (tester) async {
+    await _pumpScreen(tester, _FakeDuplicateService(groups: [_phoneGroup()]));
+
+    final searchField = find.byType(TextField);
+    expect(searchField, findsOneWidget);
+    expect(find.descendant(of: searchField, matching: find.byIcon(Icons.search)),
+        findsOneWidget);
+    expect(find.text(CustomersLabels.duplicateFinderSearchHint),
+        findsOneWidget);
+    // AppBar title is still present above the search field.
+    expect(find.text(CustomersLabels.duplicateFinderTitle), findsOneWidget);
+    // No clear button is shown when the search field is empty.
+    expect(find.byIcon(Icons.clear), findsNothing);
+  });
+
+  testWidgets(
+      'typing a name filters groups client-side; non-matching groups are hidden (FR2/AC2)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    // Both groups visible initially.
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+
+    // Type a query matching only the phone group members.
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+
+    // Phone group still visible; name group hidden. Use `_findLabel` so the
+    // search field's [EditableText] (which also contains "Sinh") is excluded.
+    expect(_findLabel('Sinh'), findsOneWidget);
+    expect(find.text('Sinh A'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsNothing);
+    expect(find.text('Nguyễn Văn Á'), findsNothing);
+  });
+
+  testWidgets(
+      'filter matches by phone as well as name (FR3/AC2)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    await tester.enterText(find.byType(TextField), '091');
+    await tester.pumpAndSettle();
+
+    // Only the name group has a member with phone '091'.
+    expect(find.text('Nguyễn Văn Á'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+    expect(find.text('Sinh'), findsNothing);
+  });
+
+  testWidgets(
+      'filter matching is diacritic-insensitive on names (FR3/AC2)',
+      (tester) async {
+    final service = _FakeDuplicateService(groups: [_nameGroup()]);
+    await _pumpScreen(tester, service);
+
+    // Query without diacritics matches accented names.
+    await tester.enterText(find.byType(TextField), 'nguyen');
+    await tester.pumpAndSettle();
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+    expect(find.text('Nguyễn Văn Á'), findsOneWidget);
+
+    // Clear and query with diacritics still matches.
+    await tester.tap(find.byIcon(Icons.clear));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Nguyễn');
+    await tester.pumpAndSettle();
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+    expect(find.text('Nguyễn Văn Á'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a partial match shows the entire group including non-matching members (FR4/AC2)',
+      (tester) async {
+    // Group where only one member's name matches the query.
+    const group = DuplicateGroup(
+      key: '0901234567',
+      kind: 'phone',
+      customers: [
+        DuplicateCustomerEntry(
+            id: 1, name: 'Sinh', phone: '0901234567', orderCount: 5),
+        DuplicateCustomerEntry(
+            id: 2, name: 'An', phone: '0901234567', orderCount: 2),
+      ],
+    );
+    final service = _FakeDuplicateService(groups: [group]);
+    await _pumpScreen(tester, service);
+
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+
+    // Both members of the matching group are shown, not just the match.
+    // Use `_findLabel` because the query "Sinh" also appears in the search
+    // field's [EditableText].
+    expect(_findLabel('Sinh'), findsOneWidget);
+    expect(find.text('An'), findsOneWidget);
+  });
+
+  testWidgets(
+      'clear button (X icon) resets the filter and shows all groups again (FR5/AC4)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    // Apply a filter that hides the name group.
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+    expect(find.text('Nguyễn Văn A'), findsNothing);
+    // Clear button is now visible because the field is non-empty.
+    expect(find.byIcon(Icons.clear), findsOneWidget);
+
+    // Tap the clear button.
+    await tester.tap(find.byIcon(Icons.clear));
+    await tester.pumpAndSettle();
+
+    // All groups are shown again.
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+    // Clear button is hidden again once the field is empty.
+    expect(find.byIcon(Icons.clear), findsNothing);
+  });
+
+  testWidgets(
+      'clearing the text (empty query) also restores all groups (FR5/AC4)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+    expect(find.text('Nguyễn Văn A'), findsNothing);
+
+    // Clear the text by entering an empty string.
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsOneWidget);
+  });
+
+  testWidgets(
+      'no-results message is shown when the filter matches no groups, distinct from the empty state (FR6/AC3)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    await tester.enterText(find.byType(TextField), 'zzz-no-match');
+    await tester.pumpAndSettle();
+
+    expect(find.text(CustomersLabels.duplicateFinderSearchNoResults),
+        findsOneWidget);
+    // The "no duplicates exist" empty state must NOT be shown here.
+    expect(find.text(CustomersLabels.duplicateFinderEmpty), findsNothing);
+    // No group member text is shown.
+    expect(find.text('Sinh'), findsNothing);
+    expect(find.text('Nguyễn Văn A'), findsNothing);
+  });
+
+  testWidgets(
+      'empty-groups state (no duplicates at all) does not show the no-results message (FR6)',
+      (tester) async {
+    await _pumpScreen(tester, _FakeDuplicateService(groups: const []));
+    expect(find.text(CustomersLabels.duplicateFinderEmpty), findsOneWidget);
+    expect(find.text(CustomersLabels.duplicateFinderSearchNoResults),
+        findsNothing);
+  });
+
+  testWidgets(
+      'clearing the filter preserves selection state for a still-present group (FR7/AC5)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    // Select two members in the phone group (index 0).
+    await tester.tap(find.text('Sinh'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sinh A'));
+    await tester.pumpAndSettle();
+    // Merge button visible → selection active.
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton),
+        findsOneWidget);
+
+    // Apply a filter that still matches the phone group (index 0 unchanged).
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+    // Selection persists: merge button still visible for the matching group.
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton),
+        findsOneWidget);
+
+    // Clear the filter; the phone group remains at index 0, so its tile
+    // state (selection) is preserved.
+    await tester.tap(find.byIcon(Icons.clear));
+    await tester.pumpAndSettle();
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton),
+        findsOneWidget);
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('Sinh A'), findsOneWidget);
+  });
+
+  testWidgets(
+      'merge flow works identically with a filter active (FR7/AC6)',
+      (tester) async {
+    final service = _FakeDuplicateService(
+      groups: [_phoneGroup(), _nameGroup()],
+    );
+    await _pumpScreen(tester, service);
+
+    // Activate a filter matching the phone group.
+    await tester.enterText(find.byType(TextField), '0901234567');
+    await tester.pumpAndSettle();
+    // Only the phone group is visible.
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('Nguyễn Văn A'), findsNothing);
+
+    // Select two members and merge.
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
+    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
+    await tester.pumpAndSettle();
+
+    expect(service.mergeCallCount, 1);
+    expect(service.lastTargetId, 1);
+    expect(service.lastSourceId, 2);
+    // The phone group is gone after merge. The filter ('0901234567') is still
+    // active, so the "no results" message shows (not the empty-groups state).
+    expect(find.text(CustomersLabels.duplicateFinderSearchNoResults),
+        findsOneWidget);
+    expect(find.text(CustomersLabels.duplicateFinderMergeSuccess),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'filter handles many groups without perceptible lag (NFR1 — smoke test)',
+      (tester) async {
+    // Build 50 groups and filter to a single matching one.
+    final groups = List<DuplicateGroup>.generate(50, (i) => DuplicateGroup(
+      key: 'phone-$i',
+      kind: 'phone',
+      customers: [
+        DuplicateCustomerEntry(
+            id: i * 2, name: 'User $i', phone: '0$i', orderCount: 0),
+        DuplicateCustomerEntry(
+            id: i * 2 + 1, name: 'User ${i}b', phone: '0$i', orderCount: 0),
+      ],
+    ));
+    final service = _FakeDuplicateService(groups: groups);
+    await _pumpScreen(tester, service);
+
+    // Filter to a single group by a unique name fragment.
+    await tester.enterText(find.byType(TextField), 'User 42');
+    await tester.pumpAndSettle();
+
+    // Use `_findLabel` because the query also appears in the search field.
+    expect(_findLabel('User 42'), findsOneWidget);
+    expect(find.text('User 42b'), findsOneWidget);
+    // The no-results path is NOT taken.
+    expect(find.text(CustomersLabels.duplicateFinderSearchNoResults),
+        findsNothing);
   });
 }
