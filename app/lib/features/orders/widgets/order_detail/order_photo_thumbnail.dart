@@ -1,18 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/utils/order_photo_tags.dart';
 import '../order_photo_section.dart';
-
-/// Parses a comma-separated tag string into a set of trimmed, non-empty keys.
-/// Mirrors the private `_parseTags` in [OrderPhotoSection] — kept local to
-/// avoid widening the API of the exempt `order_photo_section.dart` file.
-Set<String> _parseTags(String tags) {
-  if (tags.isEmpty) return {};
-  return tags
-      .split(',')
-      .map((t) => t.trim())
-      .where((t) => t.isNotEmpty)
-      .toSet();
-}
 
 /// Renders a single order photo thumbnail with tag chips below it, matching
 /// the pattern used by [OrderPhotoSection]. Extracted as a shared widget so
@@ -47,7 +36,7 @@ class OrderPhotoThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tagKeys = _parseTags(tags);
+    final tagKeys = parseOrderPhotoTags(tags);
 
     return GestureDetector(
       onTap: onTap,

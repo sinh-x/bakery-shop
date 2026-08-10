@@ -122,6 +122,10 @@ class _OrderRecordPaymentSheetState
       // Tags = 'chuyen-khoan,<sanitized-account>' (FR3/FR4). The photo upload
       // is best-effort: a failure does not roll back the recorded payment.
       final pendingPhoto = _pendingTransferPhoto;
+      // Tracks whether a pending transfer photo upload was attempted so the
+      // payment-recorded snackbar can be shown separately from the photo
+      // upload outcome (DG-364 review-auto cycle 1, MN-1).
+      var transferPhotoUploadFailed = false;
       if (_method == 'transfer' && pendingPhoto != null) {
         final accountTag = sanitizeAccountTag(_paymentSource);
         final tags = accountTag.isEmpty
@@ -138,14 +142,28 @@ class _OrderRecordPaymentSheetState
             showTopSnackBar(context, VN.transferPhotoUploaded);
           }
         } catch (e) {
+          transferPhotoUploadFailed = true;
           if (mounted) {
             showTopSnackBar(context, VN.transferPhotoUploadFailed);
           }
         }
+        // Clear the pending photo after the upload attempt (both success and
+        // failure) so the field does not outlive its purpose and the
+        // payment-recorded snackbar suppression logic below stays consistent
+        // (DG-364 review-auto cycle 1, MN-3).
+        if (mounted) {
+          setState(() => _pendingTransferPhoto = null);
+        }
       }
       if (mounted) {
         Navigator.pop(context);
-        if (!(_method == 'transfer' && _pendingTransferPhoto != null)) {
+        // Show the payment-recorded snackbar whenever a payment was
+        // persisted. When a transfer photo upload failed, both snackbars are
+        // shown so the user knows the payment succeeded even though the
+        // photo upload did not (MN-1).
+        if (transferPhotoUploadFailed) {
+          showTopSnackBar(context, VN.paymentRecorded);
+        } else if (!(_method == 'transfer' && pendingPhoto != null)) {
           showTopSnackBar(context, VN.paymentRecorded);
         }
       }
