@@ -29,6 +29,14 @@ class TemplatesLabels {
   static const systemTag = 'Hệ thống';
   static const personalTag = 'Cá nhân';
 
+  // Inactive template marker shown next to a template name in the
+  // management list when the template's `active` flag is off.
+  static const inactiveTag = '(tắt)';
+
+  // String used in place of an empty field value when resolving template
+  // placeholders. Matches requirements doc §11 Risk mitigation.
+  static const emptyFieldPlaceholder = '(trống)';
+
   // Empty state.
   static const emptyTitle = 'Chưa có mẫu nào';
   static const emptyBody = 'Quản lý thêm mẫu ở trang quản lý mẫu tin nhắn.';

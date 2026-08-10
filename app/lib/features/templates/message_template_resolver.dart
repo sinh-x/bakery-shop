@@ -1,4 +1,5 @@
 import '../../data/models/message_template.dart';
+import '../../shared/labels/templates.dart';
 import 'template_context.dart';
 
 /// Placeholder resolver for [MessageTemplate] bodies (DG-375 Phase 4.3 / FR4).
@@ -24,7 +25,8 @@ class MessageTemplateResolver {
 
   /// The string used in place of an empty field value for simple
   /// substitutions. Matches the requirements doc §11 Risk mitigation.
-  static const emptyPlaceholder = '(trống)';
+  /// Centralized in [TemplatesLabels.emptyFieldPlaceholder] (NFR4).
+  static const emptyPlaceholder = TemplatesLabels.emptyFieldPlaceholder;
 
   /// Resolves all placeholders in [template.body] using [context].
   String resolvePlaceholders(MessageTemplate template) {

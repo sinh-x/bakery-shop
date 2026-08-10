@@ -42,7 +42,7 @@ class TemplateManagementTile extends StatelessWidget {
             const SizedBox(width: 8),
             if (inactive)
               Text(
-                '(${TemplatesLabels.editorActiveLabel.toLowerCase()}: off)',
+                TemplatesLabels.inactiveTag,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
