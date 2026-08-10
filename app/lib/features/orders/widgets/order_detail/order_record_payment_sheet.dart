@@ -1,10 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show ImagePicker, ImageSource, XFile;
 
+import '../../../../data/api/order_service.dart';
 import '../../../../providers/order_providers.dart';
+import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+
+/// Sanitizes an account name for use as a photo tag: spaces → hyphens,
+/// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
+/// Unicode letters/digits are preserved; only ASCII punctuation/symbols
+/// (other than hyphen) are stripped.
+@visibleForTesting
+String sanitizeAccountTag(String? account) {
+  if (account == null || account.isEmpty) return '';
+  var sanitized = account.replaceAll(' ', '-');
+  // Strip any character that is not a Unicode letter, digit, or hyphen.
+  sanitized = sanitized.replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '');
+  // Collapse repeated hyphens and trim leading/trailing hyphens.
+  sanitized = sanitized.replaceAll(RegExp(r'-+'), '-');
+  if (sanitized.startsWith('-')) sanitized = sanitized.substring(1);
+  if (sanitized.endsWith('-')) {
+    sanitized = sanitized.substring(0, sanitized.length - 1);
+  }
+  return sanitized;
+}
 
 /// Bottom sheet for recording a new payment transaction against an order.
 class OrderRecordPaymentSheet extends ConsumerStatefulWidget {
@@ -27,6 +49,7 @@ class _OrderRecordPaymentSheetState
   late String _type;
   String _method = 'cash';
   String? _paymentSource;
+  XFile? _pendingTransferPhoto;
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -44,6 +67,33 @@ class _OrderRecordPaymentSheetState
       // Display the amount in thousands (user types 200 → means 200,000)
       _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
     }
+  }
+
+  void _onMethodSelected(String method) {
+    setState(() {
+      _method = method;
+      if (method != 'transfer') {
+        _paymentSource = null;
+        _pendingTransferPhoto = null;
+      }
+    });
+  }
+
+  /// Opens the camera/gallery picker (FR2) reusing the POS checkout
+  /// `showTransferSourceDialog` pattern. The keyboard is dismissed before
+  /// showing the picker so the bottom sheet does not overflow when the
+  /// keyboard is visible (NFR2).
+  Future<void> _pickTransferPhoto() async {
+    FocusScope.of(context).unfocus();
+    final source = await showTransferSourceDialog(context);
+    if (source == null || source == 'skip' || !mounted) return;
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source as ImageSource,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+    setState(() => _pendingTransferPhoto = image);
   }
 
   @override
@@ -68,8 +118,44 @@ class _OrderRecordPaymentSheetState
             notes: _notesCtrl.text.trim(),
             paymentSource: _paymentSource,
           );
+      // Upload the transfer proof photo after the payment is recorded (FR3).
+      // Tags = 'chuyen-khoan,<sanitized-account>' (FR3/FR4). The photo upload
+      // is best-effort: a failure does not roll back the recorded payment.
+      final pendingPhoto = _pendingTransferPhoto;
+      if (_method == 'transfer' && pendingPhoto != null) {
+        final accountTag = sanitizeAccountTag(_paymentSource);
+        final tags = accountTag.isEmpty
+            ? 'chuyen-khoan'
+            : 'chuyen-khoan,$accountTag';
+        try {
+          await ref.read(orderServiceProvider).uploadOrderPhoto(
+                widget.orderRef,
+                pendingPhoto,
+                tags: tags,
+              );
+          ref.invalidate(orderPhotosProvider(widget.orderRef));
+          if (mounted) {
+            showTopSnackBar(context, VN.transferPhotoUploaded);
+          }
+        } catch (e) {
+          if (mounted) {
+            showTopSnackBar(context, VN.transferPhotoUploadFailed);
+          }
+        }
+        // Clear the pending photo after the upload attempt (both success and
+        // failure) so the field does not outlive its purpose and the
+        // payment-recorded snackbar suppression logic below stays consistent
+        // (DG-364 review-auto cycle 1, MN-3).
+        if (mounted) {
+          setState(() => _pendingTransferPhoto = null);
+        }
+      }
       if (mounted) {
         Navigator.pop(context);
+        // The payment-recorded snackbar is always shown when a payment was
+        // persisted. The transfer photo outcome snackbar (success or failure)
+        // is shown separately above so the user knows both the payment result
+        // and the photo upload result (MN-1, MN-5).
         showTopSnackBar(context, VN.paymentRecorded);
       }
     } catch (e) {
@@ -134,10 +220,7 @@ class _OrderRecordPaymentSheetState
                     (m) => ChoiceChip(
                       label: Text(m.$2),
                       selected: _method == m.$1,
-                      onSelected: (_) => setState(() {
-                        _method = m.$1;
-                        if (m.$1 != 'transfer') _paymentSource = null;
-                      }),
+                      onSelected: (_) => _onMethodSelected(m.$1),
                     ),
                   )
                   .toList(),
@@ -175,6 +258,38 @@ class _OrderRecordPaymentSheetState
                 onChanged: (value) =>
                     setState(() => _paymentSource = value),
               ),
+              const SizedBox(height: 8),
+              // Photo attachment button (FR2): reuses the
+              // `showTransferSourceDialog` pattern from POS checkout. The
+              // selected photo is uploaded after the payment is recorded
+              // (FR3) with tags 'chuyen-khoan,<sanitized-account>' (FR4).
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  message: VN.attachTransferPhotoTooltip,
+                  child: TextButton.icon(
+                    onPressed: _pickTransferPhoto,
+                    icon: const Icon(Icons.photo_camera_outlined, size: 20),
+                    label: Text(
+                      _pendingTransferPhoto == null
+                          ? VN.attachTransferPhoto
+                          : VN.transferPhotoSelected,
+                    ),
+                  ),
+                ),
+              ),
+              if (_pendingTransferPhoto != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 2),
+                  child: Text(
+                    _pendingTransferPhoto!.name,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 16),
             FilledButton(

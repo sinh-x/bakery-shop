@@ -434,7 +434,7 @@ class VN {
 
   /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
   static const photoUploadStatusLabels = <String, String>{
-    'pending': 'Đang chờ',
+    'pending': 'Đang xử lý',
     'uploading': 'Đang tải',
     'success': 'Đã xong',
     'error': 'Lỗi',
@@ -566,6 +566,34 @@ class VN {
   static const perItemPhotos = 'Ảnh sản phẩm';
   static const birthdayWithAge = 'Sinh nhật';
   static const orderPhotosSection = 'Ảnh đơn hàng (chung)';
+
+  /// Header for the chuyen-khoan tagged photo section shown in the
+  /// Transactions tab of OrderDetailScreen. DG-364 Phase 4.2.
+  static const transferPhotosSection = 'Ảnh chuyển khoản';
+
+  /// Empty-state hint shown when an order has no chuyen-khoan tagged photos
+  /// in the Transactions tab. DG-364 Phase 4.2.
+  static const noTransferPhotos = 'Chưa có ảnh chuyển khoản';
+
+  /// Tooltip for the photo attachment button shown in the record-payment sheet
+  /// when method = transfer. DG-364 Phase 4.3 / FR2.
+  static const attachTransferPhotoTooltip = 'Đính kèm ảnh chuyển khoản';
+
+  /// Label for the photo attachment button shown in the record-payment sheet
+  /// when method = transfer. DG-364 Phase 4.3 / FR2.
+  static const attachTransferPhoto = 'Ảnh chuyển khoản';
+
+  /// Caption shown next to the selected transfer photo file name in the
+  /// record-payment sheet. DG-364 Phase 4.3 / FR2.
+  static const transferPhotoSelected = 'Đã chọn ảnh';
+
+  /// SnackBar shown when the transfer photo is uploaded after the payment
+  /// is recorded. DG-364 Phase 4.3 / FR3.
+  static const transferPhotoUploaded = 'Đã tải lên ảnh chuyển khoản';
+
+  /// SnackBar shown when the transfer photo upload fails after the payment
+  /// is recorded. DG-364 Phase 4.3 / FR3.
+  static const transferPhotoUploadFailed = 'Không tải được ảnh chuyển khoản';
 
   // General
   static const remove = 'Xóa';

@@ -9,6 +9,7 @@ import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils/order_photo_tags.dart';
 
 // ── Predefined tag definitions ─────────────────────────────────────────────────
 
@@ -56,15 +57,6 @@ const kOrderPhotoTags = [
     color: Color(0xFF00897B),
   ),
 ];
-
-Set<String> _parseTags(String tags) {
-  if (tags.isEmpty) return {};
-  return tags
-      .split(',')
-      .map((t) => t.trim())
-      .where((t) => t.isNotEmpty)
-      .toSet();
-}
 
 // ── Main gallery section ───────────────────────────────────────────────────────
 
@@ -285,7 +277,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
                   final photo = photos[index];
                   final url =
                       '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
-                  final tagKeys = _parseTags(photo.tags);
+                  final tagKeys = parseOrderPhotoTags(photo.tags);
 
                   return GestureDetector(
                     onTap: () => _openViewer(photos, index),
@@ -449,7 +441,7 @@ class _OrderPhotoViewerState extends State<OrderPhotoViewer> {
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];
           final url = '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
-          final tagKeys = _parseTags(photo.tags);
+          final tagKeys = parseOrderPhotoTags(photo.tags);
 
           return Stack(
             fit: StackFit.expand,
@@ -543,7 +535,7 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedTags = _parseTags(widget.photo.tags);
+    _selectedTags = parseOrderPhotoTags(widget.photo.tags);
   }
 
   Future<void> _save() async {
