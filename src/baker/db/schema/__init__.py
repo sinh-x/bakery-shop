@@ -95,6 +95,8 @@ from ._constants import (  # noqa: F401
     SESSIONS_SCHEMA,
     BLANKS_SCHEMA,
     ORDER_ITEM_BLANKS_SCHEMA,
+    MESSAGE_TEMPLATES_SCHEMA,
+    SEED_MESSAGE_TEMPLATES,
 )
 from ._helpers import (  # noqa: F401
     _normalize_accessory_name,
@@ -197,6 +199,7 @@ from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance  #
 from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot  # noqa: F401
 from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs  # noqa: F401
 from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column  # noqa: F401
+from .migrations.v100 import _migrate_v100_message_templates  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -236,6 +239,7 @@ __all__ = [
     'ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA',
     'ORDER_ITEMS_ATTRIBUTES_SCHEMA',
     'ORDER_ITEM_BLANKS_SCHEMA',
+    'MESSAGE_TEMPLATES_SCHEMA',
     'ORDER_PHOTOS_SCHEMA',
     'ORDER_REVENUE_CODE',
     'PAYMENT_METHOD_TO_ASSET_CODE',
@@ -265,6 +269,7 @@ __all__ = [
     'SEED_CHECKLIST_OPENING',
     'SEED_EXPENSE_CATEGORIES',
     'SEED_NHAN_BANH_OPTIONS',
+    'SEED_MESSAGE_TEMPLATES',
     'SEED_ORDER_SOURCES',
     'SEED_PRODUCTS',
     'SEED_PRODUCT_ATTRIBUTES',
@@ -372,6 +377,7 @@ __all__ = [
     '_migrate_v97_cash_drawer_breakdown_snapshot',
     '_migrate_v98_reconciliation_sale_rows_linked_order_refs',
     '_migrate_v99_cash_drawer_reconciled_column',
+    '_migrate_v100_message_templates',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

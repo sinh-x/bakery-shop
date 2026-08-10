@@ -34,6 +34,7 @@ from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
 from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
+from baker.api.templates import router as templates_router
 from baker.api.users import router as users_router
 from baker.api.work_items import router as work_items_router
 from baker.config import BUILD_FINGERPRINT, CORS_ORIGINS, VERSION
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(product_price_chips_router)
     app.include_router(staff_router)
     app.include_router(checklist_router)
+    app.include_router(templates_router)
     app.include_router(receipts_router)
     app.include_router(printing_router)
     app.include_router(stock_router)

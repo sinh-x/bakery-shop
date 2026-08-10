@@ -80,6 +80,7 @@ from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance
 from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot
 from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs
 from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column
+from .migrations.v100 import _migrate_v100_message_templates
 
 MIGRATIONS = {
     1: {
@@ -564,6 +565,11 @@ MIGRATIONS = {
         "description": "Add reconciled INTEGER NOT NULL DEFAULT 0 column to cash_drawer for edit-lock on reconciled drawers (DG-379 Phase 4.1)",
         "sql": "",
         "callable": _migrate_v99_cash_drawer_reconciled_column,
+    },
+    100: {
+        "description": "Message templates table + seed 8 default built-in templates across 6 scenarios (DG-375 Phase 4.1)",
+        "sql": MESSAGE_TEMPLATES_SCHEMA,
+        "callable": _migrate_v100_message_templates,
     },
 }
 
