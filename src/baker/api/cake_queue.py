@@ -91,27 +91,36 @@ def list_work_items_queue(
             params + [limit, offset],
         ).fetchall()
 
-        return [
-            {
-                "id": str(row["id"]),
-                "orderId": str(row["order_id"]),
-                "orderRef": row["order_ref"],
-                "customerName": row["customer_name"],
-                "productId": row["product_id"] or "",
-                "productName": row["product_name"],
-                "quantity": row["quantity"],
-                "unitPrice": row["unit_price"],
-                "notes": row["notes"] or "",
-                "position": row["position"],
-                "status": row["status"],
-                "isBirthday": bool(row["is_birthday"]),
-                "age": row["age"],
-                "attributes": _parse_attributes(row["attributes"]) if row["attributes"] and row["attributes"] != "{}" else {},
-                "dueDate": row["due_date"],
-                "dueTime": row["due_time"],
-                "createdAt": row["created_at"],
-                "orderStatus": row["order_status"],
-                "blankCount": row["blank_count"],
-            }
-            for row in rows
-        ]
+        result = []
+        for row in rows:
+            attrs = (
+                _parse_attributes(row["attributes"])
+                if row["attributes"] and row["attributes"] != "{}"
+                else {}
+            )
+            candle_type = attrs.get("candle_type")
+            result.append(
+                {
+                    "id": str(row["id"]),
+                    "orderId": str(row["order_id"]),
+                    "orderRef": row["order_ref"],
+                    "customerName": row["customer_name"],
+                    "productId": row["product_id"] or "",
+                    "productName": row["product_name"],
+                    "quantity": row["quantity"],
+                    "unitPrice": row["unit_price"],
+                    "notes": row["notes"] or "",
+                    "position": row["position"],
+                    "status": row["status"],
+                    "isBirthday": bool(row["is_birthday"]),
+                    "age": row["age"],
+                    "attributes": attrs,
+                    "candleType": candle_type if isinstance(candle_type, str) and candle_type else None,
+                    "dueDate": row["due_date"],
+                    "dueTime": row["due_time"],
+                    "createdAt": row["created_at"],
+                    "orderStatus": row["order_status"],
+                    "blankCount": row["blank_count"],
+                }
+            )
+        return result

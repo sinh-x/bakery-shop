@@ -81,6 +81,41 @@ def test_cake_queue_item_attributes_reflects_stored_value(api_client):
     assert items[0]["attributes"] == {"nhan_banh": "Sầu riêng"}
 
 
+def test_cake_queue_extracts_candle_type_as_top_level_field(api_client):
+    """AC6/FR6: candle_type in attributes is surfaced as top-level `candleType`."""
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000, "isBirthday": True,
+         "attributes": {"candle_type": "nen_so"}},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["candleType"] == "nen_so"
+    # attributes still carry the raw candle_type for backward compatibility
+    assert item["attributes"]["candle_type"] == "nen_so"
+
+
+def test_cake_queue_candle_type_null_when_absent(api_client):
+    """AC6/FR6: candleType is null when no candle_type is stored."""
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    assert items[0]["candleType"] is None
+
+
+def test_cake_queue_candle_type_null_for_khong_nen(api_client):
+    """AC8: candleType surfaces the raw value; Flutter suppresses khong_nen display."""
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000, "isBirthday": True,
+         "attributes": {"candle_type": "khong_nen"}},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    assert items[0]["candleType"] == "khong_nen"
+
+
 def test_cake_queue_returns_parent_order_status(api_client):
     """orderStatus must reflect the parent order's status (DG-292).
 
