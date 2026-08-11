@@ -1524,6 +1524,59 @@ def _echo_cashflow_subsection(
     click.echo("")
 
 
+def _echo_supplier_category_breakdown(
+    breakdown: dict, children_of: dict[str, list[str]], indent: str = "    ",
+) -> None:
+    """Print the category/subcategory tree for cash paid to suppliers.
+
+    Mirrors the formatting pattern of ``expense_by_category_cmd``
+    (report.py:825-848): a header row, one line per parent category (with
+    its total), indented subcategory lines for parents that have children
+    defined in ``expense_categories``, an uncategorized line when present,
+    and a grand-total row. ``indent`` shifts the whole block right so it
+    aligns with the cashflow subsection's per-account lines (4 spaces).
+
+    The breakdown totals are purely additive — they do NOT replace the
+    section subtotal printed by ``_echo_cashflow_subsection`` (which comes
+    from ``_sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES`` and
+    includes ``order_shipping_release`` entries that carry no category
+    data).
+    """
+    totals: dict[str, float] = breakdown["totals"]
+    sub_totals: dict[str, dict[str, float]] = breakdown["sub_totals"]
+    uncategorized: float = breakdown["uncategorized"]
+
+    if not totals and not uncategorized:
+        return
+
+    click.echo(f"{indent}{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
+    click.echo(f"{indent}{'-' * 52}")
+    grand_total = 0.0
+    for category in sorted(totals):
+        amount = totals[category]
+        grand_total += amount
+        click.echo(f"{indent}{category[:31]:<32}{amount:>20,.2f}")
+        # FR5/AC5: subcategory breakdown for parent categories that have
+        # children defined in the expense_categories table.
+        subs = sub_totals.get(category, {})
+        if category in children_of:
+            for sub_name in children_of[category]:
+                sub_amount = subs.get(sub_name, 0.0)
+                click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+            # Legacy/other subcategory values not in the seed tree (AC6).
+            known = set(children_of[category])
+            for sub_name in sorted(subs):
+                if sub_name not in known:
+                    sub_amount = subs[sub_name]
+                    click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+    if uncategorized:
+        grand_total += uncategorized
+        click.echo(f"{indent}{LBL_UNCATEGORIZED:<32}{uncategorized:>20,.2f}")
+    click.echo(f"{indent}{'-' * 52}")
+    click.echo(f"{indent}{LBL_TOTAL_UPPER:<32}{grand_total:>20,.2f}")
+    click.echo("")
+
+
 @report_cmd.command("cashflow")
 @click.option("--since", help="From date (YYYY-MM-DD)")
 @click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
@@ -1586,6 +1639,30 @@ def cashflow_cmd(since, until):
         )
         # Account names for the per-account breakdown table (DG-300 Phase 2).
         account_names = _query_cash_account_names(conn)
+        # Category/subcategory tree for the supplier section (DG-327 Phase 2).
+        # ``children_of`` maps parent category -> sorted list of child
+        # subcategory names; only categories with children get an indented
+        # subcategory block (FR5/AC5). ``supplier_breakdown`` is the
+        # totals/sub_totals/uncategorized tree from
+        # ``_query_supplier_category_breakdown`` (Phase 1).
+        children_of: dict[str, list[str]] = {}
+        cat_rows = conn.execute(
+            """
+            SELECT child.name AS child_name,
+                   parent.name AS parent_name
+            FROM expense_categories child
+            JOIN expense_categories parent ON parent.id = child.parent_id
+            """
+        ).fetchall()
+        for cr in cat_rows:
+            children_of.setdefault(cr["parent_name"], []).append(
+                cr["child_name"]
+            )
+        for parent in children_of:
+            children_of[parent].sort()
+        supplier_breakdown = _query_supplier_category_breakdown(
+            conn, since_b, until_b,
+        )
 
     # ---- Aggregate sections ----
     cust_in, cust_out, cust_per = _sum_section(
@@ -1630,6 +1707,11 @@ def cashflow_cmd(since, until):
     _echo_cashflow_subsection(
         LBL_CASH_PAID_SUPPLIERS, sup_per, sup_in, sup_out, indent="  ",
     )
+    # Category/subcategory tree for cash paid to suppliers (DG-327 Phase 2,
+    # FR1/FR5/FR6). Purely additive output — the section subtotal above
+    # comes from ``_sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES``
+    # (includes ``order_shipping_release``) and is unchanged.
+    _echo_supplier_category_breakdown(supplier_breakdown, children_of)
     click.echo(
         f"  {LBL_NET_OPERATING_CASHFLOW:<28}{oper_in:>20,.2f}"
         f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"
