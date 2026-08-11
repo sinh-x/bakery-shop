@@ -64,6 +64,14 @@ def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
             age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
 
+            # DG-361 Phase 4.3 / FR5 / AC5: candle type label after birthday badge.
+            candle_label = _candle_type_label(_candle_type_value(item))
+            if candle_label:
+                y = _icon_text(
+                    draw, y, "\U0001F56F", f" {candle_label}",
+                    fbb, (180, 0, 0), x=MARGIN + 10,
+                )
+
         # Enum attribute lines — each on its own row (Q3 / R3), indented
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
             y = _left(draw, y, line, fb, x=MARGIN + 10)

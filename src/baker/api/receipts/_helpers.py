@@ -17,6 +17,43 @@ def _shop_config(conn) -> dict:
             cfg[r["config_key"]] = r["config_value"]
     return cfg
 
+# DG-361 Phase 4.3: candle type display labels for backend receipt renderers.
+# Mirrors `VN.candleTypeLabel()` in `vietnamese_labels.dart`. Raw value is
+# returned for unknown keys so unexpected stored values remain visible rather
+# than blank.
+CANDLE_TYPE_LABELS = {
+    "nen_so": "Nến số",
+    "nen_xoan": "Nến xoắn",
+    "nen_nho": "Nến nhỏ",
+    "khong_nen": "Không nến",
+}
+
+
+def _candle_type_label(value) -> str:
+    """Return the Vietnamese display label for a stored `candle_type` value.
+
+    Returns empty string when `value` is None/empty/`khong_nen` so callers can
+    skip rendering the candle line entirely (AC8, AC9).
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s == "khong_nen":
+        return ""
+    return CANDLE_TYPE_LABELS.get(s, s)
+
+
+def _candle_type_value(item: dict) -> str:
+    """Return the trimmed candle_type stored on an item, or empty string.
+
+    Reads from `attributes['candle_type']` (camelCase or snake_case `attributes`
+    keys are both supported via `.get`).
+    """
+    attrs = item.get("attributes") or {}
+    raw = attrs.get("candle_type") or attrs.get("candleType") or ""
+    return str(raw).strip()
+
+
 def _enum_attribute_labels(conn) -> dict:
     """Map enum attribute_type → label_vi for receipt rendering."""
     rows = conn.execute(
@@ -221,6 +258,9 @@ def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
 
 __all__ = [
     '_shop_config',
+    'CANDLE_TYPE_LABELS',
+    '_candle_type_label',
+    '_candle_type_value',
     '_enum_attribute_labels',
     '_enum_attribute_lines',
     '_wrapped_enum_attribute_lines',

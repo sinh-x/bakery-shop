@@ -1860,3 +1860,248 @@ class TestDeliveryPhoneOnReceipts:
         ):
             img = _get_receipt(api_client, ref, params)
             assert img.size[0] == RECEIPT_WIDTH, params
+
+
+class TestCandleTypeLabelHelper:
+    """DG-361 Phase 4.3 / FR8 / AC8 / AC9: `_candle_type_label` helper behavior.
+
+    Mirrors `VN.candleTypeLabel()` in `vietnamese_labels.dart`:
+    - empty for None / blank / `khong_nen` (so callers skip rendering)
+    - mapped VN label for the three known candle types
+    - raw value pass-through for unknown keys (defensive; remains visible)
+    """
+
+    def test_none_returns_empty(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label(None) == ""
+
+    def test_empty_string_returns_empty(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("") == ""
+        assert _candle_type_label("   ") == ""
+
+    def test_khong_nen_returns_empty(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("khong_nen") == ""
+
+    def test_nen_so_returns_label(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("nen_so") == "Nến số"
+
+    def test_nen_xoan_returns_label(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("nen_xoan") == "Nến xoắn"
+
+    def test_nen_nho_returns_label(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("nen_nho") == "Nến nhỏ"
+
+    def test_unknown_value_passes_through_raw(self):
+        from baker.api.receipts import _candle_type_label
+        assert _candle_type_label("nen_vang") == "nen_vang"
+
+
+class TestCandleTypeValueHelper:
+    """DG-361 Phase 4.3: `_candle_type_value` reads `attributes['candle_type']`."""
+
+    def test_reads_candle_type_from_attributes(self):
+        from baker.api.receipts import _candle_type_value
+        item = {"attributes": {"candle_type": "nen_so"}}
+        assert _candle_type_value(item) == "nen_so"
+
+    def test_reads_camelCase_candleType(self):
+        from baker.api.receipts import _candle_type_value
+        item = {"attributes": {"candleType": "nen_nho"}}
+        assert _candle_type_value(item) == "nen_nho"
+
+    def test_missing_attributes_returns_empty(self):
+        from baker.api.receipts import _candle_type_value
+        assert _candle_type_value({}) == ""
+        assert _candle_type_value({"attributes": {}}) == ""
+        assert _candle_type_value({"attributes": None}) == ""
+
+    def test_blank_value_returns_empty(self):
+        from baker.api.receipts import _candle_type_value
+        assert _candle_type_value({"attributes": {"candle_type": ""}}) == ""
+        assert _candle_type_value({"attributes": {"candle_type": "  "}}) == ""
+
+
+class TestCandleTypeOnReceipts:
+    """DG-361 Phase 4.3 / FR3-FR5 / AC3-AC5, AC8-AC9: candle type label renders
+    on all four receipt types after the birthday badge, and is suppressed for
+    `khong_nen` / absent / empty values.
+
+    Each test seeds a birthday order and patches `attributes.candle_type`
+    directly on the stored `order_items` row (the create API stores attributes
+    verbatim). We then render each receipt type and assert:
+      - the receipt renders without error and stays at 576px width (NFR1), and
+      - when a candle line is added (nen_so/xoan/nho), the receipt is taller
+        than the no-candle_type baseline (candle sub-row adds height).
+      - for khong_nen, the receipt height matches the no-candle_type baseline
+        (no candle sub-row is drawn — AC8).
+    The helper-level mapping is covered by `TestCandleTypeLabelHelper`.
+    """
+
+    _CANDLE_EMOJI = "\U0001F56F"  # candle emoji used by all renderers
+
+    def _seed_birthday_order(self, api_client, *, candle_type=None, seed_config=True):
+        """Create a birthday order; optionally patch candle_type into attributes.
+
+        Pass ``seed_config=False`` when the caller has already seeded the shop
+        config for this test (avoids UNIQUE constraint violations on the
+        ``app_config`` table from a second INSERT).
+        """
+        if seed_config:
+            _seed_shop_config(api_client)
+        body = {
+            "customerName": "Sinh Nhật Test",
+            "items": [
+                {
+                    "productName": "Bánh kem sinh nhật",
+                    "quantity": 1,
+                    "unitPrice": 350000,
+                    "isBirthday": True,
+                    "age": 5,
+                }
+            ],
+            "dueDate": "2026-08-15",
+            "deliveryType": "pickup",
+        }
+        resp = api_client.post("/api/orders", json=body)
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        item_id = data["workItems"][0]["id"]
+
+        if candle_type is not None:
+            from baker.db.connection import get_db
+            import json as _json
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE order_items SET attributes = ? WHERE id = ?",
+                    (_json.dumps({"candle_type": candle_type}), item_id),
+                )
+        return data["orderRef"], item_id
+
+    def test_all_receipts_render_with_nen_so(self, api_client):
+        """AC3-AC5: nen_so renders on work_ticket / customer / shop / delivery."""
+        ref, item_id = self._seed_birthday_order(api_client, candle_type="nen_so")
+        for params in (
+            f"type=work_ticket&item_id={item_id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img = _get_receipt(api_client, ref, params)
+            assert img.size[0] == RECEIPT_WIDTH, params  # NFR1
+
+    def test_all_receipts_render_with_nen_xoan(self, api_client):
+        """AC3-AC5: nen_xoan renders on all four receipt types."""
+        ref, item_id = self._seed_birthday_order(api_client, candle_type="nen_xoan")
+        for params in (
+            f"type=work_ticket&item_id={item_id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img = _get_receipt(api_client, ref, params)
+            assert img.size[0] == RECEIPT_WIDTH, params
+
+    def test_all_receipts_render_with_nen_nho(self, api_client):
+        """AC3-AC5: nen_nho renders on all four receipt types."""
+        ref, item_id = self._seed_birthday_order(api_client, candle_type="nen_nho")
+        for params in (
+            f"type=work_ticket&item_id={item_id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img = _get_receipt(api_client, ref, params)
+            assert img.size[0] == RECEIPT_WIDTH, params
+
+    def test_khong_nen_renders_without_candle_line(self, api_client):
+        """AC8: khong_nen does not add a candle line; receipt still renders."""
+        ref, item_id = self._seed_birthday_order(api_client, candle_type="khong_nen")
+        for params in (
+            f"type=work_ticket&item_id={item_id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img = _get_receipt(api_client, ref, params)
+            assert img.size[0] == RECEIPT_WIDTH, params
+
+    def test_absent_candle_type_renders_without_candle_line(self, api_client):
+        """AC9: no candle_type key; receipt still renders (no candle line)."""
+        ref, item_id = self._seed_birthday_order(api_client, candle_type=None)
+        for params in (
+            f"type=work_ticket&item_id={item_id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img = _get_receipt(api_client, ref, params)
+            assert img.size[0] == RECEIPT_WIDTH, params
+
+    def test_nen_so_makes_work_ticket_taller_than_absent(self, api_client):
+        """AC3 evidence: candle sub-row adds height vs. no candle_type."""
+        _seed_shop_config(api_client)
+        ref_with, item_id_with = self._seed_birthday_order(api_client, candle_type="nen_so", seed_config=False)
+        ref_without, item_id_without = self._seed_birthday_order(api_client, candle_type=None, seed_config=False)
+
+        img_with = _get_receipt(api_client, ref_with, f"type=work_ticket&item_id={item_id_with}")
+        img_without = _get_receipt(api_client, ref_without, f"type=work_ticket&item_id={item_id_without}")
+        # The candle sub-row adds at least one line of height (icon + label).
+        assert img_with.size[1] > img_without.size[1], (
+            f"with-candle h={img_with.size[1]} should exceed without-candle h={img_without.size[1]}"
+        )
+
+    def test_nen_so_makes_customer_receipt_taller_than_absent(self, api_client):
+        """AC4 evidence: candle sub-row adds height on customer receipt."""
+        _seed_shop_config(api_client)
+        ref_with, _ = self._seed_birthday_order(api_client, candle_type="nen_so", seed_config=False)
+        ref_without, _ = self._seed_birthday_order(api_client, candle_type=None, seed_config=False)
+
+        img_with = _get_receipt(api_client, ref_with, "type=customer")
+        img_without = _get_receipt(api_client, ref_without, "type=customer")
+        assert img_with.size[1] > img_without.size[1], (
+            f"with-candle h={img_with.size[1]} should exceed without-candle h={img_without.size[1]}"
+        )
+
+    def test_nen_so_makes_shop_receipt_taller_than_absent(self, api_client):
+        """AC5 evidence: candle sub-row adds height on shop receipt."""
+        _seed_shop_config(api_client)
+        ref_with, _ = self._seed_birthday_order(api_client, candle_type="nen_so", seed_config=False)
+        ref_without, _ = self._seed_birthday_order(api_client, candle_type=None, seed_config=False)
+
+        img_with = _get_receipt(api_client, ref_with, "type=shop")
+        img_without = _get_receipt(api_client, ref_without, "type=shop")
+        assert img_with.size[1] > img_without.size[1], (
+            f"with-candle h={img_with.size[1]} should exceed without-candle h={img_without.size[1]}"
+        )
+
+    def test_khong_nen_same_height_as_absent(self, api_client):
+        """AC8 evidence: khong_nen does not add height (no candle line drawn).
+
+        Both should render at the same height as a no-candle_type birthday item
+        (no candle sub-row), within a small tolerance for anti-aliasing noise.
+        """
+        _seed_shop_config(api_client)
+        ref_khong, item_id_khong = self._seed_birthday_order(api_client, candle_type="khong_nen", seed_config=False)
+        ref_none, item_id_none = self._seed_birthday_order(api_client, candle_type=None, seed_config=False)
+
+        for params_tpl in (
+            "type=work_ticket&item_id={id}",
+            "type=customer",
+            "type=shop",
+            "type=delivery",
+        ):
+            img_khong = _get_receipt(
+                api_client, ref_khong, params_tpl.format(id=item_id_khong)
+            )
+            img_none = _get_receipt(
+                api_client, ref_none, params_tpl.format(id=item_id_none)
+            )
+            # khong_nen suppresses the candle line; heights should be equal.
+            assert img_khong.size[1] == img_none.size[1], (
+                f"{params_tpl}: khong_nen h={img_khong.size[1]} should equal absent h={img_none.size[1]}"
+            )
