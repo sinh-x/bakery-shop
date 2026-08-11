@@ -1959,3 +1959,385 @@ def test_cashflow_output_is_plain_text_no_ansi():
     # Click's CliRunner strips styling by default; assert no raw escape
     # sequences leaked into the captured output.
     assert "\x1b[" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow DG-327 — supplier category/subcategory breakdown (Phases 3+4)
+# ---------------------------------------------------------------------------
+
+
+def _insert_expense_event_with_settlements(
+    conn, *, category: str, amount: float, subcategory: str | None = None,
+    settlements: list | None = None, created_at: str | None = None,
+) -> int:
+    """Insert an expense event with category/subcategory + settlements array.
+
+    Mirrors the shape used by the production expense flow
+    (events.py:686-700): ``data.settlements`` is a list of
+    ``{id, amount, payment_method, payment_source, note, timestamp}`` dicts.
+    The breakdown helper resolves ``expense_settlement`` rows by matching
+    ``journal_entries.source_id`` against ``settlements[].id``.
+    """
+    payload = {
+        "amount_vnd": amount,
+        "category": category,
+        "payment_source": "Shop tiền mặt",
+    }
+    if subcategory is not None:
+        payload["subcategory"] = subcategory
+    if settlements is not None:
+        payload["settlements"] = settlements
+    data = json.dumps(payload)
+    if created_at:
+        cur = conn.execute(
+            "INSERT INTO events (type, summary, data, timestamp) VALUES (?, ?, ?, ?)",
+            ("expense", f"Expense: {category}", data, created_at),
+        )
+    else:
+        cur = conn.execute(
+            "INSERT INTO events (type, summary, data) VALUES (?, ?, ?)",
+            ("expense", f"Expense: {category}", data),
+        )
+    return int(cur.lastrowid)
+
+
+def _seed_supplier_breakdown_dataset(conn):
+    """Seed a dataset exercising every AC for the supplier breakdown.
+
+    All entries dated 2026-06-15. Layout (cash side only — every expense
+    credits 1100 Cash; the settlement credits 1100 Cash too):
+
+      - AC1: ``expense`` Nguyên liệu/Trứng 50000, Nguyên liệu/Kem 30000
+      - AC2: ``expense_settlement`` for Bao bì/Hộp & đế 40000
+            (event carries ``data.settlements=[{id:1, amount:40000}]``;
+             journal_entry ``source_type='expense_settlement'``,
+             ``source_id=1``)
+      - AC3: ``order_shipping_release`` 25000 (CR 1100) — must NOT appear
+            in the breakdown but MUST appear in the supplier-section outflow
+      - AC5: ``expense`` Vận chuyển 15000 — parent only, no subcategory
+            block (Vận chuyển has no children in expense_categories)
+      - AC6: ``expense`` legacy event where ``category='Trứng'`` (a
+            subcategory name) with no ``subcategory`` field — must be
+            normalized to Nguyên liệu/Trứng 20000
+
+    Expected breakdown totals (excluding order_shipping_release):
+      - Nguyên liệu: 50000 + 30000 + 20000 (legacy) = 100000
+      - Bao bì:      40000 (settlement)
+      - Vận chuyển:  15000
+      - Sum:         155000
+    Supplier-section outflow (includes order_shipping_release): 180000.
+    """
+    cash = _account_id(conn, "1100")
+    shipping = _account_id(conn, "2200")
+    ap = _account_id(conn, "2500")
+    transport = _account_id(conn, "5300")
+    eggs = _account_id(conn, "5110")
+    kem = _account_id(conn, "5120")
+    ts = "2026-06-15T10:00:00Z"
+
+    # AC1: Nguyên liệu/Trứng and Nguyên liệu/Kem (direct expense events).
+    eid_egg = _insert_expense_event(
+        conn, category="Nguyên liệu", amount=50000,
+        subcategory="Trứng", created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=eggs, credit_account_id=cash,
+        amount=50000.0, source_type="expense", source_id=eid_egg,
+        description="Expense: Nguyên liệu/Trứng", created_at=ts, transaction_date=ts,
+    )
+    eid_kem = _insert_expense_event(
+        conn, category="Nguyên liệu", amount=30000,
+        subcategory="Kem", created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=kem, credit_account_id=cash,
+        amount=30000.0, source_type="expense", source_id=eid_kem,
+        description="Expense: Nguyên liệu/Kem", created_at=ts, transaction_date=ts,
+    )
+
+    # AC2: expense_settlement settling a debt expense with
+    # category "Bao bì" and subcategory "Hộp & đế".
+    settlement_id = 1
+    eid_bao = _insert_expense_event_with_settlements(
+        conn, category="Bao bì", amount=100000, subcategory="Hộp & đế",
+        settlements=[{
+            "id": settlement_id, "amount": 40000,
+            "payment_method": "cash", "payment_source": "Shop tiền mặt",
+            "note": "partial settlement", "timestamp": ts,
+        }],
+        created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=ap, credit_account_id=cash,
+        amount=40000.0, source_type="expense_settlement",
+        source_id=settlement_id,
+        description=f"Settlement of expense event {eid_bao}",
+        created_at=ts, transaction_date=ts,
+    )
+
+    # AC3: order_shipping_release — DR 2200 / CR 1100 (cash outflow that
+    # belongs to the supplier section total but has no category data, so
+    # it must NOT appear in the category breakdown.
+    _insert_entry(
+        conn, debit_account_id=shipping, credit_account_id=cash,
+        amount=25000.0, source_type="order_shipping_release", source_id=None,
+        description="Shipping release", created_at=ts, transaction_date=ts,
+    )
+
+    # AC5: Vận chuyển — parent category with no children in
+    # expense_categories. The breakdown must show only the parent line,
+    # no empty indented subcategory block.
+    eid_trans = _insert_expense_event(
+        conn, category="Vận chuyển", amount=15000, created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=transport, credit_account_id=cash,
+        amount=15000.0, source_type="expense", source_id=eid_trans,
+        description="Expense: Vận chuyển", created_at=ts, transaction_date=ts,
+    )
+
+    # AC6: legacy expense where category field contains a subcategory name
+    # ("Trứng") with no subcategory field. The breakdown must normalize
+    # this to parent "Nguyên liệu" → subcategory "Trứng".
+    eid_legacy = _insert_expense_event(
+        conn, category="Trứng", amount=20000, created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=eggs, credit_account_id=cash,
+        amount=20000.0, source_type="expense", source_id=eid_legacy,
+        description="Expense: Trứng (legacy category)", created_at=ts,
+        transaction_date=ts,
+    )
+
+
+def _supplier_breakdown_block(output: str) -> str:
+    """Return the supplier category breakdown block from the report output.
+
+    The block starts at the ``Danh mục`` header printed by
+    ``_echo_supplier_category_breakdown`` and ends just before the next
+    section's header (``Dòng tiền thuần từ hoạt động kinh doanh``).
+    """
+    start = output.index("Danh mục")
+    end = output.index("Dòng tiền thuần từ hoạt động kinh doanh", start)
+    return output[start:end]
+
+
+def test_cashflow_supplier_breakdown_ac1_expense_category_subcategory():
+    """AC1: expense entries with category/subcategory appear as a tree.
+
+    Seeds Nguyên liệu/Trứng 50000 and Nguyên liệu/Kem 30000. The breakdown
+    must show "Nguyên liệu" as a parent line with indented "Trứng" and
+    "Kem" subcategory lines and their respective amounts.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    # Parent line "Nguyên liệu" present with total 100000 (50000+30000+20000 legacy).
+    assert "Nguyên liệu" in block
+    assert "100,000.00" in block
+    # Indented subcategory lines for Trứng (50000 + 20000 legacy = 70000) and Kem (30000).
+    assert "Trứng" in block
+    assert "70,000.00" in block
+    assert "Kem" in block
+    assert "30,000.00" in block
+
+
+def test_cashflow_supplier_breakdown_ac2_expense_settlement_resolves_via_settlements():
+    """AC2: expense_settlement entries resolve via the settlements array.
+
+    Seeds an expense_settlement journal entry (source_id=1) whose parent
+    expense event has category "Bao bì" and subcategory "Hộp & đế", and
+    a settlements list containing id=1. The breakdown must attribute the
+    settlement's 40000 outflow to "Bao bì" → "Hộp & đế".
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    assert "Bao bì" in block
+    assert "Hộp & đế" in block
+    # Bao bì parent total = 40000 (only the settlement contributes).
+    assert "40,000.00" in block
+
+
+def test_cashflow_supplier_breakdown_ac3_order_shipping_release_excluded_from_breakdown():
+    """AC3: order_shipping_release is excluded from the breakdown but in total.
+
+    Seeds an order_shipping_release outflow of 25000. The category
+    breakdown must NOT contain a 25000 line, but the supplier-section
+    subtotal must include it (180000 = 155000 breakdown + 25000 shipping).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    # The breakdown grand total is 155000 (excludes order_shipping_release).
+    # The breakdown block does not contain the shipping release's 25000.
+    # Note: 25,000.00 must not appear as a standalone line in the block.
+    lines = [ln for ln in block.splitlines() if ln.strip()]
+    # No line in the breakdown block carries the 25000 shipping amount.
+    for ln in lines:
+        assert "25,000.00" not in ln, (
+            f"order_shipping_release amount leaked into breakdown: {ln!r}"
+        )
+    # Supplier-section subtotal (Tổng phụ) includes order_shipping_release.
+    # The section total outflow = 155000 (breakdown) + 25000 (shipping) = 180000.
+    assert "180,000.00" in result.output
+
+
+def test_cashflow_supplier_breakdown_ac4_breakdown_plus_shipping_equals_section_subtotal():
+    """AC4: sum of breakdown lines equals section subtotal within 0.01 VND.
+
+    The breakdown grand total (155000) plus the order_shipping_release
+    outflow (25000, excluded from breakdown) equals the supplier-section
+    outflow subtotal (180000). We assert the breakdown's TỔNG row matches
+    the sum of the per-category totals, and that the section outflow
+    subtotal equals breakdown total + shipping release.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    # The breakdown's TỔNG row is 155000.
+    assert "TỔNG" in block
+    assert "155,000.00" in block
+    # Section outflow subtotal (includes order_shipping_release) = 180000.
+    # Tolerance: 0.01 VND — exact equality is expected here, but the test
+    # documents the AC4 reconciliation relationship explicitly.
+    assert "180,000.00" in result.output
+    # Reconciliation still passes (the breakdown is additive; it does not
+    # alter the section subtotal or the closing balance).
+    assert "[ĐẠT]" in result.output
+
+
+def test_cashflow_supplier_breakdown_ac5_parent_only_category_no_subcategory_block():
+    """AC5: parent category with no subcategories shows no subcategory block.
+
+    "Vận chuyển" has no children in expense_categories. The breakdown must
+    show only the parent line (15000) and no indented subcategory lines
+    under it. We assert the line "Vận chuyển" appears and that no
+    indented subcategory line (leading "  " under Vận chuyển) is present.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    assert "Vận chuyển" in block
+    assert "15,000.00" in block
+    # Vận chuyển appears exactly once (as a parent line) and no known
+    # subcategory names (which would be indented under it) appear adjacent.
+    # The known subcategory names from the seed tree under other parents
+    # are Trứng, Kem, Bột, Phụ gia khác, Trái cây, Hộp & đế, Phụ kiện,
+    # Bọc nilon — none are children of Vận chuyển.
+    children_of_van_chuyen = ("Hộp & đế", "Phụ kiện", "Bọc nilon")
+    # Vận chuyển line itself does not have any of these as a sub-line:
+    # since the breakdown prints subcategory lines only for parents that
+    # have children defined, Vận chuyển must have no indented block.
+    lines = [ln for ln in block.splitlines()]
+    van_chuyen_idx = next(
+        (i for i, ln in enumerate(lines) if "Vận chuyển" in ln), None,
+    )
+    assert van_chuyen_idx is not None, "Vận chuyển parent line missing"
+    # The next non-empty line after Vận chuyển must NOT be an indented
+    # subcategory line (it should be either the next parent or the
+    # closing separator).
+    for ln in lines[van_chuyen_idx + 1:]:
+        if ln.strip():
+            # An indented subcategory line would start with 6 spaces
+            # ("    " indent + "  " sub indent).
+            assert not ln.startswith("      "), (
+                f"unexpected subcategory line under Vận chuyển: {ln!r}"
+            )
+            break
+
+
+def test_cashflow_supplier_breakdown_ac6_legacy_category_normalized_to_parent():
+    """AC6: legacy expense where category is a subcategory name.
+
+    Seeds an expense event with category="Trứng" (a subcategory name) and
+    no subcategory field. The breakdown must normalize it to parent
+    "Nguyên liệu" → subcategory "Trứng" (20000 added to the Trứng
+    subcategory line, which already has 50000 from the AC1 seed → 70000
+    total for Trứng).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_supplier_breakdown_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    block = _supplier_breakdown_block(result.output)
+    # The legacy 20000 lands under Nguyên liệu → Trứng (50000 + 20000 = 70000).
+    assert "Nguyên liệu" in block
+    assert "Trứng" in block
+    assert "70,000.00" in block
+    # The parent total Nguyên liệu includes the legacy amount:
+    # 50000 (Trứng) + 30000 (Kem) + 20000 (legacy Trứng) = 100000.
+    assert "100,000.00" in block
+
+
+def test_cashflow_supplier_breakdown_empty_db_no_block():
+    """Edge case: empty DB does not print a breakdown block.
+
+    With no expense/expense_settlement entries, ``_echo_supplier_category_breakdown``
+    returns early (no totals, no uncategorized). The "Danh mục" header must
+    NOT appear in the output.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Danh mục" not in result.output
+
+
+def test_cashflow_supplier_breakdown_backward_compat_existing_dataset():
+    """NFR2/Phase 4: existing cashflow assertions hold with the breakdown.
+
+    The base ``_seed_cashflow_dataset`` (one Vận chuyển expense of 10000)
+    must still produce the same section totals and reconciliation. The
+    breakdown adds a "Vận chuyển 10,000.00" parent line but does NOT alter
+    the section subtotal (10000) or the closing balance.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # Backward-compat: the existing assertions still hold.
+    assert "Tiền trả cho nhà cung cấp/nhân viên" in result.output
+    assert "10,000.00" in result.output
+    # The breakdown shows Vận chuyển as a parent line with 10000.
+    assert "Danh mục" in result.output
+    assert "Vận chuyển" in result.output
+    # Reconciliation still passes (NFR2).
+    assert "[ĐẠT]" in result.output
+    assert "240,000.00" in result.output
+    # The breakdown's TỔNG row equals 10000 (only Vận chuyển contributes).
+    block = _supplier_breakdown_block(result.output)
+    assert "10,000.00" in block

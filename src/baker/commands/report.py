@@ -1249,6 +1249,195 @@ def _query_investing_cash_activity(
     return total_in, total_out, per_account
 
 
+def _query_supplier_category_breakdown(
+    conn, since_b: str | None, until_b: str | None,
+) -> dict:
+    """Category/subcategory breakdown of cash paid to suppliers/employees.
+
+    Queries cash-side journal lines (debit=0, credit>0) for ``expense`` and
+    ``expense_settlement`` source types on cash accounts within the date
+    range, then resolves each entry's category/subcategory from the
+    originating expense event's ``data`` JSON:
+
+      - ``expense`` entries: ``source_id`` is the ``events.id`` — the
+        event's ``data`` carries ``category`` / ``subcategory`` directly.
+      - ``expense_settlement`` entries: ``source_id`` is a settlement id,
+        not an event id. The settlement lives inside an expense event's
+        ``data.settlements`` list (a list of ``{id, amount, ...}`` dicts);
+        we scan all non-deleted expense events, find the one whose
+        ``data.settlements`` contains a matching ``id``, and extract
+        ``category`` / ``subcategory`` from that parent event's ``data``.
+
+    ``order_shipping_release`` entries are excluded (FR3) — only
+    ``expense`` and ``expense_settlement`` source types are queried.
+
+    Aggregation follows the same tree pattern as ``expense_by_category_cmd``
+    (report.py:756-823): ``expense_categories`` parent/child mappings are
+    loaded, totals are accumulated per parent category (including all
+    subcategory amounts), and legacy rows where the subcategory is stored
+    in the ``category`` field are normalized back to the parent
+    (report.py:806-813). Returns::
+
+        {
+            "totals": {parent_category: amount},
+            "sub_totals": {parent_category: {subcategory: amount}},
+            "uncategorized": float,
+            "children_of": {parent_category: [child_category, ...]},
+        }
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [
+        f"a.code IN ({placeholders})",
+        "je.source_type IN ('expense', 'expense_settlement')",
+        "jl.debit = 0",
+        "jl.credit > 0",
+    ]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT je.source_type AS source_type,
+               je.source_id   AS source_id,
+               jl.credit      AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        ORDER BY je.transaction_date ASC
+        """,
+        params,
+    ).fetchall()
+
+    # Parent/child category mappings (DG-302 Phase 1). Only categories with
+    # children get a breakdown block; legacy subcategory names stored in the
+    # category field are normalized back to the parent via parent_of.
+    # ``children_of`` (parent -> sorted list of child names) is derived from
+    # the same rows and returned to the caller so it does not re-issue this
+    # identical query (DG-327 deduplication).
+    parent_of: dict[str, str] = {}
+    children_of: dict[str, list[str]] = {}
+    cat_rows = conn.execute(
+        """
+        SELECT child.name AS child_name,
+               parent.name AS parent_name
+        FROM expense_categories child
+        JOIN expense_categories parent ON parent.id = child.parent_id
+        """
+    ).fetchall()
+    for cr in cat_rows:
+        parent_of[cr["child_name"]] = cr["parent_name"]
+        children_of.setdefault(cr["parent_name"], []).append(
+            cr["child_name"]
+        )
+    for parent in children_of:
+        children_of[parent].sort()
+
+    # Pre-load all non-deleted expense events once so expense_settlement
+    # resolution (which needs to scan every expense event's data.settlements
+    # array) does not issue one query per settlement row. ``events_by_id``
+    # maps event id -> parsed data dict (None when data is missing/invalid).
+    events_by_id: dict[int, dict | None] = {}
+    event_rows = conn.execute(
+        """
+        SELECT id, data
+        FROM events
+        WHERE type = 'expense'
+          AND (deleted_at IS NULL OR deleted_at = '')
+        """
+    ).fetchall()
+    for er in event_rows:
+        data: dict | None = None
+        if er["data"]:
+            try:
+                parsed = json.loads(er["data"])
+                if isinstance(parsed, dict):
+                    data = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        events_by_id[int(er["id"])] = data
+
+    # Build a settlement-id -> event-data lookup so expense_settlement rows
+    # resolve in O(1) rather than scanning every event per settlement row.
+    settlement_to_event_data: dict[int, dict] = {}
+    for ev_id, ev_data in events_by_id.items():
+        if not ev_data:
+            continue
+        settlements = ev_data.get("settlements")
+        if not isinstance(settlements, list):
+            continue
+        for s in settlements:
+            if not isinstance(s, dict):
+                continue
+            sid = s.get("id")
+            if isinstance(sid, int):
+                settlement_to_event_data[sid] = ev_data
+
+    totals: dict[str, float] = {}
+    sub_totals: dict[str, dict[str, float]] = {}
+    uncategorized = 0.0
+
+    for r in rows:
+        source_type = r["source_type"]
+        source_id = r["source_id"]
+        amount = float(r["credit"])
+        category: str | None = None
+        subcategory: str | None = None
+
+        if source_type == "expense" and isinstance(source_id, int):
+            ev_data = events_by_id.get(source_id)
+            if ev_data:
+                cat = ev_data.get("category")
+                if isinstance(cat, str) and cat:
+                    category = cat
+                sub = ev_data.get("subcategory")
+                if isinstance(sub, str) and sub:
+                    subcategory = sub
+        elif source_type == "expense_settlement" and isinstance(source_id, int):
+            ev_data = settlement_to_event_data.get(source_id)
+            if ev_data:
+                cat = ev_data.get("category")
+                if isinstance(cat, str) and cat:
+                    category = cat
+                sub = ev_data.get("subcategory")
+                if isinstance(sub, str) and sub:
+                    subcategory = sub
+
+        if category:
+            # Legacy normalization: when the category field is actually a
+            # subcategory name, normalize it back to the parent so it lands
+            # in the right bucket (matches report.py:806-813).
+            if category in parent_of:
+                parent = parent_of[category]
+                sub_totals.setdefault(parent, {})
+                sub_totals[parent][category] = (
+                    sub_totals[parent].get(category, 0.0) + amount
+                )
+                totals[parent] = totals.get(parent, 0.0) + amount
+            else:
+                totals[category] = totals.get(category, 0.0) + amount
+                if subcategory:
+                    sub_totals.setdefault(category, {})
+                    sub_totals[category][subcategory] = (
+                        sub_totals[category].get(subcategory, 0.0) + amount
+                    )
+        else:
+            uncategorized += amount
+
+    return {
+        "totals": totals,
+        "sub_totals": sub_totals,
+        "uncategorized": uncategorized,
+        "children_of": children_of,
+    }
+
+
 def _query_cash_account_names(conn) -> dict[str, str]:
     """Return ``{code: name}`` for all cash accounts (DG-300 Phase 2)."""
     placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
@@ -1346,6 +1535,59 @@ def _echo_cashflow_subsection(
     click.echo("")
 
 
+def _echo_supplier_category_breakdown(
+    breakdown: dict, children_of: dict[str, list[str]], indent: str = "    ",
+) -> None:
+    """Print the category/subcategory tree for cash paid to suppliers.
+
+    Mirrors the formatting pattern of ``expense_by_category_cmd``
+    (report.py:825-848): a header row, one line per parent category (with
+    its total), indented subcategory lines for parents that have children
+    defined in ``expense_categories``, an uncategorized line when present,
+    and a grand-total row. ``indent`` shifts the whole block right so it
+    aligns with the cashflow subsection's per-account lines (4 spaces).
+
+    The breakdown totals are purely additive — they do NOT replace the
+    section subtotal printed by ``_echo_cashflow_subsection`` (which comes
+    from ``_sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES`` and
+    includes ``order_shipping_release`` entries that carry no category
+    data).
+    """
+    totals: dict[str, float] = breakdown["totals"]
+    sub_totals: dict[str, dict[str, float]] = breakdown["sub_totals"]
+    uncategorized: float = breakdown["uncategorized"]
+
+    if not totals and not uncategorized:
+        return
+
+    click.echo(f"{indent}{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
+    click.echo(f"{indent}{'-' * 52}")
+    grand_total = 0.0
+    for category in sorted(totals):
+        amount = totals[category]
+        grand_total += amount
+        click.echo(f"{indent}{category[:31]:<32}{amount:>20,.2f}")
+        # FR5/AC5: subcategory breakdown for parent categories that have
+        # children defined in the expense_categories table.
+        subs = sub_totals.get(category, {})
+        if category in children_of:
+            for sub_name in children_of[category]:
+                sub_amount = subs.get(sub_name, 0.0)
+                click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+            # Legacy/other subcategory values not in the seed tree (AC6).
+            known = set(children_of[category])
+            for sub_name in sorted(subs):
+                if sub_name not in known:
+                    sub_amount = subs[sub_name]
+                    click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+    if uncategorized:
+        grand_total += uncategorized
+        click.echo(f"{indent}{LBL_UNCATEGORIZED:<32}{uncategorized:>20,.2f}")
+    click.echo(f"{indent}{'-' * 52}")
+    click.echo(f"{indent}{LBL_TOTAL_UPPER:<32}{grand_total:>20,.2f}")
+    click.echo("")
+
+
 @report_cmd.command("cashflow")
 @click.option("--since", help="From date (YYYY-MM-DD)")
 @click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
@@ -1408,6 +1650,20 @@ def cashflow_cmd(since, until):
         )
         # Account names for the per-account breakdown table (DG-300 Phase 2).
         account_names = _query_cash_account_names(conn)
+        # Category/subcategory tree for the supplier section (DG-327 Phase 2).
+        # ``children_of`` maps parent category -> sorted list of child
+        # subcategory names; only categories with children get an indented
+        # subcategory block (FR5/AC5). ``supplier_breakdown`` is the
+        # totals/sub_totals/uncategorized tree from
+        # ``_query_supplier_category_breakdown`` (Phase 1), which also
+        # returns ``children_of`` so we do not re-issue the identical
+        # ``expense_categories`` parent/child query here (DG-327
+        # deduplication — previously this block ran a second query at
+        # report.py:1648-1662).
+        supplier_breakdown = _query_supplier_category_breakdown(
+            conn, since_b, until_b,
+        )
+        children_of: dict[str, list[str]] = supplier_breakdown["children_of"]
 
     # ---- Aggregate sections ----
     cust_in, cust_out, cust_per = _sum_section(
@@ -1452,6 +1708,11 @@ def cashflow_cmd(since, until):
     _echo_cashflow_subsection(
         LBL_CASH_PAID_SUPPLIERS, sup_per, sup_in, sup_out, indent="  ",
     )
+    # Category/subcategory tree for cash paid to suppliers (DG-327 Phase 2,
+    # FR1/FR5/FR6). Purely additive output — the section subtotal above
+    # comes from ``_sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES``
+    # (includes ``order_shipping_release``) and is unchanged.
+    _echo_supplier_category_breakdown(supplier_breakdown, children_of)
     click.echo(
         f"  {LBL_NET_OPERATING_CASHFLOW:<28}{oper_in:>20,.2f}"
         f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"
