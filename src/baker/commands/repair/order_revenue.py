@@ -333,16 +333,28 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
     repair with dry-run). Returns a result dict with keys: order_id,
     order_ref, held_amount, release_amount, asset_code, action.
 
+    DG-366 Phase 4 — aligned with the new release logic in
+    :func:`_sync_bus_shipping_release_entry` (Phase 1): the release amount is
+    always the full ``shipping_fee`` (the previous ``min(shipping_fee,
+    held_in_2200)`` gate is removed) so the repair backfills missing entries
+    even when no payment has credited 2200. The actual write is delegated to
+    :func:`_sync_bus_shipping_release_entry` via the shared
+    :func:`run_journal_sync` wrapper (with ``source_type`` / ``source_id``),
+    mirroring the delivery/completion paths (FR6, NFR1) so failures are
+    observable via the ``journal_sync_failures`` counter and recorded in
+    ``journal_sync_failure_log``.
+
     Actions:
-      - ``not-applicable``: non-bus order, shipping_fee <= 0, or nothing held
-        in 2200 to release.
+      - ``not-applicable``: non-bus order or ``shipping_fee <= 0``.
       - ``skipped``: an existing ``order_shipping_release`` entry matches the
-        expected release amount within tolerance (idempotent, FR5).
-      - ``locked``: an existing entry is locked and stale (FR6 — do not modify).
-      - ``will-backfill``: dry-run preview of a missing entry (FR7).
+        expected release amount within tolerance (idempotent, FR7).
+      - ``locked``: an existing entry is locked and stale (FR7 — do not modify).
+      - ``will-backfill``: dry-run preview of a missing entry (FR6).
       - ``will-repair``: dry-run preview of a stale unlocked entry.
       - ``backfilled``: missing entry created (CR is drawer-aware, FR3/FR4).
       - ``repaired``: stale unlocked entry deleted and recreated.
+      - ``failed``: the delegated sync raised — reported, not raised to the
+        CLI caller (NFR1: repair never blocks on a single order).
     """
     order_ref = _order_ref(conn, order_id)
     order_row = conn.execute(
@@ -370,16 +382,7 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
         }
 
     held_in_2200 = _held_shipping_for_order(conn, order_id)
-    release_amount = min(shipping_fee, held_in_2200)
-    if release_amount <= 0:
-        return {
-            "order_id": order_id,
-            "order_ref": order_ref,
-            "held_amount": held_in_2200,
-            "release_amount": 0.0,
-            "asset_code": "",
-            "action": "not-applicable",
-        }
+    release_amount = shipping_fee
 
     asset_code, drawer_id = _resolve_shipping_release_asset_account(
         conn, order_id, order_ref
@@ -424,7 +427,6 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
                 "asset_code": asset_code,
                 "action": "will-repair",
             }
-        _delete_journal_entry_cascade(conn, existing_id)
     else:
         if dry_run:
             return {
@@ -436,31 +438,28 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
                 "action": "will-backfill",
             }
 
-    bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
-    asset_account_id = _account_id_by_code(conn, asset_code)
-    description = f"Shipping release: {order_ref}"
-    order_transaction_date = (
-        _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
-    )
-    _insert_journal_entry(
-        conn,
-        description=description,
+    # Delegate the write to the shared sync function (Phase 1 logic: always
+    # release the full shipping_fee) via the fire-and-forget runner with
+    # source_type/source_id, mirroring the delivery/completion paths (FR6,
+    # NFR1). The runner handles locked-stale reversal and unlocked-stale
+    # delete-and-recreate inside :func:`_sync_bus_shipping_release_entry`.
+    sync_status = run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=f"shipping release repair for order {order_id} ({order_ref})",
         source_type="order_shipping_release",
         source_id=order_id,
-        lines=[
-            (bus_shipping_account_id, release_amount, 0.0, "Thanh toán ship bus"),
-            (asset_account_id, 0.0, release_amount, "Tiền ship bus đã trả"),
-        ],
-        transaction_date=order_transaction_date,
-        drawer_id=drawer_id,
     )
+    action = "repaired" if existing_id is not None else "backfilled"
+    if sync_status != "ok":
+        action = "failed"
     return {
         "order_id": order_id,
         "order_ref": order_ref,
         "held_amount": held_in_2200,
         "release_amount": release_amount,
         "asset_code": asset_code,
-        "action": "repaired" if existing_id is not None else "backfilled",
+        "action": action,
     }
 
 def _run_shipping_release_repair(conn, *, order_id, repair_all, dry_run):
@@ -507,6 +506,7 @@ def _print_shipping_release_report(results, *, dry_run):
     skipped = sum(1 for r in results if r["action"] == "skipped")
     not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
     locked = sum(1 for r in results if r["action"] == "locked")
+    failed = sum(1 for r in results if r["action"] == "failed")
 
     parts = []
     if dry_run:
@@ -517,6 +517,8 @@ def _print_shipping_release_report(results, *, dry_run):
     parts.append(f"không áp dụng: {not_applicable}")
     if locked:
         parts.append(f"khoá: {locked}")
+    if failed:
+        parts.append(f"lỗi: {failed}")
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
 
 @click.command("repair-order-revenue")

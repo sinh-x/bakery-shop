@@ -45,6 +45,7 @@ from baker.services.journal_sync import (
     _resolve_delivered_timestamp,
     _resolve_shipping_release_asset_account,
     _reverse_journal_entry,
+    _sync_bus_shipping_release_entry,
     _sync_cancelled_order_journal,
     _sync_delivered_order_journal,
     _sync_expense_journal,
@@ -83,6 +84,7 @@ _ACTION_LABELS = {
     "will-backfill": "sẽ sửa",
     "repaired-with-errors": "đã sửa, có lỗi",
     "cash-only": "chỉ có tiền mặt — cần xem xét",
+    "failed": "lỗi",
 }
 
 
@@ -163,6 +165,7 @@ __all__ = [
     '_resolve_delivered_timestamp',
     '_resolve_shipping_release_asset_account',
     '_reverse_journal_entry',
+    '_sync_bus_shipping_release_entry',
     '_sync_cancelled_order_journal',
     '_sync_delivered_order_journal',
     '_sync_expense_journal',

@@ -1901,6 +1901,29 @@ def _shipping_release_entry_count(conn, order_id: int) -> int:
     return int(row[0])
 
 
+def _delete_shipping_release_entry(conn, order_id: int) -> None:
+    """Delete the order_shipping_release journal entry (and its lines) for setup.
+
+    DG-366 Phase 3 made ``_sync_payment_journal`` re-trigger the shipping
+    release for delivered/completed bus orders, so ``_pay_and_sync_bus`` now
+    creates the release entry as a side effect. Tests that exercise the
+    repair "backfill missing entry" path call this helper after setup to
+    restore the pre-Phase-3 "missing release" state.
+    """
+    conn.execute(
+        "DELETE FROM journal_lines WHERE journal_entry_id IN ("
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?"
+        ")",
+        (order_id,),
+    )
+    conn.execute(
+        "DELETE FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?",
+        (order_id,),
+    )
+
+
 def _shipping_release_lines(conn, order_id: int) -> dict[str, dict[str, float]]:
     """Return per-account debit/credit for the order's latest shipping release entry."""
     rows = conn.execute(
@@ -1955,6 +1978,10 @@ def test_shipping_release_backfills_missing_entry_credit_1101_within_drawer():
             "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
             (oid, f'{{"order_ref": "ORD-BUS-REL-1101", "to_status": "delivered"}}'),
         )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry
+        # for delivered bus orders. Delete it to restore the "missing entry"
+        # state the repair command must backfill.
+        _delete_shipping_release_entry(conn, oid)
         assert _shipping_release_entry_count(conn, oid) == 0
 
     result = _invoke(
@@ -1988,6 +2015,8 @@ def test_shipping_release_backfills_missing_entry_credit_1102_no_drawer():
             "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
             (oid, f'{{"order_ref": "ORD-BUS-REL-1102", "to_status": "delivered"}}'),
         )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
         assert _shipping_release_entry_count(conn, oid) == 0
 
     result = _invoke(
@@ -2030,6 +2059,8 @@ def test_shipping_release_credit_1102_when_delivery_predates_drawer():
             "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
             (oid, f'{{"order_ref": "ORD-BUS-REL-PREDATE", "to_status": "delivered"}}'),
         )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
         assert _shipping_release_entry_count(conn, oid) == 0
 
     result = _invoke(
@@ -2102,6 +2133,10 @@ def test_shipping_release_reports_locked_and_does_not_modify():
             status="delivered", due_date="2026-07-15",
         )
         _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates a correct release
+        # entry. Remove it so only the manually-inserted stale locked entry
+        # exists — the scenario this test exercises.
+        _delete_shipping_release_entry(conn, oid)
         # Create a stale release entry (wrong amount) then lock it.
         held_acct = _account_id(conn, "2200")
         asset_acct = _account_id(conn, "1101")
@@ -2149,6 +2184,8 @@ def test_shipping_release_dry_run_does_not_mutate():
             status="delivered", due_date="2026-07-15",
         )
         _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
         assert _shipping_release_entry_count(conn, oid) == 0
 
     result = _invoke(
@@ -2174,6 +2211,11 @@ def test_shipping_release_all_scans_bus_orders_only():
             status="delivered", due_date="2026-07-15",
         )
         _pay_and_sync_bus(conn, order_id=bus_oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry
+        # for the bus order. Remove it so the --all repair has a missing
+        # entry to backfill (otherwise the bus order would be reported as
+        # skipped and the test would no longer exercise the backfill path).
+        _delete_shipping_release_entry(conn, bus_oid)
         # Pickup order with shipping_fee — must NOT be scanned.
         pickup_oid = _insert_bus_order(
             conn, order_ref="ORD-PICK-REL-ALL", total_price=100000, shipping_fee=25000,
@@ -2211,6 +2253,9 @@ def test_shipping_release_all_idempotent_second_run_all_skipped():
             status="delivered", due_date="2026-07-15",
         )
         _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        # Remove it so the first --all run has a missing entry to backfill.
+        _delete_shipping_release_entry(conn, oid)
 
     r1 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
     assert r1.exit_code == 0, r1.output
@@ -2253,6 +2298,10 @@ def test_shipping_release_repair_stale_unlocked_entry():
             status="delivered", due_date="2026-07-15",
         )
         _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates a correct release
+        # entry. Remove it so only the manually-inserted stale unlocked
+        # entry exists — the scenario this test exercises.
+        _delete_shipping_release_entry(conn, oid)
         # Insert a stale (wrong-amount) unlocked release entry.
         held_acct = _account_id(conn, "2200")
         asset_acct = _account_id(conn, "1101")

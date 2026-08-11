@@ -175,6 +175,7 @@ __all__ = [
     '_resolve_delivered_timestamp',
     '_reverse_journal_entry',
     '_run_cogs_repair',
+    '_sync_bus_shipping_release_entry',
     '_sync_cancelled_order_journal',
     '_sync_delivered_order_journal',
     '_sync_expense_journal',
