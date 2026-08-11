@@ -615,6 +615,8 @@ def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
         _sync_bus_shipping_release_entry,
         conn, order_id, order_ref,
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
     )
 
     _sync_order_cogs_entry(conn, order_id, order_ref)
@@ -645,6 +647,8 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
         _sync_bus_shipping_release_entry,
         conn, order_id, order_ref,
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
     )
 
     _sync_order_cogs_entry(conn, order_id, order_ref)
