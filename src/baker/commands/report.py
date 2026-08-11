@@ -1282,6 +1282,7 @@ def _query_supplier_category_breakdown(
             "totals": {parent_category: amount},
             "sub_totals": {parent_category: {subcategory: amount}},
             "uncategorized": float,
+            "children_of": {parent_category: [child_category, ...]},
         }
     """
     placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
@@ -1317,7 +1318,11 @@ def _query_supplier_category_breakdown(
     # Parent/child category mappings (DG-302 Phase 1). Only categories with
     # children get a breakdown block; legacy subcategory names stored in the
     # category field are normalized back to the parent via parent_of.
+    # ``children_of`` (parent -> sorted list of child names) is derived from
+    # the same rows and returned to the caller so it does not re-issue this
+    # identical query (DG-327 deduplication).
     parent_of: dict[str, str] = {}
+    children_of: dict[str, list[str]] = {}
     cat_rows = conn.execute(
         """
         SELECT child.name AS child_name,
@@ -1328,6 +1333,11 @@ def _query_supplier_category_breakdown(
     ).fetchall()
     for cr in cat_rows:
         parent_of[cr["child_name"]] = cr["parent_name"]
+        children_of.setdefault(cr["parent_name"], []).append(
+            cr["child_name"]
+        )
+    for parent in children_of:
+        children_of[parent].sort()
 
     # Pre-load all non-deleted expense events once so expense_settlement
     # resolution (which needs to scan every expense event's data.settlements
@@ -1424,6 +1434,7 @@ def _query_supplier_category_breakdown(
         "totals": totals,
         "sub_totals": sub_totals,
         "uncategorized": uncategorized,
+        "children_of": children_of,
     }
 
 
@@ -1644,25 +1655,15 @@ def cashflow_cmd(since, until):
         # subcategory names; only categories with children get an indented
         # subcategory block (FR5/AC5). ``supplier_breakdown`` is the
         # totals/sub_totals/uncategorized tree from
-        # ``_query_supplier_category_breakdown`` (Phase 1).
-        children_of: dict[str, list[str]] = {}
-        cat_rows = conn.execute(
-            """
-            SELECT child.name AS child_name,
-                   parent.name AS parent_name
-            FROM expense_categories child
-            JOIN expense_categories parent ON parent.id = child.parent_id
-            """
-        ).fetchall()
-        for cr in cat_rows:
-            children_of.setdefault(cr["parent_name"], []).append(
-                cr["child_name"]
-            )
-        for parent in children_of:
-            children_of[parent].sort()
+        # ``_query_supplier_category_breakdown`` (Phase 1), which also
+        # returns ``children_of`` so we do not re-issue the identical
+        # ``expense_categories`` parent/child query here (DG-327
+        # deduplication — previously this block ran a second query at
+        # report.py:1648-1662).
         supplier_breakdown = _query_supplier_category_breakdown(
             conn, since_b, until_b,
         )
+        children_of: dict[str, list[str]] = supplier_breakdown["children_of"]
 
     # ---- Aggregate sections ----
     cust_in, cust_out, cust_per = _sum_section(
