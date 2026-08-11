@@ -2333,3 +2333,138 @@ def test_shipping_release_repair_stale_unlocked_entry():
         assert _shipping_release_entry_count(conn, oid) == 1
         lines = _shipping_release_lines(conn, oid)
         assert lines["2200"]["debit"] == 25000.0
+
+# ---------------------------------------------------------------------------
+# DG-366 Phase 5 — check-shipping-release-gaps (read-only detection, FR5/AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_check_shipping_release_gaps_command_registered():
+    """--help lists the command and documents it as read-only."""
+    result = _invoke(["check-shipping-release-gaps", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "chỉ đọc" in result.output.lower()
+
+
+def test_check_shipping_release_gaps_finds_missing_release():
+    """AC6: bus order with held 2200 but no order_shipping_release is reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-DET", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Phase 3 auto-creates the release; delete it to restore the gap.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+        # Sanity: held_in_2200 should be 25000 after the payment.
+        from baker.services.journal_sync import _held_shipping_for_order
+        assert _held_shipping_for_order(conn, oid) == 25000.0
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-DET" in result.output
+    assert "25.000" in result.output
+    assert "Tổng: 1" in result.output
+
+
+def test_check_shipping_release_gaps_read_only_no_mutation():
+    """The detection query never mutates the database."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-RO", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        _delete_shipping_release_entry(conn, oid)
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        o_before = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-RO" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        o_after = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    assert je_before == je_after
+    assert jl_before == jl_after
+    assert o_before == o_after
+
+
+def test_check_shipping_release_gaps_empty_when_release_exists():
+    """Bus order with held 2200 AND a matching release entry → not reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-OK", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Phase 3 creates the release — leave it in place (no gap).
+        assert _shipping_release_entry_count(conn, oid) == 1
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-OK" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_non_bus_orders():
+    """Pickup/door orders are never reported (no shipping held in 2200)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-PICKUP-GAP", customer_name="Khách pickup",
+            total_price=100000, status="delivered", due_date="2026-07-15",
+        )
+        _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-PICKUP-GAP" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_non_delivered_bus_orders():
+    """Bus orders not yet delivered/completed are not reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-NEW", total_price=100000, shipping_fee=25000,
+            status="new", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        _delete_shipping_release_entry(conn, oid)
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-NEW" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_bus_order_with_no_held_shipping():
+    """Bus order with no held 2200 (no payment) and no release → not reported
+    (the AC6 gap requires held shipping in 2200)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-UNPAID", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        # No payment → no held shipping in 2200.
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-UNPAID" not in result.output
+    assert "không có đơn ship bus nào" in result.output
