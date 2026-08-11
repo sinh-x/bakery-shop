@@ -2198,7 +2198,7 @@ def test_cashflow_supplier_breakdown_ac3_order_shipping_release_excluded_from_br
     assert "180,000.00" in result.output
 
 
-def test_cashflow_supplier_breakdown_ac4_breakdown_sum_equals_section_subtotal():
+def test_cashflow_supplier_breakdown_ac4_breakdown_plus_shipping_equals_section_subtotal():
     """AC4: sum of breakdown lines equals section subtotal within 0.01 VND.
 
     The breakdown grand total (155000) plus the order_shipping_release
