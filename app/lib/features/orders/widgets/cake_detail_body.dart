@@ -116,10 +116,20 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
     _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     final storedCandle = widget.item.attributes['candle_type']?.toString();
-    // AC1/AC7: default selection is "Không nến" (no candle). A stored
-    // candle_type takes precedence; absence falls back to the explicit
-    // "khong_nen" radio value so the group renders a default selection.
-    _candleType = storedCandle?.isNotEmpty == true ? storedCandle : 'khong_nen';
+    // AC1/AC7: default selection so the radio group renders a selection. A
+    // stored candle_type takes precedence.
+    //
+    // DG-361 Phase 1 — FR2/AC2: default to `nen_so` (Nến số) when birthday
+    // is checked and no prior selection exists; otherwise default to
+    // `khong_nen`. The default is NOT persisted until the user submits the
+    // edit form (`_submit`).
+    if (storedCandle != null && storedCandle.isNotEmpty) {
+      _candleType = storedCandle;
+    } else if (_isBirthday) {
+      _candleType = 'nen_so';
+    } else {
+      _candleType = 'khong_nen';
+    }
     setState(() => _editing = true);
   }
 
@@ -400,6 +410,16 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                 onChanged: (v) => setState(() {
                   _isBirthday = v ?? false;
                   if (!_isBirthday) _ageCtrl.clear();
+                  // DG-361 Phase 1 — FR2/AC2: when birthday is checked and
+                  // the user has not yet picked a candle type (still the
+                  // initial default), pre-select `nen_so`. Not persisted
+                  // until the user submits the edit form (`_submit`).
+                  if (_isBirthday &&
+                      _candleType == 'khong_nen' &&
+                      (widget.item.attributes['candle_type'] == null ||
+                          widget.item.attributes['candle_type'].toString().isEmpty)) {
+                    _candleType = 'nen_so';
+                  }
                 }),
               ),
               const Text(VN.isBirthday),

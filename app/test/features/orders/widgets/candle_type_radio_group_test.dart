@@ -32,7 +32,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(CandleTypeRadioGroup), findsOneWidget);
-      expect(find.byType(RadioListTile<String>), findsNWidgets(4));
+      // DG-361 Phase 1: layout changed from Column+RadioListTile to Wrap+Radio.
+      // A Wrap container holds the four inline Radio options.
+      expect(find.byType(Wrap), findsWidgets);
+      expect(find.byType(Radio<String>), findsNWidgets(4));
       expect(find.text(VN.candleTypeNenSo), findsOneWidget);
       expect(find.text(VN.candleTypeNenXoan), findsOneWidget);
       expect(find.text(VN.candleTypeNenNho), findsOneWidget);
@@ -51,11 +54,25 @@ void main() {
       expect(find.byType(CandleTypeRadioGroup), findsOneWidget);
       expect(find.text(VN.candleTypeKhongNen), findsOneWidget);
       // The four values map to the four expected constants exactly.
-      final tileValues = tester
-          .widgetList<RadioListTile<String>>(find.byType(RadioListTile<String>))
-          .map((t) => t.value)
+      final radioValues = tester
+          .widgetList<Radio<String>>(find.byType(Radio<String>))
+          .map((r) => r.value)
           .toSet();
-      expect(tileValues, {'nen_so', 'nen_xoan', 'nen_nho', 'khong_nen'});
+      expect(radioValues, {'nen_so', 'nen_xoan', 'nen_nho', 'khong_nen'});
+    },
+  );
+
+  testWidgets(
+    'DG-361 AC1: renders options inside a Wrap (horizontal layout, not RadioListTile)',
+    (tester) async {
+      await tester.pumpWidget(harness(groupValue: 'nen_so'));
+      await tester.pumpAndSettle();
+
+      // The widget tree must use Wrap + Radio, not the legacy vertical
+      // RadioListTile (FR1/AC1).
+      expect(find.byType(RadioListTile<String>), findsNothing);
+      expect(find.byType(Wrap), findsWidgets);
+      expect(find.byType(Radio<String>), findsNWidgets(4));
     },
   );
 

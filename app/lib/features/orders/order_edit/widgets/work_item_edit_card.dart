@@ -77,10 +77,21 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
       text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee',
     );
     _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
-    // AC1/AC7: default candle type to "Không nến" when none is stored so the
-    // radio group renders a default selection (DG-340 Phase 2 — FR1/AC1).
+    // AC1/AC7: default candle type so the radio group renders a default
+    // selection (DG-340 Phase 2 — FR1/AC1).
+    //
+    // DG-361 Phase 1 — FR2/AC2: default to `nen_so` (Nến số) when birthday
+    // is checked and no prior selection exists; otherwise default to
+    // `khong_nen`. The default lives in the local field only and is NOT
+    // persisted until the user explicitly picks an option.
     final storedCandle = widget.item.attributes['candle_type']?.toString();
-    _candleType = storedCandle?.isNotEmpty == true ? storedCandle : 'khong_nen';
+    if (storedCandle != null && storedCandle.isNotEmpty) {
+      _candleType = storedCandle;
+    } else if (_isBirthday) {
+      _candleType = 'nen_so';
+    } else {
+      _candleType = 'khong_nen';
+    }
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
     _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
@@ -558,7 +569,19 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     value: _isBirthday,
                     onChanged: (v) {
                       final newVal = v ?? false;
-                      setState(() => _isBirthday = newVal);
+                      setState(() {
+                        _isBirthday = newVal;
+                        // DG-361 Phase 1 — FR2/AC2: when birthday is checked
+                        // and the user has not yet picked a candle type
+                        // (still the initial default), pre-select `nen_so`
+                        // as the default. Not persisted until user interacts.
+                        if (newVal &&
+                            _candleType == 'khong_nen' &&
+                            !widget.item.attributes
+                                .containsKey('candle_type')) {
+                          _candleType = 'nen_so';
+                        }
+                      });
                       _editItem(isBirthday: newVal);
                       // When birthday is unchecked, clear any stored
                       // candle_type so AC7 (absent = no candle) holds.
