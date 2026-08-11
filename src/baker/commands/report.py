@@ -1249,6 +1249,184 @@ def _query_investing_cash_activity(
     return total_in, total_out, per_account
 
 
+def _query_supplier_category_breakdown(
+    conn, since_b: str | None, until_b: str | None,
+) -> dict:
+    """Category/subcategory breakdown of cash paid to suppliers/employees.
+
+    Queries cash-side journal lines (debit=0, credit>0) for ``expense`` and
+    ``expense_settlement`` source types on cash accounts within the date
+    range, then resolves each entry's category/subcategory from the
+    originating expense event's ``data`` JSON:
+
+      - ``expense`` entries: ``source_id`` is the ``events.id`` — the
+        event's ``data`` carries ``category`` / ``subcategory`` directly.
+      - ``expense_settlement`` entries: ``source_id`` is a settlement id,
+        not an event id. The settlement lives inside an expense event's
+        ``data.settlements`` list (a list of ``{id, amount, ...}`` dicts);
+        we scan all non-deleted expense events, find the one whose
+        ``data.settlements`` contains a matching ``id``, and extract
+        ``category`` / ``subcategory`` from that parent event's ``data``.
+
+    ``order_shipping_release`` entries are excluded (FR3) — only
+    ``expense`` and ``expense_settlement`` source types are queried.
+
+    Aggregation follows the same tree pattern as ``expense_by_category_cmd``
+    (report.py:756-823): ``expense_categories`` parent/child mappings are
+    loaded, totals are accumulated per parent category (including all
+    subcategory amounts), and legacy rows where the subcategory is stored
+    in the ``category`` field are normalized back to the parent
+    (report.py:806-813). Returns::
+
+        {
+            "totals": {parent_category: amount},
+            "sub_totals": {parent_category: {subcategory: amount}},
+            "uncategorized": float,
+        }
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [
+        f"a.code IN ({placeholders})",
+        "je.source_type IN ('expense', 'expense_settlement')",
+        "jl.debit = 0",
+        "jl.credit > 0",
+    ]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT je.source_type AS source_type,
+               je.source_id   AS source_id,
+               jl.credit      AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        ORDER BY je.transaction_date ASC
+        """,
+        params,
+    ).fetchall()
+
+    # Parent/child category mappings (DG-302 Phase 1). Only categories with
+    # children get a breakdown block; legacy subcategory names stored in the
+    # category field are normalized back to the parent via parent_of.
+    parent_of: dict[str, str] = {}
+    cat_rows = conn.execute(
+        """
+        SELECT child.name AS child_name,
+               parent.name AS parent_name
+        FROM expense_categories child
+        JOIN expense_categories parent ON parent.id = child.parent_id
+        """
+    ).fetchall()
+    for cr in cat_rows:
+        parent_of[cr["child_name"]] = cr["parent_name"]
+
+    # Pre-load all non-deleted expense events once so expense_settlement
+    # resolution (which needs to scan every expense event's data.settlements
+    # array) does not issue one query per settlement row. ``events_by_id``
+    # maps event id -> parsed data dict (None when data is missing/invalid).
+    events_by_id: dict[int, dict | None] = {}
+    event_rows = conn.execute(
+        """
+        SELECT id, data
+        FROM events
+        WHERE type = 'expense'
+          AND (deleted_at IS NULL OR deleted_at = '')
+        """
+    ).fetchall()
+    for er in event_rows:
+        data: dict | None = None
+        if er["data"]:
+            try:
+                parsed = json.loads(er["data"])
+                if isinstance(parsed, dict):
+                    data = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        events_by_id[int(er["id"])] = data
+
+    # Build a settlement-id -> event-data lookup so expense_settlement rows
+    # resolve in O(1) rather than scanning every event per settlement row.
+    settlement_to_event_data: dict[int, dict] = {}
+    for ev_id, ev_data in events_by_id.items():
+        if not ev_data:
+            continue
+        settlements = ev_data.get("settlements")
+        if not isinstance(settlements, list):
+            continue
+        for s in settlements:
+            if not isinstance(s, dict):
+                continue
+            sid = s.get("id")
+            if isinstance(sid, int):
+                settlement_to_event_data[sid] = ev_data
+
+    totals: dict[str, float] = {}
+    sub_totals: dict[str, dict[str, float]] = {}
+    uncategorized = 0.0
+
+    for r in rows:
+        source_type = r["source_type"]
+        source_id = r["source_id"]
+        amount = float(r["credit"])
+        category: str | None = None
+        subcategory: str | None = None
+
+        if source_type == "expense" and isinstance(source_id, int):
+            ev_data = events_by_id.get(source_id)
+            if ev_data:
+                cat = ev_data.get("category")
+                if isinstance(cat, str) and cat:
+                    category = cat
+                sub = ev_data.get("subcategory")
+                if isinstance(sub, str) and sub:
+                    subcategory = sub
+        elif source_type == "expense_settlement" and isinstance(source_id, int):
+            ev_data = settlement_to_event_data.get(source_id)
+            if ev_data:
+                cat = ev_data.get("category")
+                if isinstance(cat, str) and cat:
+                    category = cat
+                sub = ev_data.get("subcategory")
+                if isinstance(sub, str) and sub:
+                    subcategory = sub
+
+        if category:
+            # Legacy normalization: when the category field is actually a
+            # subcategory name, normalize it back to the parent so it lands
+            # in the right bucket (matches report.py:806-813).
+            if category in parent_of:
+                parent = parent_of[category]
+                sub_totals.setdefault(parent, {})
+                sub_totals[parent][category] = (
+                    sub_totals[parent].get(category, 0.0) + amount
+                )
+                totals[parent] = totals.get(parent, 0.0) + amount
+            else:
+                totals[category] = totals.get(category, 0.0) + amount
+                if subcategory:
+                    sub_totals.setdefault(category, {})
+                    sub_totals[category][subcategory] = (
+                        sub_totals[category].get(subcategory, 0.0) + amount
+                    )
+        else:
+            uncategorized += amount
+
+    return {
+        "totals": totals,
+        "sub_totals": sub_totals,
+        "uncategorized": uncategorized,
+    }
+
+
 def _query_cash_account_names(conn) -> dict[str, str]:
     """Return ``{code: name}`` for all cash accounts (DG-300 Phase 2)."""
     placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
