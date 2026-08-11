@@ -13,6 +13,11 @@ import '../../../shared/widgets/vietnamese_labels.dart';
 ///
 /// The four options (`nen_so`, `nen_xoan`, `nen_nho`, `khong_nen`) are fixed
 /// constants; callers own the selected value and persist it (FR2/AC7).
+///
+/// DG-361 Phase 1 — layout changed from vertical `Column` +
+/// `RadioListTile` to horizontal `Wrap` + `Radio` so the four options render
+/// in a single row on wide screens and automatically wrap to new lines on
+/// narrow screens (≥ 360dp) without overflow (FR1/AC1/NFR3).
 class CandleTypeRadioGroup extends StatelessWidget {
   const CandleTypeRadioGroup({
     super.key,
@@ -28,37 +33,41 @@ class CandleTypeRadioGroup extends StatelessWidget {
   /// forwarded by `RadioGroup` when the selection is cleared.
   final ValueChanged<String?> onChanged;
 
+  /// Builds a single tappable option row: a [Radio] button followed by its
+  /// VN label. Tapping either the radio or the label selects the option,
+  /// mirroring the previous `RadioListTile` affordance so existing widget
+  /// tests that tap `find.text(...)` keep working.
+  Widget _option(BuildContext context, String value, String label) {
+    return InkWell(
+      onTap: () => onChanged(value),
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Radio<String>(value: value),
+            const SizedBox(width: 4),
+            Text(label),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RadioGroup<String>(
       groupValue: groupValue,
       onChanged: onChanged,
-      child: const Column(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
         children: [
-          RadioListTile<String>(
-            title: Text(VN.candleTypeNenSo),
-            value: 'nen_so',
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
-          RadioListTile<String>(
-            title: Text(VN.candleTypeNenXoan),
-            value: 'nen_xoan',
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
-          RadioListTile<String>(
-            title: Text(VN.candleTypeNenNho),
-            value: 'nen_nho',
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
-          RadioListTile<String>(
-            title: Text(VN.candleTypeKhongNen),
-            value: 'khong_nen',
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
+          _option(context, 'nen_so', VN.candleTypeNenSo),
+          _option(context, 'nen_xoan', VN.candleTypeNenXoan),
+          _option(context, 'nen_nho', VN.candleTypeNenNho),
+          _option(context, 'khong_nen', VN.candleTypeKhongNen),
         ],
       ),
     );

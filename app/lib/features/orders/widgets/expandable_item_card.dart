@@ -38,9 +38,14 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   // model in initState, written back to the model only on explicit user
   // selection. Avoids the previous `widget.item.candleType ??= ...` model
   // mutation in initState that could affect other widgets holding the same
-  // draft reference. Default "khong_nen" lives in the local field only, so
-  // the radio group renders a default selection without persisting it until
-  // the user actually picks an option (AC7: absent = no candle).
+  // draft reference. The default lives in the local field only, so the
+  // radio group renders a default selection without persisting it until the
+  // user actually picks an option (AC7: absent = no candle).
+  //
+  // DG-361 Phase 1 — FR2/AC2: the default is `nen_so` (Nến số) when birthday
+  // is checked and no prior selection exists, instead of the previous
+  // `khong_nen`. The default is NOT persisted until the user explicitly
+  // picks an option.
   String? _candleType;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
@@ -51,18 +56,29 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   void initState() {
     super.initState();
     _isBirthday = widget.item.isBirthday;
-    // AC1/AC7: default candle type to "Không nến" when none is set so the
-    // radio group renders a default selection once is_birthday is checked.
-    // The default is applied to the LOCAL field only — the shared draft
-    // model is not mutated in initState (CQ-3 fix). FR6 (auto-check
-    // is_birthday for new cake items) is intentionally NOT applied here:
-    // re-checking on every card build would override restored drafts where
-    // the user explicitly unchecked birthday, violating the Phase 2
-    // guardrail ("Do NOT change existing birthday checkbox behavior") and
-    // AC6. FR6 belongs at the item-creation boundary
-    // (`product_picker_page._createDraftItem`), which is outside the three
-    // files in scope for this phase.
-    _candleType = widget.item.candleType ?? 'khong_nen';
+    // AC1/AC7: default candle type so the radio group renders a default
+    // selection once is_birthday is checked. The default is applied to the
+    // LOCAL field only — the shared draft model is not mutated in initState
+    // (CQ-3 fix). FR6 (auto-check is_birthday for new cake items) is
+    // intentionally NOT applied here: re-checking on every card build would
+    // override restored drafts where the user explicitly unchecked
+    // birthday, violating the Phase 2 guardrail ("Do NOT change existing
+    // birthday checkbox behavior") and AC6. FR6 belongs at the
+    // item-creation boundary (`product_picker_page._createDraftItem`),
+    // which is outside the three files in scope for this phase.
+    //
+    // DG-361 Phase 1 — FR2/AC2: default to `nen_so` (Nến số) when birthday
+    // is checked and no prior selection exists; otherwise default to
+    // `khong_nen` so the radio group still renders a selection when
+    // birthday is off.
+    final storedCandle = widget.item.candleType;
+    if (storedCandle != null && storedCandle.isNotEmpty) {
+      _candleType = storedCandle;
+    } else if (_isBirthday) {
+      _candleType = 'nen_so';
+    } else {
+      _candleType = 'khong_nen';
+    }
     _isTrungBayMarkup = widget.item.product.isTrungBay;
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(text: widget.item.age);
@@ -389,8 +405,20 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                   CheckboxListTile(
                     value: _isBirthday,
                     onChanged: (v) {
-                      setState(() => _isBirthday = v ?? false);
-                      widget.item.isBirthday = _isBirthday;
+                      setState(() {
+                        _isBirthday = v ?? false;
+                        widget.item.isBirthday = _isBirthday;
+                        // DG-361 Phase 1 — FR2/AC2: when birthday is checked
+                        // and the user has not yet picked a candle type
+                        // (still the initial default), pre-select `nen_so`
+                        // as the default. Not persisted until user interacts.
+                        if (_isBirthday &&
+                            _candleType == 'khong_nen' &&
+                            (widget.item.candleType == null ||
+                                widget.item.candleType!.isEmpty)) {
+                          _candleType = 'nen_so';
+                        }
+                      });
                     },
                     title: const Text(VN.isBirthday),
                     controlAffinity: ListTileControlAffinity.leading,
