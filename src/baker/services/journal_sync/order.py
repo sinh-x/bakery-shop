@@ -27,6 +27,7 @@ from baker.services.journal_sync._common import (
     _is_locked,
     _resolve_delivered_timestamp,
     _reverse_journal_entry,
+    _table_exists,
     run_journal_sync,
 )
 
@@ -478,7 +479,7 @@ def _resolve_shipping_release_asset_account(
       - Otherwise (no open drawer, or delivery predates the open drawer),
         credit 1102 (Owner's Cash) with no drawer link.
     """
-    drawer = CashDrawer.get_active(conn)
+    drawer = CashDrawer.get_active(conn) if _table_exists(conn, "cash_drawer") else None
     if drawer is not None:
         delivery_ts = _resolve_delivered_timestamp(conn, order_id, order_ref)
         if delivery_ts is not None and delivery_ts >= drawer.opened_at:
