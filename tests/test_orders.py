@@ -1005,16 +1005,18 @@ def test_compute_urgency_threshold_minutes_param_overrides_env():
     assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=30) == "urgent"
 
 
-def test_compute_urgency_threshold_minutes_zero_not_used_when_none():
+def test_compute_urgency_threshold_minutes_zero_not_used_when_none(monkeypatch):
     """threshold_minutes=None -> falls back to env-var default (60).
 
     Sanity: passing None must NOT short-circuit the threshold check to 0.
+    The reference now is frozen to noon (12:00 server tz) so the 90-min-out
+    due time never crosses midnight, making the assertion deterministic
+    regardless of wall-clock time (AC2).
     """
     from baker.models.order import compute_urgency
-    from datetime import datetime, timedelta
-    from baker.config import TIMEZONE
-
-    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=90)
+    from datetime import timedelta
+    frozen = _freeze_now_local(monkeypatch, hour=12, minute=0)
+    soon_local = frozen + timedelta(minutes=90)
     due_date, due_time = _format_due(soon_local)
     # 90 min out > 60 min default -> urgent (not critical)
     assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=None) == "urgent"
