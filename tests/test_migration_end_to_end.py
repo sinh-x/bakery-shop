@@ -92,6 +92,8 @@ _EXPECTED_TABLES = {
     "cash_drawer_breakdown_snapshot",
     # v100
     "message_templates",
+    # v101
+    "address_library", "customer_addresses",
 }
 
 # Key composite / unique indexes that must exist after the full chain.
