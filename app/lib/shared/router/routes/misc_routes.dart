@@ -13,6 +13,7 @@ import '../../../features/knowledge/knowledge_form_screen.dart';
 import '../../../features/knowledge/widgets/knowledge_edit_loader.dart';
 import '../../../features/pos/pos_checkout_screen.dart';
 import '../../../features/pos/pos_receipt_screen.dart';
+import '../../../features/settings/address_library_screen.dart';
 import '../../../features/settings/pre_login_settings_screen.dart';
 import '../../../features/settings/settings_screen.dart';
 import '../../../features/stock/stock_reconciliation_screen.dart';
@@ -67,6 +68,12 @@ List<RouteBase> miscRoutes() => [
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      // Address library management — full-screen (DG-385 Phase 5 /
+      // FR6/FR8/AC6). Reached from Settings → "Thư viện địa chỉ".
+      GoRoute(
+        path: '/settings/addresses',
+        builder: (context, state) => const AddressLibraryScreen(),
       ),
       // Pre-login technical settings (DG-367 Phase 1 / FR4 / AC5) —
       // unauthenticated-accessible route for fixing the server URL before
