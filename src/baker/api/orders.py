@@ -31,6 +31,10 @@ from baker.services.customer_resolver import (
     _resolve_or_create_customer_id,
 )
 from baker.services.order_stock import auto_decrement_stock, reverse_order_stock_for_edit
+from baker.services.address_library import (
+    sync_on_order_edit as _sync_address_library_on_edit,
+    sync_on_order_save as _sync_address_library_on_save,
+)
 from baker.api.auth import resolve_actor, resolve_staff_name, resolve_staff_record
 from baker.utils.time import now_utc
 
@@ -748,6 +752,18 @@ def create_order(body: OrderCreate, request: Request):
             _recompute_customer_year_summary(
                 conn, body.customerId, _order_year(order.created_at or now_utc())
             )
+        # DG-385 Phase 3 (FR3/AC3): upsert the address+link pair into the
+        # address library for door-to-door delivery orders carrying a
+        # Google Maps link. Skips pickup/bus orders and door orders without
+        # a link. Idempotent and customer-linked (FR5). Runs within this
+        # same ``get_db()`` transaction (NFR3).
+        _sync_address_library_on_save(
+            conn,
+            body.deliveryType,
+            body.deliveryAddress,
+            body.googleMapsUrl,
+            customer_id=body.customerId,
+        )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         response = _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
         if accounting_sync_warning is not None:
@@ -1190,6 +1206,33 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 and old_year is not None
             ):
                 _recompute_customer_year_summary(conn, new_customer_id, old_year)
+
+        # DG-385 Phase 3 (FR4/AC4/AC8): sync the address library when a
+        # Google Maps link is added, updated, or removed on a door-delivery
+        # order (via the Google Maps modal or the edit flow). Also handles
+        # door→non-door and non-door→door delivery-type transitions.
+        # Reference-count aware: only removes a library entry when no other
+        # door-delivery order references the same (address, link) pair
+        # (AC8). Runs within this same ``get_db()`` transaction (NFR3) and
+        # only fires when the link actually changes — address-only edits
+        # do not trigger sync (per Sinh's clarification).
+        old_delivery_type_edit = row["delivery_type"]
+        old_delivery_address_edit = row["delivery_address"] or ""
+        old_google_maps_url_edit = row["google_maps_url"]
+        new_delivery_type_edit = data.get("deliveryType", old_delivery_type_edit)
+        new_delivery_address_edit = data.get("deliveryAddress", old_delivery_address_edit)
+        new_google_maps_url_edit = data.get("googleMapsUrl", old_google_maps_url_edit)
+        _sync_address_library_on_edit(
+            conn,
+            row["id"],
+            old_delivery_type_edit,
+            old_delivery_address_edit,
+            old_google_maps_url_edit,
+            new_delivery_type_edit,
+            new_delivery_address_edit,
+            new_google_maps_url_edit,
+            customer_id=new_customer_id,
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

@@ -242,3 +242,195 @@ def link_customer_address(conn, customer_id: int, address_library_id: int) -> No
         "VALUES (?, ?)",
         (customer_id, address_library_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# DG-385 Phase 3 — order-save auto-sync hooks (FR3 / FR4 / AC3 / AC4 / AC8)
+#
+# These helpers run inside the caller's ``get_db()`` transaction (NFR3) and
+# are invoked from ``create_order`` and ``edit_order`` in
+# ``baker.api.orders``. Sync fires ONLY for door-to-door delivery orders
+# (``delivery_type IN ('door', 'delivery')``) and ONLY when a Google Maps
+# link is present, added, updated, or removed — never for pickup orders
+# and never when a link is simply absent (AC3, AC4).
+#
+# Reference-count rule (AC8): when a link is removed or replaced on an
+# order, the corresponding ``address_library`` row is deleted only when
+# NO other door-delivery order still references the same
+# ``(normalized_address, google_maps_url)`` pair. This keeps entries that
+# other active orders depend on intact.
+# ---------------------------------------------------------------------------
+
+# Door-to-door delivery types that trigger library sync. Includes the
+# legacy ``"delivery"`` value which behaves like ``"door"`` (see
+# ``OrderDeliverySection._isDoorDelivery`` on the Flutter side). ``"bus"``
+# is intentionally excluded — bus orders use a central pickup point, not a
+# per-customer address+link pair that should populate the library.
+DOOR_DELIVERY_TYPES = ("door", "delivery")
+
+
+def is_door_delivery(delivery_type: str) -> bool:
+    """Return True when ``delivery_type`` is a door-to-door type (FR3/AC3).
+
+    ``"door"`` is the current value; ``"delivery"`` is the legacy alias
+    kept for backward compatibility with older rows. ``"bus"`` and
+    ``"pickup"`` are NOT door delivery and do not trigger library sync.
+    """
+    return delivery_type in DOOR_DELIVERY_TYPES
+
+
+def sync_on_order_save(
+    conn,
+    delivery_type: str,
+    delivery_address: str,
+    google_maps_url: Optional[str],
+    customer_id: Optional[int] = None,
+) -> Optional[int]:
+    """Upsert an address+link pair into the library after an order save (FR3/AC3).
+
+    Runs ONLY for door-to-door delivery orders with a non-empty
+    ``delivery_address`` and a non-empty ``google_maps_url``. When both
+    conditions hold, the pair is upserted (idempotent) and — when a
+    ``customer_id`` is supplied — linked to the customer in
+    ``customer_addresses`` so subsequent autocomplete results rank the
+    customer's own addresses first (FR5).
+
+    Returns the ``address_library.id`` of the upserted entry, or ``None``
+    when the sync was skipped (non-door delivery, missing address, or
+    missing link).
+    """
+    if not is_door_delivery(delivery_type):
+        return None
+    address = (delivery_address or "").strip()
+    if not address:
+        return None
+    url = (google_maps_url or "").strip() or None
+    if not url:
+        return None
+    entry = create_library_entry(conn, display_address=address, google_maps_url=url)
+    if customer_id is not None:
+        link_customer_address(conn, customer_id, entry.id)
+    return entry.id
+
+
+def _count_other_orders_with_pair(
+    conn,
+    normalized_address: str,
+    google_maps_url: Optional[str],
+    exclude_order_id: int,
+) -> int:
+    """Count door-delivery orders referencing the same (address, link) pair.
+
+    Used by the reference-count rule (AC8). ``exclude_order_id`` is the
+    order whose link was just removed/changed — it no longer references
+    the pair so it is excluded from the count. The address match uses the
+    normalized form so diacritics/case variants collapse to the same key
+    (FR1).
+    """
+    rows = conn.execute(
+        "SELECT id, delivery_address, google_maps_url, delivery_type "
+        "FROM orders WHERE google_maps_url = ? AND delivery_address IS NOT NULL "
+        "AND delivery_address != '' AND id != ?",
+        (google_maps_url, exclude_order_id),
+    ).fetchall()
+    count = 0
+    for r in rows:
+        if not is_door_delivery(r["delivery_type"]):
+            continue
+        if normalize_address(r["delivery_address"]) == normalized_address:
+            count += 1
+    return count
+
+
+def _maybe_delete_library_pair(
+    conn,
+    normalized_address: str,
+    google_maps_url: Optional[str],
+    exclude_order_id: int,
+) -> None:
+    """Delete the library entry for a pair when no other orders reference it (AC8).
+
+    Looks up the ``address_library`` row keyed by
+    ``(normalized_address, google_maps_url)``. When found, counts the
+    remaining door-delivery orders still referencing the pair (excluding
+    ``exclude_order_id``). When the count is zero, the entry is deleted —
+    its ``customer_addresses`` links cascade via the v101 FK. When other
+    orders still use the pair, the entry is preserved (AC8).
+    """
+    if not google_maps_url:
+        return
+    row = conn.execute(
+        "SELECT id FROM address_library "
+        "WHERE normalized_address = ? AND google_maps_url = ?",
+        (normalized_address, google_maps_url),
+    ).fetchone()
+    if not row:
+        return
+    remaining = _count_other_orders_with_pair(
+        conn, normalized_address, google_maps_url, exclude_order_id
+    )
+    if remaining == 0:
+        delete_library_entry(conn, row["id"])
+
+
+def sync_on_order_edit(
+    conn,
+    order_id: int,
+    old_delivery_type: str,
+    old_delivery_address: str,
+    old_google_maps_url: Optional[str],
+    new_delivery_type: str,
+    new_delivery_address: str,
+    new_google_maps_url: Optional[str],
+    customer_id: Optional[int] = None,
+) -> None:
+    """Sync the address library after an order edit (FR4/AC4/AC8).
+
+    Handles the four link-change scenarios on a door-delivery order:
+
+    1. **Link added** (old empty → new present): upsert the new pair.
+    2. **Link updated** (old present → new present, different): upsert the
+       new pair; delete the old pair's library entry when no other orders
+       reference it (AC8).
+    3. **Link removed** (old present → new empty): delete the old pair's
+       library entry when no other orders reference it (AC8).
+    4. **No link change**: no-op — sync only fires when the link changes
+       (per Sinh's clarification: "Sync ONLY triggers when a Google Maps
+       link is added/updated/removed — not on every order save").
+
+    When the order transitions OUT of door delivery (e.g. door → pickup),
+    the old link pair is cleaned up via the reference-count rule. When the
+    order transitions INTO door delivery with a link present, the new pair
+    is upserted. Address-only changes (link unchanged) do NOT trigger
+    sync — the library is keyed on the (address, link) pair and the
+    display text is owned by the order, not the library.
+    """
+    old_url = (old_google_maps_url or "").strip() or None
+    new_url = (new_google_maps_url or "").strip() or None
+    old_addr = (old_delivery_address or "").strip()
+    new_addr = (new_delivery_address or "").strip()
+    old_is_door = is_door_delivery(old_delivery_type)
+    new_is_door = is_door_delivery(new_delivery_type)
+
+    # Cleanup the OLD pair when the order no longer references it — either
+    # because the link changed/removed on a door order, or because the
+    # order left door delivery entirely.
+    old_pair_active = old_is_door and bool(old_addr) and bool(old_url)
+    new_pair_uses_old_url = (
+        new_is_door
+        and bool(new_addr)
+        and bool(new_url)
+        and old_url == new_url
+        and normalize_address(new_addr) == normalize_address(old_addr)
+    )
+    if old_pair_active and not new_pair_uses_old_url:
+        _maybe_delete_library_pair(
+            conn, normalize_address(old_addr), old_url, order_id
+        )
+
+    # Upsert the NEW pair when the order is now a door delivery with a
+    # link. The upsert is idempotent and also re-links the customer.
+    if new_is_door and bool(new_addr) and bool(new_url):
+        sync_on_order_save(
+            conn, new_delivery_type, new_addr, new_url, customer_id
+        )
