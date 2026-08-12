@@ -11,6 +11,8 @@ The sync fires ONLY for door-to-door delivery orders (``door`` or legacy
 updated, or removed. Pickup and bus orders do NOT trigger library sync.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 from baker.db.connection import get_db
 
 
@@ -514,3 +516,76 @@ def test_edit_add_link_links_customer(api_client):
         ).fetchone()
         assert row is not None
         assert row["customer_id"] == customer["id"]
+
+
+# --- CQ-1 regression: concurrent upsert must not raise IntegrityError -------
+
+
+def test_concurrent_create_library_entry_no_integrity_error(use_memory_db):
+    """CQ-1: parallel calls to ``create_library_entry`` for the same pair.
+
+    The previous SELECT-then-INSERT implementation could raise
+    ``IntegrityError`` when two callers observed no existing row and both
+    attempted INSERT. The ``INSERT OR IGNORE`` + ``SELECT`` fix makes the
+    upsert atomic so concurrent callers resolve to the single winning row
+    without surfacing an ``IntegrityError`` (which would 500 the request
+    or crash an enclosing order-save transaction).
+    """
+    from baker.db.schema import ensure_schema
+    from baker.services.address_library import create_library_entry
+
+    with get_db() as conn:
+        ensure_schema(conn)
+
+    address = "123 Nguyễn Huệ"
+    url = "https://maps.google.com/abc"
+
+    def _upsert():
+        with get_db() as conn:
+            return create_library_entry(conn, display_address=address, google_maps_url=url)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: _upsert(), range(32)))
+
+    # All 32 concurrent upserts must resolve to the same single row.
+    ids = {r.id for r in results}
+    assert len(ids) == 1, f"expected one library row, got ids={ids}"
+    with get_db() as conn:
+        assert _library_count(conn) == 1
+        assert _library_has(conn, address, url)
+
+
+def test_concurrent_order_create_same_pair_no_integrity_error(api_client):
+    """CQ-1 end-to-end: concurrent door-delivery order creation with the same
+    address+link pair must not 500. Each ``POST /api/orders`` runs
+    ``sync_on_order_save`` → ``create_library_entry`` inside its own
+    ``get_db()`` transaction; under the old implementation the second
+    request could ``IntegrityError`` and surface a 500 to the client.
+    """
+    addr = "123 Nguyễn Huệ"
+    url = "https://maps.google.com/abc"
+
+    def _post(_):
+        return api_client.post(
+            "/api/orders",
+            json={
+                "customerName": "Khách đồng thời",
+                "items": [
+                    {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}
+                ],
+                "dueDate": "2026-08-15",
+                "deliveryType": "door",
+                "deliveryAddress": addr,
+                "googleMapsUrl": url,
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(_post, range(8)))
+
+    assert all(r.status_code == 201 for r in responses), [
+        (r.status_code, r.text) for r in responses
+    ]
+    with get_db() as conn:
+        assert _library_count(conn) == 1
+        assert _library_has(conn, addr, url)

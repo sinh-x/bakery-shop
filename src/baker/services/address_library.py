@@ -79,25 +79,27 @@ def create_library_entry(
     pair already exists, the existing row is returned instead of raising
     (idempotent create — matches the Phase 3 upsert semantics so manual
     library creation and order-save auto-sync do not collide).
+
+    The upsert is implemented as ``INSERT OR IGNORE`` followed by a
+    ``SELECT`` of the matching pair. This is a single atomic statement in
+    SQLite, so concurrent calls cannot race between the SELECT and INSERT
+    and surface an ``IntegrityError`` to the caller (CQ-1 fix). The
+    subsequent ``SELECT`` resolves to the winning row whether it was just
+    inserted by this call or already existed from a concurrent one.
     """
     normalized = normalize_address(display_address)
     url = google_maps_url.strip() if google_maps_url else None
-    existing = conn.execute(
-        "SELECT * FROM address_library "
-        "WHERE normalized_address = ? AND "
-        "  (google_maps_url IS ? OR google_maps_url = ?)",
-        (normalized, url, url),
-    ).fetchone()
-    if existing:
-        return _row_to_address(existing)
-    cursor = conn.execute(
-        "INSERT INTO address_library "
+    conn.execute(
+        "INSERT OR IGNORE INTO address_library "
         "(normalized_address, display_address, google_maps_url, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (normalized, display_address.strip(), url, now_utc(), now_utc()),
     )
     row = conn.execute(
-        "SELECT * FROM address_library WHERE id = ?", (cursor.lastrowid,)
+        "SELECT * FROM address_library "
+        "WHERE normalized_address = ? AND "
+        "  (google_maps_url IS ? OR google_maps_url = ?)",
+        (normalized, url, url),
     ).fetchone()
     return _row_to_address(row)
 
@@ -313,6 +315,17 @@ def sync_on_order_save(
     return entry.id
 
 
+def _ensure_normalize_function(conn) -> None:
+    """Register ``normalize_address`` as a SQLite custom function on ``conn``.
+
+    Idempotent — re-registering with the same name simply replaces the
+    previous binding. Used by ``_count_other_orders_with_pair`` so the
+    address-normalization comparison can run inside SQLite (CQ-2) instead
+    of post-filtering fetched rows in Python.
+    """
+    conn.create_function("normalize_address", 1, normalize_address)
+
+
 def _count_other_orders_with_pair(
     conn,
     normalized_address: str,
@@ -326,20 +339,28 @@ def _count_other_orders_with_pair(
     the pair so it is excluded from the count. The address match uses the
     normalized form so diacritics/case variants collapse to the same key
     (FR1).
+
+    The door-delivery type filter and the address-normalization comparison
+    are pushed into the SQL ``WHERE`` clause (CQ-2) by registering
+    ``normalize_address`` as a SQLite custom function. This lets SQLite
+    compute ``COUNT(*)`` server-side using the
+    ``idx_address_library_normalized_url_unique`` normalized key semantics
+    instead of fetching every url-matching order row and post-filtering in
+    Python.
     """
-    rows = conn.execute(
-        "SELECT id, delivery_address, google_maps_url, delivery_type "
-        "FROM orders WHERE google_maps_url = ? AND delivery_address IS NOT NULL "
-        "AND delivery_address != '' AND id != ?",
-        (google_maps_url, exclude_order_id),
-    ).fetchall()
-    count = 0
-    for r in rows:
-        if not is_door_delivery(r["delivery_type"]):
-            continue
-        if normalize_address(r["delivery_address"]) == normalized_address:
-            count += 1
-    return count
+    _ensure_normalize_function(conn)
+    placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
+    row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM orders "
+        f"WHERE google_maps_url = ? "
+        f"  AND delivery_type IN ({placeholders}) "
+        f"  AND delivery_address IS NOT NULL "
+        f"  AND delivery_address != '' "
+        f"  AND normalize_address(delivery_address) = ? "
+        f"  AND id != ?",
+        (google_maps_url, *DOOR_DELIVERY_TYPES, normalized_address, exclude_order_id),
+    ).fetchone()
+    return int(row["cnt"]) if row else 0
 
 
 def _maybe_delete_library_pair(
