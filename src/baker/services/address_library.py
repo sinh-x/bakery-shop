@@ -227,6 +227,7 @@ def _autocomplete_past_orders(
     normalized_query = _strip_diacritics(query)
     like = f"%{_escape_like(normalized_query)}%"
     placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
+    status_placeholders = ",".join("?" for _ in DELIVERED_STATUSES)
     rows = conn.execute(
         f"""
         SELECT o.delivery_address AS delivery_address,
@@ -243,6 +244,7 @@ def _autocomplete_past_orders(
             FROM orders
             WHERE customer_id = ?
               AND delivery_type IN ({placeholders})
+              AND status IN ({status_placeholders})
               AND delivery_address IS NOT NULL
               AND delivery_address != ''
             GROUP BY delivery_address
@@ -251,7 +253,13 @@ def _autocomplete_past_orders(
         ORDER BY latest.last_order_id DESC
         LIMIT ?
         """,
-        (customer_id, *DOOR_DELIVERY_TYPES, like, PAST_ORDERS_LIMIT),
+        (
+            customer_id,
+            *DOOR_DELIVERY_TYPES,
+            *DELIVERED_STATUSES,
+            like,
+            PAST_ORDERS_LIMIT,
+        ),
     ).fetchall()
     return [
         {
@@ -355,6 +363,13 @@ def link_customer_address(conn, customer_id: int, address_library_id: int) -> No
 # is intentionally excluded — bus orders use a central pickup point, not a
 # per-customer address+link pair that should populate the library.
 DOOR_DELIVERY_TYPES = ("door", "delivery")
+
+# DG-388 Phase 5.6-c4 Mn-3: only orders that reached a delivered state
+# contribute to the "Địa chỉ đã giao" (previously delivered) section of
+# autocomplete. Matches the codebase-wide DELIVERED_STATUSES convention
+# (e.g. baker.commands.repair._common) so cancelled/rejected/draft orders
+# are excluded.
+DELIVERED_STATUSES = ("delivered", "completed")
 
 
 def is_door_delivery(delivery_type: str) -> bool:
@@ -492,10 +507,12 @@ def list_missing_links(conn, limit: int = 100) -> list[dict]:
 
     Results are ordered by ``order_count DESC`` then ``delivery_address ASC``
     so the most-referenced gap surfaces first, and paginated via ``limit``
-    (default 100) to keep the API response bounded (NFR4). The query
-    leverages the indexed ``delivery_type`` and ``google_maps_url`` columns
-    on the ``orders`` table for sub-500ms response at up to 10k door
-    delivery orders (NFR4).
+    (default 100) to keep the API response bounded (NFR4). The
+    ``delivery_type IN (...)`` predicate is backed by the
+    ``idx_orders_delivery_type`` index (created in migration v103) for
+    sub-500ms response at up to 10k door delivery orders (NFR4). The
+    ``google_maps_url`` column is not indexed; its NULL/empty filter is
+    applied after the indexed ``delivery_type`` scan.
 
     Returns a list of dicts with ``deliveryAddress`` and ``orderCount`` keys
     (camelCase for API JSON compatibility with the rest of the addresses

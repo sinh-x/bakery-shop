@@ -284,6 +284,51 @@ def test_autocomplete_past_orders_excludes_pickup_and_bus(api_client):
     assert "Bến xe" not in addrs
 
 
+def test_autocomplete_past_orders_excludes_non_delivered_statuses(api_client):
+    """DG-388 Phase 5.6-c4 Mn-3 regression: only orders with status in
+    DELIVERED_STATUSES ('delivered', 'completed') contribute to pastOrders.
+    A cancelled door-delivery order must NOT surface in the "Địa chỉ đã
+    giao" (previously delivered) section."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        # delivered order at "12 Lê Lợi" — should be returned
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="12 Lê Lợi",
+            google_maps_url=None,
+            status="delivered",
+        )
+        # cancelled door-delivery order at "34 Trần Hưng Đạo" — must NOT
+        # be returned (it never reached delivery, so the address is not a
+        # "previously delivered" address).
+        _insert_order_for_customer(
+            conn,
+            order_ref="C1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="34 Trần Hưng Đạo",
+            google_maps_url=None,
+            status="cancelled",
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    addrs = {s["displayAddress"] for s in body["pastOrders"]}
+    assert "12 Lê Lợi" in addrs
+    assert "34 Trần Hưng Đạo" not in addrs
+
+
 def test_autocomplete_past_orders_normalizes_query(api_client):
     """F1: past-order matching uses normalize_address so diacritics- and
     case-variants of the query resolve to the same address."""

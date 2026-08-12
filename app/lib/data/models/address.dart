@@ -5,22 +5,17 @@ import '../../shared/utils/date_formatting.dart';
 part 'address.freezed.dart';
 part 'address.g.dart';
 
-/// One entry returned by ``GET /api/addresses/autocomplete`` (DG-385 Phase 4).
+/// One per-item entry produced by the backend
+/// `baker.services.address_library.autocomplete` function, which returns a
+/// grouped ``{pastOrders, library}`` response (DG-388 Phase 2 / FR3 / FR4).
+/// The same per-item shape is used for both groups so the frontend can
+/// render them uniformly; [AddressAutocompleteResponse] models the grouped
+/// envelope.
 ///
-/// Mirrors the backend ``AutocompleteSuggestion`` pydantic model from
-/// `src/baker/models/address.py`. The backend ranks the caller customer's
-/// own addresses first when ``customerId`` is supplied (FR5/AC5), and each
-/// entry carries ``googleMapsUrl`` so the frontend can auto-bind the link
-/// on selection (FR2/AC2). ``isCustomerAddress`` is true for entries that
-/// belong to the selected customer so the UI can badge them.
-///
-/// DG-388 Phase 1: the autocomplete endpoint will be enhanced (Phase 2) to
-/// return a grouped response ``{pastOrders: [...], library: [...]}`` (FR3).
-/// [AddressAutocompleteResponse] models that grouped shape; the existing
-/// `AddressSuggestion` entries remain the per-item shape so current
-/// consumers of the flat list continue to work unchanged. The
-/// [googleMapsUrl] field is nullable because library entries and past-order
-/// addresses may exist without a known link (F3).
+/// The [googleMapsUrl] field is nullable because both library entries and
+/// past-order addresses may exist without a known link (F3). The
+/// [isCustomerAddress] flag is true for library entries that are linked to
+/// the selected customer so the UI can badge them.
 @freezed
 sealed class AddressSuggestion with _$AddressSuggestion {
   const factory AddressSuggestion({
