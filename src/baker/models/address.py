@@ -109,26 +109,3 @@ class AddressLibraryUpdate(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("Địa chỉ không được để trống")
         return v.strip() if v is not None else None
-
-
-class AutocompleteSuggestion(BaseModel):
-    """One entry in the ``library`` array of the
-    ``GET /api/addresses/autocomplete`` grouped response (FR7/FR2/FR3).
-
-    DG-388 Phase 2: the endpoint now returns ``{pastOrders, library}``;
-    this model describes the per-item shape of the ``library`` array.
-    ``googleMapsUrl`` is included so the frontend can auto-bind the link
-    when the user selects a suggestion (FR2 / AC2).
-
-    DG-388 CQ-1: ``id`` is optional because ``pastOrders`` entries are
-    derived from the ``orders`` table (grouped by raw
-    ``delivery_address``) and have no address-library id by construction.
-    ``library`` entries always carry an ``id``. The frontend
-    ``AddressSuggestion`` mirrors this with a nullable ``id`` so the same
-    model parses both sections without throwing.
-    """
-
-    id: Optional[int] = None
-    displayAddress: str
-    googleMapsUrl: Optional[str] = None
-    isCustomerAddress: bool = False
