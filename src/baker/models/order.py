@@ -567,7 +567,7 @@ class Order:
         tier = CompletenessTier.INCOMPLETE.value if missing else CompletenessTier.COMPLETE.value
         return (missing, tier)
 
-    def to_api_dict(self, threshold_minutes: Optional[int] = None) -> dict:
+    def to_api_dict(self, threshold_minutes: Optional[int] = None, payment_methods: Optional[list[str]] = None) -> dict:
         """Return Dart-compatible camelCase JSON representation.
 
         ``threshold_minutes`` is forwarded to ``compute_urgency`` so callers
@@ -620,4 +620,5 @@ class Order:
             ),
             "missingFields": missing_fields,
             "completeness": completeness,
+            "paymentMethods": payment_methods or [],
         }

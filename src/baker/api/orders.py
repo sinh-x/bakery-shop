@@ -386,6 +386,9 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
     ).fetchall()
     result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
 
+    payment_methods = list({r["method"] for r in txn_rows if not r["invalidated_at"]})
+    result["paymentMethods"] = payment_methods
+
     return result
 
 

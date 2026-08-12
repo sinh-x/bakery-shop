@@ -23,6 +23,7 @@ from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
 from baker.db.schema import _account_id_by_code
 from baker.models.order import Order
+from baker.api.orders import _parse_payment_methods
 from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -171,7 +172,9 @@ def get_today_summary(
         threshold_minutes = get_delivery_critical_threshold(conn)
         source_placeholders = ",".join("?" for _ in _FALLBACK_SOURCES)
         rows = conn.execute(
-            f"""SELECT orders.*, s.name AS assigned_staff_name
+            f"""SELECT orders.*, s.name AS assigned_staff_name,
+                (SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions
+                 WHERE order_id = orders.id AND invalidated_at IS NULL) AS payment_methods_concat
                 FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
                 WHERE (
                     orders.due_date = ?
@@ -196,7 +199,8 @@ def get_today_summary(
             order = Order.from_row(
                 r, conn, assigned_staff_name=staff_name
             )
-            orders.append(order.to_api_dict(threshold_minutes=threshold_minutes))
+            payment_methods = _parse_payment_methods(r["payment_methods_concat"])
+            orders.append(order.to_api_dict(threshold_minutes=threshold_minutes, payment_methods=payment_methods))
 
         return {
             "date": date,
