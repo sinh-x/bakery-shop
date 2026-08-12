@@ -81,6 +81,7 @@ from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot
 from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs
 from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column
 from .migrations.v100 import _migrate_v100_message_templates
+from .migrations.v102 import _migrate_v102_backfill_address_library
 
 MIGRATIONS = {
     1: {
@@ -574,6 +575,11 @@ MIGRATIONS = {
     101: {
         "description": "Address library + customer_addresses junction tables (DG-385 Phase 1)",
         "sql": ADDRESS_LIBRARY_SCHEMA,
+    },
+    102: {
+        "description": "Backfill address_library + customer_addresses from existing door-delivery orders with Google Maps links (DG-387 Phase 2)",
+        "sql": "",
+        "callable": _migrate_v102_backfill_address_library,
     },
 }
 
