@@ -34,6 +34,13 @@ _BANK_ACCOUNT_CODES = ("1200", "1210", "1220", "1290")
 # POS source label — orders with empty due_date are matched by created_at.
 _POS_SOURCE = "Tại tiệm - POS"
 
+# Reconciliation source label — same fallback scope as POS for NULL due_date
+# (DG-384 Phase 2: include reconciliation orders in today-summary date filter).
+_RECONCILIATION_SOURCE = "reconciliation"
+
+# Sources that fall back to created_at when due_date is NULL/empty.
+_FALLBACK_SOURCES = (_POS_SOURCE, _RECONCILIATION_SOURCE)
+
 
 def _day_bounds(date_str: str) -> tuple[str, str]:
     """Return (start, next_day_start) timestamps for string-range filtering."""
@@ -162,6 +169,7 @@ def get_today_summary(
         # POS orders with empty due_date are matched by created_at within
         # the day bounds (same pattern as GET /api/orders?due_date=...).
         threshold_minutes = get_delivery_critical_threshold(conn)
+        source_placeholders = ",".join("?" for _ in _FALLBACK_SOURCES)
         rows = conn.execute(
             f"""SELECT orders.*, s.name AS assigned_staff_name
                 FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
@@ -169,13 +177,13 @@ def get_today_summary(
                     orders.due_date = ?
                     OR (
                         (orders.due_date IS NULL OR orders.due_date = '')
-                        AND orders.source = ?
+                        AND orders.source IN ({source_placeholders})
                         AND orders.created_at >= ?
                         AND orders.created_at < ?
                     )
                 )
                 ORDER BY orders.id DESC""",
-            (date, _POS_SOURCE, day_start, day_end),
+            (date, *_FALLBACK_SOURCES, day_start, day_end),
         ).fetchall()
 
         orders = []
