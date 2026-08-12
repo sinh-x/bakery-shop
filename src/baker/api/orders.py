@@ -48,6 +48,29 @@ _RECONCILIATION_SOURCE = "reconciliation"
 # Sources that fall back to created_at when due_date is NULL/empty.
 _FALLBACK_SOURCES = (_POS_SOURCE, _RECONCILIATION_SOURCE)
 
+# DG-384 Phase 3 (FR5/NFR2): correlated subquery that returns the distinct
+# payment methods for each order in a single query (no N+1). Embedded as a
+# computed column in the list_orders SELECT. ``invalidated_at IS NULL``
+# excludes soft-deleted transactions; the column always exists at runtime
+# (migrations run at startup, v53 added it).
+_PAYMENT_METHODS_SUBQUERY = (
+    "(SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions "
+    "WHERE order_id = orders.id AND invalidated_at IS NULL)"
+)
+
+
+def _parse_payment_methods(concat: Optional[str]) -> list[str]:
+    """Split a ``GROUP_CONCAT``-produced comma-separated string into a list.
+
+    Returns an empty list when the concat is NULL/empty (e.g. an order with
+    no payment transactions). Preserves the DISTINCT methods; order follows
+    SQLite's GROUP_CONCAT (encounter order, not guaranteed) — callers that
+    need a deterministic order should sort the result.
+    """
+    if not concat:
+        return []
+    return [m for m in concat.split(",") if m]
+
 
 def _day_bounds(date_str: str) -> tuple[str, str]:
     day = datetime.strptime(date_str, "%Y-%m-%d")
@@ -529,7 +552,8 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
                 params,
@@ -548,13 +572,18 @@ def list_orders(
                     continue
                 staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
                 order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
-                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
+                order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+                # DG-384 Phase 3 (FR5/NFR2): attach distinct payment methods via
+                # the correlated subquery column (no N+1 per-order query).
+                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                result.append(order_dict)
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
                 params,
@@ -569,24 +598,30 @@ def list_orders(
                     continue
                 staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
                 order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
-                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
+                order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                result.append(order_dict)
             return result
 
         rows = conn.execute(
-            f"SELECT orders.*, s.name AS assigned_staff_name "
+            f"SELECT orders.*, s.name AS assigned_staff_name, "
+            f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
             f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
             f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
-        return [
-            Order.from_row(
+        result = []
+        for r in rows:
+            order = Order.from_row(
                 r,
                 conn,
                 assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
-            ).to_api_dict(threshold_minutes=threshold_minutes)
-            for r in rows
-        ]
+            )
+            order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+            order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+            result.append(order_dict)
+        return result
 
 
 @router.post("", status_code=201)

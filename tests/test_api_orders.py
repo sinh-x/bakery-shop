@@ -2224,6 +2224,93 @@ def test_update_payment_method_no_transaction(api_client):
 # --- Fresh payment status in list orders (DG-089) ---
 
 
+def test_list_orders_includes_payment_methods_cash(api_client):
+    """FR5/AC3 (DG-384 Phase 3): order list returns paymentMethods=['cash']
+    for an order paid in cash."""
+    created = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["cash"]
+
+
+def test_list_orders_includes_payment_methods_transfer(api_client):
+    """FR5/AC4 (DG-384 Phase 3): order list returns paymentMethods=['transfer']
+    for an order paid by transfer."""
+    created = _create_order(api_client, paymentMethod="transfer", status="delivered")
+
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    found = next((o for o in resp.json() if o["orderRef"] == created["orderRef"]), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["transfer"]
+
+
+def test_list_orders_includes_payment_methods_distinct_multiple(api_client):
+    """FR5 (DG-384 Phase 3): distinct payment methods across multiple
+    transactions. An order with both cash and transfer transactions returns
+    both methods, deduplicated by the GROUP_CONCAT(DISTINCT) subquery."""
+    created = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+
+    # Add a transfer payment transaction directly to the DB so the order has
+    # two distinct payment methods. The cash transaction was created by
+    # _create_order(paymentMethod="cash"); we add a transfer one separately.
+    with get_db() as conn:
+        from baker.models.payment_transaction import PaymentTransaction
+        PaymentTransaction(
+            order_id=int(created["id"]), amount=total, type="full_payment", method="transfer"
+        ).save(conn)
+
+    resp = api_client.get("/api/orders")
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert set(found["paymentMethods"]) == {"cash", "transfer"}
+
+
+def test_list_orders_payment_methods_empty_when_no_transactions(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods=[] for an order with no payment
+    transactions."""
+    created = _create_order(api_client)  # no paymentMethod → no txn
+    ref = created["orderRef"]
+
+    resp = api_client.get("/api/orders")
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == []
+
+
+def test_list_orders_payment_methods_present_in_active_only_view(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods is populated in the active_only
+    branch too (the subquery column is JOINed into all three list branches)."""
+    created = _create_order(api_client, paymentMethod="cash")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders", params={"active_only": "true"})
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["cash"]
+
+
+def test_list_orders_payment_methods_present_in_status_filter_view(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods is populated in the status-filter
+    active-status branch too."""
+    created = _create_order(api_client, paymentMethod="transfer")
+
+    resp = api_client.get("/api/orders", params={"status": "new"})
+    found = next((o for o in resp.json() if o["orderRef"] == created["orderRef"]), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["transfer"]
+
+
 def test_list_orders_returns_fresh_is_paid_after_full_payment(api_client):
     """list_orders returns isPaid=True and correct amountPaid after full payment."""
     created = _create_order(api_client)
