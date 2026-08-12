@@ -39,7 +39,7 @@ def _link_customer_address(customer_id, address_library_id):
 def test_autocomplete_short_query_returns_empty(api_client):
     resp = api_client.get("/api/addresses/autocomplete", params={"q": "a"})
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json() == {"pastOrders": [], "library": []}
 
 
 def test_autocomplete_missing_query_param(api_client):
@@ -59,8 +59,10 @@ def test_autocomplete_returns_matching_address_with_map_url(api_client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body) == 1
-    entry = body[0]
+    assert body["pastOrders"] == []
+    library = body["library"]
+    assert len(library) == 1
+    entry = library[0]
     assert entry["displayAddress"] == "123 Nguyễn Huệ, Q1"
     assert entry["googleMapsUrl"] == "https://maps.google.com/abc"
     assert entry["isCustomerAddress"] is False
@@ -73,12 +75,12 @@ def test_autocomplete_normalization_strips_diacritics(api_client):
         "/api/addresses/autocomplete", params={"q": "123 nguyen hue"}
     )
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    assert len(resp.json()["library"]) == 1
     # original diacritics query also matches
     resp = api_client.get(
         "/api/addresses/autocomplete", params={"q": "123 Nguyễn Huệ"}
     )
-    assert len(resp.json()) == 1
+    assert len(resp.json()["library"]) == 1
 
 
 def test_autocomplete_case_insensitive(api_client):
@@ -86,7 +88,7 @@ def test_autocomplete_case_insensitive(api_client):
     resp = api_client.get(
         "/api/addresses/autocomplete", params={"q": "123 NGUYEN HUE"}
     )
-    assert len(resp.json()) == 1
+    assert len(resp.json()["library"]) == 1
 
 
 def test_autocomplete_trims_query(api_client):
@@ -94,7 +96,7 @@ def test_autocomplete_trims_query(api_client):
     resp = api_client.get(
         "/api/addresses/autocomplete", params={"q": "  123 nguyen  "}
     )
-    assert len(resp.json()) == 1
+    assert len(resp.json()["library"]) == 1
 
 
 def test_autocomplete_paginates_to_20(api_client):
@@ -104,7 +106,7 @@ def test_autocomplete_paginates_to_20(api_client):
         "/api/addresses/autocomplete", params={"q": "nguyen hue"}
     )
     assert resp.status_code == 200
-    assert len(resp.json()) == 20
+    assert len(resp.json()["library"]) == 20
 
 
 def test_autocomplete_customer_addresses_ranked_first(api_client):
@@ -119,12 +121,13 @@ def test_autocomplete_customer_addresses_ranked_first(api_client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body) == 2
+    library = body["library"]
+    assert len(library) == 2
     # customer's address first
-    assert body[0]["id"] == customer_entry["id"]
-    assert body[0]["isCustomerAddress"] is True
-    assert body[1]["id"] == general["id"]
-    assert body[1]["isCustomerAddress"] is False
+    assert library[0]["id"] == customer_entry["id"]
+    assert library[0]["isCustomerAddress"] is True
+    assert library[1]["id"] == general["id"]
+    assert library[1]["isCustomerAddress"] is False
 
 
 def test_autocomplete_without_customer_id_no_priority_flag(api_client):
@@ -135,8 +138,321 @@ def test_autocomplete_without_customer_id_no_priority_flag(api_client):
         "/api/addresses/autocomplete", params={"q": "nguyen hue"}
     )
     body = resp.json()
-    assert len(body) == 1
-    assert body[0]["isCustomerAddress"] is False
+    library = body["library"]
+    assert len(library) == 1
+    assert library[0]["isCustomerAddress"] is False
+
+
+# --- Autocomplete grouped pastOrders (DG-388 Phase 2) --------------------
+
+
+def _insert_order_for_customer(
+    conn,
+    *,
+    order_ref,
+    customer_id,
+    delivery_type="door",
+    delivery_address="",
+    google_maps_url=None,
+    status="delivered",
+):
+    conn.execute(
+        """
+        INSERT INTO orders (
+            order_ref, customer_name, items, total_price, status,
+            delivery_type, delivery_address, google_maps_url, customer_id
+        ) VALUES (?, ?, '[]', 0, ?, ?, ?, ?, ?)
+        """,
+        (
+            order_ref,
+            "Khách test",
+            status,
+            delivery_type,
+            delivery_address,
+            google_maps_url,
+            customer_id,
+        ),
+    )
+
+
+def test_autocomplete_past_orders_returns_customer_addresses(api_client):
+    """F1: pastOrders lists the customer's previous door-delivery addresses
+    from past orders, with the most recent google_maps_url per address."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url="https://maps.google.com/abc",
+        )
+        _insert_order_for_customer(
+            conn,
+            order_ref="D2",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="45 Trần Hưng Đạo",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    past = body["pastOrders"]
+    assert len(past) == 1
+    assert past[0]["displayAddress"] == "123 Lê Lợi"
+    assert past[0]["googleMapsUrl"] == "https://maps.google.com/abc"
+
+
+def test_autocomplete_past_orders_empty_without_customer_id(api_client):
+    """F1: no customerId → pastOrders is always empty (no past-order lookup)."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete", params={"q": "le loi"}
+    )
+    body = resp.json()
+    assert body["pastOrders"] == []
+
+
+def test_autocomplete_past_orders_excludes_pickup_and_bus(api_client):
+    """F1: only door-delivery orders contribute to pastOrders."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="P1",
+            customer_id=customer["id"],
+            delivery_type="pickup",
+            delivery_address="Pickup counter",
+            google_maps_url=None,
+        )
+        _insert_order_for_customer(
+            conn,
+            order_ref="B1",
+            customer_id=customer["id"],
+            delivery_type="bus",
+            delivery_address="Bến xe",
+            google_maps_url=None,
+        )
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="12 Độc Lập",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "doc lap", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    addrs = {s["displayAddress"] for s in body["pastOrders"]}
+    assert "12 Độc Lập" in addrs
+    assert "Pickup counter" not in addrs
+    assert "Bến xe" not in addrs
+
+
+def test_autocomplete_past_orders_normalizes_query(api_client):
+    """F1: past-order matching uses normalize_address so diacritics- and
+    case-variants of the query resolve to the same address."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Nguyễn Huệ",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    # diacritics-stripped query matches diacritics-rich address
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "123 nguyen hue", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert len(body["pastOrders"]) == 1
+    assert body["pastOrders"][0]["displayAddress"] == "123 Nguyễn Huệ"
+
+    # diacritics-rich query also matches
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "123 NGUYỄN HUỆ", "customerId": customer["id"]},
+    )
+    assert len(resp.json()["pastOrders"]) == 1
+
+
+def test_autocomplete_past_orders_dedupes_by_raw_address(api_client):
+    """F1: the same raw delivery_address on multiple orders appears once,
+    carrying the most recent google_maps_url seen for that address."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url=None,
+        )
+        # later order for the same address adds a link
+        _insert_order_for_customer(
+            conn,
+            order_ref="D2",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url="https://maps.google.com/new",
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert len(body["pastOrders"]) == 1
+    assert body["pastOrders"][0]["displayAddress"] == "123 Lê Lợi"
+    assert body["pastOrders"][0]["googleMapsUrl"] == "https://maps.google.com/new"
+
+
+def test_autocomplete_past_orders_limits_to_10(api_client):
+    """F2: pastOrders is capped at 10 per customer."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        for i in range(15):
+            _insert_order_for_customer(
+                conn,
+                order_ref=f"D{i}",
+                customer_id=customer["id"],
+                delivery_type="door",
+                delivery_address=f"Địa chỉ {i} Lê Lợi",
+                google_maps_url=None,
+            )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert len(body["pastOrders"]) == 10
+
+
+def test_autocomplete_past_orders_excludes_other_customers(api_client):
+    """F1: pastOrders only returns the calling customer's addresses — orders
+    for a different customer must not leak into this customer's group."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer_a = _create_customer(api_client, name="Khách A", phone="0901111111")
+    customer_b = _create_customer(api_client, name="Khách B", phone="0902222222")
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="A1",
+            customer_id=customer_a["id"],
+            delivery_type="door",
+            delivery_address="12 Lê Lợi A",
+            google_maps_url=None,
+        )
+        _insert_order_for_customer(
+            conn,
+            order_ref="B1",
+            customer_id=customer_b["id"],
+            delivery_type="door",
+            delivery_address="34 Lê Lợi B",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer_a["id"]},
+    )
+    body = resp.json()
+    addrs = {s["displayAddress"] for s in body["pastOrders"]}
+    assert "12 Lê Lợi A" in addrs
+    assert "34 Lê Lợi B" not in addrs
+
+
+def test_autocomplete_returns_both_groups_when_both_match(api_client):
+    """FR3/AC3: endpoint returns {pastOrders, library} with both groups
+    populated when the customer has matching past orders AND the library
+    has matching entries."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    _create_library_entry(api_client, "123 Nguyen Hue Library")
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="45 Nguyen Hue Past",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "nguyen hue", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert len(body["pastOrders"]) == 1
+    assert body["pastOrders"][0]["displayAddress"] == "45 Nguyen Hue Past"
+    assert len(body["library"]) == 1
+    assert body["library"][0]["displayAddress"] == "123 Nguyen Hue Library"
 
 
 # --- Library CRUD ----------------------------------------------------------
@@ -240,7 +556,7 @@ def test_update_library_entry_recomputes_normalized_address(api_client):
     resp = api_client.get(
         "/api/addresses/autocomplete", params={"q": "nguyen hue"}
     )
-    matches = [m for m in resp.json() if m["id"] == entry["id"]]
+    matches = [m for m in resp.json()["library"] if m["id"] == entry["id"]]
     assert len(matches) == 1
 
 

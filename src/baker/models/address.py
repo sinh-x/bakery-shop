@@ -112,8 +112,11 @@ class AddressLibraryUpdate(BaseModel):
 
 
 class AutocompleteSuggestion(BaseModel):
-    """One entry in the ``GET /api/addresses/autocomplete`` response (FR7/FR2).
+    """One entry in the ``library`` array of the
+    ``GET /api/addresses/autocomplete`` grouped response (FR7/FR2/FR3).
 
+    DG-388 Phase 2: the endpoint now returns ``{pastOrders, library}``;
+    this model describes the per-item shape of the ``library`` array.
     ``googleMapsUrl`` is included so the frontend can auto-bind the link
     when the user selects a suggestion (FR2 / AC2).
     """
