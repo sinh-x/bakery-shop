@@ -11,11 +11,9 @@ import logging
 import click
 
 from baker.db.connection import get_db
+from baker.services.address_library import DOOR_DELIVERY_TYPES
 
 logger = logging.getLogger(__name__)
-
-# Door-to-door delivery types (matches v102 backfill + Phase 3 sync).
-_DOOR_DELIVERY_TYPES = ("door", "delivery")
 
 
 @click.group("address")
@@ -32,7 +30,7 @@ def missing_links_cmd():
     nhóm theo ``delivery_address`` và đếm số đơn. Kết quả in ra stdout.
     Lệnh chỉ đọc — không ghi vào CSDL (NFR3).
     """
-    placeholders = ",".join("?" for _ in _DOOR_DELIVERY_TYPES)
+    placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
     try:
         with get_db() as conn:
             rows = conn.execute(
@@ -47,7 +45,7 @@ def missing_links_cmd():
                 GROUP BY delivery_address
                 ORDER BY order_count DESC, delivery_address ASC
                 """,
-                list(_DOOR_DELIVERY_TYPES),
+                list(DOOR_DELIVERY_TYPES),
             ).fetchall()
     except Exception:  # noqa: BLE001 — top-level CLI guard
         logger.exception("Address missing-links CLI error")

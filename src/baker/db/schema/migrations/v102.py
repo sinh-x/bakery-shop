@@ -56,10 +56,11 @@ def _migrate_v102_backfill_address_library(conn):
     # FR2: collect all unique (normalize_address(delivery_address),
     # google_maps_url, display_address) pairs from door-delivery orders
     # with a non-empty link. Skip rows with empty delivery_address.
-    # The display_address carried forward is the first-seen (earliest by
-    # created_at/id) raw text for that pair — same earliest-wins rule as
-    # v057 — so the library keeps a representative display string when
-    # multiple orders share a normalized pair.
+    # The display_address carried forward is selected via
+    # MIN(delivery_address), which returns the lexicographically smallest
+    # raw display text for that pair. This is cosmetic only — any
+    # variant maps to the same normalized key value, so the choice of
+    # display text does not affect dedup or linkage.
     pair_rows = conn.execute(
         f"""
         SELECT
