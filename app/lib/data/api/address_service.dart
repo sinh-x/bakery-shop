@@ -101,6 +101,30 @@ class AddressService {
   Future<void> deleteLibraryEntry(int id) async {
     await _dio.delete('/api/addresses/library/$id');
   }
+
+  /// Fetch door-delivery addresses that are missing Google Maps links
+  /// (DG-387 backend / DG-388 Phase 1 / FR1).
+  ///
+  /// Calls ``GET /api/addresses/missing-links`` and returns up to [limit]
+  /// entries (backend default 100). Each [MissingLinkItem] carries the raw
+  /// ``deliveryAddress`` text and the ``orderCount`` of door-delivery
+  /// orders referencing it without a link, ordered by ``orderCount``
+  /// descending so the most-referenced gap surfaces first. The backend
+  /// enforces ``limit >= 1``. On error, the Dio exception propagates to the
+  /// caller (the provider surfaces it as an [AsyncError] for the UI).
+  Future<List<MissingLinkItem>> missingLinks({int? limit}) async {
+    final params = <String, dynamic>{};
+    if (limit != null) params['limit'] = limit;
+    final response = await _dio.get(
+      '/api/addresses/missing-links',
+      queryParameters: params,
+    );
+    final list = response.data as List;
+    return list
+        .map((json) =>
+            MissingLinkItem.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
 }
 
 final addressServiceProvider = Provider<AddressService>((ref) {

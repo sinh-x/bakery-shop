@@ -22,6 +22,40 @@ Map<String, dynamic> _$AddressSuggestionToJson(_AddressSuggestion instance) =>
       'isCustomerAddress': instance.isCustomerAddress,
     };
 
+_AddressAutocompleteResponse _$AddressAutocompleteResponseFromJson(
+  Map<String, dynamic> json,
+) => _AddressAutocompleteResponse(
+  pastOrders:
+      (json['pastOrders'] as List<dynamic>?)
+          ?.map((e) => AddressSuggestion.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <AddressSuggestion>[],
+  library:
+      (json['library'] as List<dynamic>?)
+          ?.map((e) => AddressSuggestion.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <AddressSuggestion>[],
+);
+
+Map<String, dynamic> _$AddressAutocompleteResponseToJson(
+  _AddressAutocompleteResponse instance,
+) => <String, dynamic>{
+  'pastOrders': instance.pastOrders,
+  'library': instance.library,
+};
+
+_MissingLinkItem _$MissingLinkItemFromJson(Map<String, dynamic> json) =>
+    _MissingLinkItem(
+      deliveryAddress: json['deliveryAddress'] as String,
+      orderCount: (json['orderCount'] as num).toInt(),
+    );
+
+Map<String, dynamic> _$MissingLinkItemToJson(_MissingLinkItem instance) =>
+    <String, dynamic>{
+      'deliveryAddress': instance.deliveryAddress,
+      'orderCount': instance.orderCount,
+    };
+
 _AddressLibraryEntry _$AddressLibraryEntryFromJson(Map<String, dynamic> json) =>
     _AddressLibraryEntry(
       id: (json['id'] as num).toInt(),
