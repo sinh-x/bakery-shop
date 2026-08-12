@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../data/models/address.dart';
 import '../../../providers/address/address_library_provider.dart';
@@ -114,6 +115,16 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(AddressLabels.libraryTitle),
+        // Cross-link to the missing-links screen (DG-388 Phase 5 / FR5).
+        // Lets staff jump directly from the address library to the list of
+        // door-delivery addresses that still lack a Google Maps link.
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.link_off),
+            tooltip: AddressLabels.missingLinksNavEntry,
+            onPressed: () => context.push('/settings/missing-links'),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
