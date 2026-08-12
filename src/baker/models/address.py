@@ -119,9 +119,16 @@ class AutocompleteSuggestion(BaseModel):
     this model describes the per-item shape of the ``library`` array.
     ``googleMapsUrl`` is included so the frontend can auto-bind the link
     when the user selects a suggestion (FR2 / AC2).
+
+    DG-388 CQ-1: ``id`` is optional because ``pastOrders`` entries are
+    derived from the ``orders`` table (grouped by raw
+    ``delivery_address``) and have no address-library id by construction.
+    ``library`` entries always carry an ``id``. The frontend
+    ``AddressSuggestion`` mirrors this with a nullable ``id`` so the same
+    model parses both sections without throwing.
     """
 
-    id: int
+    id: Optional[int] = None
     displayAddress: str
     googleMapsUrl: Optional[str] = None
     isCustomerAddress: bool = False

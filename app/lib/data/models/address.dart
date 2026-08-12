@@ -24,7 +24,11 @@ part 'address.g.dart';
 @freezed
 sealed class AddressSuggestion with _$AddressSuggestion {
   const factory AddressSuggestion({
-    required int id,
+    // DG-388 CQ-1: `id` is nullable because `pastOrders` entries are derived
+    // from the `orders` table (grouped by raw delivery_address) and have no
+    // address-library id by construction. The `library` entries always carry
+    // an id. Making `id` nullable lets the same model parse both sections.
+    @JsonKey(name: 'id') int? id,
     @JsonKey(name: 'displayAddress') required String displayAddress,
     @JsonKey(name: 'googleMapsUrl') String? googleMapsUrl,
     @JsonKey(name: 'isCustomerAddress') @Default(false) bool isCustomerAddress,

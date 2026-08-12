@@ -8,7 +8,7 @@ part of 'address.dart';
 
 _AddressSuggestion _$AddressSuggestionFromJson(Map<String, dynamic> json) =>
     _AddressSuggestion(
-      id: (json['id'] as num).toInt(),
+      id: (json['id'] as num?)?.toInt(),
       displayAddress: json['displayAddress'] as String,
       googleMapsUrl: json['googleMapsUrl'] as String?,
       isCustomerAddress: json['isCustomerAddress'] as bool? ?? false,

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$AddressSuggestion {
 
- int get id;@JsonKey(name: 'displayAddress') String get displayAddress;@JsonKey(name: 'googleMapsUrl') String? get googleMapsUrl;@JsonKey(name: 'isCustomerAddress') bool get isCustomerAddress;
+@JsonKey(name: 'id') int? get id;@JsonKey(name: 'displayAddress') String get displayAddress;@JsonKey(name: 'googleMapsUrl') String? get googleMapsUrl;@JsonKey(name: 'isCustomerAddress') bool get isCustomerAddress;
 /// Create a copy of AddressSuggestion
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $AddressSuggestionCopyWith<$Res>  {
   factory $AddressSuggestionCopyWith(AddressSuggestion value, $Res Function(AddressSuggestion) _then) = _$AddressSuggestionCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(name: 'displayAddress') String displayAddress,@JsonKey(name: 'googleMapsUrl') String? googleMapsUrl,@JsonKey(name: 'isCustomerAddress') bool isCustomerAddress
+@JsonKey(name: 'id') int? id,@JsonKey(name: 'displayAddress') String displayAddress,@JsonKey(name: 'googleMapsUrl') String? googleMapsUrl,@JsonKey(name: 'isCustomerAddress') bool isCustomerAddress
 });
 
 
@@ -65,10 +65,10 @@ class _$AddressSuggestionCopyWithImpl<$Res>
 
 /// Create a copy of AddressSuggestion
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? displayAddress = null,Object? googleMapsUrl = freezed,Object? isCustomerAddress = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = freezed,Object? displayAddress = null,Object? googleMapsUrl = freezed,Object? isCustomerAddress = null,}) {
   return _then(_self.copyWith(
-id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as int,displayAddress: null == displayAddress ? _self.displayAddress : displayAddress // ignore: cast_nullable_to_non_nullable
+id: freezed == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as int?,displayAddress: null == displayAddress ? _self.displayAddress : displayAddress // ignore: cast_nullable_to_non_nullable
 as String,googleMapsUrl: freezed == googleMapsUrl ? _self.googleMapsUrl : googleMapsUrl // ignore: cast_nullable_to_non_nullable
 as String?,isCustomerAddress: null == isCustomerAddress ? _self.isCustomerAddress : isCustomerAddress // ignore: cast_nullable_to_non_nullable
 as bool,
@@ -153,7 +153,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'id')  int? id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AddressSuggestion() when $default != null:
 return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustomerAddress);case _:
@@ -174,7 +174,7 @@ return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustom
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'id')  int? id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)  $default,) {final _that = this;
 switch (_that) {
 case _AddressSuggestion():
 return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustomerAddress);}
@@ -191,7 +191,7 @@ return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustom
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'id')  int? id, @JsonKey(name: 'displayAddress')  String displayAddress, @JsonKey(name: 'googleMapsUrl')  String? googleMapsUrl, @JsonKey(name: 'isCustomerAddress')  bool isCustomerAddress)?  $default,) {final _that = this;
 switch (_that) {
 case _AddressSuggestion() when $default != null:
 return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustomerAddress);case _:
@@ -206,10 +206,10 @@ return $default(_that.id,_that.displayAddress,_that.googleMapsUrl,_that.isCustom
 @JsonSerializable()
 
 class _AddressSuggestion implements AddressSuggestion {
-  const _AddressSuggestion({required this.id, @JsonKey(name: 'displayAddress') required this.displayAddress, @JsonKey(name: 'googleMapsUrl') this.googleMapsUrl, @JsonKey(name: 'isCustomerAddress') this.isCustomerAddress = false});
+  const _AddressSuggestion({@JsonKey(name: 'id') this.id, @JsonKey(name: 'displayAddress') required this.displayAddress, @JsonKey(name: 'googleMapsUrl') this.googleMapsUrl, @JsonKey(name: 'isCustomerAddress') this.isCustomerAddress = false});
   factory _AddressSuggestion.fromJson(Map<String, dynamic> json) => _$AddressSuggestionFromJson(json);
 
-@override final  int id;
+@override@JsonKey(name: 'id') final  int? id;
 @override@JsonKey(name: 'displayAddress') final  String displayAddress;
 @override@JsonKey(name: 'googleMapsUrl') final  String? googleMapsUrl;
 @override@JsonKey(name: 'isCustomerAddress') final  bool isCustomerAddress;
@@ -247,7 +247,7 @@ abstract mixin class _$AddressSuggestionCopyWith<$Res> implements $AddressSugges
   factory _$AddressSuggestionCopyWith(_AddressSuggestion value, $Res Function(_AddressSuggestion) _then) = __$AddressSuggestionCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(name: 'displayAddress') String displayAddress,@JsonKey(name: 'googleMapsUrl') String? googleMapsUrl,@JsonKey(name: 'isCustomerAddress') bool isCustomerAddress
+@JsonKey(name: 'id') int? id,@JsonKey(name: 'displayAddress') String displayAddress,@JsonKey(name: 'googleMapsUrl') String? googleMapsUrl,@JsonKey(name: 'isCustomerAddress') bool isCustomerAddress
 });
 
 
@@ -264,10 +264,10 @@ class __$AddressSuggestionCopyWithImpl<$Res>
 
 /// Create a copy of AddressSuggestion
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? displayAddress = null,Object? googleMapsUrl = freezed,Object? isCustomerAddress = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = freezed,Object? displayAddress = null,Object? googleMapsUrl = freezed,Object? isCustomerAddress = null,}) {
   return _then(_AddressSuggestion(
-id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as int,displayAddress: null == displayAddress ? _self.displayAddress : displayAddress // ignore: cast_nullable_to_non_nullable
+id: freezed == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as int?,displayAddress: null == displayAddress ? _self.displayAddress : displayAddress // ignore: cast_nullable_to_non_nullable
 as String,googleMapsUrl: freezed == googleMapsUrl ? _self.googleMapsUrl : googleMapsUrl // ignore: cast_nullable_to_non_nullable
 as String?,isCustomerAddress: null == isCustomerAddress ? _self.isCustomerAddress : isCustomerAddress // ignore: cast_nullable_to_non_nullable
 as bool,

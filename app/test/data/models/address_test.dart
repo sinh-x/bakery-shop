@@ -129,4 +129,52 @@ void main() {
       expect(parsed.googleMapsUrl, isNull);
     });
   });
+
+  // DG-388 CQ-3: cross-boundary contract test. The backend ``pastOrders``
+  // entries are derived from the ``orders`` table (grouped by raw
+  // ``delivery_address``) and omit ``id`` by construction. The Flutter
+  // ``AddressSuggestion`` must parse this real backend shape through
+  // ``AddressAutocompleteResponse.fromJson`` without throwing. Regression
+  // guard for the Critical ``id`` mismatch found in the DG-388 review-auto.
+  group('AddressAutocompleteResponse (backend pastOrders contract)', () {
+    test('parses pastOrders entries that omit id (no throw)', () {
+      // Mirrors the real backend `_autocomplete_past_orders` dict shape:
+      // only `displayAddress` + `googleMapsUrl`, no `id` key.
+      final resp = AddressAutocompleteResponse.fromJson({
+        'pastOrders': <Map<String, dynamic>>[
+          {'displayAddress': '12 Nguyễn Huệ, Q1', 'googleMapsUrl': 'https://maps.google.com/abc'},
+          {'displayAddress': '45 Lê Lợi', 'googleMapsUrl': null},
+        ],
+        'library': <Map<String, dynamic>>[
+          {
+            'id': 9,
+            'displayAddress': 'Thư viện địa chỉ',
+            'googleMapsUrl': 'https://maps.google.com/lib',
+            'isCustomerAddress': true,
+          },
+        ],
+      });
+
+      expect(resp.pastOrders, hasLength(2));
+      expect(resp.pastOrders[0].id, isNull);
+      expect(resp.pastOrders[0].displayAddress, '12 Nguyễn Huệ, Q1');
+      expect(resp.pastOrders[0].googleMapsUrl, 'https://maps.google.com/abc');
+      expect(resp.pastOrders[1].id, isNull);
+      expect(resp.pastOrders[1].googleMapsUrl, isNull);
+      // library entries still carry a non-null id.
+      expect(resp.library, hasLength(1));
+      expect(resp.library.first.id, 9);
+      expect(resp.library.first.isCustomerAddress, isTrue);
+    });
+
+    test('AddressSuggestion parses a no-id pastOrders entry directly', () {
+      final s = AddressSuggestion.fromJson(const {
+        'displayAddress': '78 Trần Hưng Đạo',
+        'googleMapsUrl': 'https://maps.google.com/x',
+      });
+      expect(s.id, isNull);
+      expect(s.displayAddress, '78 Trần Hưng Đạo');
+      expect(s.googleMapsUrl, 'https://maps.google.com/x');
+    });
+  });
 }

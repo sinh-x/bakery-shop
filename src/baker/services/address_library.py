@@ -229,15 +229,21 @@ def _autocomplete_past_orders(
     placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
     rows = conn.execute(
         f"""
-        SELECT delivery_address, google_maps_url, MAX(id) AS last_order_id
-        FROM orders
-        WHERE customer_id = ?
-          AND delivery_type IN ({placeholders})
-          AND delivery_address IS NOT NULL
-          AND delivery_address != ''
-        GROUP BY delivery_address
-        HAVING normalize_address(delivery_address) LIKE ? ESCAPE '\\'
-        ORDER BY last_order_id DESC
+        SELECT o.delivery_address AS delivery_address,
+               o.google_maps_url AS google_maps_url,
+               latest.last_order_id AS last_order_id
+        FROM orders o
+        INNER JOIN (
+            SELECT delivery_address, MAX(id) AS last_order_id
+            FROM orders
+            WHERE customer_id = ?
+              AND delivery_type IN ({placeholders})
+              AND delivery_address IS NOT NULL
+              AND delivery_address != ''
+            GROUP BY delivery_address
+        ) latest ON o.id = latest.last_order_id
+        WHERE normalize_address(o.delivery_address) LIKE ? ESCAPE '\\'
+        ORDER BY latest.last_order_id DESC
         LIMIT ?
         """,
         (customer_id, *DOOR_DELIVERY_TYPES, like, PAST_ORDERS_LIMIT),

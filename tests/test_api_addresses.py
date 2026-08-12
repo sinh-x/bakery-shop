@@ -455,6 +455,59 @@ def test_autocomplete_returns_both_groups_when_both_match(api_client):
     assert body["library"][0]["displayAddress"] == "123 Nguyen Hue Library"
 
 
+def test_autocomplete_past_orders_omits_id_contract(api_client):
+    """DG-388 CQ-3 (contract): the real `pastOrders` shape produced by
+    `_autocomplete_past_orders` carries only `displayAddress` +
+    `googleMapsUrl` and MUST omit `id` (past-order addresses have no
+    address-library id by construction). The Flutter `AddressSuggestion`
+    model has a nullable `id` to parse this shape without throwing; this
+    test guards the backend side of that contract so a future change
+    that re-introduces a required `id` (or a synthetic one) on pastOrders
+    fails CI here.
+    """
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="99 Lê Lợi",
+            google_maps_url="https://maps.google.com/abc",
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    assert resp.status_code == 200
+    past = resp.json()["pastOrders"]
+    assert len(past) == 1
+    # Contract: pastOrders entries MUST NOT carry an `id` key.
+    assert "id" not in past[0]
+    assert past[0]["displayAddress"] == "99 Lê Lợi"
+    assert past[0]["googleMapsUrl"] == "https://maps.google.com/abc"
+
+    # The library section, by contrast, MUST still carry a non-null id
+    # (library entries are address_library rows). Add a library entry
+    # that matches the same query and verify the contract asymmetry.
+    _create_library_entry(api_client, "Lê Lợi Library")
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert any(e["displayAddress"] == "99 Lê Lợi" for e in body["pastOrders"])
+    lib_match = [e for e in body["library"] if e["displayAddress"] == "Lê Lợi Library"]
+    assert lib_match, "library entry should match"
+    assert lib_match[0]["id"] is not None
+
+
 # --- Library CRUD ----------------------------------------------------------
 
 
