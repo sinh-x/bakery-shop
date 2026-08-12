@@ -36,7 +36,6 @@ from baker.services.journal_sync._common import (
 # Mirrors the 1102 routing used elsewhere (api/cash_drawer.py, repair/_common).
 OWNER_CASH_CODE = "1102"
 from baker.services.journal_sync.payment import (
-    _held_shipping_for_order,
     _held_tien_rut_for_order,
     _resolve_transaction_asset_code,
 )
@@ -497,8 +496,12 @@ def _sync_bus_shipping_release_entry(
 
     Behaviour:
       - Non-bus orders or ``shipping_fee <= 0``: no-op.
-      - The release amount is ``min(shipping_fee, held_in_2200)`` so the
-        entry never releases more than was actually held.
+      - The release amount is always the full ``shipping_fee`` (DG-366 Phase 1,
+        FR1): the previous ``min(shipping_fee, held_in_2200)`` gate is removed
+        so the release is created even when no payment has been recorded yet.
+        The 2200 account may temporarily go negative until a payment credits
+        it; this is the intended accounting (shop paid the driver from the
+        drawer, the customer owes the shipping).
       - Idempotent: when an existing ``order_shipping_release`` entry matches
         the expected release amount (within tolerance), it is left untouched.
       - Lock semantics (FR6): a locked stale entry is *reversed* then a
@@ -516,10 +519,7 @@ def _sync_bus_shipping_release_entry(
     if delivery_type != "bus" or shipping_fee <= 0:
         return
 
-    held_in_2200 = _held_shipping_for_order(conn, order_id)
-    release_amount = min(shipping_fee, held_in_2200)
-    if release_amount <= 0:
-        return
+    release_amount = shipping_fee
 
     bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
     asset_code, drawer_id = _resolve_shipping_release_asset_account(
@@ -615,6 +615,8 @@ def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
         _sync_bus_shipping_release_entry,
         conn, order_id, order_ref,
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
     )
 
     _sync_order_cogs_entry(conn, order_id, order_ref)
@@ -645,6 +647,8 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
         _sync_bus_shipping_release_entry,
         conn, order_id, order_ref,
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
     )
 
     _sync_order_cogs_entry(conn, order_id, order_ref)
