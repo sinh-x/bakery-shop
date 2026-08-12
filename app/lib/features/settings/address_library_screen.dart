@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/address.dart';
 import '../../../providers/address/address_library_provider.dart';
 import '../../../shared/labels/address_labels.dart';
+import '../../../shared/utils/launch_external_url.dart';
 
 /// Address-library management screen (DG-385 Phase 5 / FR6/FR8/AC6).
 ///
@@ -185,7 +186,10 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
 /// Renders the address as the title and an optional map-link icon +
 /// truncated link as subtitle when [AddressLibraryEntry.googleMapsUrl]
 /// is non-null. Edit and delete affordances are exposed via a trailing
-/// row of icon buttons.
+/// row of icon buttons. When the entry has a stored Google Maps link,
+/// an "Open in Google Maps" shortcut button (DG-388 Phase 5.6-c5 / FB-2)
+/// launches the link via [launchExternalUrl], mirroring the
+/// missing-links screen pattern.
 class _AddressLibraryRow extends StatelessWidget {
   const _AddressLibraryRow({
     required this.entry,
@@ -225,6 +229,13 @@ class _AddressLibraryRow extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (hasLink)
+            IconButton(
+              icon: const Icon(Icons.open_in_new),
+              tooltip: AddressLabels.libraryOpenMapTooltip,
+              onPressed: () =>
+                  launchExternalUrl(context, entry.googleMapsUrl),
+            ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: AddressLabels.libraryEditTooltip,

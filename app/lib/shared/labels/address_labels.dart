@@ -128,4 +128,9 @@ class AddressLabels {
 
   /// Tooltip for the "Open in Google Maps" button on each row (FR2/AC2).
   static const missingLinksOpenMapTooltip = 'Mở Google Maps';
+
+  /// Tooltip for the "Open in Google Maps" shortcut button on each
+  /// address-library row (DG-388 Phase 5.6-c5 / FB-2). Opens the stored
+  /// `googleMapsUrl` via [launchExternalUrl].
+  static const libraryOpenMapTooltip = 'Mở Google Maps';
 }
