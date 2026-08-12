@@ -10,6 +10,8 @@ Covers:
 
 import pytest
 
+from baker.db.connection import get_db
+from baker.services.inventory_fifo import create_lot_with_items
 from baker.utils.time import now_utc
 
 
@@ -37,6 +39,57 @@ def _create_txn(client, ref, amount=100000, **kwargs):
     payload = {"amount": amount, **kwargs}
     resp = client.post(f"/api/orders/{ref}/transactions", json=payload)
     assert resp.status_code == 201
+    return resp.json()
+
+
+def _mark_product_display(conn, product_id: int, value: str = "true"):
+    conn.execute(
+        """INSERT INTO product_attribute_values (product_id, attribute_type, value)
+           VALUES (?, 'trung_bay', ?)
+           ON CONFLICT(product_id, attribute_type) DO UPDATE SET value = excluded.value""",
+        (product_id, value),
+    )
+
+
+def _set_stock(conn, product_id: int, quantity: int):
+    conn.execute(
+        "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",
+        (product_id,),
+    )
+    conn.execute("DELETE FROM stock_lots WHERE product_id = ?", (product_id,))
+    if quantity > 0:
+        create_lot_with_items(conn, product_id, None, quantity)
+
+
+def _submit_reconciliation_with_sale(client, payment_method="cash", sale_qty=2,
+                                     unit_price=12000, product_id=1):
+    """Submit a reconciliation with one sale row and return the API response.
+
+    Sets up product 1 as a displayed product with stock so the reconciliation
+    sale flow creates ``sale_qty`` delivered orders with ``source='reconciliation'``.
+    """
+    with get_db() as conn:
+        _mark_product_display(conn, product_id, "true")
+        _set_stock(conn, product_id, sale_qty)
+
+    resp = client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": payment_method,
+            "lines": [
+                {
+                    "product_id": product_id,
+                    "expected_qty": sale_qty,
+                    "counted_qty": 0,
+                    "sale_qty": sale_qty,
+                    "waste_qty": 0,
+                    "manual_unit_price": unit_price,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201, resp.text
     return resp.json()
 
 
@@ -411,3 +464,106 @@ def test_today_summary_cash_in_out_zero_on_empty_day(api_client):
     ).json()
     assert body["cashInTotal"] == 0
     assert body["cashOutTotal"] == 0
+
+
+# ---------------------------------------------------------------------------
+# DG-384 Phase 5 — reconciliation order visibility in today-summary (AC1)
+# ---------------------------------------------------------------------------
+
+
+def test_today_summary_includes_reconciliation_orders(api_client):
+    """DG-384 AC1: a stock reconciliation submitted today creates sale orders
+    with ``source='reconciliation'`` and a non-empty ``publicOrderCode``. The
+    today-summary endpoint must include them in the ``orders`` array with
+    ``status='delivered'`` and ``source='reconciliation'``."""
+    session = _submit_reconciliation_with_sale(api_client, payment_method="cash",
+                                               sale_qty=2, unit_price=15000)
+    assert session["id"] > 0
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT order_ref, status, source, public_order_code, due_date "
+            "FROM orders WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+    assert len(rows) == 2, f"expected 2 reconciliation orders, got {len(rows)}"
+    recon_refs = {r["order_ref"] for r in rows}
+
+    body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
+    summary_refs = {o["orderRef"] for o in body["orders"]}
+
+    # Every reconciliation order must appear in the today-summary orders list.
+    assert recon_refs.issubset(summary_refs), (
+        f"reconciliation orders {recon_refs} not all in today-summary {summary_refs}"
+    )
+
+    for order in body["orders"]:
+        if order["orderRef"] in recon_refs:
+            assert order["status"] == "delivered", (
+                f"reconciliation order {order['orderRef']} status should be 'delivered', "
+                f"got {order['status']!r}"
+            )
+            assert order["source"] == "reconciliation", (
+                f"reconciliation order {order['orderRef']} source should be 'reconciliation', "
+                f"got {order['source']!r}"
+            )
+            assert order["publicOrderCode"], (
+                f"reconciliation order {order['orderRef']} has empty publicOrderCode"
+            )
+
+    # orderCount must reflect the reconciliation orders.
+    assert body["orderCount"] >= 2
+
+
+def test_today_summary_reconciliation_orders_revenue_counted_once(api_client):
+    """DG-384 AC1 (supplementary): reconciliation order revenue is counted
+    exactly once via the journal 4100 credit — the reconciliation orders
+    appear in the orders list but revenue is not double-counted by
+    totalPrice."""
+    unit_price = 20000
+    sale_qty = 2
+    _submit_reconciliation_with_sale(api_client, payment_method="cash",
+                                     sale_qty=sale_qty, unit_price=unit_price)
+
+    body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
+    # Revenue equals sum of journal 4100 credits (one per delivered order),
+    # i.e. sale_qty * unit_price — not 2x that from double-counting.
+    assert body["revenue"] == pytest.approx(sale_qty * unit_price)
+
+
+# ---------------------------------------------------------------------------
+# DG-384 Phase 5 — AC7: old reconciliation orders NOT retroactively included
+# ---------------------------------------------------------------------------
+
+
+def test_today_summary_excludes_old_reconciliation_orders_without_due_date(api_client):
+    """DG-384 AC7: reconciliation orders created *before* the fix (i.e. with
+    ``due_date IS NULL`` and ``source='reconciliation'``) must NOT be
+    retroactively included in the today-summary. The fallback only matches
+    reconciliation orders whose ``due_date`` equals the queried date.
+
+    This simulates a pre-fix reconciliation order by inserting one directly
+    into the DB with a NULL ``due_date`` and an old ``created_at``."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO orders
+                 (order_ref, customer_name, status, source, due_date,
+                  public_order_code, total_price, created_at, updated_at)
+               VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)""",
+            (
+                "OLD-RECON-001",
+                "Đối soát tồn kho",
+                "delivered",
+                "reconciliation",
+                "",
+                15000,
+                "2025-01-15T10:00:00Z",
+                "2025-01-15T10:00:00Z",
+            ),
+        )
+
+    body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
+    refs = {o["orderRef"] for o in body["orders"]}
+    assert "OLD-RECON-001" not in refs, (
+        "old reconciliation order without due_date must NOT appear in today-summary "
+        "(forward-only fix)"
+    )

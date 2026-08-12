@@ -1981,3 +1981,70 @@ def test_submit_sale_sets_unique_public_order_code_per_due_date(api_client):
 
         # Unique per due_date (both orders share today's date).
         assert len(set(codes)) == 2, f"public_order_codes must be unique, got {codes}"
+
+
+def test_submit_sale_public_order_code_and_due_date_visible_in_order_api(api_client):
+    """DG-384 AC5/AC6 (end-to-end): after a reconciliation submit, the
+    created sale orders are visible via ``GET /api/orders?due_date=today``
+    with a ``publicOrderCode`` matching ``{LETTER}{DIGITS}-{SUFFIX}`` and a
+    ``dueDate`` equal to the reconciliation session date.
+
+    This complements the DB-level assertions above by verifying the full
+    path from reconciliation submit → order list API response shape."""
+    import re
+    from datetime import date
+
+    from baker.models.order import PUBLIC_ORDER_CODE_LETTERS
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 3)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 3,
+                    "counted_qty": 1,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 18000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    today = date.today().isoformat()
+    pattern = re.compile(rf"^[{PUBLIC_ORDER_CODE_LETTERS}]\d+-\S+$")
+
+    list_resp = api_client.get("/api/orders", params={"due_date": today})
+    assert list_resp.status_code == 200
+    recon_orders = [
+        o for o in list_resp.json() if o.get("source") == "reconciliation"
+    ]
+    assert len(recon_orders) == 2, (
+        f"expected 2 reconciliation orders in order API, got {len(recon_orders)}"
+    )
+
+    codes = []
+    for order in recon_orders:
+        # AC6: dueDate equals the reconciliation session date (today).
+        assert order["dueDate"] == today, (
+            f"order {order['orderRef']} dueDate should be {today}, "
+            f"got {order['dueDate']!r}"
+        )
+        # AC5: publicOrderCode is non-empty and matches the pattern.
+        code = order["publicOrderCode"]
+        assert code, f"order {order['orderRef']} has empty publicOrderCode"
+        assert pattern.match(code), (
+            f"publicOrderCode {code!r} does not match {{LETTER}}{{DIGITS}}-{{SUFFIX}}"
+        )
+        codes.append(code)
+
+    # AC5: unique per due_date.
+    assert len(set(codes)) == 2, f"publicOrderCodes must be unique, got {codes}"
