@@ -31,6 +31,7 @@ sealed class Order with _$Order {
     @Default(0.0) double amountPaid,
     @Default(false) bool isPaid,
     @Default([]) List<PackingItem> packingChecklist,
+    @Default([]) List<String> paymentMethods,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
     @JsonKey(name: 'createdStaffName') @Default('') String createdStaffName,

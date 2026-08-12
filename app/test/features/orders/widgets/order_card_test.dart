@@ -431,4 +431,92 @@ void main() {
     expect(borderColor, BakeryTheme.urgencyTierColors['urgent']);
     expect(borderWidth, 4);
   });
+
+  // ── DG-384 Phase 4: payment methods display on OrderCard ──
+  //
+  // Phase 3 added `paymentMethods` (List<String>) to the API response.
+  // Phase 4 surfaces it on the OrderCard beside the existing payment status
+  // badge, mapping "cash" → "Tiền mặt" and "transfer" → "Chuyển khoản" via
+  // the shared `paymentMethodLabel()` helper (vietnamese_labels.dart:1533).
+
+  Order orderWithPaymentMethods(List<String> paymentMethods) => Order(
+        id: '8',
+        orderRef: _testRef,
+        customerName: 'Khách Đối Soát',
+        items: const [
+          OrderItem(
+            productId: 'prod-7',
+            productName: 'Bánh kem',
+            quantity: 1,
+            unitPrice: 200000.0,
+            isExtra: false,
+          ),
+        ],
+        totalPrice: 200000.0,
+        status: 'delivered',
+        dueDate: '2026-08-12',
+        isPaid: true,
+        amountPaid: 200000.0,
+        createdAt: DateTime(2026, 8, 12),
+        updatedAt: DateTime(2026, 8, 12),
+        completeness: 'complete',
+        missingFields: const [],
+        paymentMethods: paymentMethods,
+      );
+
+  testWidgets(
+      'AC3 (DG-384): order with payment method "cash" shows "Tiền mặt"',
+      (tester) async {
+    final order = orderWithPaymentMethods(const ['cash']);
+    final widget = await _buildTestApp(order);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    expect(find.text('Tiền mặt'), findsOneWidget);
+    // The "transfer" label must NOT appear for a cash-only order.
+    expect(find.text('Chuyển khoản'), findsNothing);
+  });
+
+  testWidgets(
+      'AC4 (DG-384): order with payment method "transfer" shows "Chuyển khoản"',
+      (tester) async {
+    final order = orderWithPaymentMethods(const ['transfer']);
+    final widget = await _buildTestApp(order);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    expect(find.text('Chuyển khoản'), findsOneWidget);
+    // The "cash" label must NOT appear for a transfer-only order.
+    expect(find.text('Tiền mặt'), findsNothing);
+  });
+
+  testWidgets(
+      'DG-384: order with multiple payment methods shows comma-separated labels',
+      (tester) async {
+    final order = orderWithPaymentMethods(const ['cash', 'transfer']);
+    final widget = await _buildTestApp(order);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    // Both labels render, joined by a comma.
+    expect(find.textContaining('Tiền mặt'), findsOneWidget);
+    expect(find.textContaining('Chuyển khoản'), findsOneWidget);
+    // The combined label text is "Tiền mặt, Chuyển khoản".
+    expect(find.text('Tiền mặt, Chuyển khoản'), findsOneWidget);
+  });
+
+  testWidgets(
+      'DG-384: order with no payment methods renders no payment-method label',
+      (tester) async {
+    final order = orderWithPaymentMethods(const []);
+    final widget = await _buildTestApp(order);
+    await tester.pumpWidget(widget);
+    await tester.pump();
+
+    // No Vietnamese payment-method labels rendered.
+    expect(find.text('Tiền mặt'), findsNothing);
+    expect(find.text('Chuyển khoản'), findsNothing);
+    // The payment status badge still renders (defensive — display survives).
+    expect(find.text('Đã TT'), findsOneWidget);
+  });
 }

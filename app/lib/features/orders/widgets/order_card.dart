@@ -86,6 +86,36 @@ class _OrderCardState extends ConsumerState<OrderCard>
     }
   }
 
+  /// Returns the comma-separated Vietnamese payment-method labels for the
+  /// distinct payment methods on this order (e.g. "Tiền mặt, Chuyển khoản").
+  /// Empty when the order has no payment methods (defensive — renders nothing).
+  String _paymentMethodsLine() {
+    if (order.paymentMethods.isEmpty) return '';
+    return order.paymentMethods.map(paymentMethodLabel).join(', ');
+  }
+
+  /// Builds a compact Vietnamese payment-methods label widget shown beside
+  /// the payment status badge. Returns null when the order has no payment
+  /// methods (nothing to render).
+  Widget? _paymentMethodsLabel(ThemeData theme) {
+    final line = _paymentMethodsLine();
+    if (line.isEmpty) return null;
+    return Flexible(
+      child: Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Text(
+          line,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 10,
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Urgency/delivery helpers delegated to shared order_helpers.dart ──
 
   // ── Product names ───────────────────────────────────────────────────────
@@ -169,6 +199,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
+    final paymentMethodsLabel = _paymentMethodsLabel(theme);
     final isTerminal =
         ['completed', 'cancelled', 'delivered'].contains(order.status);
     final printedBy = order.displayPrintedBy;
@@ -533,6 +564,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                     const Spacer(),
+                    // Payment methods label (Vietnamese) beside payment badge
+                    ?paymentMethodsLabel,
                     // Payment badge
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -565,6 +598,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                     const Spacer(),
+                    // Payment methods label (Vietnamese) beside payment badge
+                    ?paymentMethodsLabel,
                     // Payment badge (no due date)
                     Container(
                       padding: const EdgeInsets.symmetric(

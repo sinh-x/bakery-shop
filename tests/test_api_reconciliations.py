@@ -3,6 +3,8 @@ from baker.db.connection import get_db
 from baker.db.schema import MIGRATIONS
 from baker.services.inventory_fifo import create_lot_with_items
 
+from datetime import date
+
 pytestmark = pytest.mark.critical
 
 
@@ -1891,3 +1893,158 @@ def test_submit_counted_nonzero_does_not_clear_negative_balance(api_client):
     with get_db() as conn:
         # Netting reduced negative from 5 to 3; clearing path did not run.
         assert _neg_qty(conn, 1, None) == 3
+
+
+def test_submit_sale_sets_due_date_to_session_date(api_client):
+    """DG-384 FR1/AC6: reconciliation sale orders must have ``due_date`` equal
+    to the reconciliation session date (today, in ISO format)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "transfer",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 6,
+                    "counted_qty": 4,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    today = date.today().isoformat()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT due_date, source FROM orders WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 2
+        for row in rows:
+            assert row["due_date"] == today
+
+
+def test_submit_sale_sets_unique_public_order_code_per_due_date(api_client):
+    """DG-384 FR2/AC5: reconciliation sale orders must have a non-empty
+    ``public_order_code`` matching ``{LETTER}{DIGITS}-{SUFFIX}``, unique per
+    ``due_date``."""
+    import re
+
+    from baker.models.order import PUBLIC_ORDER_CODE_LETTERS
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 6,
+                    "counted_qty": 4,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    pattern = re.compile(rf"^[{PUBLIC_ORDER_CODE_LETTERS}]\d+-\S+$")
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT public_order_code, due_date FROM orders "
+            "WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 2
+
+        codes = []
+        for row in rows:
+            code = row["public_order_code"]
+            assert code, f"public_order_code must be non-empty, got {code!r}"
+            assert pattern.match(code), (
+                f"public_order_code {code!r} does not match {{LETTER}}{{DIGITS}}-{{SUFFIX}}"
+            )
+            codes.append(code)
+
+        # Unique per due_date (both orders share today's date).
+        assert len(set(codes)) == 2, f"public_order_codes must be unique, got {codes}"
+
+
+def test_submit_sale_public_order_code_and_due_date_visible_in_order_api(api_client):
+    """DG-384 AC5/AC6 (end-to-end): after a reconciliation submit, the
+    created sale orders are visible via ``GET /api/orders?due_date=today``
+    with a ``publicOrderCode`` matching ``{LETTER}{DIGITS}-{SUFFIX}`` and a
+    ``dueDate`` equal to the reconciliation session date.
+
+    This complements the DB-level assertions above by verifying the full
+    path from reconciliation submit → order list API response shape."""
+    import re
+    from datetime import date
+
+    from baker.models.order import PUBLIC_ORDER_CODE_LETTERS
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 3)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 3,
+                    "counted_qty": 1,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 18000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    today = date.today().isoformat()
+    pattern = re.compile(rf"^[{PUBLIC_ORDER_CODE_LETTERS}]\d+-\S+$")
+
+    list_resp = api_client.get("/api/orders", params={"due_date": today})
+    assert list_resp.status_code == 200
+    recon_orders = [
+        o for o in list_resp.json() if o.get("source") == "reconciliation"
+    ]
+    assert len(recon_orders) == 2, (
+        f"expected 2 reconciliation orders in order API, got {len(recon_orders)}"
+    )
+
+    codes = []
+    for order in recon_orders:
+        # AC6: dueDate equals the reconciliation session date (today).
+        assert order["dueDate"] == today, (
+            f"order {order['orderRef']} dueDate should be {today}, "
+            f"got {order['dueDate']!r}"
+        )
+        # AC5: publicOrderCode is non-empty and matches the pattern.
+        code = order["publicOrderCode"]
+        assert code, f"order {order['orderRef']} has empty publicOrderCode"
+        assert pattern.match(code), (
+            f"publicOrderCode {code!r} does not match {{LETTER}}{{DIGITS}}-{{SUFFIX}}"
+        )
+        codes.append(code)
+
+    # AC5: unique per due_date.
+    assert len(set(codes)) == 2, f"publicOrderCodes must be unique, got {codes}"

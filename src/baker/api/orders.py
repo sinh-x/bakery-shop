@@ -38,6 +38,40 @@ from baker.utils.time import now_utc
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
+# POS source label — orders with empty due_date are matched by created_at.
+_POS_SOURCE = "Tại tiệm - POS"
+
+# Reconciliation source label — same fallback scope as POS for NULL due_date
+# (DG-384 Phase 2: include reconciliation orders in order history date filter).
+_RECONCILIATION_SOURCE = "reconciliation"
+
+# Sources that fall back to created_at when due_date is NULL/empty.
+_FALLBACK_SOURCES = (_POS_SOURCE, _RECONCILIATION_SOURCE)
+
+# DG-384 Phase 3 (FR5/NFR2): correlated subquery that returns the distinct
+# payment methods for each order in a single query (no N+1). Embedded as a
+# computed column in the list_orders SELECT. ``invalidated_at IS NULL``
+# excludes soft-deleted transactions; the column always exists at runtime
+# (migrations run at startup, v53 added it).
+_PAYMENT_METHODS_SUBQUERY = (
+    "(SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions "
+    "WHERE order_id = orders.id AND invalidated_at IS NULL)"
+)
+
+
+def _parse_payment_methods(concat: Optional[str]) -> list[str]:
+    """Split a ``GROUP_CONCAT``-produced comma-separated string into a list.
+
+    Returns an empty list when the concat is NULL/empty (e.g. an order with
+    no payment transactions). Preserves the DISTINCT methods; order follows
+    SQLite's GROUP_CONCAT (encounter order, not guaranteed) — callers that
+    need a deterministic order should sort the result.
+    """
+    if not concat:
+        return []
+    return [m for m in concat.split(",") if m]
+
+
 def _day_bounds(date_str: str) -> tuple[str, str]:
     day = datetime.strptime(date_str, "%Y-%m-%d")
     next_day = day + timedelta(days=1)
@@ -352,6 +386,9 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
     ).fetchall()
     result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
 
+    payment_methods = list({r["method"] for r in txn_rows if not r["invalidated_at"]})
+    result["paymentMethods"] = payment_methods
+
     return result
 
 
@@ -460,13 +497,13 @@ def list_orders(
                     due_date = ?
                     OR (
                         (due_date IS NULL OR due_date = '')
-                        AND source = ?
+                        AND source IN (?, ?)
                         AND orders.created_at >= ?
                         AND orders.created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date, "Tại tiệm - POS", created_at_from, created_at_to])
+            params.extend([due_date, *_FALLBACK_SOURCES, created_at_from, created_at_to])
         elif due_date_from and due_date_to:
             created_at_from, _ = _day_bounds(due_date_from)
             _, created_at_to = _day_bounds(due_date_to)
@@ -475,13 +512,13 @@ def list_orders(
                     (due_date >= ? AND due_date <= ?)
                     OR (
                         (due_date IS NULL OR due_date = '')
-                        AND source = ?
+                        AND source IN (?, ?)
                         AND orders.created_at >= ?
                         AND orders.created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date_from, due_date_to, "Tại tiệm - POS", created_at_from, created_at_to])
+            params.extend([due_date_from, due_date_to, *_FALLBACK_SOURCES, created_at_from, created_at_to])
         elif due_date_from:
             created_at_from, _ = _day_bounds(due_date_from)
             conditions.append(
@@ -489,12 +526,12 @@ def list_orders(
                     due_date >= ?
                     OR (
                         (due_date IS NULL OR due_date = '')
-                        AND source = ?
+                        AND source IN (?, ?)
                         AND orders.created_at >= ?
                     )
                 )"""
             )
-            params.extend([due_date_from, "Tại tiệm - POS", created_at_from])
+            params.extend([due_date_from, *_FALLBACK_SOURCES, created_at_from])
         elif due_date_to:
             _, created_at_to = _day_bounds(due_date_to)
             conditions.append(
@@ -502,12 +539,12 @@ def list_orders(
                     due_date <= ?
                     OR (
                         (due_date IS NULL OR due_date = '')
-                        AND source = ?
+                        AND source IN (?, ?)
                         AND orders.created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date_to, "Tại tiệm - POS", created_at_to])
+            params.extend([due_date_to, *_FALLBACK_SOURCES, created_at_to])
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -518,7 +555,8 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
                 params,
@@ -537,13 +575,18 @@ def list_orders(
                     continue
                 staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
                 order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
-                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
+                order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+                # DG-384 Phase 3 (FR5/NFR2): attach distinct payment methods via
+                # the correlated subquery column (no N+1 per-order query).
+                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                result.append(order_dict)
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
                 params,
@@ -558,24 +601,30 @@ def list_orders(
                     continue
                 staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
                 order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
-                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
+                order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                result.append(order_dict)
             return result
 
         rows = conn.execute(
-            f"SELECT orders.*, s.name AS assigned_staff_name "
+            f"SELECT orders.*, s.name AS assigned_staff_name, "
+            f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
             f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
             f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
-        return [
-            Order.from_row(
+        result = []
+        for r in rows:
+            order = Order.from_row(
                 r,
                 conn,
                 assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
-            ).to_api_dict(threshold_minutes=threshold_minutes)
-            for r in rows
-        ]
+            )
+            order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
+            order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+            result.append(order_dict)
+        return result
 
 
 @router.post("", status_code=201)

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from baker.api.auth import resolve_actor
+from baker.api.orders import _generate_unique_public_order_code
 from baker.services.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
@@ -393,6 +394,7 @@ def _create_sale_orders(
             first_sale_movement_id: int | None = None
 
             for _ in range(row_quantity):
+                due_date = date.today().isoformat()
                 order = Order(
                     customer_name="Đối soát tồn kho",
                     items=[
@@ -406,6 +408,10 @@ def _create_sale_orders(
                     ],
                     status="new",
                     source="reconciliation",
+                    due_date=due_date,
+                    public_order_code=_generate_unique_public_order_code(
+                        conn, due_date, "reconciliation"
+                    ),
                     notes=f"Đối soát phiên #{session_id}",
                     created_by=actor,
                 )

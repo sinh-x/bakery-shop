@@ -2224,6 +2224,93 @@ def test_update_payment_method_no_transaction(api_client):
 # --- Fresh payment status in list orders (DG-089) ---
 
 
+def test_list_orders_includes_payment_methods_cash(api_client):
+    """FR5/AC3 (DG-384 Phase 3): order list returns paymentMethods=['cash']
+    for an order paid in cash."""
+    created = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["cash"]
+
+
+def test_list_orders_includes_payment_methods_transfer(api_client):
+    """FR5/AC4 (DG-384 Phase 3): order list returns paymentMethods=['transfer']
+    for an order paid by transfer."""
+    created = _create_order(api_client, paymentMethod="transfer", status="delivered")
+
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    found = next((o for o in resp.json() if o["orderRef"] == created["orderRef"]), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["transfer"]
+
+
+def test_list_orders_includes_payment_methods_distinct_multiple(api_client):
+    """FR5 (DG-384 Phase 3): distinct payment methods across multiple
+    transactions. An order with both cash and transfer transactions returns
+    both methods, deduplicated by the GROUP_CONCAT(DISTINCT) subquery."""
+    created = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+
+    # Add a transfer payment transaction directly to the DB so the order has
+    # two distinct payment methods. The cash transaction was created by
+    # _create_order(paymentMethod="cash"); we add a transfer one separately.
+    with get_db() as conn:
+        from baker.models.payment_transaction import PaymentTransaction
+        PaymentTransaction(
+            order_id=int(created["id"]), amount=total, type="full_payment", method="transfer"
+        ).save(conn)
+
+    resp = api_client.get("/api/orders")
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert set(found["paymentMethods"]) == {"cash", "transfer"}
+
+
+def test_list_orders_payment_methods_empty_when_no_transactions(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods=[] for an order with no payment
+    transactions."""
+    created = _create_order(api_client)  # no paymentMethod → no txn
+    ref = created["orderRef"]
+
+    resp = api_client.get("/api/orders")
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == []
+
+
+def test_list_orders_payment_methods_present_in_active_only_view(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods is populated in the active_only
+    branch too (the subquery column is JOINed into all three list branches)."""
+    created = _create_order(api_client, paymentMethod="cash")
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders", params={"active_only": "true"})
+    found = next((o for o in resp.json() if o["orderRef"] == ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["cash"]
+
+
+def test_list_orders_payment_methods_present_in_status_filter_view(api_client):
+    """FR5 (DG-384 Phase 3): paymentMethods is populated in the status-filter
+    active-status branch too."""
+    created = _create_order(api_client, paymentMethod="transfer")
+
+    resp = api_client.get("/api/orders", params={"status": "new"})
+    found = next((o for o in resp.json() if o["orderRef"] == created["orderRef"]), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["transfer"]
+
+
 def test_list_orders_returns_fresh_is_paid_after_full_payment(api_client):
     """list_orders returns isPaid=True and correct amountPaid after full payment."""
     created = _create_order(api_client)
@@ -4238,3 +4325,191 @@ def test_edit_order_clears_google_maps_url_with_empty_string(api_client):
     resp = api_client.patch(f"/api/orders/{ref}", json={"googleMapsUrl": ""})
     assert resp.status_code == 200
     assert resp.json()["googleMapsUrl"] is None
+
+
+# ---------------------------------------------------------------------------
+# DG-384 Phase 5 — reconciliation order visibility in order history (AC2)
+# ---------------------------------------------------------------------------
+
+
+def _submit_reconciliation_with_sale_orders(client, payment_method="cash", sale_qty=2,
+                                            unit_price=12000, product_id=1):
+    """Submit a reconciliation with one sale row and return the list of
+    created order refs (``source='reconciliation'``).
+
+    Mirrors the helper in ``test_api_reconciliations.py`` so we can exercise
+    the full reconciliation → order-creation flow without duplicating the
+    inventory setup boilerplate."""
+    from baker.services.inventory_fifo import create_lot_with_items
+
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO product_attribute_values (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', 'true')
+               ON CONFLICT(product_id, attribute_type) DO UPDATE SET value = excluded.value""",
+            (product_id,),
+        )
+        conn.execute(
+            "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",
+            (product_id,),
+        )
+        conn.execute("DELETE FROM stock_lots WHERE product_id = ?", (product_id,))
+        if sale_qty > 0:
+            create_lot_with_items(conn, product_id, None, sale_qty)
+
+    resp = client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": payment_method,
+            "lines": [
+                {
+                    "product_id": product_id,
+                    "expected_qty": sale_qty,
+                    "counted_qty": 0,
+                    "sale_qty": sale_qty,
+                    "waste_qty": 0,
+                    "manual_unit_price": unit_price,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT order_ref, due_date, public_order_code FROM orders "
+            "WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+    return rows
+
+
+def test_list_orders_due_date_includes_reconciliation_orders(api_client):
+    """DG-384 AC2: reconciliation sale orders submitted today appear in
+    ``GET /api/orders?due_date=today`` with the correct fields
+    (``source='reconciliation'``, non-empty ``publicOrderCode``, ``dueDate``
+    equal to today)."""
+    from datetime import date
+
+    rows = _submit_reconciliation_with_sale_orders(api_client, payment_method="cash",
+                                                   sale_qty=2, unit_price=15000)
+    assert len(rows) == 2
+    today = date.today().isoformat()
+    recon_refs = {r["order_ref"] for r in rows}
+    for r in rows:
+        assert r["due_date"] == today, (
+            f"reconciliation order {r['order_ref']} due_date should be {today}, "
+            f"got {r['due_date']!r}"
+        )
+        assert r["public_order_code"], "public_order_code must be non-empty"
+
+    resp = api_client.get("/api/orders", params={"due_date": today})
+    assert resp.status_code == 200
+    orders = resp.json()
+    found_refs = {o["orderRef"] for o in orders}
+    assert recon_refs.issubset(found_refs), (
+        f"reconciliation orders {recon_refs} not all in order history {found_refs}"
+    )
+
+    for order in orders:
+        if order["orderRef"] in recon_refs:
+            assert order["source"] == "reconciliation"
+            assert order["status"] == "delivered"
+            assert order["dueDate"] == today
+            assert order["publicOrderCode"], "publicOrderCode must be non-empty"
+
+
+def test_list_orders_due_date_range_includes_reconciliation_orders(api_client):
+    """DG-384 AC2 (range branch): reconciliation orders submitted today
+    appear when the ``due_date_from``/``due_date_to`` range covers today."""
+    from datetime import date
+
+    rows = _submit_reconciliation_with_sale_orders(api_client, payment_method="transfer",
+                                                   sale_qty=1, unit_price=20000)
+    assert len(rows) == 1
+    recon_ref = rows[0]["order_ref"]
+    today = date.today().isoformat()
+
+    resp = api_client.get(
+        "/api/orders",
+        params={"due_date_from": today, "due_date_to": today},
+    )
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert recon_ref in refs, (
+        f"reconciliation order {recon_ref} missing from due_date range query"
+    )
+
+
+def test_list_orders_reconciliation_orders_include_payment_methods(api_client):
+    """DG-384 AC3/AC4 (order history): reconciliation orders carry the
+    ``paymentMethods`` computed field in the order history response. A cash
+    reconciliation yields ``['cash']``; a transfer reconciliation yields
+    ``['transfer']``."""
+    rows = _submit_reconciliation_with_sale_orders(api_client, payment_method="cash",
+                                                   sale_qty=1, unit_price=12000)
+    recon_ref = rows[0]["order_ref"]
+    from datetime import date
+    today = date.today().isoformat()
+
+    resp = api_client.get("/api/orders", params={"due_date": today})
+    found = next((o for o in resp.json() if o["orderRef"] == recon_ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["cash"], (
+        f"cash reconciliation order paymentMethods should be ['cash'], "
+        f"got {found['paymentMethods']}"
+    )
+
+
+def test_list_orders_reconciliation_orders_transfer_payment_methods(api_client):
+    """DG-384 AC4 (order history): a transfer reconciliation yields
+    ``paymentMethods=['transfer']``."""
+    rows = _submit_reconciliation_with_sale_orders(api_client, payment_method="transfer",
+                                                   sale_qty=1, unit_price=12000)
+    recon_ref = rows[0]["order_ref"]
+    from datetime import date
+    today = date.today().isoformat()
+
+    resp = api_client.get("/api/orders", params={"due_date": today})
+    found = next((o for o in resp.json() if o["orderRef"] == recon_ref), None)
+    assert found is not None
+    assert found["paymentMethods"] == ["transfer"], (
+        f"transfer reconciliation order paymentMethods should be ['transfer'], "
+        f"got {found['paymentMethods']}"
+    )
+
+
+def test_list_orders_excludes_old_reconciliation_orders_without_due_date(api_client):
+    """DG-384 AC7: an old reconciliation order created before the fix
+    (``due_date IS NULL``, ``source='reconciliation'``) must NOT appear in
+    the order history when filtering by today's date. The fallback only
+    matches reconciliation orders whose ``due_date`` equals the queried
+    date — this is a forward-only fix."""
+    from datetime import date
+
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO orders
+                 (order_ref, customer_name, status, source, due_date,
+                  public_order_code, total_price, created_at, updated_at)
+               VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)""",
+            (
+                "OLD-RECON-HIST-001",
+                "Đối soát tồn kho",
+                "delivered",
+                "reconciliation",
+                "",
+                15000,
+                "2025-01-15T10:00:00Z",
+                "2025-01-15T10:00:00Z",
+            ),
+        )
+
+    today = date.today().isoformat()
+    resp = api_client.get("/api/orders", params={"due_date": today})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert "OLD-RECON-HIST-001" not in refs, (
+        "old reconciliation order without due_date must NOT appear in order history "
+        "(forward-only fix)"
+    )
