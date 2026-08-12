@@ -36,6 +36,7 @@ from baker.services.address_library import (
     delete_library_entry,
     get_library_entry,
     list_library,
+    list_missing_links,
     update_library_entry,
 )
 
@@ -59,6 +60,22 @@ def autocomplete(
         return []
     with get_db() as conn:
         return _autocomplete(conn, q, customer_id=customerId)
+
+
+@router.get("/missing-links")
+def missing_links(
+    limit: int = Query(100, ge=1, description="Số kết quả tối đa (mặc định 100)"),
+):
+    """Danh sách địa chỉ giao tận nơi chưa có liên kết Google Maps (FR5/AC6/NFR4).
+
+    Trả về mảng JSON các đối tượng ``{"deliveryAddress", "orderCount"}``
+    cho đơn ``delivery_type IN ('door','delivery')`` có ``delivery_address``
+    không rỗng nhưng ``google_maps_url`` rỗng/NULL. Nhóm theo raw
+    ``delivery_address``, sắp xếp theo ``orderCount`` giảm dần. Read-only
+    SELECT — không ghi vào CSDL. Phân trang qua ``?limit=`` (mặc định 100).
+    """
+    with get_db() as conn:
+        return list_missing_links(conn, limit=limit)
 
 
 @router.get("/library")
