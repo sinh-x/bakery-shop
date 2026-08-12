@@ -313,3 +313,282 @@ def test_normalize_address_unit():
     assert normalize_address("123 NGUYỄN HUỆ") == "123 nguyen hue"
     assert normalize_address("") == ""
     assert normalize_address("Đồng Khởi") == "dong khoi"
+
+
+# --- Missing-links endpoint (DG-387 Phase 5) ------------------------------
+
+
+def _insert_order(
+    conn,
+    *,
+    order_ref,
+    delivery_type="door",
+    delivery_address="",
+    google_maps_url=None,
+    status="delivered",
+):
+    conn.execute(
+        """
+        INSERT INTO orders (
+            order_ref, customer_name, items, total_price, status,
+            delivery_type, delivery_address, google_maps_url, customer_id
+        ) VALUES (?, ?, '[]', 0, ?, ?, ?, ?, NULL)
+        """,
+        (
+            order_ref,
+            "Khách test",
+            status,
+            delivery_type,
+            delivery_address,
+            google_maps_url,
+        ),
+    )
+
+
+def test_missing_links_returns_unique_addresses_with_counts(api_client):
+    """AC6/FR5: JSON array of unique ``(deliveryAddress, orderCount)`` for
+    door-delivery orders with empty/NULL ``google_maps_url``."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="D2",
+            delivery_type="delivery",
+            delivery_address="123 Lê Lợi",
+            google_maps_url="",
+        )
+        _insert_order(
+            conn,
+            order_ref="D3",
+            delivery_type="door",
+            delivery_address="45 Trần Hưng Đạo",
+            google_maps_url=None,
+        )
+        # Has a link — excluded.
+        _insert_order(
+            conn,
+            order_ref="D4",
+            delivery_type="door",
+            delivery_address="78 Nguyễn Huệ",
+            google_maps_url="https://maps.google.com/x",
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+    by_addr = {r["deliveryAddress"]: r["orderCount"] for r in body}
+    assert by_addr["123 Lê Lợi"] == 2
+    assert by_addr["45 Trần Hưng Đạo"] == 1
+    assert "78 Nguyễn Huệ" not in by_addr
+    # Ordered by orderCount DESC.
+    assert body[0]["orderCount"] >= body[1]["orderCount"]
+
+
+def test_missing_links_empty_when_all_have_links(api_client):
+    """AC6: when every door-delivery order has a link, returns empty array."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url="https://maps.google.com/x",
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_missing_links_excludes_pickup_and_bus(api_client):
+    """FR5 guard: only ``door`` and ``delivery`` orders are considered;
+    ``pickup`` and ``bus`` orders with missing links must NOT appear."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="P1",
+            delivery_type="pickup",
+            delivery_address="Pickup counter",
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="B1",
+            delivery_type="bus",
+            delivery_address="Bến xe Nha Trang",
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="12 Độc Lập",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    body = resp.json()
+    addrs = {r["deliveryAddress"] for r in body}
+    assert "12 Độc Lập" in addrs
+    assert "Pickup counter" not in addrs
+    assert "Bến xe Nha Trang" not in addrs
+
+
+def test_missing_links_excludes_empty_delivery_address(api_client):
+    """FR5 guard: door-delivery orders with an empty/NULL
+    ``delivery_address`` are excluded (matches v102 backfill + Phase 3
+    sync guard)."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="",
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="D2",
+            delivery_type="door",
+            delivery_address=None,
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="D3",
+            delivery_type="door",
+            delivery_address="45 Trần Hưng Đạo",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["deliveryAddress"] == "45 Trần Hưng Đạo"
+
+
+def test_missing_links_is_read_only(api_client):
+    """NFR4/FR5: the endpoint does not mutate the database."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url=None,
+        )
+        conn.commit()
+        before = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        after = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        assert after == before
+        row = conn.execute(
+            "SELECT google_maps_url FROM orders WHERE order_ref = ?", ("D1",)
+        ).fetchone()
+        assert row["google_maps_url"] is None
+
+
+def test_missing_links_groups_by_raw_delivery_address(api_client):
+    """FR5: grouping is on raw ``delivery_address`` (not normalized) — two
+    diacritic-variant addresses that normalize to the same value appear as
+    two separate rows."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn,
+            order_ref="D1",
+            delivery_type="door",
+            delivery_address="Số 123 Lê Lợi",
+            google_maps_url=None,
+        )
+        _insert_order(
+            conn,
+            order_ref="D2",
+            delivery_type="door",
+            delivery_address="so 123 le loi",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+    addrs = {r["deliveryAddress"] for r in body}
+    assert "Số 123 Lê Lợi" in addrs
+    assert "so 123 le loi" in addrs
+
+
+def test_missing_links_limit_param_paginates(api_client):
+    """FR5: ``?limit=`` paginates the response (default 100)."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        for i in range(5):
+            _insert_order(
+                conn,
+                order_ref=f"D{i}",
+                delivery_type="door",
+                delivery_address=f"Địa chỉ {i}",
+                google_maps_url=None,
+            )
+        conn.commit()
+
+    # limit=2 returns at most 2 rows.
+    resp = api_client.get("/api/addresses/missing-links", params={"limit": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+
+    # default limit returns all 5.
+    resp = api_client.get("/api/addresses/missing-links")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 5
+
+
+def test_missing_links_limit_rejects_non_positive(api_client):
+    """FR5: ``limit`` must be >= 1 (FastAPI ``ge=1`` validation)."""
+    resp = api_client.get("/api/addresses/missing-links", params={"limit": 0})
+    assert resp.status_code == 422

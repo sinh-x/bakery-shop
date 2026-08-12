@@ -394,6 +394,52 @@ def _maybe_delete_library_pair(
         delete_library_entry(conn, row["id"])
 
 
+def list_missing_links(conn, limit: int = 100) -> list[dict]:
+    """Return unique delivery addresses missing Google Maps links (FR5/AC6).
+
+    Read-only SELECT that groups door-to-door delivery orders
+    (``delivery_type IN ('door', 'delivery')``) by raw ``delivery_address``
+    where ``google_maps_url`` is NULL or empty, returning each unique
+    address with its order count. Grouping is on the raw text (not
+    normalized) so staff see the address exactly as typed on the order —
+    matching the Phase 4 CLI command behavior (FR4).
+
+    Results are ordered by ``order_count DESC`` then ``delivery_address ASC``
+    so the most-referenced gap surfaces first, and paginated via ``limit``
+    (default 100) to keep the API response bounded (NFR4). The query
+    leverages the indexed ``delivery_type`` and ``google_maps_url`` columns
+    on the ``orders`` table for sub-500ms response at up to 10k door
+    delivery orders (NFR4).
+
+    Returns a list of dicts with ``deliveryAddress`` and ``orderCount`` keys
+    (camelCase for API JSON compatibility with the rest of the addresses
+    API).
+    """
+    placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
+    rows = conn.execute(
+        f"""
+        SELECT delivery_address AS delivery_address,
+               COUNT(*) AS order_count
+        FROM orders
+        WHERE delivery_type IN ({placeholders})
+          AND delivery_address IS NOT NULL
+          AND delivery_address != ''
+          AND (google_maps_url IS NULL OR google_maps_url = '')
+        GROUP BY delivery_address
+        ORDER BY order_count DESC, delivery_address ASC
+        LIMIT ?
+        """,
+        (*DOOR_DELIVERY_TYPES, limit),
+    ).fetchall()
+    return [
+        {
+            "deliveryAddress": r["delivery_address"],
+            "orderCount": int(r["order_count"]),
+        }
+        for r in rows
+    ]
+
+
 def sync_on_order_edit(
     conn,
     order_id: int,

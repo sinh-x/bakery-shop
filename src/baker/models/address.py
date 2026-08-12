@@ -21,7 +21,7 @@ from baker.db.schema import _strip_diacritics
 
 
 def normalize_address(address: str) -> str:
-    """Normalize an address for matching (FR1 / NFR3).
+    """Normalize an address for matching.
 
     Trim leading/trailing whitespace, lowercase, and strip Vietnamese
     diacritics so ``"123 Nguyễn Huệ"`` and ``"123 nguyen hue"`` resolve to
