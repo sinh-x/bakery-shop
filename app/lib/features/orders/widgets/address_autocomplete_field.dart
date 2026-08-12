@@ -8,6 +8,14 @@ import '../../../shared/labels/address_labels.dart';
 /// Reusable delivery-address field with autocomplete suggestions from the
 /// address library (DG-385 Phase 4 / FR1/FR2/FR5/AC1/AC2/AC5/AC7).
 ///
+/// DG-388 Phase 4: the dropdown now renders two labeled sections —
+/// "Địa chỉ đã giao" (customer past-order addresses) and
+/// "Thư viện địa chỉ" (address library matches) — backed by the grouped
+/// `{pastOrders, library}` response from the enhanced autocomplete
+/// endpoint (FR3/FR4/AC3). Section headers are only shown when BOTH groups
+/// have results; when only one group has matches the suggestions render
+/// inline without a header so the common single-source case stays compact.
+///
 /// Wraps a `TextFormField` (using the caller-supplied [controller] so the
 /// wizard/edit state stays the single source of truth) and renders a
 /// dropdown overlay of [AddressSuggestion] entries below the field. The
@@ -71,7 +79,8 @@ class _AddressAutocompleteFieldState
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlayEntry;
   bool _ownFocusNode = false;
-  List<AddressSuggestion> _lastOptions = const [];
+  AddressAutocompleteResponse _lastResponse =
+      const AddressAutocompleteResponse();
   bool _overlayLoading = false;
   bool _overlayError = false;
 
@@ -156,7 +165,7 @@ class _AddressAutocompleteFieldState
   void _syncOverlay() {
     if (!mounted) return;
     final hasContent =
-        _lastOptions.isNotEmpty || _overlayLoading || _overlayError;
+        _hasSuggestions(_lastResponse) || _overlayLoading || _overlayError;
     if (_focusNode.hasFocus && hasContent) {
       if (_overlayEntry == null) {
         _showOverlay();
@@ -167,6 +176,9 @@ class _AddressAutocompleteFieldState
       _hideOverlay();
     }
   }
+
+  bool _hasSuggestions(AddressAutocompleteResponse response) =>
+      response.pastOrders.isNotEmpty || response.library.isNotEmpty;
 
   void _selectSuggestion(AddressSuggestion suggestion) {
     widget.controller.text = suggestion.displayAddress;
@@ -189,7 +201,7 @@ class _AddressAutocompleteFieldState
     if (request.isValid) {
       asyncOptions.when(
         data: (data) {
-          _lastOptions = data;
+          _lastResponse = data;
           _overlayLoading = false;
           _overlayError = false;
         },
@@ -203,7 +215,7 @@ class _AddressAutocompleteFieldState
         },
       );
     } else {
-      _lastOptions = const [];
+      _lastResponse = const AddressAutocompleteResponse();
       _overlayLoading = false;
       _overlayError = false;
     }
@@ -254,7 +266,11 @@ class _AddressAutocompleteFieldState
               maxHeight: mediaQuery.size.height * 0.3,
               minWidth: 200,
             ),
-            child: _buildOverlayBody(_lastOptions, _overlayLoading, _overlayError),
+            child: _buildOverlayBody(
+              _lastResponse,
+              _overlayLoading,
+              _overlayError,
+            ),
           ),
         ),
       ),
@@ -262,7 +278,7 @@ class _AddressAutocompleteFieldState
   }
 
   Widget _buildOverlayBody(
-    List<AddressSuggestion> options,
+    AddressAutocompleteResponse response,
     bool loading,
     bool hasError,
   ) {
@@ -291,34 +307,87 @@ class _AddressAutocompleteFieldState
         ),
       );
     }
-    if (options.isEmpty) {
+    final pastOrders = response.pastOrders;
+    final library = response.library;
+    if (pastOrders.isEmpty && library.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(12),
         child: Text(AddressLabels.autocompleteNoResults),
       );
     }
-    return ListView.builder(
+
+    // Build the flat list of tiles for the dropdown. Section headers are
+    // only shown when BOTH groups have results (FR4). When only one group
+    // has results, the section is rendered inline without a header so the
+    // dropdown stays compact for the common single-source case.
+    final showHeaders = pastOrders.isNotEmpty && library.isNotEmpty;
+    final children = <Widget>[];
+
+    if (pastOrders.isNotEmpty) {
+      if (showHeaders) {
+        children.add(const _SectionHeader(AddressLabels.autocompleteSectionPastOrders));
+      }
+      for (final suggestion in pastOrders) {
+        children.add(_suggestionTile(suggestion));
+      }
+    }
+    if (library.isNotEmpty) {
+      if (showHeaders) {
+        children.add(const _SectionHeader(AddressLabels.autocompleteSectionLibrary));
+      }
+      for (final suggestion in library) {
+        children.add(_suggestionTile(suggestion));
+      }
+    }
+
+    return ListView(
       shrinkWrap: true,
       padding: EdgeInsets.zero,
-      itemCount: options.length,
-      itemBuilder: (ctx, i) {
-        final suggestion = options[i];
-        return ListTile(
-          dense: true,
-          leading: const Icon(Icons.location_on_outlined, size: 18),
-          title: Text(suggestion.displayAddress),
-          subtitle: suggestion.isCustomerAddress
-              ? const Text(
-                  AddressLabels.customerAddressBadge,
-                  style: TextStyle(fontSize: 11),
-                )
-              : null,
-          trailing: suggestion.googleMapsUrl != null
-              ? const Icon(Icons.map_outlined, size: 16)
-              : null,
-          onTap: () => _selectSuggestion(suggestion),
-        );
-      },
+      children: children,
+    );
+  }
+
+  Widget _suggestionTile(AddressSuggestion suggestion) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.location_on_outlined, size: 18),
+      title: Text(suggestion.displayAddress),
+      subtitle: suggestion.isCustomerAddress
+          ? const Text(
+              AddressLabels.customerAddressBadge,
+              style: TextStyle(fontSize: 11),
+            )
+          : null,
+      trailing: suggestion.googleMapsUrl != null
+          ? const Icon(Icons.map_outlined, size: 16)
+          : null,
+      onTap: () => _selectSuggestion(suggestion),
+    );
+  }
+}
+
+/// Section header for the grouped autocomplete dropdown (FR4/AC3).
+///
+/// Renders a small, non-interactive label header above a group of
+/// suggestions. Only shown when both groups have results so the single-
+/// source case stays compact.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }

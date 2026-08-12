@@ -27,12 +27,15 @@ class AddressService {
 
   /// Autocomplete suggestions for the delivery address field (FR1/FR7).
   ///
-  /// The backend requires ``q`` to be at least 2 non-space characters and
-  /// returns up to 20 normalized matches. When [customerId] is supplied,
-  /// the customer's previously used addresses appear first (FR5/AC5).
-  /// Each suggestion carries ``googleMapsUrl`` so the caller can auto-bind
-  /// the link on selection (FR2/AC2).
-  Future<List<AddressSuggestion>> autocomplete({
+  /// DG-388 Phase 2 changed the backend to always return a grouped
+  /// ``{pastOrders, library}`` shape (FR3). This method returns the parsed
+  /// [AddressAutocompleteResponse] so the dropdown can render two labeled
+  /// sections ("Địa chỉ đã giao" / "Thư viện địa chỉ") (FR4). When
+  /// [customerId] is supplied, ``pastOrders`` holds that customer's prior
+  /// door-delivery addresses and the ``library`` group ranks their own
+  /// addresses first (FR5/AC5). Each suggestion carries ``googleMapsUrl``
+  /// so the caller can auto-bind the link on selection (FR2/AC2).
+  Future<AddressAutocompleteResponse> autocomplete({
     required String query,
     int? customerId,
   }) async {
@@ -42,11 +45,9 @@ class AddressService {
       '/api/addresses/autocomplete',
       queryParameters: params,
     );
-    final list = response.data as List;
-    return list
-        .map((json) =>
-            AddressSuggestion.fromJson(json as Map<String, dynamic>))
-        .toList();
+    return AddressAutocompleteResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   /// List all address library entries, optionally filtered by [search]

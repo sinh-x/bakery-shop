@@ -20,6 +20,15 @@ class AddressLabels {
   // Suggestion badges (FR5/AC5).
   static const customerAddressBadge = 'Khách';
 
+  // ── Phase 4 — Two-section autocomplete dropdown (DG-388 / FR4 / AC3) ──
+  /// Section header for the customer's past-order delivery addresses
+  /// group in the autocomplete dropdown (FR4/AC3).
+  static const autocompleteSectionPastOrders = 'Địa chỉ đã giao';
+
+  /// Section header for the address library matches group in the
+  /// autocomplete dropdown (FR4/AC3).
+  static const autocompleteSectionLibrary = 'Thư viện địa chỉ';
+
   // Auto-bind map link (FR2/AC2).
   static const mapsLinkBoundSnack = 'Đã gắn link Google Maps cho đơn';
   static const mapsLinkNoLinkSnack = 'Địa chỉ chưa có link Google Maps';
