@@ -128,9 +128,4 @@ class AddressLabels {
 
   /// Tooltip for the "Open in Google Maps" button on each row (FR2/AC2).
   static const missingLinksOpenMapTooltip = 'Mở Google Maps';
-
-  /// Snackbar shown when the device cannot open Google Maps for an
-  /// address row. Reuses [OrdersLabels.cannotOpenMap] via
-  /// [launchExternalUrl]; this label is reserved for screen-level hints.
-  static const missingLinksOpenMapError = 'Không mở được Google Maps';
 }

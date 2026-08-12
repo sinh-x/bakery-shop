@@ -231,17 +231,22 @@ def _autocomplete_past_orders(
         f"""
         SELECT o.delivery_address AS delivery_address,
                o.google_maps_url AS google_maps_url,
-               latest.last_order_id AS last_order_id
+               latest.last_order_id AS last_order_id,
+               latest.latest_link_id AS latest_link_id
         FROM orders o
         INNER JOIN (
-            SELECT delivery_address, MAX(id) AS last_order_id
+            SELECT delivery_address,
+                   MAX(id) AS last_order_id,
+                   MAX(CASE WHEN google_maps_url IS NOT NULL
+                             AND google_maps_url != ''
+                        THEN id END) AS latest_link_id
             FROM orders
             WHERE customer_id = ?
               AND delivery_type IN ({placeholders})
               AND delivery_address IS NOT NULL
               AND delivery_address != ''
             GROUP BY delivery_address
-        ) latest ON o.id = latest.last_order_id
+        ) latest ON o.id = COALESCE(latest.latest_link_id, latest.last_order_id)
         WHERE normalize_address(o.delivery_address) LIKE ? ESCAPE '\\'
         ORDER BY latest.last_order_id DESC
         LIMIT ?

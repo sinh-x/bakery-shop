@@ -78,7 +78,7 @@ def autocomplete(
 
 @router.get("/missing-links")
 def missing_links(
-    limit: int = Query(100, ge=1, description="Số kết quả tối đa (mặc định 100)"),
+    limit: int = Query(100, ge=1, le=1000, description="Số kết quả tối đa (mặc định 100, tối đa 1000)"),
 ):
     """Danh sách địa chỉ giao tận nơi chưa có liên kết Google Maps (FR5/AC6/NFR4).
 

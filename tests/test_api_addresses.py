@@ -358,6 +358,48 @@ def test_autocomplete_past_orders_dedupes_by_raw_address(api_client):
     assert body["pastOrders"][0]["googleMapsUrl"] == "https://maps.google.com/new"
 
 
+def test_autocomplete_past_orders_prefers_non_null_link_when_latest_is_null(api_client):
+    """F1 regression: when the most recent order for an address has a NULL
+    google_maps_url but an earlier order carried a link, the past-orders
+    group must surface the most recent non-null link (per the docstring:
+    "most recent google_maps_url seen for that address"), not the NULL
+    value from the latest order."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    customer = _create_customer(api_client)
+    with get_db() as conn:
+        ensure_schema(conn)
+        # earliest order carries a link
+        _insert_order_for_customer(
+            conn,
+            order_ref="D1",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url="https://maps.google.com/early",
+        )
+        # latest order for the same address has a NULL link
+        _insert_order_for_customer(
+            conn,
+            order_ref="D2",
+            customer_id=customer["id"],
+            delivery_type="door",
+            delivery_address="123 Lê Lợi",
+            google_maps_url=None,
+        )
+        conn.commit()
+
+    resp = api_client.get(
+        "/api/addresses/autocomplete",
+        params={"q": "le loi", "customerId": customer["id"]},
+    )
+    body = resp.json()
+    assert len(body["pastOrders"]) == 1
+    assert body["pastOrders"][0]["displayAddress"] == "123 Lê Lợi"
+    assert body["pastOrders"][0]["googleMapsUrl"] == "https://maps.google.com/early"
+
+
 def test_autocomplete_past_orders_limits_to_10(api_client):
     """F2: pastOrders is capped at 10 per customer."""
     from baker.db.connection import get_db
