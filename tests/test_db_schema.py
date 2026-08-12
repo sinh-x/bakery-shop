@@ -453,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -472,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -488,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3498,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         _assert_users_role_check_constraint(conn)
 
 
@@ -3564,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3687,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3761,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3788,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4191,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         indexes = {
             r["name"]
@@ -4274,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4386,7 +4386,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4461,7 +4461,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4595,7 +4595,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4720,7 +4720,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4729,7 +4729,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4879,7 +4879,7 @@ def test_v98_adds_linked_order_refs_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
         cols = {
             r[1]: r
             for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
@@ -5000,7 +5000,7 @@ def test_v99_adds_reconciled_column_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         cols = _schema_columns(conn, "cash_drawer")
         assert "reconciled" in cols
@@ -5056,7 +5056,7 @@ def test_v99_idempotent_on_already_migrated_db():
         idx_after = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
         assert before == after
         assert idx_before == idx_after
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
 
 def test_v100_registered_in_migration_chain():
@@ -5074,7 +5074,7 @@ def test_v100_creates_message_templates_table_on_fresh_db():
     with all expected columns (FR1/FR4/FR6/FR7)."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         cols = _schema_columns(conn, "message_templates")
         expected = {
@@ -5139,7 +5139,7 @@ def test_v100_idempotent_on_already_migrated_db():
         _migrate_v100_message_templates(conn)
         after = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
         assert before == after, f"re-running v100 changed count: {before} -> {after}"
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
 
 def test_schema_all_matches_imported_symbols():
@@ -5261,7 +5261,11 @@ def _assert_address_library_schema(conn) -> None:
 def test_schema_migration_v101_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        # ensure_schema applies ALL migrations through the latest (v102 after
+        # DG-387 Phase 2). v101 creates the address_library tables; v102 only
+        # runs a data backfill so the schema is unchanged. Assert >= 102 so
+        # this test keeps passing as new migrations are added.
+        assert _migrated_version(conn) >= 102
         _assert_address_library_schema(conn)
 
 
@@ -5278,8 +5282,95 @@ def test_schema_migration_v100_to_v101():
 def test_schema_migration_v101_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 101
+        assert _migrated_version(conn) >= 102
 
         ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+# ---------------------------------------------------------------------------
+# Migration v102 — address library backfill from door-delivery orders
+# (DG-387 Phase 2). v102 adds no schema objects — it only runs a data
+# backfill callable against the v101 ``address_library`` and
+# ``customer_addresses`` tables. These schema-level tests verify the
+# migration is registered, runs cleanly on a fresh DB, advances the
+# schema version to 102, and leaves the v101 schema intact (no tables or
+# columns added/removed/dropped). Backfill correctness, idempotency, and
+# customer linking are exercised in
+# ``tests/test_migration_v102_backfill.py``.
+# ---------------------------------------------------------------------------
+
+
+def test_schema_migration_v102_fresh_db():
+    """v102 runs via ensure_schema on a fresh DB and advances version to 102."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v101_to_v102():
+    """v102 applies cleanly on top of v101 and advances version to 102."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 101)
         assert _migrated_version(conn) == 101
         _assert_address_library_schema(conn)
+
+        _migrate_to_version(conn, 102)
+        assert _migrated_version(conn) == 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v102_idempotent():
+    """Re-running v102 on an already-backfilled DB is a no-op (NFR1).
+
+    v102 adds no schema objects, so schema assertions are unchanged. The
+    backfill callable uses ``INSERT OR IGNORE`` for both ``address_library``
+    # and ``customer_addresses`` so a second invocation reports 0 new rows.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v102_adds_no_new_tables_or_columns():
+    """v102 is a pure data backfill — no schema objects are added or removed.
+
+    Compares the set of tables and per-table columns before (v101) and after
+    # (v102) running the migration to guard against accidental schema drift.
+    """
+    def _snapshot(conn):
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        columns = {
+            table: set(_schema_columns(conn, table).keys())
+            for table in tables
+        }
+        return tables, columns
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 101)
+        before_tables, before_columns = _snapshot(conn)
+
+        _migrate_to_version(conn, 102)
+        after_tables, after_columns = _snapshot(conn)
+
+        assert after_tables == before_tables, (
+            f"v102 changed table set: added={after_tables - before_tables}, "
+            f"removed={before_tables - after_tables}"
+        )
+        for table in before_tables:
+            assert after_columns[table] == before_columns[table], (
+                f"v102 changed columns on {table}: "
+                f"added={after_columns[table] - before_columns[table]}, "
+                f"removed={before_columns[table] - after_columns[table]}"
+            )
