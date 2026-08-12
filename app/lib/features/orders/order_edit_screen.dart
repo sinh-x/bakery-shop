@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/customer_service.dart';
+import '../../data/models/address.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
 import '../../providers/events_provider.dart';
@@ -16,6 +17,7 @@ import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/address_labels.dart';
 import '../templates/widgets/template_picker_modal.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
@@ -402,6 +404,32 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     });
   }
 
+  /// DG-385 Phase 4 / FR2 / AC2 / AC7: auto-bind the selected suggestion's
+  /// `googleMapsUrl` to the order being edited. The address text is written
+  /// into the address controller by the autocomplete field; this callback
+  /// only updates the stored map link and clears stale GPS coordinates so
+  /// the saved order does not carry mismatched address/coords. Edit-flow
+  /// parity with order creation (FR9/AC7).
+  void _onAddressSelected(AddressSuggestion suggestion) {
+    setState(() {
+      _existingGoogleMapsUrl = suggestion.googleMapsUrl;
+      _existingLatitude = null;
+      _existingLongitude = null;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            suggestion.googleMapsUrl != null
+                ? AddressLabels.mapsLinkBoundSnack
+                : AddressLabels.mapsLinkNoLinkSnack,
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
@@ -505,6 +533,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         // DG-304 Phase 5: staff assignment dropdown state.
                         assignedStaffId: _assignedStaffId,
                         onAssignedStaffChanged: _onAssignedStaffChanged,
+                        // DG-385 Phase 4 / FR5/FR2/AC5/AC7: customer id for
+                        // customer-prioritized suggestions + auto-bind map
+                        // link on selection (edit-flow parity with create).
+                        customerId: _selectedCustomer?.id,
+                        onAddressSelected: _onAddressSelected,
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

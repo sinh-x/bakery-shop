@@ -2,7 +2,7 @@
 
 > Date: 2026-07-29
 > Ticket: DG-308 (Phase 5 — Documentation)
-> Source of truth: `src/baker/db/schema/` (88 incremental migrations)
+> Source of truth: `src/baker/db/schema/` (101 incremental migrations)
 > SQLite runtime requirement: ≥ 3.35.0 (v80 uses `ALTER TABLE ... DROP COLUMN`).
 
 This is the standalone reference for the bakery-shop database schema. It
@@ -32,9 +32,9 @@ seed data. For migration application/rollback procedures see
 
 Migrations are **forward-only and incremental** — there is no automatic
 down-migration. The `MIGRATIONS` dict (line 4589) maps `int → {description,
-sql, [callable], [seed]}`. Current max schema version: **88**.
+sql, [callable], [seed]}`. Current max schema version: **101**.
 
-### 1.2 Migration history (v1–v88)
+### 1.2 Migration history (v1–v101)
 
 | V | Description |
 |---|---|
@@ -126,10 +126,23 @@ sql, [callable], [seed]}`. Current max schema version: **88**.
 | 86 | Expense subcategories: `expense_categories` table + seed + account codes 5110-5140, 5210-5230 |
 | 87 | Add `latitude`/`longitude`/`google_maps_url`/`delivery_time_slot` to orders (delivery GPS) |
 | 88 | Add composite indexes on `orders(status, due_date)` and `orders(customer_id, created_at)` |
+| 89 | Add `assigned_staff_id` nullable column to orders for delivery staff claiming |
+| 90 | Add `force_password_change` INTEGER NOT NULL DEFAULT 0 column to users |
+| 91 | Create `cash_drawer` table + add `cash_drawer_id` nullable FK columns to `payment_transactions` and `events` |
+| 92 | Insert cash drawer sub-accounts 1101/1102 and transfer existing 1100 balance to 1101 |
+| 93 | Rename 'quỹ' → 'quầy' in `journal_entries.description` for terminology consistency |
+| 94 | Add `tien_rut_in`/`tien_rut_out` INTEGER columns to `cash_drawer` for separate tien rut tracking |
+| 95 | Refactor cash drawer balance to derive from journal: add `closing_balance`, create `cash_drawer_journal_entries` join table, drop accumulator columns |
+| 96 | Add `counted_opening_balance` INTEGER column to `cash_drawer` |
+| 97 | Create `cash_drawer_breakdown_snapshot` table + backfill snapshots for already-closed drawers |
+| 98 | Add `linked_order_refs` TEXT column to `reconciliation_sale_rows` |
+| 99 | Add `reconciled` INTEGER NOT NULL DEFAULT 0 column to `cash_drawer` for edit-lock on reconciled drawers |
+| 100 | Message templates table + seed 8 default built-in templates across 6 scenarios (DG-375 Phase 4.1) |
+| 101 | Address library + customer_addresses junction tables (DG-385 Phase 1) |
 
 ---
 
-## 2. Tables (52 total)
+## 2. Tables (54 total)
 
 Tables grouped by domain. Arrows show foreign-key relationships.
 
@@ -147,9 +160,11 @@ Tables grouped by domain. Arrows show foreign-key relationships.
 
 | Table | Purpose | Key relationships |
 |-------|---------|--------------------|
-| `customers` | Customer master record. Has `name`, `search_name` (diacritic-insensitive), `phone` (legacy primary), `notes`. | `orders(customer_id)`; `customer_phones`; `customer_year_summary` |
+| `customers` | Customer master record. Has `name`, `search_name` (diacritic-insensitive), `phone` (legacy primary), `notes`. | `orders(customer_id)`; `customer_phones`; `customer_year_summary`; `customer_addresses` |
 | `customer_phones` | Multi-phone support. One customer can have several phone numbers; one is primary. | `customer_id → customers.id` |
 | `customer_year_summary` | Aggregated order count + total volume per customer per year. | `customer_id → customers.id` |
+| `customer_addresses` | Junction linking customers to addresses in the address library for autocomplete prioritization (DG-385 Phase 1). Composite PK (customer_id, address_library_id). | `customer_id → customers.id`; `address_library_id → address_library.id` |
+| `address_library` | Normalized delivery addresses paired with Google Maps links for autocomplete + order binding (DG-385 Phase 1). Unique on (normalized_address, google_maps_url) for idempotent upsert. | `customer_addresses` |
 
 ### 2.3 Products, catalog & attributes
 
@@ -366,6 +381,10 @@ for every debit/credit mapping per business action.
 | `idx_orders_status_due_date` | orders(status, due_date) | v88 |
 | `idx_orders_customer_id_created_at` | orders(customer_id, created_at) | v88 |
 | `idx_journal_entries_transaction_date` | journal_entries(transaction_date) | |
+| `idx_address_library_normalized_address` | address_library(normalized_address) | v101 autocomplete |
+| `idx_address_library_normalized_url_unique` | address_library(normalized_address, google_maps_url) | v101 UNIQUE upsert target |
+| `idx_customer_addresses_customer` | customer_addresses(customer_id) | v101 |
+| `idx_customer_addresses_address` | customer_addresses(address_library_id) | v101 |
 
 ### 4.2 Notable UNIQUE indexes
 

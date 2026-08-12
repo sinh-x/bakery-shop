@@ -48,6 +48,12 @@ class OrderDeliverySection extends StatelessWidget {
     this.longitude,
     this.googleMapsUrl,
     this.onLaunchMap,
+    // DG-385 Phase 4 / FR1: optional replacement for the inline address
+    // `TextFormField`. When provided (order create/edit Stage 3), the section
+    // renders this widget instead of the plain field so the caller can plug
+    // in `AddressAutocompleteField` with library suggestions. When null the
+    // existing `TextFormField` is used (read-only/legacy callers).
+    this.addressField,
   });
 
   final String deliveryType;
@@ -91,6 +97,13 @@ class OrderDeliverySection extends StatelessWidget {
   final double? longitude;
   final String? googleMapsUrl;
   final VoidCallback? onLaunchMap;
+
+  /// DG-385 Phase 4 / FR1: optional autocomplete address widget. When
+  /// provided the editable section renders this instead of the plain
+  /// `TextFormField` so the caller can plug in `AddressAutocompleteField`
+  /// with library suggestions and auto-bind (FR2/AC2). Null keeps the
+  /// existing plain field for read-only/legacy callers.
+  final Widget? addressField;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
 
@@ -234,17 +247,21 @@ class OrderDeliverySection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          TextFormField(
-            controller: addressCtrl,
-            decoration: const InputDecoration(
-              labelText: VN.deliveryAddress,
-              border: OutlineInputBorder(),
-            ),
-            validator: (v) =>
-                _needsAddress && (v == null || v.trim().isEmpty)
-                ? VN.fieldRequired
-                : null,
-          ),
+          // DG-385 Phase 4 / FR1: prefer the caller-supplied autocomplete
+          // field when provided so library suggestions and auto-bind
+          // (FR2/AC2) are available in the create/edit wizard.
+          addressField ??
+              TextFormField(
+                controller: addressCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.deliveryAddress,
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) =>
+                    _needsAddress && (v == null || v.trim().isEmpty)
+                    ? VN.fieldRequired
+                    : null,
+              ),
         ],
         if ((deliveryType == 'bus' || deliveryType == 'door') &&
             onShippingFeeChanged != null) ...[

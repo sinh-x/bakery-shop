@@ -1314,20 +1314,59 @@ SEED_MESSAGE_TEMPLATES = [
         7,
     ),
     (
-        "payment_request",
-        "Yêu cầu thanh toán",
-        "Dạ shop gửi mình thông tin thanh toán đơn bánh mã {public_order_code} ạ:\n"
-        "{items_list}\n"
-        "Tổng cộng: {total_price}\n"
-        "{notes, if: Đã ghi chú: {notes}}\n"
-        "Mình chuyển khoản giúp shop qua:\n"
-        "- Ngân hàng: ...\n"
-        "- Số tài khoản: ...\n"
-        "- Chủ tài khoản: ...\n"
-        "Mình chuyển xong nhắn shop xác nhận nha. Cảm ơn mình ạ!",
-        8,
+    "payment_request",
+    "Yêu cầu thanh toán",
+    "Dạ shop gửi mình thông tin thanh toán đơn bánh mã {public_order_code} ạ:\n"
+    "{items_list}\n"
+    "Tổng cộng: {total_price}\n"
+    "{notes, if: Đã ghi chú: {notes}}\n"
+    "Mình chuyển khoản giúp shop qua:\n"
+    "- Ngân hàng: ...\n"
+    "- Số tài khoản: ...\n"
+    "- Chủ tài khoản: ...\n"
+    "Mình chuyển xong nhắn shop xác nhận nha. Cảm ơn mình ạ!",
+    8,
     ),
 ]
+
+
+# DG-385 Phase 1: address library + customer_addresses junction.
+# `address_library` stores normalized delivery addresses paired with their
+# Google Maps share links so the autocomplete endpoint (Phase 2) can match
+# typed text against `normalized_address` and return the original
+# `display_address` + `google_maps_url` for binding to an order (FR1/FR2).
+# The unique constraint on (normalized_address, google_maps_url) gives the
+# Phase 3 upsert an idempotent target: a re-save of the same address+link
+# pair resolves to the existing row instead of creating a duplicate.
+# `customer_addresses` tracks which customers use which addresses so the
+# autocomplete endpoint can prioritize the caller's own addresses (FR4).
+ADDRESS_LIBRARY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS address_library (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    normalized_address  TEXT NOT NULL,
+    display_address     TEXT NOT NULL,
+    google_maps_url     TEXT,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_address_library_normalized_address
+    ON address_library(normalized_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_address_library_normalized_url_unique
+    ON address_library(normalized_address, google_maps_url);
+
+CREATE TABLE IF NOT EXISTS customer_addresses (
+    customer_id         INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    address_library_id  INTEGER NOT NULL REFERENCES address_library(id) ON DELETE CASCADE,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    PRIMARY KEY (customer_id, address_library_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_customer
+    ON customer_addresses(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_address
+    ON customer_addresses(address_library_id);
+"""
 
 
 __all__ = [
@@ -1418,4 +1457,5 @@ __all__ = [
     'ORDER_ITEM_BLANKS_SCHEMA',
     'MESSAGE_TEMPLATES_SCHEMA',
     'SEED_MESSAGE_TEMPLATES',
+    'ADDRESS_LIBRARY_SCHEMA',
 ]

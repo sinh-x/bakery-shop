@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
+import 'package:bakery_app/shared/labels/address_labels.dart';
 import 'package:bakery_app/shared/labels/auth.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/labels/templates.dart';
@@ -210,6 +211,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   title: const Text(TemplatesLabels.managementTitle),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/templates/manage'),
+                ),
+                const SizedBox(height: 16),
+                // Address library management (DG-385 Phase 5 / FR6/FR8/AC6).
+                ListTile(
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: const Text(AddressLabels.libraryNavEntry),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/addresses'),
                 ),
                 const SizedBox(height: 16),
                 // Logout (DG-319 Phase 6 / FR6 / AC6).

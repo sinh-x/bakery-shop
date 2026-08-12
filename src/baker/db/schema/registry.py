@@ -571,6 +571,10 @@ MIGRATIONS = {
         "sql": MESSAGE_TEMPLATES_SCHEMA,
         "callable": _migrate_v100_message_templates,
     },
+    101: {
+        "description": "Address library + customer_addresses junction tables (DG-385 Phase 1)",
+        "sql": ADDRESS_LIBRARY_SCHEMA,
+    },
 }
 
 def ensure_schema(conn):

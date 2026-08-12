@@ -453,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -472,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -488,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3498,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         _assert_users_role_check_constraint(conn)
 
 
@@ -3564,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3687,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3761,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3788,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4191,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         indexes = {
             r["name"]
@@ -4274,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4386,7 +4386,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4461,7 +4461,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4595,7 +4595,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4720,7 +4720,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4729,7 +4729,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4879,7 +4879,7 @@ def test_v98_adds_linked_order_refs_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
         cols = {
             r[1]: r
             for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
@@ -5000,7 +5000,7 @@ def test_v99_adds_reconciled_column_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         cols = _schema_columns(conn, "cash_drawer")
         assert "reconciled" in cols
@@ -5056,7 +5056,7 @@ def test_v99_idempotent_on_already_migrated_db():
         idx_after = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
         assert before == after
         assert idx_before == idx_after
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
 
 def test_v100_registered_in_migration_chain():
@@ -5074,7 +5074,7 @@ def test_v100_creates_message_templates_table_on_fresh_db():
     with all expected columns (FR1/FR4/FR6/FR7)."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
         cols = _schema_columns(conn, "message_templates")
         expected = {
@@ -5139,7 +5139,7 @@ def test_v100_idempotent_on_already_migrated_db():
         _migrate_v100_message_templates(conn)
         after = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
         assert before == after, f"re-running v100 changed count: {before} -> {after}"
-        assert _migrated_version(conn) == 100
+        assert _migrated_version(conn) == 101
 
 
 def test_schema_all_matches_imported_symbols():
@@ -5189,3 +5189,97 @@ def test_schema_all_matches_imported_symbols():
         f"Symbols declared in __all__ but not importable from baker.db.schema: "
         f"{sorted(extra_in_all)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Migration v101 — address library + customer_addresses (DG-385 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _assert_address_library_schema(conn) -> None:
+    """DG-385 Phase 1: v101 creates address_library + customer_addresses."""
+    # address_library table exists with the expected columns.
+    addr_cols = _schema_columns(conn, "address_library")
+    assert set(addr_cols) >= {
+        "id",
+        "normalized_address",
+        "display_address",
+        "google_maps_url",
+        "created_at",
+        "updated_at",
+    }
+    for name in ("normalized_address", "display_address"):
+        assert addr_cols[name]["notnull"] == 1
+    # google_maps_url is nullable (FR2: non-null when present, not always set).
+    assert addr_cols["google_maps_url"]["notnull"] == 0
+
+    # Autocomplete index on normalized_address (NFR1: p95 < 300ms).
+    addr_indexes = [
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(address_library)").fetchall()
+    ]
+    assert "idx_address_library_normalized_address" in addr_indexes
+    # Unique upsert target on (normalized_address, google_maps_url) (FR3).
+    assert "idx_address_library_normalized_url_unique" in addr_indexes
+
+    # customer_addresses junction table.
+    junction_cols = _schema_columns(conn, "customer_addresses")
+    assert set(junction_cols) >= {
+        "customer_id",
+        "address_library_id",
+        "created_at",
+    }
+    for name in ("customer_id", "address_library_id"):
+        assert junction_cols[name]["notnull"] == 1
+
+    # Foreign keys: customer_id → customers, address_library_id → address_library.
+    junction_fks = conn.execute(
+        "PRAGMA foreign_key_list(customer_addresses)"
+    ).fetchall()
+    fk_targets = {(fk["from"], fk["table"], fk["on_delete"]) for fk in junction_fks}
+    assert ("customer_id", "customers", "CASCADE") in fk_targets
+    assert ("address_library_id", "address_library", "CASCADE") in fk_targets
+
+    # Composite PRIMARY KEY (customer_id, address_library_id) dedupes links.
+    junction_indexes = [
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(customer_addresses)").fetchall()
+    ]
+    assert any(
+        name.startswith("sqlite_autoindex_customer_addresses") or "pk" in name.lower()
+        for name in junction_indexes
+    ), f"customer_addresses missing composite PK index: {junction_indexes}"
+
+    # Lookup indexes for the autocomplete endpoint's per-customer prioritization.
+    for expected in (
+        "idx_customer_addresses_customer",
+        "idx_customer_addresses_address",
+    ):
+        assert expected in junction_indexes, f"missing {expected}: {junction_indexes}"
+
+
+def test_schema_migration_v101_fresh_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 101
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v100_to_v101():
+    with get_db() as conn:
+        _migrate_to_version(conn, 100)
+        assert _migrated_version(conn) == 100
+
+        _migrate_to_version(conn, 101)
+        assert _migrated_version(conn) == 101
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v101_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 101
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 101
+        _assert_address_library_schema(conn)
