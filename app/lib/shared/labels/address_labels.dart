@@ -96,4 +96,32 @@ class AddressLabels {
 
   /// Validator message shown when the maps link is not a URL.
   static const editorMapsLinkInvalid = 'Link Google Maps không hợp lệ';
+
+  // ── Phase 3 — Missing-links screen (DG-388 / FR1/FR2/FR6/AC1/AC2/AC5) ──
+  /// Screen title shown in the AppBar of [MissingLinksScreen].
+  static const missingLinksTitle = 'Địa chỉ thiếu liên kết';
+
+  /// Settings navigation entry label for the missing-links screen (FR5).
+  static const missingLinksNavEntry = 'Địa chỉ thiếu liên kết';
+
+  /// Subtitle shown under the nav entry in Settings.
+  static const missingLinksNavSubtitle =
+      'Các địa chỉ giao cửa chưa có link Google Maps';
+
+  /// Empty state body when no missing-links are returned by the backend
+  /// (AC5 — every door-delivery address has a link).
+  static const missingLinksEmpty =
+      'Tất cả địa chỉ giao cửa đã có link Google Maps.';
+
+  /// Row subtitle showing how many orders reference this address.
+  /// `{count}` is replaced with the [MissingLinkItem.orderCount] value.
+  static const missingLinksOrderCountSuffix = ' đơn';
+
+  /// Tooltip for the "Open in Google Maps" button on each row (FR2/AC2).
+  static const missingLinksOpenMapTooltip = 'Mở Google Maps';
+
+  /// Snackbar shown when the device cannot open Google Maps for an
+  /// address row. Reuses [OrdersLabels.cannotOpenMap] via
+  /// [launchExternalUrl]; this label is reserved for screen-level hints.
+  static const missingLinksOpenMapError = 'Không mở được Google Maps';
 }
