@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/address.dart';
 import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/config_parsers.dart';
+import 'address_autocomplete_field.dart';
 import 'order_delivery_section.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/address_labels.dart';
 
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
   const Stage3DeliveryOptionsScreen({
@@ -140,6 +143,38 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
+  /// DG-385 Phase 4 / FR2 / AC2: auto-bind the selected suggestion's
+  /// `googleMapsUrl` to the order when the user picks an address from the
+  /// autocomplete dropdown. The address text is written into the address
+  /// controller by the field; this callback only updates the map link on
+  /// the wizard state and surfaces a non-blocking snackbar so the operator
+  /// knows the link was bound (or that the library entry has no link yet).
+  void _onAddressSelected(AddressSuggestion suggestion) {
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
+    notifier.updateWizardData(
+      state.wizardData.copyWith(
+        googleMapsUrl: suggestion.googleMapsUrl,
+        // Clear any stale GPS coordinates when a library address is chosen
+        // so the saved order does not carry mismatched address/coords.
+        latitude: null,
+        longitude: null,
+      ),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            suggestion.googleMapsUrl != null
+                ? AddressLabels.mapsLinkBoundSnack
+                : AddressLabels.mapsLinkNoLinkSnack,
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _retryShippingFeeConfig(String type) {
     switch (type) {
       case 'bus':
@@ -189,6 +224,17 @@ class _Stage3DeliveryOptionsScreenState
               notesCtrl: data.needsNotes ? _notesCtrl : null,
               onDeliveryTypeChanged: _updateDeliveryType,
               onShippingFeeChanged: _setShippingFee,
+              // DG-385 Phase 4 / FR1/FR2/FR5: autocomplete address field with
+              // library suggestions, customer-prioritized ordering, and
+              // auto-bind of `googleMapsUrl` on selection (AC1/AC2/AC5).
+              addressField: AddressAutocompleteField(
+                controller: _addressCtrl,
+                customerId: data.selectedCustomer?.id,
+                onSelected: _onAddressSelected,
+                validator: (v) => data.needsAddress && (v == null || v.trim().isEmpty)
+                    ? VN.fieldRequired
+                    : null,
+              ),
               dueDate: state.dueDate,
               dueTime: state.dueTime,
               onDueDateChanged: (d) => ref
