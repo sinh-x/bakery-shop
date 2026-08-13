@@ -30,7 +30,7 @@ with the period-summary revenue total and ``baker report income-statement``
 DG-386 Phase 3: adds ``GET /api/reports/expense-summary`` — total
 expenses for a week or month period with a full parent/child category
 tree breakdown from ``expense_categories``. Reuses the aggregation
-pattern from ``_query_supplier_category_breakdown`` and the
+pattern from ``query_supplier_category_breakdown`` and the
 ``expense-by-category`` CLI: category/subcategory is resolved from the
 originating expense event's ``data`` JSON, deleted expense events are
 excluded (matching the expense screen filter logic), and legacy rows
@@ -43,8 +43,8 @@ computed from journal entries on cash accounts without requiring an
 active cash drawer (F2). Reuses the constants
 (``CASH_ACCOUNT_CODES``, ``OPERATING_INFLOW_SOURCE_TYPES``,
 ``OPERATING_OUTFLOW_SOURCE_TYPES``) and query helpers
-(``_query_cash_period_activity``, ``_query_supplier_category_breakdown``,
-``_sum_section``) from ``src/baker/commands/report.py`` so the totals
+(``query_cash_period_activity``, ``query_supplier_category_breakdown``,
+``sum_section``) from ``src/baker/services/cashflow.py`` so the totals
 reconcile with ``baker report cashflow`` (FR5 / AC5).
 """
 
@@ -55,13 +55,13 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from baker.commands.report import (
+from baker.services.cashflow import (
     CASH_ACCOUNT_CODES,
     OPERATING_INFLOW_SOURCE_TYPES,
     OPERATING_OUTFLOW_SOURCE_TYPES,
-    _query_cash_period_activity,
-    _query_supplier_category_breakdown,
-    _sum_section,
+    query_cash_period_activity,
+    query_supplier_category_breakdown,
+    sum_section,
 )
 from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
@@ -164,11 +164,6 @@ def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
         f"{start_str}T00:00:00",
         next_day.strftime("%Y-%m-%dT00:00:00"),
     )
-
-
-def _period_date_range_filter(start_str: str, end_str: str) -> str:
-    """Return the SQL ``orders.due_date`` predicate for an inclusive date range."""
-    return "orders.due_date >= ? AND orders.due_date <= ?"
 
 
 @router.get("/today-summary")
@@ -458,7 +453,7 @@ def get_period_summary(
                  WHERE order_id = orders.id AND invalidated_at IS NULL) AS payment_methods_concat
                 FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
                 WHERE (
-                    {_period_date_range_filter(start_date, end_date)}
+                    orders.due_date >= ? AND orders.due_date <= ?
                     OR (
                         (orders.due_date IS NULL OR orders.due_date = '')
                         AND orders.source IN ({source_placeholders})
@@ -801,7 +796,7 @@ def get_expense_summary(
         # --- Aggregate by category/subcategory ---
         # totals[parent] = total (incl. all subcategories)
         # sub_totals[parent][subcategory] = subtotal
-        # Mirrors _query_supplier_category_breakdown / expense_by_category_cmd.
+        # Mirrors query_supplier_category_breakdown / expense_by_category_cmd.
         totals: dict[str, float] = {}
         sub_totals: dict[str, dict[str, float]] = {}
         uncategorized = 0.0
@@ -947,7 +942,7 @@ def get_cashflow_summary(
 
     with get_db() as conn:
         # --- Operating cash activity grouped by source_type/account ---
-        # Reuses _query_cash_period_activity from report.py so the totals
+        # Reuses query_cash_period_activity from report.py so the totals
         # reconcile with ``baker report cashflow``. The CLI uses inclusive
         # ``<= until_b`` bounds with end-of-day suffix; here we use the
         # same half-open ``>= start_ts AND < end_next_day_ts`` bounds as
@@ -955,24 +950,24 @@ def get_cashflow_summary(
         # expense-summary) for consistency. Both schemes cover the same
         # day range for journal entries whose transaction_date carries a
         # T00:00:00..T23:59:59 timestamp.
-        period_activity = _query_cash_period_activity(
+        period_activity = query_cash_period_activity(
             conn, start_ts, end_next_day_ts,
         )
 
         # --- Supplier category/subcategory breakdown ---
         # expense + expense_settlement only (order_shipping_release is
-        # excluded from the breakdown by _query_supplier_category_breakdown
+        # excluded from the breakdown by query_supplier_category_breakdown
         # but its outflow is captured in the suppliers section total via
-        # _sum_section below).
-        supplier_breakdown = _query_supplier_category_breakdown(
+        # sum_section below).
+        supplier_breakdown = query_supplier_category_breakdown(
             conn, start_ts, end_next_day_ts,
         )
 
     # --- Aggregate customer and supplier sections ---
-    cust_in, cust_out, cust_per = _sum_section(
+    cust_in, cust_out, cust_per = sum_section(
         period_activity, OPERATING_INFLOW_SOURCE_TYPES,
     )
-    sup_in, sup_out, sup_per = _sum_section(
+    sup_in, sup_out, sup_per = sum_section(
         period_activity, OPERATING_OUTFLOW_SOURCE_TYPES,
     )
 

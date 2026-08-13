@@ -16,6 +16,31 @@ import 'expense_summary_section.dart';
 import 'product_breakdown_section.dart';
 import 'revenue_summary_section.dart';
 
+/// Shifts a [DateTime] anchor by one week (±7 days) or one month (±1 month)
+/// so the backend can re-derive the new period window from the new anchor.
+///
+/// For month shifts the day is clamped to the target month's last day so a
+/// 31st-of-month anchor does not skip a month when the target has fewer
+/// days (Dart normalizes overflow, e.g. Jan 31 + 1 month → Feb 31 → Mar 3).
+DateTime shiftPeriodAnchor(DateTime anchor, {required bool isWeek, required int direction}) {
+  if (isWeek) {
+    return anchor.add(Duration(days: 7 * direction));
+  }
+  int targetYear = anchor.year;
+  int targetMonth = anchor.month + direction;
+  if (targetMonth > 12) {
+    targetYear = anchor.year + 1;
+    targetMonth = 1;
+  } else if (targetMonth < 1) {
+    targetYear = anchor.year - 1;
+    targetMonth = 12;
+  }
+  // DateTime(year, month + 1, 0).day is the last day of `month`.
+  final lastDayOfMonth = DateTime(targetYear, targetMonth + 1, 0).day;
+  final clampedDay = anchor.day < lastDayOfMonth ? anchor.day : lastDayOfMonth;
+  return DateTime(targetYear, targetMonth, clampedDay);
+}
+
 /// Week/Month tab body for the Today Sales screen (DG-386 Phase 6 / FR1,
 /// FR2 / AC1, AC2, AC7).
 ///
@@ -28,8 +53,8 @@ import 'revenue_summary_section.dart';
 ///
 /// Reuses [RevenueSummarySection] for the revenue/payment/cash-source cards
 /// because the [PeriodSummary] metric fields are identical in shape to
-/// `TodaySummary`. The product/expense/cashflow sections are the widgets
-/// built in Phases 7–9 and wired here in Phase 11 (FR1).
+/// `TodaySummary`. The product/expense/cashflow sections are implemented and
+/// wired here (DG-386 Phases 7–11 / FR1).
 class PeriodTabBody extends ConsumerWidget {
   const PeriodTabBody({
     super.key,
@@ -91,20 +116,13 @@ class _PeriodTabContent extends StatelessWidget {
   DateTime get _anchor => parseApiDate(query.date) ?? DateTime.now();
 
   /// Shifts the anchor by one week (±7 days) or one month (±1 month) so the
-  /// backend re-derives the new period window from the new anchor.
-  DateTime _shift(int direction) {
-    final anchor = _anchor;
-    if (_isWeek) {
-      return anchor.add(Duration(days: 7 * direction));
-    }
-    final newMonth = anchor.month + direction;
-    if (newMonth > 12) {
-      return DateTime(anchor.year + 1, 1, anchor.day);
-    } else if (newMonth < 1) {
-      return DateTime(anchor.year - 1, 12, anchor.day);
-    }
-    return DateTime(anchor.year, newMonth, anchor.day);
-  }
+  /// backend re-derives the new period window from the new anchor. Delegates
+  /// to [shiftPeriodAnchor] for the clamping logic.
+  DateTime _shift(int direction) => shiftPeriodAnchor(
+        _anchor,
+        isWeek: _isWeek,
+        direction: direction,
+      );
 
   String get _periodLabel {
     if (_isWeek) {

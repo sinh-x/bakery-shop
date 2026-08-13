@@ -25,9 +25,9 @@ import 'widgets/period_tab_body.dart';
 ///
 /// The screen is a thin orchestrator: tab state lives here, while each tab's
 /// body is rendered by [DayTabBody] or [PeriodTabBody] (NF2 — screen ≤ 300
-/// lines, each widget file ≤ 300 lines). Section widgets for product
-/// breakdown, expense summary, and cashflow summary are stubbed inside
-/// [PeriodTabBody] and will be built in Phases 7–9.
+/// lines, each widget file ≤ 300 lines). The product breakdown, expense
+/// summary, and cashflow summary section widgets are implemented and wired
+/// into [PeriodTabBody] (DG-386 Phases 7–11 / FR1).
 class TodaySalesScreen extends ConsumerStatefulWidget {
   const TodaySalesScreen({super.key});
 
@@ -84,7 +84,17 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   @override
   void initState() {
     super.initState();
+    // Tab changes drive `isDayTab` and the AppBar title, so rebuild on every
+    // tab transition (Mn-4). Removed in `dispose` to avoid leaking the
+    // listener once the controller is disposed.
+    _tabController.addListener(_onTabChanged);
     initAutoRefresh();
+  }
+
+  void _onTabChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -95,6 +105,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     disposeAutoRefresh();
     super.dispose();
