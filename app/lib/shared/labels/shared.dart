@@ -237,6 +237,21 @@ class SharedLabels {
   static const todaySalesExpenseUncategorized = 'Chưa phân loại';
   static const todaySalesExpenseEmpty = 'Không có chi phí trong kỳ';
 
+  // Today Sales screen — cashflow summary (DG-386 Phase 9 / FR5 / AC5)
+  //
+  // Section title and line labels for the operating-activities cashflow
+  // summary rendered from journal entries (drawer-independent). Inflow is
+  // cash received from customers; outflow is cash paid to suppliers and
+  // employees. The supplier-outflow breakdown is grouped by expense
+  // category with subcategory lines, mirroring the expense-summary tree.
+  // An `Chưa phân loại` line covers supplier outflow whose category could
+  // not be resolved. The net line is inflow minus outflow.
+  static const todaySalesCashflowInflow = 'Tiền vào từ khách hàng';
+  static const todaySalesCashflowOutflow = 'Tiền trả nhà cung cấp / nhân viên';
+  static const todaySalesCashflowNet = 'Dòng tiền ròng';
+  static const todaySalesCashflowUncategorized = 'Chưa phân loại';
+  static const todaySalesCashflowEmpty = 'Không có dòng tiền trong kỳ';
+
   // Today Sales screen — cash-source breakdown (DG-378 Phase 3 / FR3, AC3)
   //
   // Separate from the "Tổng tiền nhận được" payment group: this breakdown
