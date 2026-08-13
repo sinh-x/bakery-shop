@@ -13,7 +13,11 @@ import '../../../shared/widgets/section_title.dart';
 /// and employees, including shipping releases), and the net operating cash
 /// flow. The supplier-outflow side is broken down by expense category with
 /// one subcategory line per child, mirroring the [ExpenseSummarySection]
-/// tree. An `Chưa phân loại` (uncategorized) line is appended when supplier
+/// tree. The complete subcategory tree from the backend `childrenOf`
+/// mapping is rendered even when a subcategory had zero expenses in the
+/// period — missing subcategories are filled in with a zero amount so the
+/// tree is always complete (AC5 consistency with the expense section /
+/// AC4). An `Chưa phân loại` (uncategorized) line is appended when supplier
 /// outflow could not be attributed to any category.
 ///
 /// Unlike the drawer-dependent [CashflowBreakdownSection] (DG-374), this
@@ -106,7 +110,11 @@ class _CashflowSummaryBody extends StatelessWidget {
               child: Column(
                 children: [
                   for (final category in summary.supplierCategories)
-                    _CashflowSupplierCategoryGroup(category: category),
+                    _CashflowSupplierCategoryGroup(
+                      category: category,
+                      childNames: summary.childrenOf[category.name] ??
+                          const [],
+                    ),
                   if (summary.uncategorizedSupplier > 0)
                     _UncategorizedLine(amount: summary.uncategorizedSupplier),
                 ],
@@ -152,16 +160,32 @@ class _CashflowTotalLine extends StatelessWidget {
 }
 
 /// A parent supplier category with its inclusive total and one line per
-/// subcategory. Subcategories are rendered in the order the backend
-/// reports them (already sorted by the API).
+/// subcategory. The complete subcategory tree from the backend
+/// `childrenOf` mapping is rendered even when a subcategory had zero
+/// expenses in the period — missing subcategories are filled in with a
+/// zero amount so the tree is always complete (AC5 consistency with the
+/// expense section / AC4).
 class _CashflowSupplierCategoryGroup extends StatelessWidget {
-  const _CashflowSupplierCategoryGroup({required this.category});
+  const _CashflowSupplierCategoryGroup({
+    required this.category,
+    required this.childNames,
+  });
 
   final CashflowSupplierCategory category;
+  final List<String> childNames;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Build a name→amount lookup for the subcategories the backend
+    // actually reported amounts for, then walk the canonical child-name
+    // list from `childrenOf` so zero-amount subcategories still appear.
+    final amountByName = <String, double>{
+      for (final sub in category.subcategories) sub.name: sub.amount,
+    };
+    final renderedChildNames = childNames.isNotEmpty
+        ? childNames
+        : category.subcategories.map((s) => s.name).toList(growable: false);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -188,8 +212,11 @@ class _CashflowSupplierCategoryGroup extends StatelessWidget {
               ),
             ],
           ),
-          for (final sub in category.subcategories)
-            _CashflowSubcategoryLine(name: sub.name, amount: sub.amount),
+          for (final name in renderedChildNames)
+            _CashflowSubcategoryLine(
+              name: name,
+              amount: amountByName[name] ?? 0,
+            ),
         ],
       ),
     );

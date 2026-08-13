@@ -1,9 +1,9 @@
 """Shared date-bound and date-validation helpers for the reporting API.
 
 Extracted from ``baker.api.reports`` (DG-386 review Mn1, cycle 5) so the
-date helpers are reusable and the main router module stays under the
-oversized-file threshold. Behavior is identical to the prior inline
-implementation — only the module location changed.
+date helpers are reusable across the per-domain report router modules.
+Behavior is identical to the prior inline implementation — only the
+module location changed.
 """
 
 import calendar

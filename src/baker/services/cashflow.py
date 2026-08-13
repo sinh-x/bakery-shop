@@ -9,6 +9,8 @@ only the module location and visibility (private → public) changed.
 
 import json
 
+from baker.services.expense_categories import aggregate_categories
+
 
 # Cash accounts tracked by the direct-method cashflow statement. Cash held in
 # 1200 (the parent bank account, used by the expense flow and owner-capital
@@ -279,10 +281,10 @@ def query_supplier_category_breakdown(
             if isinstance(sid, int):
                 settlement_to_event_data[sid] = ev_data
 
-    totals: dict[str, float] = {}
-    sub_totals: dict[str, dict[str, float]] = {}
-    uncategorized = 0.0
-
+    # Resolve (category, subcategory, amount) per row, then delegate the
+    # legacy normalization + totals/sub_totals/uncategorized accumulation
+    # to the shared aggregate_categories helper (DG-386 review Mn3).
+    triples: list[tuple[str | None, str | None, float]] = []
     for r in rows:
         source_type = r["source_type"]
         source_id = r["source_id"]
@@ -309,26 +311,9 @@ def query_supplier_category_breakdown(
                 if isinstance(sub, str) and sub:
                     subcategory = sub
 
-        if category:
-            # Legacy normalization: when the category field is actually a
-            # subcategory name, normalize it back to the parent so it lands
-            # in the right bucket (matches report.py:806-813).
-            if category in parent_of:
-                parent = parent_of[category]
-                sub_totals.setdefault(parent, {})
-                sub_totals[parent][category] = (
-                    sub_totals[parent].get(category, 0.0) + amount
-                )
-                totals[parent] = totals.get(parent, 0.0) + amount
-            else:
-                totals[category] = totals.get(category, 0.0) + amount
-                if subcategory:
-                    sub_totals.setdefault(category, {})
-                    sub_totals[category][subcategory] = (
-                        sub_totals[category].get(subcategory, 0.0) + amount
-                    )
-        else:
-            uncategorized += amount
+        triples.append((category, subcategory, amount))
+
+    totals, sub_totals, uncategorized = aggregate_categories(triples, parent_of)
 
     return {
         "totals": totals,

@@ -111,6 +111,7 @@ from baker.labels.report_labels import (
     LBL_RECONCILE_MISMATCH,
 )
 from baker.models.order import OrderStatus
+from baker.services.expense_categories import aggregate_categories
 from baker.utils.time import utc_to_local
 
 
@@ -777,12 +778,10 @@ def expense_by_category_cmd(since, until):
 
         # Aggregate by category (and subcategory when present) from
         # events.data JSON, falling back to the debited account name when
-        # the event/data is unavailable.
-        # totals[parent_category] = total (incl. all subcategories)
-        # sub_totals[parent_category][subcategory] = subtotal
-        totals: dict[str, float] = {}
-        sub_totals: dict[str, dict[str, float]] = {}
-        uncategorized = 0.0
+        # the event/data is unavailable. The legacy normalization and
+        # totals/sub_totals/uncategorized accumulation are delegated to
+        # the shared aggregate_categories helper (DG-386 review Mn3).
+        triples: list[tuple[str | None, str | None, float]] = []
         for r in rows:
             category = None
             subcategory = None
@@ -802,27 +801,11 @@ def expense_by_category_cmd(since, until):
                             subcategory = sub
                     except (json.JSONDecodeError, TypeError):
                         pass
-            if category:
-                # If the "category" itself is a subcategory name (legacy
-                # rows where subcategory was stored in category), normalize
-                # it back to the parent so it lands in the right bucket.
-                if category in parent_of:
-                    parent = parent_of[category]
-                    sub_totals.setdefault(parent, {})
-                    sub_totals[parent][category] = (
-                        sub_totals[parent].get(category, 0.0) + float(r["debit"])
-                    )
-                    totals[parent] = totals.get(parent, 0.0) + float(r["debit"])
-                else:
-                    totals[category] = totals.get(category, 0.0) + float(r["debit"])
-                    if subcategory:
-                        sub_totals.setdefault(category, {})
-                        sub_totals[category][subcategory] = (
-                            sub_totals[category].get(subcategory, 0.0)
-                            + float(r["debit"])
-                        )
-            else:
-                uncategorized += float(r["debit"])
+            triples.append((category, subcategory, float(r["debit"])))
+
+        totals, sub_totals, uncategorized = aggregate_categories(
+            triples, parent_of
+        )
 
         click.echo(f"{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
         click.echo("-" * 52)
