@@ -183,6 +183,15 @@ class SharedLabels {
   // Today Sales entry point (DG-374 Phase 1)
   static const dashboardMetricViewTodaySales = 'Xem doanh số hôm nay';
 
+  // Today Sales screen — period tabs (DG-386 Phase 6 / FR1 / AC1, AC2)
+  //
+  // Three tabs on the summary screen: Ngày (day, current behavior), Tuần
+  // (week, Monday–Sunday), Tháng (month, 1st–last day). Used as TabBar labels
+  // and AppBar title prefixes for week/month navigation.
+  static const todaySalesTabDay = 'Ngày';
+  static const todaySalesTabWeek = 'Tuần';
+  static const todaySalesTabMonth = 'Tháng';
+
   // Today Sales screen (DG-374 Phase 2)
   static const todaySalesTitle = 'Doanh số hôm nay';
   static const todaySalesRevenueSection = 'Tổng quan doanh thu';

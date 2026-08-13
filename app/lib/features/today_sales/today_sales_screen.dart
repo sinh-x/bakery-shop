@@ -2,32 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/models/today_summary.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
+import '../../providers/dashboard/period_summary_providers.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import '../../shared/widgets/section_title.dart';
-import '../dashboard/widgets/today_order_list.dart';
-import 'widgets/revenue_summary_section.dart';
+import 'widgets/day_tab_body.dart';
+import 'widgets/period_tab_body.dart';
 
-/// Today Sales screen (DG-374 Phase 2 / FR3, FR4 / AC5, AC6).
+/// Today Sales screen (DG-374 Phase 2 / FR3, FR4 / AC5, AC6), refactored in
+/// DG-386 Phase 6 to add a Ngày/Tuần/Tháng tab bar with week/month prev/next
+/// navigation (FR1 / AC1, AC2, AC7).
 ///
-/// Shows today's revenue summary (total revenue, order count, cash total,
-/// bank transfer total) and an order list grouped by status with due-date/
-/// time ordering. A date picker in the app bar switches the order-list view
-/// to historical days. Revenue/cashflow sections always reflect today's live
-/// data regardless of the selected date.
+/// - **Ngày tab**: keeps the pre-Phase-6 behavior, including the date picker
+///   in the AppBar (today → `todaySummaryProvider`, historical →
+///   `dateSummaryProvider(<date>)`).
+/// - **Tuần tab**: shows the current week (Monday–Sunday) summary via
+///   `periodSummaryProvider(week)`. Prev/next arrows navigate weeks.
+/// - **Tháng tab**: shows the current month (1st–last day) summary via
+///   `periodSummaryProvider(month)`. Prev/next arrows navigate months.
 ///
-/// DG-378 Phase 3 / FR4 / AC5: all metrics — revenue, order count, cash,
-/// bank, cash-in, cash-out — come from the backend
-/// `GET /api/reports/today-summary` API via [todaySummaryProvider]
-/// (today) or [dateSummaryProvider] (historical). The legacy
-/// `todayPaymentSplitProvider` and the dashboard's
-/// `dashboardRevenueStockProvider` are no longer consulted for any metric
-/// on this screen — the summary API is the single source of truth for both
-/// today and historical dates.
+/// The screen is a thin orchestrator: tab state lives here, while each tab's
+/// body is rendered by [DayTabBody] or [PeriodTabBody] (NF2 — screen ≤ 300
+/// lines, each widget file ≤ 300 lines). Section widgets for product
+/// breakdown, expense summary, and cashflow summary are stubbed inside
+/// [PeriodTabBody] and will be built in Phases 7–9.
 class TodaySalesScreen extends ConsumerStatefulWidget {
   const TodaySalesScreen({super.key});
 
@@ -36,8 +36,21 @@ class TodaySalesScreen extends ConsumerStatefulWidget {
 }
 
 class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
-    with WidgetsBindingObserver, AutoRefreshMixin {
+    with WidgetsBindingObserver, AutoRefreshMixin, SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+  );
+
+  /// Selected date for the Ngày tab (defaults to today). The date picker in
+  /// the AppBar updates this and is only shown when the Ngày tab is active.
   String _selectedDate = formatApiDate(DateTime.now());
+
+  /// Anchor date for the Tuần tab (week navigation).
+  String _weekAnchor = formatApiDate(DateTime.now());
+
+  /// Anchor date for the Tháng tab (month navigation).
+  String _monthAnchor = formatApiDate(DateTime.now());
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -49,6 +62,14 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     if (picked != null && mounted) {
       setState(() => _selectedDate = formatApiDate(picked));
     }
+  }
+
+  void _navigateWeek(DateTime newAnchor) {
+    setState(() => _weekAnchor = formatApiDate(newAnchor));
+  }
+
+  void _navigateMonth(DateTime newAnchor) {
+    setState(() => _monthAnchor = formatApiDate(newAnchor));
   }
 
   @override
@@ -74,6 +95,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
 
   @override
   void dispose() {
+    _tabController.dispose();
     disposeAutoRefresh();
     super.dispose();
   }
@@ -81,6 +103,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   @override
   Widget build(BuildContext context) {
     final isToday = _selectedDate == formatApiDate(DateTime.now());
+    final isDayTab = _tabController.index == 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -94,149 +117,44 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
             ? SharedLabels.todaySalesTitle
             : formatDisplayDate(parseApiDate(_selectedDate))),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_today),
-            tooltip: VN.chonNgay,
-            onPressed: _pickDate,
-          ),
+          if (isDayTab)
+            IconButton(
+              icon: const Icon(Icons.calendar_today),
+              tooltip: VN.chonNgay,
+              onPressed: _pickDate,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: onAutoRefreshTriggered,
           ),
           const AppBarOverflowMenu(),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: SharedLabels.todaySalesTabDay),
+            Tab(text: SharedLabels.todaySalesTabWeek),
+            Tab(text: SharedLabels.todaySalesTabMonth),
+          ],
+        ),
       ),
       body: SafeArea(
-        child: _TodaySalesBody(selectedDate: _selectedDate, isToday: isToday),
-      ),
-    );
-  }
-}
-
-class _TodaySalesBody extends ConsumerStatefulWidget {
-  const _TodaySalesBody({
-    required this.selectedDate,
-    required this.isToday,
-  });
-
-  final String selectedDate;
-  final bool isToday;
-
-  @override
-  ConsumerState<_TodaySalesBody> createState() => _TodaySalesBodyState();
-}
-
-class _TodaySalesBodyState extends ConsumerState<_TodaySalesBody> {
-  bool _refreshError = false;
-
-  @override
-  Widget build(BuildContext context) {
-    // DG-378 Phase 3 / FR4 / AC5: all metrics (revenue, order count, cash,
-    // bank, cash-in, cash-out) come from the backend `today-summary` API —
-    // `todaySummaryProvider` for today, `dateSummaryProvider(<date>)` for
-    // historical days. The legacy `todayPaymentSplitProvider` and
-    // `dashboardRevenueStockProvider` are no longer consulted on this
-    // screen.
-    final summaryProvider = widget.isToday
-        ? todaySummaryProvider
-        : dateSummaryProvider(widget.selectedDate);
-    final summaryAsync = ref.watch(summaryProvider);
-    final summary = summaryAsync.asData?.value;
-
-    final totalRevenue = summary?.revenue;
-    final orderCount = summary?.orderCount;
-    final cashTotal = summary?.cashTotal;
-    final bankTransferTotal = summary?.bankTransferTotal;
-    final cashInTotal = summary?.cashInTotal;
-    final cashOutTotal = summary?.cashOutTotal;
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        ref.invalidate(summaryProvider);
-        var failed = false;
-        await ref.read(summaryProvider.future).catchError((_) {
-          failed = true;
-          return const TodaySummary(
-            date: '',
-            revenue: 0,
-            orderCount: 0,
-            cashTotal: 0,
-            bankTransferTotal: 0,
-            cashInTotal: 0,
-            cashOutTotal: 0,
-            orders: [],
-          );
-        });
-        if (!mounted) return;
-        if (failed) {
-          setState(() => _refreshError = true);
-          messenger?.showSnackBar(
-            const SnackBar(
-              content: Text(SharedLabels.refreshFailed),
-              behavior: SnackBarBehavior.floating,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            DayTabBody(selectedDate: _selectedDate, isToday: isToday),
+            PeriodTabBody(
+              query: PeriodQuery(period: 'week', date: _weekAnchor),
+              onNavigate: _navigateWeek,
             ),
-          );
-        } else if (_refreshError) {
-          setState(() => _refreshError = false);
-        }
-      },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (_refreshError)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                SharedLabels.refreshFailed,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
-                ),
-              ),
+            PeriodTabBody(
+              query: PeriodQuery(period: 'month', date: _monthAnchor),
+              onNavigate: _navigateMonth,
             ),
-          RevenueSummarySection(
-            totalRevenue: totalRevenue,
-            orderCount: orderCount,
-            cashTotal: cashTotal,
-            bankTransferTotal: bankTransferTotal,
-            cashInTotal: cashInTotal,
-            cashOutTotal: cashOutTotal,
-          ),
-          const SizedBox(height: 20),
-          _OrderListSection(summaryAsync: summaryAsync),
-        ],
-      ),
-    );
-  }
-}
-
-/// Order-list section using the today-summary API. Orders are grouped by
-/// status with due-date/time ordering within each group (DG-376 FR6/AC6).
-class _OrderListSection extends StatelessWidget {
-  const _OrderListSection({required this.summaryAsync});
-
-  final AsyncValue<TodaySummary> summaryAsync;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle(title: SharedLabels.todaySalesOrderListSection),
-        const SizedBox(height: 8),
-        summaryAsync.when(
-          data: (summary) => TodayOrderList(orders: summary.orders),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (_, _) => Center(
-            child: Text(
-              SharedLabels.errorLoading,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
