@@ -12,36 +12,41 @@ class _FakeAddressService extends AddressService {
   int? lastCustomerId;
   int callCount = 0;
 
-  final List<AddressSuggestion> _suggestions = <AddressSuggestion>[
-    const AddressSuggestion(
-      id: 1,
-      displayAddress: '123 Lê Lợi',
-      googleMapsUrl: 'https://maps.app.goo.gl/abc',
-      isCustomerAddress: true,
-    ),
-    const AddressSuggestion(
-      id: 2,
-      displayAddress: '45 Trần Phú',
-      googleMapsUrl: null,
-      isCustomerAddress: false,
-    ),
-  ];
+  final AddressAutocompleteResponse _response =
+      const AddressAutocompleteResponse(
+    pastOrders: <AddressSuggestion>[
+      AddressSuggestion(
+        id: 1,
+        displayAddress: '123 Lê Lợi',
+        googleMapsUrl: 'https://maps.app.goo.gl/abc',
+        isCustomerAddress: true,
+      ),
+    ],
+    library: <AddressSuggestion>[
+      AddressSuggestion(
+        id: 2,
+        displayAddress: '45 Trần Phú',
+        googleMapsUrl: null,
+        isCustomerAddress: false,
+      ),
+    ],
+  );
 
   @override
-  Future<List<AddressSuggestion>> autocomplete({
+  Future<AddressAutocompleteResponse> autocomplete({
     required String query,
     int? customerId,
   }) async {
     callCount += 1;
     lastQuery = query;
     lastCustomerId = customerId;
-    return List<AddressSuggestion>.from(_suggestions);
+    return _response;
   }
 }
 
 void main() {
   test(
-    'addressAutocompleteProvider returns empty list when query too short',
+    'addressAutocompleteProvider returns empty response when query too short',
     () async {
       final container = ProviderContainer(
         overrides: [addressServiceProvider.overrideWithValue(_FakeAddressService())],
@@ -51,12 +56,13 @@ void main() {
       const request = AddressAutocompleteRequest(query: 'a', customerId: null);
       final result =
           await container.read(addressAutocompleteProvider(request).future);
-      expect(result, isEmpty);
+      expect(result.pastOrders, isEmpty);
+      expect(result.library, isEmpty);
     },
   );
 
   test(
-    'addressAutocompleteProvider fetches suggestions for valid query and forwards customerId',
+    'addressAutocompleteProvider fetches grouped response for valid query and forwards customerId',
     () async {
       final fake = _FakeAddressService();
       final container = ProviderContainer(
@@ -68,12 +74,14 @@ void main() {
       final result =
           await container.read(addressAutocompleteProvider(request).future);
 
-      expect(result, hasLength(2));
       expect(fake.callCount, 1);
       expect(fake.lastQuery, '123');
       expect(fake.lastCustomerId, 7);
-      expect(result.first.isCustomerAddress, isTrue);
-      expect(result.first.googleMapsUrl, isNotNull);
+      expect(result.pastOrders, hasLength(1));
+      expect(result.pastOrders.first.isCustomerAddress, isTrue);
+      expect(result.pastOrders.first.googleMapsUrl, isNotNull);
+      expect(result.library, hasLength(1));
+      expect(result.library.first.displayAddress, '45 Trần Phú');
     },
   );
 

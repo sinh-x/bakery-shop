@@ -11,27 +11,38 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeAddressService extends AddressService {
   _FakeAddressService() : super(Dio());
 
-  final List<AddressSuggestion> _suggestions = <AddressSuggestion>[
-    const AddressSuggestion(
-      id: 1,
-      displayAddress: '123 Lê Lợi',
-      googleMapsUrl: 'https://maps.app.goo.gl/abc',
-      isCustomerAddress: true,
-    ),
-    const AddressSuggestion(
-      id: 2,
-      displayAddress: '45 Trần Phú',
-      googleMapsUrl: null,
-      isCustomerAddress: false,
-    ),
-  ];
+  /// Default grouped response. Tests may override this via [_responseOverride]
+  /// to exercise single-group scenarios.
+  static const _defaultResponse = AddressAutocompleteResponse(
+    pastOrders: <AddressSuggestion>[
+      AddressSuggestion(
+        id: 1,
+        displayAddress: '123 Lê Lợi',
+        googleMapsUrl: 'https://maps.app.goo.gl/abc',
+        isCustomerAddress: true,
+      ),
+    ],
+    library: <AddressSuggestion>[
+      AddressSuggestion(
+        id: 2,
+        displayAddress: '45 Trần Phú',
+        googleMapsUrl: null,
+        isCustomerAddress: false,
+      ),
+    ],
+  );
+
+  AddressAutocompleteResponse? _responseOverride;
+
+  set responseOverride(AddressAutocompleteResponse value) =>
+      _responseOverride = value;
 
   @override
-  Future<List<AddressSuggestion>> autocomplete({
+  Future<AddressAutocompleteResponse> autocomplete({
     required String query,
     int? customerId,
   }) async {
-    return List<AddressSuggestion>.from(_suggestions);
+    return _responseOverride ?? _defaultResponse;
   }
 }
 
@@ -191,6 +202,167 @@ void main() {
       focusNode.unfocus();
       await tester.pumpAndSettle();
       expect(find.text('123 Lê Lợi'), findsNothing);
+    },
+  );
+
+  // ── DG-388 Phase 4 — Two-section dropdown (FR4 / AC3 / AC4) ─────────────
+
+  testWidgets(
+    'AddressAutocompleteField shows both section headers when both groups have results (FR4/AC3)',
+    (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            addressServiceProvider.overrideWithValue(_FakeAddressService()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(body: AddressAutocompleteField(controller: controller)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextFormField), '12');
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      // Both section headers render (FR4/AC3).
+      expect(find.text(AddressLabels.autocompleteSectionPastOrders),
+          findsOneWidget);
+      expect(
+          find.text(AddressLabels.autocompleteSectionLibrary), findsOneWidget);
+      // Both groups' suggestions render.
+      expect(find.text('123 Lê Lợi'), findsOneWidget);
+      expect(find.text('45 Trần Phú'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'AddressAutocompleteField omits section headers when only library group has results (FR4)',
+    (tester) async {
+      final fake = _FakeAddressService();
+      // Override response: only library group has results.
+      fake.responseOverride = const AddressAutocompleteResponse(
+        pastOrders: <AddressSuggestion>[],
+        library: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 2,
+            displayAddress: '45 Trần Phú',
+            googleMapsUrl: null,
+            isCustomerAddress: false,
+          ),
+        ],
+      );
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            addressServiceProvider.overrideWithValue(fake),
+          ],
+          child: MaterialApp(
+            home: Scaffold(body: AddressAutocompleteField(controller: controller)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextFormField), '45');
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      // No section headers when only one group has results.
+      expect(find.text(AddressLabels.autocompleteSectionPastOrders),
+          findsNothing);
+      expect(
+          find.text(AddressLabels.autocompleteSectionLibrary), findsNothing);
+      // The single suggestion still renders inline.
+      expect(find.text('45 Trần Phú'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'AddressAutocompleteField omits section headers when only pastOrders group has results (FR4)',
+    (tester) async {
+      final fake = _FakeAddressService();
+      fake.responseOverride = const AddressAutocompleteResponse(
+        pastOrders: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 1,
+            displayAddress: '123 Lê Lợi',
+            googleMapsUrl: 'https://maps.app.goo.gl/abc',
+            isCustomerAddress: true,
+          ),
+        ],
+        library: <AddressSuggestion>[],
+      );
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            addressServiceProvider.overrideWithValue(fake),
+          ],
+          child: MaterialApp(
+            home: Scaffold(body: AddressAutocompleteField(controller: controller)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextFormField), '12');
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(AddressLabels.autocompleteSectionPastOrders),
+          findsNothing);
+      expect(
+          find.text(AddressLabels.autocompleteSectionLibrary), findsNothing);
+      expect(find.text('123 Lê Lợi'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Selecting a library-section suggestion writes address and fires onSelected (AC4)',
+    (tester) async {
+      final controller = TextEditingController();
+      AddressSuggestion? selected;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            addressServiceProvider.overrideWithValue(_FakeAddressService()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: AddressAutocompleteField(
+                controller: controller,
+                onSelected: (s) => selected = s,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextFormField), '45');
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap the library suggestion.
+      await tester.tap(find.text('45 Trần Phú').first);
+      await tester.pumpAndSettle();
+
+      expect(controller.text, '45 Trần Phú');
+      expect(selected, isNotNull);
+      expect(selected!.displayAddress, '45 Trần Phú');
+      expect(selected!.googleMapsUrl, isNull);
     },
   );
 }

@@ -221,6 +221,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   onTap: () => context.push('/settings/addresses'),
                 ),
                 const SizedBox(height: 16),
+                // Missing-links screen (DG-388 Phase 5 / FR5/AC6).
+                // Full-screen route outside the shell, reachable from
+                // Settings and from the Address Library screen.
+                ListTile(
+                  leading: const Icon(Icons.link_off),
+                  title: const Text(AddressLabels.missingLinksNavEntry),
+                  subtitle: const Text(AddressLabels.missingLinksNavSubtitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/missing-links'),
+                ),
+                const SizedBox(height: 16),
                 // Logout (DG-319 Phase 6 / FR6 / AC6).
                 ListTile(
                   leading: const Icon(Icons.logout, color: Colors.red),

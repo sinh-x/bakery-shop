@@ -223,5 +223,15 @@ void main() {
           (tester.widget(addressField) as TextField).controller;
       expect(controller?.text, '123 Lê Lợi');
     });
+
+    testWidgets(
+      'open-maps shortcut appears only on rows with a googleMapsUrl (FB-2)',
+      (tester) async {
+        await _pumpScreen(tester, seed: _seedStore());
+        // _seedStore() has one entry with a link ('123 Lê Lợi') and one
+        // without ('45 Trần Phú'), so exactly one open-in-new icon renders.
+        expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      },
+    );
   });
 }

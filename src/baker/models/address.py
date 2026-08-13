@@ -109,16 +109,3 @@ class AddressLibraryUpdate(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("Địa chỉ không được để trống")
         return v.strip() if v is not None else None
-
-
-class AutocompleteSuggestion(BaseModel):
-    """One entry in the ``GET /api/addresses/autocomplete`` response (FR7/FR2).
-
-    ``googleMapsUrl`` is included so the frontend can auto-bind the link
-    when the user selects a suggestion (FR2 / AC2).
-    """
-
-    id: int
-    displayAddress: str
-    googleMapsUrl: Optional[str] = None
-    isCustomerAddress: bool = False

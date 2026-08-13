@@ -133,9 +133,12 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     bool clearGoogleMapsUrl = false,
   }) {
     state = state.copyWith(
-      latitude: clearLatitude ? null : latitude,
-      longitude: clearLongitude ? null : longitude,
-      googleMapsUrl: clearGoogleMapsUrl ? null : googleMapsUrl,
+      latitude: latitude,
+      clearLatitude: clearLatitude,
+      longitude: longitude,
+      clearLongitude: clearLongitude,
+      googleMapsUrl: googleMapsUrl,
+      clearGoogleMapsUrl: clearGoogleMapsUrl,
     );
   }
 

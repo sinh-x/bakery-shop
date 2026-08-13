@@ -20,6 +20,15 @@ class AddressLabels {
   // Suggestion badges (FR5/AC5).
   static const customerAddressBadge = 'Khách';
 
+  // ── Phase 4 — Two-section autocomplete dropdown (DG-388 / FR4 / AC3) ──
+  /// Section header for the customer's past-order delivery addresses
+  /// group in the autocomplete dropdown (FR4/AC3).
+  static const autocompleteSectionPastOrders = 'Địa chỉ đã giao';
+
+  /// Section header for the address library matches group in the
+  /// autocomplete dropdown (FR4/AC3).
+  static const autocompleteSectionLibrary = 'Thư viện địa chỉ';
+
   // Auto-bind map link (FR2/AC2).
   static const mapsLinkBoundSnack = 'Đã gắn link Google Maps cho đơn';
   static const mapsLinkNoLinkSnack = 'Địa chỉ chưa có link Google Maps';
@@ -96,4 +105,32 @@ class AddressLabels {
 
   /// Validator message shown when the maps link is not a URL.
   static const editorMapsLinkInvalid = 'Link Google Maps không hợp lệ';
+
+  // ── Phase 3 — Missing-links screen (DG-388 / FR1/FR2/FR6/AC1/AC2/AC5) ──
+  /// Screen title shown in the AppBar of [MissingLinksScreen].
+  static const missingLinksTitle = 'Địa chỉ thiếu liên kết';
+
+  /// Settings navigation entry label for the missing-links screen (FR5).
+  static const missingLinksNavEntry = 'Địa chỉ thiếu liên kết';
+
+  /// Subtitle shown under the nav entry in Settings.
+  static const missingLinksNavSubtitle =
+      'Các địa chỉ giao cửa chưa có link Google Maps';
+
+  /// Empty state body when no missing-links are returned by the backend
+  /// (AC5 — every door-delivery address has a link).
+  static const missingLinksEmpty =
+      'Tất cả địa chỉ giao cửa đã có link Google Maps.';
+
+  /// Row subtitle showing how many orders reference this address.
+  /// `{count}` is replaced with the [MissingLinkItem.orderCount] value.
+  static const missingLinksOrderCountSuffix = ' đơn';
+
+  /// Tooltip for the "Open in Google Maps" button on each row (FR2/AC2).
+  static const missingLinksOpenMapTooltip = 'Mở Google Maps';
+
+  /// Tooltip for the "Open in Google Maps" shortcut button on each
+  /// address-library row (DG-388 Phase 5.6-c5 / FB-2). Opens the stored
+  /// `googleMapsUrl` via [launchExternalUrl].
+  static const libraryOpenMapTooltip = 'Mở Google Maps';
 }

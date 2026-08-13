@@ -82,6 +82,7 @@ from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_
 from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column
 from .migrations.v100 import _migrate_v100_message_templates
 from .migrations.v102 import _migrate_v102_backfill_address_library
+from .migrations.v103 import _migrate_v103_orders_delivery_type_index
 
 MIGRATIONS = {
     1: {
@@ -580,6 +581,11 @@ MIGRATIONS = {
         "description": "Backfill address_library + customer_addresses from existing door-delivery orders with Google Maps links (DG-387 Phase 2)",
         "sql": "",
         "callable": _migrate_v102_backfill_address_library,
+    },
+    103: {
+        "description": "Add idx_orders_delivery_type index on orders(delivery_type) for door-delivery query performance (DG-388 Phase 5.6-c4 Mn-2)",
+        "sql": "",
+        "callable": _migrate_v103_orders_delivery_type_index,
     },
 }
 

@@ -4,13 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bakery_app/data/api/address_service.dart';
+import 'package:bakery_app/data/models/address.dart';
+import 'package:bakery_app/features/orders/widgets/address_autocomplete_field.dart';
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
+import 'package:bakery_app/providers/address/address_autocomplete_provider.dart';
 import 'package:bakery_app/providers/config_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:dio/dio.dart';
 
 class _FixedStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;
@@ -42,11 +47,28 @@ class _ErrorConfigNotifier extends ConfigValuesNotifier {
   Future<List<String>> build() async => throw Exception('config load failed');
 }
 
+/// Fake [AddressService] used by the FB-1 auto-bind tests. Returns a
+/// configurable grouped autocomplete response so each test can exercise
+/// the bind / clear paths of `_onAddressSelected` via `updateGpsFields`.
+class _FakeAddressService extends AddressService {
+  _FakeAddressService(this._response) : super(Dio());
+
+  final AddressAutocompleteResponse _response;
+
+  @override
+  Future<AddressAutocompleteResponse> autocomplete({
+    required String query,
+    int? customerId,
+  }) async =>
+      _response;
+}
+
 Widget _harness(
   Widget child, {
   required OrderCreateState state,
   ConfigValuesNotifier Function()? busConfig,
   ConfigValuesNotifier Function()? doorConfig,
+  AddressService? addressService,
 }) {
   return ProviderScope(
     overrides: [
@@ -57,9 +79,23 @@ Widget _harness(
         doorConfig ?? () => _DataConfigNotifier(['20000']),
       ),
       orderCreateStateProvider.overrideWith(() => _FixedStateNotifier(state)),
+      if (addressService != null)
+        addressServiceProvider.overrideWithValue(addressService),
     ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
+}
+
+/// Reads the top-level [OrderCreateState] from the harness container so the
+/// FB-1 tests can assert `updateGpsFields` routed the map link to the correct
+/// field (read at submit), not the nested `wizardData.googleMapsUrl` that was
+/// never read by the submission path (the c5 bug).
+OrderCreateState readOrderCreateState(WidgetTester tester) {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(Stage3DeliveryOptionsScreen)),
+    listen: false,
+  );
+  return container.read(orderCreateStateProvider);
 }
 
 void main() {
@@ -301,4 +337,127 @@ void main() {
 
     expect(deliveryPhoneText(tester), '');
   });
+
+  // ── DG-388 Phase 5.6-c6 — FB-1 auto-bind routing tests ────────────────
+
+  testWidgets(
+    'FB-1: selecting a suggestion with a googleMapsUrl binds it to the top-level state',
+    (tester) async {
+      final fake = _FakeAddressService(const AddressAutocompleteResponse(
+        pastOrders: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 1,
+            displayAddress: '123 Lê Lợi',
+            googleMapsUrl: 'https://maps.app.goo.gl/abc',
+          ),
+        ],
+        library: <AddressSuggestion>[],
+      ));
+      await tester.pumpWidget(_harness(
+        Stage3DeliveryOptionsScreen(
+          onBack: () {},
+          onContinue: () {},
+          orderStateProvider: orderCreateStateProvider,
+        ),
+        state: const OrderCreateState(
+          wizardData: OrderWizardData(deliveryType: 'door'),
+        ),
+        addressService: fake,
+      ));
+      await tester.pumpAndSettle();
+
+      // Drive the autocomplete: type a 2+ char query and wait for the debounce.
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AddressAutocompleteField),
+          matching: find.byType(TextFormField),
+        ),
+        '12',
+      );
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap the suggestion carrying a non-null googleMapsUrl.
+      await tester.tap(find.text('123 Lê Lợi').first);
+      await tester.pumpAndSettle();
+
+      final state = readOrderCreateState(tester);
+      expect(state.googleMapsUrl, 'https://maps.app.goo.gl/abc');
+      // The stale lat/long must be cleared per the FB-1 clear path.
+      expect(state.latitude, isNull);
+      expect(state.longitude, isNull);
+    },
+  );
+
+  testWidgets(
+    'FB-1: selecting a suggestion with null googleMapsUrl clears the top-level link + stale lat/long',
+    (tester) async {
+      final fake = _FakeAddressService(const AddressAutocompleteResponse(
+        pastOrders: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 2,
+            displayAddress: '45 Trần Phú',
+            googleMapsUrl: null,
+          ),
+        ],
+        library: <AddressSuggestion>[],
+      ));
+      await tester.pumpWidget(_harness(
+        Stage3DeliveryOptionsScreen(
+          onBack: () {},
+          onContinue: () {},
+          orderStateProvider: orderCreateStateProvider,
+        ),
+        // Start from a state that already has a bound link + coords, so the
+        // clear path (selecting a suggestion with null googleMapsUrl) can be
+        // observed to reset them.
+        state: const OrderCreateState(
+          wizardData: OrderWizardData(deliveryType: 'door'),
+          latitude: 10.0,
+          longitude: 106.0,
+          googleMapsUrl: 'https://maps.app.goo.gl/stale',
+        ),
+        addressService: fake,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AddressAutocompleteField),
+          matching: find.byType(TextFormField),
+        ),
+        '45',
+      );
+      await tester.pump(
+        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('45 Trần Phú').first);
+      await tester.pumpAndSettle();
+
+      // Confirm the suggestion was actually selected (address text written in).
+      expect(
+        (tester.widget(
+          find.descendant(
+            of: find.byType(AddressAutocompleteField),
+            matching: find.byType(TextFormField),
+          ),
+        ) as TextFormField)
+            .controller!
+            .text,
+        '45 Trần Phú',
+      );
+
+      final state = readOrderCreateState(tester);
+      // The address controller sync confirms the selection routed through the
+      // shared controller, proving we read the live container.
+      expect(state.wizardData.deliveryAddress, '45 Trần Phú');
+      expect(state.googleMapsUrl, isNull);
+      expect(state.latitude, isNull);
+      expect(state.longitude, isNull);
+    },
+  );
 }

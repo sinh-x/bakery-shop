@@ -30,6 +30,9 @@ from baker.utils.time import now_utc
 AUTOCOMPLETE_LIMIT = 20
 AUTOCOMPLETE_MIN_QUERY_LEN = 2
 
+# DG-388 Phase 2 / F2: cap on past-order addresses returned per customer.
+PAST_ORDERS_LIMIT = 10
+
 
 def _row_to_address(row) -> Address:
     return Address.from_row(row)
@@ -167,29 +170,122 @@ def autocomplete(
     query: str,
     customer_id: Optional[int] = None,
     limit: int = AUTOCOMPLETE_LIMIT,
-) -> list[dict]:
-    """Return matching library entries for the autocomplete dropdown (FR7/FR1).
+) -> dict:
+    """Return grouped autocomplete suggestions for the dropdown (FR3/FR1/FR5).
 
-    The query is normalized (trim, lowercase, strip diacritics) and matched
-    against ``address_library.normalized_address`` via a ``LIKE`` prefix
-    scan that leverages the v101 index (NFR1: p95 < 300ms at 10k rows).
-    Results are paginated to ``limit`` (default 20).
+    DG-388 Phase 2: the response is ALWAYS a grouped dict with two keys so
+    the frontend can render two labeled sections ("Địa chỉ đã giao" /
+    "Thư viện địa chỉ"):
 
-    When ``customer_id`` is provided, the customer's own addresses (rows
-    linked via ``customer_addresses``) are ranked first, then the remaining
-    library matches follow (FR5). Each result carries ``googleMapsUrl`` so
-    the frontend can auto-bind the link on selection (FR2 / AC2), and an
-    ``isCustomerAddress`` flag so the UI can badge customer-specific
-    suggestions (FR5).
+    - ``pastOrders``: the caller customer's previous door-delivery
+      addresses drawn from the ``orders`` table (raw
+      ``delivery_address`` text + its most recent ``google_maps_url``),
+      filtered by the normalized query and capped at
+      :data:`PAST_ORDERS_LIMIT` (F2). Empty when ``customer_id`` is None
+      or no past orders match.
+    - ``library``: matching ``address_library`` entries (the previous
+      flat-list behavior), ranked with the caller customer's own linked
+      addresses first when ``customer_id`` is supplied (FR5), capped at
+      ``limit`` (default 20). Each entry carries ``googleMapsUrl`` for
+      auto-bind (FR2 / AC2) and an ``isCustomerAddress`` flag.
+
+    The query is normalized (trim, lowercase, strip diacritics) and
+    matched against ``normalized_address`` / normalized
+    ``delivery_address`` via ``LIKE`` so diacritics- and case-variants
+    resolve to the same key (FR1 / NFR3). Both lists may be empty; the
+    grouped dict is always returned so consumers can iterate safely.
     """
     q = (query or "").strip()
     if len(q) < AUTOCOMPLETE_MIN_QUERY_LEN:
+        return {"pastOrders": [], "library": []}
+    return {
+        "pastOrders": _autocomplete_past_orders(conn, q, customer_id),
+        "library": _autocomplete_library(conn, q, customer_id, limit),
+    }
+
+
+def _autocomplete_past_orders(
+    conn,
+    query: str,
+    customer_id: Optional[int],
+) -> list[dict]:
+    """Return the customer's past door-delivery addresses matching ``query``.
+
+    DG-388 Phase 2 / F1 / F2. Draws from the ``orders`` table (not the
+    address library) so the past-orders group reflects addresses the
+    customer actually used on prior door-delivery orders, regardless of
+    whether a library entry exists. Each unique raw
+    ``delivery_address`` is returned once with the most recent
+    ``google_maps_url`` seen for that address (so auto-bind still works
+    when a link was captured on a later order). Results are capped at
+    :data:`PAST_ORDERS_LIMIT` (F2) and ordered by most-recently used
+    first. Returns an empty list when ``customer_id`` is None.
+    """
+    if customer_id is None:
         return []
-    normalized_query = _strip_diacritics(q)
+    _ensure_normalize_function(conn)
+    normalized_query = _strip_diacritics(query)
+    like = f"%{_escape_like(normalized_query)}%"
+    placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
+    status_placeholders = ",".join("?" for _ in DELIVERED_STATUSES)
+    rows = conn.execute(
+        f"""
+        SELECT o.delivery_address AS delivery_address,
+               o.google_maps_url AS google_maps_url,
+               latest.last_order_id AS last_order_id,
+               latest.latest_link_id AS latest_link_id
+        FROM orders o
+        INNER JOIN (
+            SELECT delivery_address,
+                   MAX(id) AS last_order_id,
+                   MAX(CASE WHEN google_maps_url IS NOT NULL
+                             AND google_maps_url != ''
+                        THEN id END) AS latest_link_id
+            FROM orders
+            WHERE customer_id = ?
+              AND delivery_type IN ({placeholders})
+              AND status IN ({status_placeholders})
+              AND delivery_address IS NOT NULL
+              AND delivery_address != ''
+            GROUP BY delivery_address
+        ) latest ON o.id = COALESCE(latest.latest_link_id, latest.last_order_id)
+        WHERE normalize_address(o.delivery_address) LIKE ? ESCAPE '\\'
+        ORDER BY latest.last_order_id DESC
+        LIMIT ?
+        """,
+        (
+            customer_id,
+            *DOOR_DELIVERY_TYPES,
+            *DELIVERED_STATUSES,
+            like,
+            PAST_ORDERS_LIMIT,
+        ),
+    ).fetchall()
+    return [
+        {
+            "displayAddress": r["delivery_address"],
+            "googleMapsUrl": (r["google_maps_url"] or None),
+        }
+        for r in rows
+    ]
+
+
+def _autocomplete_library(
+    conn,
+    query: str,
+    customer_id: Optional[int],
+    limit: int,
+) -> list[dict]:
+    """Return matching ``address_library`` entries (DG-385 Phase 2 behavior).
+
+    When ``customer_id`` is provided, the customer's own linked addresses
+    rank first (FR5); each entry carries ``googleMapsUrl`` (FR2/AC2) and
+    an ``isCustomerAddress`` flag. Capped at ``limit`` (default 20).
+    """
+    normalized_query = _strip_diacritics(query)
     like = f"%{_escape_like(normalized_query)}%"
 
     if customer_id is not None:
-        # FR5: customer's own matching addresses first, then the rest.
         rows = conn.execute(
             "SELECT al.*, "
             "  CASE WHEN ca.customer_id IS NOT NULL THEN 1 ELSE 0 END AS is_customer "
@@ -201,17 +297,15 @@ def autocomplete(
             "LIMIT ?",
             (customer_id, like, limit),
         ).fetchall()
-        results = []
-        for r in rows:
-            results.append(
-                {
-                    "id": r["id"],
-                    "displayAddress": r["display_address"],
-                    "googleMapsUrl": r["google_maps_url"],
-                    "isCustomerAddress": bool(r["is_customer"]),
-                }
-            )
-        return results
+        return [
+            {
+                "id": r["id"],
+                "displayAddress": r["display_address"],
+                "googleMapsUrl": r["google_maps_url"],
+                "isCustomerAddress": bool(r["is_customer"]),
+            }
+            for r in rows
+        ]
 
     rows = conn.execute(
         "SELECT * FROM address_library "
@@ -269,6 +363,13 @@ def link_customer_address(conn, customer_id: int, address_library_id: int) -> No
 # is intentionally excluded — bus orders use a central pickup point, not a
 # per-customer address+link pair that should populate the library.
 DOOR_DELIVERY_TYPES = ("door", "delivery")
+
+# DG-388 Phase 5.6-c4 Mn-3: only orders that reached a delivered state
+# contribute to the "Địa chỉ đã giao" (previously delivered) section of
+# autocomplete. Matches the codebase-wide DELIVERED_STATUSES convention
+# (e.g. baker.commands.repair._common) so cancelled/rejected/draft orders
+# are excluded.
+DELIVERED_STATUSES = ("delivered", "completed")
 
 
 def is_door_delivery(delivery_type: str) -> bool:
@@ -406,10 +507,12 @@ def list_missing_links(conn, limit: int = 100) -> list[dict]:
 
     Results are ordered by ``order_count DESC`` then ``delivery_address ASC``
     so the most-referenced gap surfaces first, and paginated via ``limit``
-    (default 100) to keep the API response bounded (NFR4). The query
-    leverages the indexed ``delivery_type`` and ``google_maps_url`` columns
-    on the ``orders`` table for sub-500ms response at up to 10k door
-    delivery orders (NFR4).
+    (default 100) to keep the API response bounded (NFR4). The
+    ``delivery_type IN (...)`` predicate is backed by the
+    ``idx_orders_delivery_type`` index (created in migration v103) for
+    sub-500ms response at up to 10k door delivery orders (NFR4). The
+    ``google_maps_url`` column is not indexed; its NULL/empty filter is
+    applied after the indexed ``delivery_type`` scan.
 
     Returns a list of dicts with ``deliveryAddress`` and ``orderCount`` keys
     (camelCase for API JSON compatibility with the rest of the addresses

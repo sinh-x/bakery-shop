@@ -100,16 +100,17 @@ final addressAutocompleteQueryProvider =
 
 /// Debounced autocomplete suggestions (FR1/FR5/AC1/AC5).
 ///
-/// A family keyed by [AddressAutocompleteRequest] so the fetch only re-runs
-/// when the debounced query or the selected customer actually changes. The
-/// UI should watch [addressAutocompleteQueryProvider] to drive the
-/// debounce, then read this provider with the resulting request. Empty or
-/// too-short queries short-circuit to an empty list without hitting the
-/// backend (FR1 — "2+ characters").
-final addressAutocompleteProvider =
-    FutureProvider.family<List<AddressSuggestion>, AddressAutocompleteRequest>(
+/// DG-388 Phase 4: the provider now returns the grouped
+/// [AddressAutocompleteResponse] (``{pastOrders, library}``) so the
+/// dropdown can render two labeled sections (FR3/FR4/AC3). Empty or
+/// too-short queries short-circuit to an empty response without hitting
+/// the backend (FR1 — "2+ characters"). The UI should watch
+/// [addressAutocompleteQueryProvider] to drive the debounce, then read
+/// this provider with the resulting request.
+final addressAutocompleteProvider = FutureProvider.family<
+    AddressAutocompleteResponse, AddressAutocompleteRequest>(
   (ref, request) async {
-    if (!request.isValid) return const <AddressSuggestion>[];
+    if (!request.isValid) return const AddressAutocompleteResponse();
     final service = ref.read(addressServiceProvider);
     try {
       return service.autocomplete(

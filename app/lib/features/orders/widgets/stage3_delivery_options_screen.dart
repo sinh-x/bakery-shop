@@ -147,19 +147,20 @@ class _Stage3DeliveryOptionsScreenState
   /// `googleMapsUrl` to the order when the user picks an address from the
   /// autocomplete dropdown. The address text is written into the address
   /// controller by the field; this callback only updates the map link on
-  /// the wizard state and surfaces a non-blocking snackbar so the operator
+  /// the order state and surfaces a non-blocking snackbar so the operator
   /// knows the link was bound (or that the library entry has no link yet).
+  ///
+  /// DG-388 Phase 5.6-c5 (FB-1): bind to the top-level
+  /// `OrderCreateState.googleMapsUrl` (read at submit) via
+  /// `updateGpsFields`, NOT the nested `wizardData.googleMapsUrl` which
+  /// was never read by the submission path and silently dropped the link.
   void _onAddressSelected(AddressSuggestion suggestion) {
     final notifier = ref.read(widget.orderStateProvider.notifier);
-    final state = ref.read(widget.orderStateProvider);
-    notifier.updateWizardData(
-      state.wizardData.copyWith(
-        googleMapsUrl: suggestion.googleMapsUrl,
-        // Clear any stale GPS coordinates when a library address is chosen
-        // so the saved order does not carry mismatched address/coords.
-        latitude: null,
-        longitude: null,
-      ),
+    notifier.updateGpsFields(
+      googleMapsUrl: suggestion.googleMapsUrl,
+      clearGoogleMapsUrl: suggestion.googleMapsUrl == null,
+      clearLatitude: true,
+      clearLongitude: true,
     );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

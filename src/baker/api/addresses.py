@@ -1,12 +1,17 @@
-"""Address library API routes (DG-385 Phase 2).
+"""Address library API routes (DG-385 Phase 2, DG-388 Phase 2).
 
 Endpoints:
 
 - ``GET /api/addresses/autocomplete?q=&customerId=`` — autocomplete
-  suggestions ranked with the caller customer's own addresses first when
-  ``customerId`` is supplied (FR7 / FR5 / NFR1). Returns up to 20 entries,
-  each carrying ``googleMapsUrl`` so the frontend can auto-bind the link
-  on selection (FR2 / AC2).
+  suggestions returned as a grouped ``{pastOrders, library}`` object
+  (DG-388 Phase 2 / FR3 / AC3). ``pastOrders`` lists the caller
+  customer's previous door-delivery addresses from past orders (capped
+  at 10, F2); ``library`` lists ``address_library`` matches (up to 20),
+  with the caller customer's own linked addresses ranked first when
+  ``customerId`` is supplied (FR5) and each entry carrying
+  ``googleMapsUrl`` so the frontend can auto-bind the link on selection
+  (FR2 / AC2). The grouped shape is always returned so the frontend can
+  render two labeled sections ("Địa chỉ đã giao" / "Thư viện địa chỉ").
 - ``GET /api/addresses/library`` — list all library entries, optional
   ``search`` query for the management screen (FR6 / FR8).
 - ``POST /api/addresses/library`` — create a new entry (FR8).
@@ -48,23 +53,32 @@ ADDRESS_NOT_FOUND_MSG = "Không tìm thấy địa chỉ trong thư viện"
 @router.get("/autocomplete")
 def autocomplete(
     q: str = Query(..., description="Từ khóa tìm địa chỉ (≥2 ký tự)"),
-    customerId: Optional[int] = Query(None, description="ID khách hàng để ưu tiên địa chỉ của khách"),
+    customerId: Optional[int] = Query(None, description="ID khách hàng để lấy địa chỉ đã giao + ưu tiên thư viện"),
 ):
-    """Gợi ý địa chỉ từ thư viện (FR7/FR1/FR5).
+    """Gợi ý địa chỉ theo hai nhóm (DG-388 Phase 2 / FR3 / AC3).
 
-    Trả về tối đa 20 kết quả, mỗi kết quả chứa ``googleMapsUrl`` để frontend
-    tự động bind link (FR2/AC2). Khi có ``customerId``, địa chỉ của khách
-    đó được xếp trước (FR5).
+    Trả về đối tượng ``{pastOrders, library}``:
+
+    - ``pastOrders``: các địa chỉ giao tận nơi mà khách hàng đã dùng trong
+      đơn trước (raw ``delivery_address`` + ``googleMapsUrl`` gần nhất),
+      giới hạn 10 (F2). Rỗng khi không có ``customerId`` hoặc không khớp.
+    - ``library``: các mục ``address_library`` khớp, tối đa 20, mỗi mục
+      có ``googleMapsUrl`` (FR2/AC2) và ``isCustomerAddress`` (FR5). Khi
+      có ``customerId``, địa chỉ của khách đó được xếp trước (FR5).
+
+    Định dạng nhóm luôn cố định để frontend render hai section
+    ("Địa chỉ đã giao" / "Thư viện địa chỉ") (FR4). Trả về
+    ``{pastOrders: [], library: []}`` khi query quá ngắn.
     """
     if not q or len(q.strip()) < AUTOCOMPLETE_MIN_QUERY_LEN:
-        return []
+        return {"pastOrders": [], "library": []}
     with get_db() as conn:
         return _autocomplete(conn, q, customer_id=customerId)
 
 
 @router.get("/missing-links")
 def missing_links(
-    limit: int = Query(100, ge=1, description="Số kết quả tối đa (mặc định 100)"),
+    limit: int = Query(100, ge=1, le=1000, description="Số kết quả tối đa (mặc định 100, tối đa 1000)"),
 ):
     """Danh sách địa chỉ giao tận nơi chưa có liên kết Google Maps (FR5/AC6/NFR4).
 
