@@ -36,6 +36,16 @@ originating expense event's ``data`` JSON, deleted expense events are
 excluded (matching the expense screen filter logic), and legacy rows
 whose subcategory is stored in the ``category`` field are normalized
 back to the parent (FR4 / AC4).
+
+DG-386 Phase 4: adds ``GET /api/reports/cashflow-summary`` — the
+operating-activities cash-flow summary for a week or month period,
+computed from journal entries on cash accounts without requiring an
+active cash drawer (F2). Reuses the constants
+(``CASH_ACCOUNT_CODES``, ``OPERATING_INFLOW_SOURCE_TYPES``,
+``OPERATING_OUTFLOW_SOURCE_TYPES``) and query helpers
+(``_query_cash_period_activity``, ``_query_supplier_category_breakdown``,
+``_sum_section``) from ``src/baker/commands/report.py`` so the totals
+reconcile with ``baker report cashflow`` (FR5 / AC5).
 """
 
 import calendar
@@ -45,9 +55,24 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from baker.commands.report import (
+    CASH_ACCOUNT_CODES,
+    OPERATING_INFLOW_SOURCE_TYPES,
+    OPERATING_OUTFLOW_SOURCE_TYPES,
+    _query_cash_period_activity,
+    _query_supplier_category_breakdown,
+    _sum_section,
+)
 from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
 from baker.db.schema import _account_id_by_code
+from baker.models.cashflow_summary import (
+    CashflowAccountMovement,
+    CashflowSection,
+    CashflowSubcategory,
+    CashflowSupplierCategory,
+    CashflowSummary,
+)
 from baker.models.expense_summary import (
     ExpenseCategory,
     ExpenseSubcategory,
@@ -856,3 +881,178 @@ def get_expense_summary(
             childrenOf=children_of,
         )
         return summary.to_api_dict()
+
+
+@router.get("/cashflow-summary")
+def get_cashflow_summary(
+    period: str = Query(
+        ...,
+        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(week|month)$",
+    ),
+    date: Optional[str] = Query(
+        None,
+        description="Ngày tham chiếu (YYYY-MM-DD) xác định tuần/tháng cần tổng hợp; mặc định hôm nay",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
+):
+    """Tóm tắt dòng tiền hoạt động kinh doanh theo kỳ (DG-386 Phase 4).
+
+    Trả về dòng tiền thuần từ hoạt động kinh doanh (operating
+    activities) cho tuần hoặc tháng, tính từ journal entries trên các
+    tài khoản tiền mặt (``CASH_ACCOUNT_CODES``) — không yêu cầu quầy
+    tiền mặt đang mở (F2). Khớp với phần "Hoạt động kinh doanh" của
+    ``baker report cashflow``:
+
+    - ``operatingInflow`` — dòng vào từ khách hàng
+      (``payment_transaction`` debit tài khoản tiền mặt).
+    - ``operatingOutflow`` — dòng ra cho nhà cung cấp/nhân viên
+      (``expense``, ``expense_settlement``,
+      ``order_shipping_release`` credit tài khoản tiền mặt).
+    - ``netOperatingCashFlow`` — inflow − outflow.
+    - ``customers`` — sub-section ``payment_transaction`` theo tài
+      khoản tiền mặt.
+    - ``suppliers`` — sub-section ``expense`` +
+      ``expense_settlement`` + ``order_shipping_release`` theo tài
+      khoản tiền mặt.
+    - ``supplierCategories`` — phân loại cha/con của dòng ra cho nhà
+      cung cấp (chỉ ``expense`` và ``expense_settlement``;
+      ``order_shipping_release`` không có dữ liệu danh mục nên bị loại
+      khỏi breakdown nhưng vẫn nằm trong ``suppliers.outflow``).
+    - ``uncategorizedSupplier`` — dòng ra không xác định được danh mục.
+    - ``childrenOf`` — ánh xạ cha→[con] đầy đủ từ
+      ``expense_categories`` để client render cây hoàn chỉnh.
+
+    Bất kỳ journal entry nào chạm tài khoản tài sản cố định 1600 đều
+    bị loại trừ (đó là hoạt động đầu tư, báo cáo riêng trong CLI).
+    """
+    if date is None:
+        date = now_utc()[:10]
+    else:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="date phải có định dạng YYYY-MM-DD",
+            )
+
+    start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
+
+    with get_db() as conn:
+        # --- Operating cash activity grouped by source_type/account ---
+        # Reuses _query_cash_period_activity from report.py so the totals
+        # reconcile with ``baker report cashflow``. The CLI uses inclusive
+        # ``<= until_b`` bounds with end-of-day suffix; here we use the
+        # same half-open ``>= start_ts AND < end_next_day_ts`` bounds as
+        # the other period endpoints (period-summary, product-breakdown,
+        # expense-summary) for consistency. Both schemes cover the same
+        # day range for journal entries whose transaction_date carries a
+        # T00:00:00..T23:59:59 timestamp.
+        period_activity = _query_cash_period_activity(
+            conn, start_ts, end_next_day_ts,
+        )
+
+        # --- Supplier category/subcategory breakdown ---
+        # expense + expense_settlement only (order_shipping_release is
+        # excluded from the breakdown by _query_supplier_category_breakdown
+        # but its outflow is captured in the suppliers section total via
+        # _sum_section below).
+        supplier_breakdown = _query_supplier_category_breakdown(
+            conn, start_ts, end_next_day_ts,
+        )
+
+    # --- Aggregate customer and supplier sections ---
+    cust_in, cust_out, cust_per = _sum_section(
+        period_activity, OPERATING_INFLOW_SOURCE_TYPES,
+    )
+    sup_in, sup_out, sup_per = _sum_section(
+        period_activity, OPERATING_OUTFLOW_SOURCE_TYPES,
+    )
+
+    cust_accounts = [
+        CashflowAccountMovement(
+            code=code,
+            inflow=round(mov["inflow"], 2),
+            outflow=round(mov["outflow"], 2),
+        )
+        for code, mov in sorted(cust_per.items())
+    ]
+    sup_accounts = [
+        CashflowAccountMovement(
+            code=code,
+            inflow=round(mov["inflow"], 2),
+            outflow=round(mov["outflow"], 2),
+        )
+        for code, mov in sorted(sup_per.items())
+    ]
+
+    # --- Supplier category tree ---
+    # Mirrors the rendering logic in _echo_supplier_category_breakdown /
+    # the expense-summary endpoint: known children first (in seed order),
+    # then legacy/other subcategory values, sorted by name.
+    breakdown_totals: dict[str, float] = supplier_breakdown["totals"]
+    breakdown_sub_totals: dict[str, dict[str, float]] = supplier_breakdown[
+        "sub_totals"
+    ]
+    uncategorized_supplier = supplier_breakdown["uncategorized"]
+    children_of: dict[str, list[str]] = supplier_breakdown["children_of"]
+
+    supplier_categories: list[CashflowSupplierCategory] = []
+    for parent_name in sorted(breakdown_totals):
+        subs: list[CashflowSubcategory] = []
+        known_children = set(children_of.get(parent_name, []))
+        rendered: set[str] = set()
+        for sub_name in children_of.get(parent_name, []):
+            sub_amount = breakdown_sub_totals.get(parent_name, {}).get(
+                sub_name, 0.0
+            )
+            subs.append(
+                CashflowSubcategory(
+                    name=sub_name, amount=round(sub_amount, 2)
+                )
+            )
+            rendered.add(sub_name)
+        for sub_name in sorted(breakdown_sub_totals.get(parent_name, {})):
+            if sub_name in rendered:
+                continue
+            subs.append(
+                CashflowSubcategory(
+                    name=sub_name,
+                    amount=round(breakdown_sub_totals[parent_name][sub_name], 2),
+                )
+            )
+        supplier_categories.append(
+            CashflowSupplierCategory(
+                name=parent_name,
+                amount=round(breakdown_totals[parent_name], 2),
+                subcategories=subs,
+            )
+        )
+
+    oper_in = cust_in + sup_in
+    oper_out = cust_out + sup_out
+
+    summary = CashflowSummary(
+        period=period,
+        startDate=start_date,
+        endDate=end_date,
+        date=date,
+        operatingInflow=round(oper_in, 2),
+        operatingOutflow=round(oper_out, 2),
+        netOperatingCashFlow=round(oper_in - oper_out, 2),
+        customers=CashflowSection(
+            inflow=round(cust_in, 2),
+            outflow=round(cust_out, 2),
+            perAccount=cust_accounts,
+        ),
+        suppliers=CashflowSection(
+            inflow=round(sup_in, 2),
+            outflow=round(sup_out, 2),
+            perAccount=sup_accounts,
+        ),
+        supplierCategories=supplier_categories,
+        uncategorizedSupplier=round(uncategorized_supplier, 2),
+        childrenOf=children_of,
+    )
+    return summary.to_api_dict()
