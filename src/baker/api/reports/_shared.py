@@ -14,6 +14,16 @@ from fastapi import HTTPException
 
 from baker.utils.time import now_utc
 
+# POS source label — orders with empty due_date are matched by created_at.
+_POS_SOURCE = "Tại tiệm - POS"
+
+# Reconciliation source label — same fallback scope as POS for NULL due_date
+# (DG-384 Phase 2: include reconciliation orders in today-summary date filter).
+_RECONCILIATION_SOURCE = "reconciliation"
+
+# Sources that fall back to created_at when due_date is NULL/empty.
+_FALLBACK_SOURCES = (_POS_SOURCE, _RECONCILIATION_SOURCE)
+
 
 def _day_bounds(date_str: str) -> tuple[str, str]:
     """Return (start, next_day_start) timestamps for string-range filtering."""

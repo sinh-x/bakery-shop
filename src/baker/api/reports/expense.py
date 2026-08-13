@@ -178,7 +178,6 @@ def get_expense_summary(
         categories: list[ExpenseCategory] = []
         for parent_name in sorted(totals):
             subs: list[ExpenseSubcategory] = []
-            known_children = set(children_of.get(parent_name, []))
             # Known children first (in seed order), then legacy/other subs.
             rendered = set()
             for sub_name in children_of.get(parent_name, []):

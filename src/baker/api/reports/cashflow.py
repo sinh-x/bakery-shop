@@ -145,7 +145,6 @@ def get_cashflow_summary(
     supplier_categories: list[CashflowSupplierCategory] = []
     for parent_name in sorted(breakdown_totals):
         subs: list[CashflowSubcategory] = []
-        known_children = set(children_of.get(parent_name, []))
         rendered: set[str] = set()
         for sub_name in children_of.get(parent_name, []):
             sub_amount = breakdown_sub_totals.get(parent_name, {}).get(

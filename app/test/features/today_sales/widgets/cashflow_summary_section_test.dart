@@ -165,6 +165,34 @@ void main() {
           findsNothing);
     });
 
+    testWidgets('fills zero-amount subcategories from childrenOf mapping',
+        (tester) async {
+      // Backend reported only "Bột mì" with an amount, but the canonical
+      // tree says "Nguyên liệu" also has "Đường" and "Men" — the widget
+      // must render them with a 0 amount so the tree is always complete
+      // (AC5 consistency with the expense section / AC4).
+      await tester.pumpWidget(_wrap(CashflowSummarySection(
+        summary: _summary(
+          operatingInflow: 1000000,
+          operatingOutflow: 500000,
+          netOperatingCashFlow: 500000,
+          supplierCategories: [
+            _cat('Nguyên liệu', 500000, subcategories: [
+              _sub('Bột mì', 500000),
+            ]),
+          ],
+          childrenOf: {
+            'Nguyên liệu': ['Bột mì', 'Đường', 'Men'],
+          },
+        ),
+      )));
+      expect(find.text('Bột mì'), findsOneWidget);
+      expect(find.text('Đường'), findsOneWidget);
+      expect(find.text('Men'), findsOneWidget);
+      // Zero-amount subcategories render as "0đ".
+      expect(find.text('0đ'), findsNWidgets(2));
+    });
+
     testWidgets('renders multiple supplier categories', (tester) async {
       await tester.pumpWidget(_wrap(CashflowSummarySection(
         summary: _summary(

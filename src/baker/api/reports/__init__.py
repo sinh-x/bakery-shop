@@ -65,6 +65,7 @@ from baker.models.order import Order
 from baker.api.orders import _parse_payment_methods
 from baker.api.reports._metrics import summary_metrics
 from baker.api.reports._shared import (
+    _FALLBACK_SOURCES,
     _day_bounds,
     _resolve_date_param,
 )
@@ -80,16 +81,6 @@ router.include_router(period_router)
 router.include_router(product_breakdown_router)
 router.include_router(expense_router)
 router.include_router(cashflow_router)
-
-# POS source label — orders with empty due_date are matched by created_at.
-_POS_SOURCE = "Tại tiệm - POS"
-
-# Reconciliation source label — same fallback scope as POS for NULL due_date
-# (DG-384 Phase 2: include reconciliation orders in today-summary date filter).
-_RECONCILIATION_SOURCE = "reconciliation"
-
-# Sources that fall back to created_at when due_date is NULL/empty.
-_FALLBACK_SOURCES = (_POS_SOURCE, _RECONCILIATION_SOURCE)
 
 
 @router.get("/today-summary")
