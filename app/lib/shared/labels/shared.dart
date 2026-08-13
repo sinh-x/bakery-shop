@@ -192,6 +192,14 @@ class SharedLabels {
   static const todaySalesTabWeek = 'Tuần';
   static const todaySalesTabMonth = 'Tháng';
 
+  // Today Sales screen — period navigation (DG-386 Phase 11 / FR1 / AC1, AC2)
+  //
+  // Tooltips for the prev/next arrow buttons on the Tuần/Tháng tabs. Distinct
+  // from `SharedLabels.back` (generic "Quay lại") so the period navigation
+  // affordance is unambiguous (NFR4 — no inline VN strings).
+  static const todaySalesPeriodPrevious = 'Kỳ trước';
+  static const todaySalesPeriodNext = 'Kỳ sau';
+
   // Today Sales screen (DG-374 Phase 2)
   static const todaySalesTitle = 'Doanh số hôm nay';
   static const todaySalesRevenueSection = 'Tổng quan doanh thu';

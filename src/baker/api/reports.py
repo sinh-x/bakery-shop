@@ -126,6 +126,9 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
 def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
     """Return (start_date, end_date, start_ts, next_day_ts) for a period.
 
+    - ``day``: the single day containing ``date_str`` (start == end ==
+      ``date_str``). Mirrors [_day_bounds] so the day tab can reuse the
+      period endpoints without a separate code path.
     - ``week``: Monday–Sunday of the week containing ``date_str``
       (Monday-anchored, per FR1).
     - ``month``: 1st day through last day of the month containing
@@ -136,7 +139,10 @@ def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
     multi-day ranges.
     """
     ref = datetime.strptime(date_str, "%Y-%m-%d")
-    if period == "week":
+    if period == "day":
+        start = ref
+        end = ref
+    elif period == "week":
         # weekday(): Mon=0 .. Sun=6 — subtract to reach this week's Monday.
         start = ref - timedelta(days=ref.weekday())
         end = start + timedelta(days=6)
@@ -147,7 +153,7 @@ def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
     else:
         raise HTTPException(
             status_code=422,
-            detail="period phải là 'week' hoặc 'month'",
+            detail="period phải là 'day', 'week' hoặc 'month'",
         )
     start_str = start.strftime("%Y-%m-%d")
     end_str = end.strftime("%Y-%m-%d")
@@ -330,8 +336,8 @@ def get_today_summary(
 def get_period_summary(
     period: str = Query(
         ...,
-        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
-        pattern=r"^(week|month)$",
+        description="Loại kỳ báo cáo: 'day' (ngày), 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(day|week|month)$",
     ),
     date: Optional[str] = Query(
         None,
@@ -497,8 +503,8 @@ def get_period_summary(
 def get_product_breakdown(
     period: str = Query(
         ...,
-        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
-        pattern=r"^(week|month)$",
+        description="Loại kỳ báo cáo: 'day' (ngày), 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(day|week|month)$",
     ),
     date: Optional[str] = Query(
         None,
@@ -681,8 +687,8 @@ def get_product_breakdown(
 def get_expense_summary(
     period: str = Query(
         ...,
-        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
-        pattern=r"^(week|month)$",
+        description="Loại kỳ báo cáo: 'day' (ngày), 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(day|week|month)$",
     ),
     date: Optional[str] = Query(
         None,
@@ -887,8 +893,8 @@ def get_expense_summary(
 def get_cashflow_summary(
     period: str = Query(
         ...,
-        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
-        pattern=r"^(week|month)$",
+        description="Loại kỳ báo cáo: 'day' (ngày), 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(day|week|month)$",
     ),
     date: Optional[str] = Query(
         None,

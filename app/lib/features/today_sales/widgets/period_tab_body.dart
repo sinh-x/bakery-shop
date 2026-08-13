@@ -1,28 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/cashflow_summary.dart';
+import '../../../data/models/expense_summary.dart';
 import '../../../data/models/order.dart';
 import '../../../data/models/period_summary.dart';
+import '../../../data/models/product_breakdown.dart';
 import '../../../providers/dashboard/period_summary_providers.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/today_order_list.dart';
+import 'cashflow_summary_section.dart';
+import 'expense_summary_section.dart';
+import 'product_breakdown_section.dart';
 import 'revenue_summary_section.dart';
 
 /// Week/Month tab body for the Today Sales screen (DG-386 Phase 6 / FR1,
 /// FR2 / AC1, AC2, AC7).
 ///
 /// Renders the period-aggregated summary for a [PeriodQuery] (week or month).
+/// All four period endpoints are fired in parallel via
+/// [periodReportDataProvider] (NFR3 — `Future.wait`), so revenue, product
+/// breakdown, expense summary, and cashflow summary all resolve together.
+/// Switching the tab or navigating to a different week/month produces a new
+/// [PeriodQuery] and triggers a fresh fetch (AC7).
+///
 /// Reuses [RevenueSummarySection] for the revenue/payment/cash-source cards
 /// because the [PeriodSummary] metric fields are identical in shape to
-/// `TodaySummary`. The product/expense/cashflow sections are placeholder
-/// `SectionTitle`-only blocks that will be filled by Phases 7–9.
-///
-/// Period navigation (prev/next) is owned by the parent [TodaySalesScreen]
-/// and flows in via [query] and [onNavigate]. Switching the tab or navigating
-/// to a different week/month produces a new [PeriodQuery] and triggers a
-/// fresh fetch (AC7).
+/// `TodaySummary`. The product/expense/cashflow sections are the widgets
+/// built in Phases 7–9 and wired here in Phase 11 (FR1).
 class PeriodTabBody extends ConsumerWidget {
   const PeriodTabBody({
     super.key,
@@ -36,9 +43,9 @@ class PeriodTabBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final summaryAsync = ref.watch(periodSummaryProvider(query));
+    final reportAsync = ref.watch(periodReportDataProvider(query));
 
-    return summaryAsync.when(
+    return reportAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
         child: Padding(
@@ -50,8 +57,11 @@ class PeriodTabBody extends ConsumerWidget {
           ),
         ),
       ),
-      data: (summary) => _PeriodTabContent(
-        summary: summary,
+      data: (report) => _PeriodTabContent(
+        summary: report.summary,
+        productBreakdown: report.productBreakdown,
+        expenseSummary: report.expenseSummary,
+        cashflowSummary: report.cashflowSummary,
         query: query,
         onNavigate: onNavigate,
       ),
@@ -62,11 +72,17 @@ class PeriodTabBody extends ConsumerWidget {
 class _PeriodTabContent extends StatelessWidget {
   const _PeriodTabContent({
     required this.summary,
+    required this.productBreakdown,
+    required this.expenseSummary,
+    required this.cashflowSummary,
     required this.query,
     required this.onNavigate,
   });
 
   final PeriodSummary summary;
+  final ProductBreakdown productBreakdown;
+  final ExpenseSummary expenseSummary;
+  final CashflowSummary cashflowSummary;
   final PeriodQuery query;
   final void Function(DateTime newAnchor) onNavigate;
 
@@ -122,13 +138,11 @@ class _PeriodTabContent extends StatelessWidget {
           cashOutTotal: summary.cashOutTotal,
         ),
         const SizedBox(height: 20),
-        // Placeholder sections for Phases 7–9. Kept as titled stubs so the
-        // screen compiles and the layout is ready for the upcoming widgets.
-        const _PlaceholderSection(title: 'Phân tích sản phẩm'),
+        ProductBreakdownSection(breakdown: productBreakdown),
         const SizedBox(height: 20),
-        const _PlaceholderSection(title: 'Chi phí'),
+        ExpenseSummarySection(summary: expenseSummary),
         const SizedBox(height: 20),
-        const _PlaceholderSection(title: 'Dòng tiền'),
+        CashflowSummarySection(summary: cashflowSummary),
         const SizedBox(height: 20),
         _PeriodOrderListSection(orders: summary.orders),
       ],
@@ -155,7 +169,7 @@ class _PeriodNavHeader extends StatelessWidget {
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left),
-          tooltip: SharedLabels.back,
+          tooltip: SharedLabels.todaySalesPeriodPrevious,
           onPressed: onPrev,
         ),
         Expanded(
@@ -169,33 +183,8 @@ class _PeriodNavHeader extends StatelessWidget {
         ),
         IconButton(
           icon: const Icon(Icons.chevron_right),
-          tooltip: SharedLabels.back,
+          tooltip: SharedLabels.todaySalesPeriodNext,
           onPressed: onNext,
-        ),
-      ],
-    );
-  }
-}
-
-/// Placeholder section used until Phases 7–9 build the real widgets. Keeps
-/// the screen compiling and the layout reserved.
-class _PlaceholderSection extends StatelessWidget {
-  const _PlaceholderSection({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionTitle(title: title),
-        const SizedBox(height: 8),
-        Text(
-          SharedLabels.loading,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.outline,
-              ),
         ),
       ],
     );
