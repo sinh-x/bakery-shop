@@ -213,5 +213,65 @@ void main() {
       expect(offsets[labels[1]]! < offsets[labels[2]]!, true);
       expect(offsets[labels[2]]! < offsets[labels[3]]!, true);
     });
+
+    testWidgets('all groups expanded by default (Phase 10 FR6/AC6)',
+        (tester) async {
+      final orders = [
+        _order(ref: 'A', status: 'new', customerName: 'An'),
+        _order(ref: 'B', status: 'completed', customerName: 'Bình'),
+      ];
+      await _pump(tester, orders);
+
+      // Both status headers present.
+      expect(find.text(VN.statusNew), findsOneWidget);
+      expect(find.text(VN.statusCompleted), findsOneWidget);
+      // Order cards visible — groups default to expanded.
+      expect(find.text('An'), findsOneWidget);
+      expect(find.text('Bình'), findsOneWidget);
+      // Expand (down) chevron shown when expanded.
+      expect(find.byIcon(Icons.keyboard_arrow_down), findsNWidgets(2));
+      expect(find.byIcon(Icons.keyboard_arrow_right), findsNothing);
+    });
+
+    testWidgets('tapping a header collapses its group (Phase 10 FR6/AC6)',
+        (tester) async {
+      final orders = [
+        _order(ref: 'A', status: 'new', customerName: 'An'),
+        _order(ref: 'B', status: 'new', customerName: 'Bình'),
+        _order(ref: 'C', status: 'completed', customerName: 'Cúc'),
+      ];
+      await _pump(tester, orders);
+
+      // Sanity: "new" group has 2 orders visible initially.
+      expect(find.text('An'), findsOneWidget);
+      expect(find.text('Bình'), findsOneWidget);
+
+      // Tap the "new" status header to collapse it.
+      await tester.tap(find.text(VN.statusNew));
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+
+      // "new" group now collapsed: chevron flipped, order rows hidden.
+      expect(find.byIcon(Icons.keyboard_arrow_right), findsOneWidget);
+      expect(find.text('An'), findsNothing);
+      expect(find.text('Bình'), findsNothing);
+      // Header label + count badge still visible when collapsed.
+      expect(find.text(VN.statusNew), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+
+      // "completed" group unaffected — still expanded.
+      expect(find.text(VN.statusCompleted), findsOneWidget);
+      expect(find.text('Cúc'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+
+      // Tap again to re-expand.
+      await tester.tap(find.text(VN.statusNew));
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+
+      // Order rows visible again.
+      expect(find.text('An'), findsOneWidget);
+      expect(find.text('Bình'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_down), findsNWidgets(2));
+      expect(find.byIcon(Icons.keyboard_arrow_right), findsNothing);
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/order.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
+import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../../orders/widgets/order_card.dart';
 
 /// All order statuses in workflow order, including terminal statuses
@@ -51,14 +52,18 @@ Map<String, List<Order>> groupTodayOrdersByStatus(List<Order> orders) {
 ///
 /// Renders all orders due today (including completed and cancelled) grouped
 /// under workflow-ordered section headers. Each header shows a colored status
-/// dot, the localized status label, and a count badge — reusing the visual
-/// pattern from [DeliveryStatusGroupHeader]. Order rows reuse [OrderCard]
-/// so the cards stay consistent with the rest of the app.
+/// dot, the localized status label, a count badge, and a collapse/expand
+/// chevron — reusing the [CategorySectionExpansionController] pattern from
+/// [CollapsibleCategorySections]. Tapping a header toggles the group's
+/// collapse state (DG-386 Phase 10 / FR6 / AC6). When collapsed, only the
+/// header (status label + count) is shown; when expanded, the [OrderCard]
+/// list renders below. All groups default to expanded so the pre-Phase-10
+/// behavior is preserved.
 ///
 /// The orders come from the today-summary API response
 /// ([TodaySummary.orders]) — no separate order fetch is needed. An empty
 /// list renders a centered empty-state message.
-class TodayOrderList extends StatelessWidget {
+class TodayOrderList extends StatefulWidget {
   const TodayOrderList({
     super.key,
     required this.orders,
@@ -73,8 +78,27 @@ class TodayOrderList extends StatelessWidget {
   final void Function(Order order)? onOrderTap;
 
   @override
+  State<TodayOrderList> createState() => _TodayOrderListState();
+}
+
+class _TodayOrderListState extends State<TodayOrderList> {
+  late final CategorySectionExpansionController _expansionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _expansionController = CategorySectionExpansionController();
+    // All groups default to expanded so the pre-Phase-10 behavior (always
+    // visible) is preserved until the user taps a header (DG-386 Phase 10).
+    final grouped = groupTodayOrdersByStatus(widget.orders);
+    for (final status in grouped.keys) {
+      _expansionController.setExpanded(status, true);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (orders.isEmpty) {
+    if (widget.orders.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Text(
@@ -87,25 +111,39 @@ class TodayOrderList extends StatelessWidget {
       );
     }
 
-    final grouped = groupTodayOrdersByStatus(orders);
+    final grouped = groupTodayOrdersByStatus(widget.orders);
     final children = <Widget>[];
     for (final entry in grouped.entries) {
+      final status = entry.key;
+      final orders = entry.value;
+      final expanded = _expansionController.isExpanded(status);
       children.add(
-        _TodayStatusGroupHeader(status: entry.key, count: entry.value.length),
+        _TodayStatusGroupHeader(
+          status: status,
+          count: orders.length,
+          isCollapsed: !expanded,
+          onTap: () {
+            setState(() {
+              _expansionController.setExpanded(status, !expanded);
+            });
+          },
+        ),
       );
-      for (final order in entry.value) {
-        children.add(
-          OrderCard(
-            order: order,
-            onTap: () {
-              if (onOrderTap != null) {
-                onOrderTap!(order);
-                return;
-              }
-              context.push('/orders/${order.orderRef}');
-            },
-          ),
-        );
+      if (expanded) {
+        for (final order in orders) {
+          children.add(
+            OrderCard(
+              order: order,
+              onTap: () {
+                if (widget.onOrderTap != null) {
+                  widget.onOrderTap!(order);
+                  return;
+                }
+                context.push('/orders/${order.orderRef}');
+              },
+            ),
+          );
+        }
       }
     }
     return Column(
@@ -116,14 +154,23 @@ class TodayOrderList extends StatelessWidget {
 }
 
 /// Status-group header for [TodayOrderList]: a colored status dot, the
-/// localized status label, and a count badge. Mirrors the visual pattern of
-/// [DeliveryStatusGroupHeader] (delivery list view) but is a separate widget
-/// so the today-sales list can evolve independently.
+/// localized status label, a count badge, and a collapse/expand chevron.
+/// Mirrors the visual pattern of [DeliveryStatusGroupHeader] (delivery list
+/// view) but is a separate widget so the today-sales list can evolve
+/// independently. Tapping the header toggles the group's collapse state
+/// (DG-386 Phase 10 / FR6 / AC6).
 class _TodayStatusGroupHeader extends StatelessWidget {
-  const _TodayStatusGroupHeader({required this.status, required this.count});
+  const _TodayStatusGroupHeader({
+    required this.status,
+    required this.count,
+    required this.isCollapsed,
+    required this.onTap,
+  });
 
   final String status;
   final int count;
+  final bool isCollapsed;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -131,42 +178,58 @@ class _TodayStatusGroupHeader extends StatelessWidget {
     final statusLabel = statusMap[status] ?? status;
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: statusColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              statusLabel,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Icon(
+                isCollapsed
+                    ? Icons.keyboard_arrow_right
+                    : Icons.keyboard_arrow_down,
+                size: 20,
                 color: statusColor,
               ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: statusColor.withAlpha(50),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: statusColor,
+              const SizedBox(width: 4),
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  shape: BoxShape.circle,
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: statusColor.withAlpha(50),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
