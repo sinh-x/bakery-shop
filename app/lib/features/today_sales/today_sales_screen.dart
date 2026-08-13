@@ -79,6 +79,14 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   void invalidateProviders() {
     ref.invalidate(todaySummaryProvider);
     ref.invalidate(dateSummaryProvider);
+    // Invalidate the combined period-report provider so the Tuần/Tháng tabs
+    // refresh via the AppBar refresh button, the 15-second auto-refresh, and
+    // app-resume (M-1). The family members are watched inside
+    // `periodReportDataProvider`, so invalidating the combined provider
+    // propagates to `periodSummaryProvider`, `productBreakdownProvider`,
+    // `expenseSummaryProvider`, and `cashflowSummaryProvider` for the active
+    // `PeriodQuery`. Preserve the Ngày-tab behavior above.
+    ref.invalidate(periodReportDataProvider);
   }
 
   @override

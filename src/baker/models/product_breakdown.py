@@ -9,6 +9,16 @@ Revenue is attributed proportionally to each order item's line value
 reconciles with the journal 4100 credit total reported by
 ``GET /api/reports/period-summary`` and ``baker report income-statement``
 (see FR3 / Risk R-2 cross-validation).
+
+Known reconciliation limitation: orders whose net 4100 credit is ≤ 0
+(reversals/returns) are excluded by the ``HAVING revenue > 0`` clause,
+and orders whose total line value is 0 (e.g. all items 0 VND) are
+skipped during attribution (``if order_rev <= 0: continue`` and
+``if line_total <= 0: continue``). As a result ``totalRevenue`` may be
+less than ``period-summary.revenue`` when the period contains such
+orders. This is intentional — it keeps the per-product breakdown
+internally consistent (sum-of-products) rather than a strict equality
+with the period-summary total.
 """
 
 from dataclasses import dataclass, field
@@ -52,7 +62,9 @@ class ProductBreakdown:
       client can render a stable layout.
     - ``totalRevenue`` — sum of all product revenues (top N + Others),
       which reconciles with the journal 4100 credit total for the
-      period.
+      period, excluding orders with net 4100 credit ≤ 0 (reversals/
+      returns) and orders with zero total line value (see the module
+      docstring's "Known reconciliation limitation").
     """
 
     period: str

@@ -84,6 +84,13 @@ class TodayOrderList extends StatefulWidget {
 class _TodayOrderListState extends State<TodayOrderList> {
   late final CategorySectionExpansionController _expansionController;
 
+  /// Status keys that have already been seeded with an explicit expand/collapse
+  /// state. Used by [didUpdateWidget] to distinguish a newly-appeared status
+  /// group (seed it expanded) from one the user has already toggled (preserve
+  /// their choice) — [CategorySectionExpansionController.isExpanded] returns
+  /// `false` for both unseeded keys and explicitly-collapsed keys (Mn-3).
+  final Set<String> _seededStatuses = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +100,23 @@ class _TodayOrderListState extends State<TodayOrderList> {
     final grouped = groupTodayOrdersByStatus(widget.orders);
     for (final status in grouped.keys) {
       _expansionController.setExpanded(status, true);
+      _seededStatuses.add(status);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant TodayOrderList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Seed expansion for any status group that newly appears after a refresh
+    // (Mn-3). Preserves the expand-by-default contract: a group that was not
+    // present in `initState` but appears on an updated `widget.orders` is
+    // expanded here. Groups that already have a recorded state keep their
+    // user-toggled value — only keys absent from `_seededStatuses` are seeded.
+    final grouped = groupTodayOrdersByStatus(widget.orders);
+    for (final status in grouped.keys) {
+      if (_seededStatuses.add(status)) {
+        _expansionController.setExpanded(status, true);
+      }
     }
   }
 
@@ -125,6 +149,9 @@ class _TodayOrderListState extends State<TodayOrderList> {
           onTap: () {
             setState(() {
               _expansionController.setExpanded(status, !expanded);
+              // Record the user's explicit choice so a later refresh does not
+              // re-seed this group via `didUpdateWidget` (Mn-3).
+              _seededStatuses.add(status);
             });
           },
         ),

@@ -515,15 +515,25 @@ def get_product_breakdown(
 
     - ``products``: top 10 sản phẩm có doanh thu cao nhất trong kỳ.
     - ``others``: một dòng tổng hợp phần còn lại (``"Khác"``).
-    - ``totalRevenue``: tổng doanh thu всех sản phẩm (top 10 + Khác),
+    - ``totalRevenue``: tổng doanh thu tất cả sản phẩm (top 10 + Khác),
       đối soát được với ``revenue`` của ``period-summary`` và
-      ``baker report income-statement``.
+      ``baker report income-statement`` — với giới hạn đã nêu bên dưới.
 
     Doanh thu được ghi nhận theo bút toán order (credit 4100 =
     deposit_balance tại giao delivered), rồi phân bổ cho từng sản phẩm
     theo tỷ lệ line value (``unit_price * quantity``) trong đơn — loại
     trừ quà tặng (``is_gift = 1``). Cách này đảm bảo tổng doanh thu theo
     sản phẩm khớp với tổng doanh thu trên báo cáo thu nhập (FR3, Risk R-2).
+
+    Giới hạn đối soát (known limitation): các đơn có doanh thu ròng 4100
+    credit ≤ 0 (bút toán đảo/reversal hoặc hoàn/trả hàng) bị loại trừ qua
+    ``HAVING revenue > 0``; các đơn có tổng line value = 0 (ví dụ mọi dòng
+    đều 0 VND) cũng bị bỏ qua vì không thể phân bổ tỷ lệ
+    (``if order_rev <= 0: continue`` và ``if line_total <= 0: continue``).
+    Do đó ``totalRevenue`` có thể nhỏ hơn ``period-summary.revenue`` khi
+    kỳ có đơn đảo/hoàn hoặc đơn line value = 0 — đây là hành vi cố ý để
+    giữ bảng phân tích theo sản phẩm khớp internally (sum-of-products),
+    không phải lỗi đối soát.
     """
     if date is None:
         date = now_utc()[:10]
@@ -943,11 +953,11 @@ def get_cashflow_summary(
     with get_db() as conn:
         # --- Operating cash activity grouped by source_type/account ---
         # Reuses query_cash_period_activity from report.py so the totals
-        # reconcile with ``baker report cashflow``. The CLI uses inclusive
-        # ``<= until_b`` bounds with end-of-day suffix; here we use the
-        # same half-open ``>= start_ts AND < end_next_day_ts`` bounds as
-        # the other period endpoints (period-summary, product-breakdown,
-        # expense-summary) for consistency. Both schemes cover the same
+        # reconcile with ``baker report cashflow``. The shared helper applies
+        # an inclusive upper bound (``je.transaction_date <= ?``) using the
+        # ``until_b`` argument; here we pass ``end_next_day_ts`` as ``until_b``
+        # so the bound is ``je.transaction_date <= end_next_day_ts``. Combined
+        # with the inclusive lower ``>= start_ts`` bound this covers the same
         # day range for journal entries whose transaction_date carries a
         # T00:00:00..T23:59:59 timestamp.
         period_activity = query_cash_period_activity(
