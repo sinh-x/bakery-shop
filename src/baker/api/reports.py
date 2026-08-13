@@ -1,4 +1,4 @@
-"""Reporting API routes — day summary endpoint for the Today Sales dashboard.
+"""Reporting API routes — day + period summary endpoints for the Today Sales dashboard.
 
 DG-376 Phase 1+2: provides a single backend endpoint that returns revenue,
 order count, cash/bank payment totals, and the full order list for a given
@@ -12,8 +12,15 @@ DG-378 Phase 1: extends the endpoint with ``cashInTotal`` and
 ``source_type='cash_drawer_cash_out'`` (1101 credits). Same
 ``journal_lines`` + ``journal_entries`` join pattern as the existing
 cash/bank totals, with a different ``source_type`` filter (NFR1).
+
+DG-386 Phase 1: adds ``GET /api/reports/period-summary`` — the same
+metric shape as the day summary but aggregated over a week (Monday–Sunday)
+or month (1st–last day) anchored on a reference date. Reuses the
+``journal_lines`` + ``journal_entries`` join pattern with date-range
+bounds computed server-side (FR1/FR2).
 """
 
+import calendar
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -23,6 +30,7 @@ from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
 from baker.db.schema import _account_id_by_code
 from baker.models.order import Order
+from baker.models.period_summary import PeriodSummary
 from baker.api.orders import _parse_payment_methods
 from baker.utils.time import now_utc
 
@@ -51,6 +59,48 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
         f"{date_str}T00:00:00",
         next_day.strftime("%Y-%m-%dT00:00:00"),
     )
+
+
+def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
+    """Return (start_date, end_date, start_ts, next_day_ts) for a period.
+
+    - ``week``: Monday–Sunday of the week containing ``date_str``
+      (Monday-anchored, per FR1).
+    - ``month``: 1st day through last day of the month containing
+      ``date_str``.
+
+    The ``start_ts`` / ``next_day_ts`` pair mirrors ``_day_bounds`` so the
+    same ``>= start_ts AND < next_day_ts`` journal-entry filter works for
+    multi-day ranges.
+    """
+    ref = datetime.strptime(date_str, "%Y-%m-%d")
+    if period == "week":
+        # weekday(): Mon=0 .. Sun=6 — subtract to reach this week's Monday.
+        start = ref - timedelta(days=ref.weekday())
+        end = start + timedelta(days=6)
+    elif period == "month":
+        start = ref.replace(day=1)
+        last_day = calendar.monthrange(ref.year, ref.month)[1]
+        end = ref.replace(day=last_day)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="period phải là 'week' hoặc 'month'",
+        )
+    start_str = start.strftime("%Y-%m-%d")
+    end_str = end.strftime("%Y-%m-%d")
+    next_day = end + timedelta(days=1)
+    return (
+        start_str,
+        end_str,
+        f"{start_str}T00:00:00",
+        next_day.strftime("%Y-%m-%dT00:00:00"),
+    )
+
+
+def _period_date_range_filter(start_str: str, end_str: str) -> str:
+    """Return the SQL ``orders.due_date`` predicate for an inclusive date range."""
+    return "orders.due_date >= ? AND orders.due_date <= ?"
 
 
 @router.get("/today-summary")
@@ -212,3 +262,170 @@ def get_today_summary(
             "cashOutTotal": cash_out_total,
             "orders": orders,
         }
+
+
+@router.get("/period-summary")
+def get_period_summary(
+    period: str = Query(
+        ...,
+        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(week|month)$",
+    ),
+    date: Optional[str] = Query(
+        None,
+        description="Ngày tham chiếu (YYYY-MM-DD) xác định tuần/tháng cần tổng hợp; mặc định hôm nay",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
+):
+    """Tóm tắt doanh thu theo kỳ — tổng hợp tuần hoặc tháng (DG-386 Phase 1).
+
+    Trả về cùng hình dạng với ``GET /api/reports/today-summary`` (revenue,
+    orderCount, cashTotal, bankTransferTotal, cashInTotal, cashOutTotal,
+    orders) nhưng tổng hợp trên toàn bộ khoảng thời gian của kỳ:
+
+    - ``week``: thứ 2 đến chủ nhật của tuần chứa ``date`` (FR1).
+    - ``month``: từ ngày 1 đến cuối tháng chứa ``date`` (FR1).
+
+    Các metric được tính theo cùng pattern với today-summary nhưng thay
+    single-day bounds bằng period bounds:
+
+    - revenue = tổng credit tài khoản 4100 trong kỳ
+    - cashTotal = tổng debit 1101 từ ``payment_transaction``
+    - bankTransferTotal = tổng debit 1200/1210/1220/1290 từ ``payment_transaction``
+    - cashInTotal = tổng debit 1101 từ ``cash_drawer_cash_in``
+    - cashOutTotal = tổng credit 1101 từ ``cash_drawer_cash_out``
+    - orderCount = số đơn có dueDate nằm trong kỳ (mọi status), bao gồm
+      đơn POS/reconciliation có due_date rỗng (match theo created_at)
+    """
+    if date is None:
+        date = now_utc()[:10]
+    else:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="date phải có định dạng YYYY-MM-DD",
+            )
+
+    start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
+
+    with get_db() as conn:
+        # --- Revenue: sum of credits to account 4100 over the period ---
+        revenue_acc_id = _account_id_by_code(conn, "4100")
+        revenue_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (revenue_acc_id, start_ts, end_next_day_ts),
+        ).fetchone()
+        revenue = float(revenue_row["total"] or 0)
+
+        # --- Cash total: debits to 1101 from payment_transaction entries ---
+        cash_acc_id = _account_id_by_code(conn, "1101")
+        cash_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.debit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.source_type = 'payment_transaction'
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (cash_acc_id, start_ts, end_next_day_ts),
+        ).fetchone()
+        cash_total = float(cash_row["total"] or 0)
+
+        # --- Bank total: debits to 1200/1210/1220/1290 from payment_transaction ---
+        bank_acc_ids = [_account_id_by_code(conn, code) for code in _BANK_ACCOUNT_CODES]
+        placeholders = ",".join("?" for _ in bank_acc_ids)
+        bank_row = conn.execute(
+            f"""SELECT COALESCE(SUM(jl.debit), 0) AS total
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.journal_entry_id
+                WHERE jl.account_id IN ({placeholders})
+                  AND je.source_type = 'payment_transaction'
+                  AND je.transaction_date >= ?
+                  AND je.transaction_date < ?""",
+            [*bank_acc_ids, start_ts, end_next_day_ts],
+        ).fetchone()
+        bank_total = float(bank_row["total"] or 0)
+
+        # --- Cash-in total: debits to 1101 from cash_drawer_cash_in ---
+        cash_in_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.debit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.source_type = 'cash_drawer_cash_in'
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (cash_acc_id, start_ts, end_next_day_ts),
+        ).fetchone()
+        cash_in_total = float(cash_in_row["total"] or 0)
+
+        # --- Cash-out total: credits to 1101 from cash_drawer_cash_out ---
+        cash_out_row = conn.execute(
+            """SELECT COALESCE(SUM(jl.credit), 0) AS total
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_entry_id
+               WHERE jl.account_id = ?
+                 AND je.source_type = 'cash_drawer_cash_out'
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (cash_acc_id, start_ts, end_next_day_ts),
+        ).fetchone()
+        cash_out_total = float(cash_out_row["total"] or 0)
+
+        # --- Orders: all orders due within [start_date, end_date] (no status filter) ---
+        # POS/reconciliation orders with empty due_date fall back to created_at
+        # within the period bounds (same pattern as today-summary).
+        threshold_minutes = get_delivery_critical_threshold(conn)
+        source_placeholders = ",".join("?" for _ in _FALLBACK_SOURCES)
+        rows = conn.execute(
+            f"""SELECT orders.*, s.name AS assigned_staff_name,
+                (SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions
+                 WHERE order_id = orders.id AND invalidated_at IS NULL) AS payment_methods_concat
+                FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
+                WHERE (
+                    {_period_date_range_filter(start_date, end_date)}
+                    OR (
+                        (orders.due_date IS NULL OR orders.due_date = '')
+                        AND orders.source IN ({source_placeholders})
+                        AND orders.created_at >= ?
+                        AND orders.created_at < ?
+                    )
+                )
+                ORDER BY orders.id DESC""",
+            (start_date, end_date, *_FALLBACK_SOURCES, start_ts, end_next_day_ts),
+        ).fetchall()
+
+        orders = []
+        for r in rows:
+            staff_name = (
+                r["assigned_staff_name"]
+                if r["assigned_staff_name"] is not None
+                else ""
+            )
+            order = Order.from_row(
+                r, conn, assigned_staff_name=staff_name
+            )
+            payment_methods = _parse_payment_methods(r["payment_methods_concat"])
+            orders.append(order.to_api_dict(threshold_minutes=threshold_minutes, payment_methods=payment_methods))
+
+        summary = PeriodSummary(
+            period=period,
+            startDate=start_date,
+            endDate=end_date,
+            date=date,
+            revenue=revenue,
+            orderCount=len(orders),
+            cashTotal=cash_total,
+            bankTransferTotal=bank_total,
+            cashInTotal=cash_in_total,
+            cashOutTotal=cash_out_total,
+            orders=orders,
+        )
+        return summary.to_api_dict()
