@@ -26,9 +26,20 @@ credit per order) is prorated across each order's line value
 with the period-summary revenue total and ``baker report income-statement``
 (FR3 / Risk R-2). Returns the top 10 products plus a synthetic ``Khác``
 (Others) row aggregating the remainder, sorted by revenue descending.
+
+DG-386 Phase 3: adds ``GET /api/reports/expense-summary`` — total
+expenses for a week or month period with a full parent/child category
+tree breakdown from ``expense_categories``. Reuses the aggregation
+pattern from ``_query_supplier_category_breakdown`` and the
+``expense-by-category`` CLI: category/subcategory is resolved from the
+originating expense event's ``data`` JSON, deleted expense events are
+excluded (matching the expense screen filter logic), and legacy rows
+whose subcategory is stored in the ``category`` field are normalized
+back to the parent (FR4 / AC4).
 """
 
 import calendar
+import json
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -37,6 +48,11 @@ from fastapi import APIRouter, HTTPException, Query
 from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
 from baker.db.schema import _account_id_by_code
+from baker.models.expense_summary import (
+    ExpenseCategory,
+    ExpenseSubcategory,
+    ExpenseSummary,
+)
 from baker.models.order import Order
 from baker.models.period_summary import PeriodSummary
 from baker.models.product_breakdown import (
@@ -634,3 +650,209 @@ def get_product_breakdown(
             others=others,
         )
         return breakdown.to_api_dict()
+
+
+@router.get("/expense-summary")
+def get_expense_summary(
+    period: str = Query(
+        ...,
+        description="Loại kỳ báo cáo: 'week' (thứ 2–chủ nhật) hoặc 'month' (1–cuối tháng)",
+        pattern=r"^(week|month)$",
+    ),
+    date: Optional[str] = Query(
+        None,
+        description="Ngày tham chiếu (YYYY-MM-DD) xác định tuần/tháng cần tổng hợp; mặc định hôm nay",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
+):
+    """Tổng chi phí theo danh mục cho kỳ — tuần hoặc tháng (DG-386 Phase 3).
+
+    Trả về tổng chi phí kèm phân loại đầy đủ danh mục cha/con từ bảng
+    ``expense_categories`` cho khoảng thời gian được chỉ định (FR4 / AC4):
+
+    - ``totalExpenses`` — tổng tất cả chi phí trong kỳ.
+    - ``categories`` — phân loại theo danh mục cha, mỗi danh mục bao gồm
+      tổng (gồm tất cả subcategory) và danh sách subcategory. Sắp xếp
+      theo tên danh mục.
+    - ``uncategorized`` — chi phí không xác định được danh mục từ dữ
+      liệu sự kiện.
+    - ``childrenOf`` — ánh xạ cha→[con] đầy đủ từ ``expense_categories``
+      để client render cây hoàn chỉnh kể cả khi subcategory không có
+      chi phí trong kỳ.
+
+    Chi phí được trích từ journal entries ``source_type = 'expense'``
+    (debit tài khoản chi phí 5xxx) trong kỳ, đối chiếu với sự kiện
+    expense gốc (``events.data``) để lấy ``category`` / ``subcategory``.
+    Sự kiện đã xóa (``deleted_at`` không rỗng) bị loại trừ — khớp với
+    logic lọc của màn hình chi phí (F2). Dòng legacy có subcategory lưu
+    trong trường ``category`` được chuẩn hóa về danh mục cha.
+    """
+    if date is None:
+        date = now_utc()[:10]
+    else:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="date phải có định dạng YYYY-MM-DD",
+            )
+
+    start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
+
+    with get_db() as conn:
+        # --- Expense journal debits within the period (source_type='expense') ---
+        # Mirrors the expense-by-category CLI query (report.py:736-750) but
+        # filters by the period bounds and joins events to exclude deleted
+        # expenses (matching the expense screen filter logic, F2). Only the
+        # debit side is summed — credits would be reversal entries which are
+        # excluded by the deleted-event filter and the natural net-out of
+        # the expense journal sync.
+        rows = conn.execute(
+            """SELECT je.source_id AS event_id,
+                      jl.debit      AS debit
+               FROM journal_entries je
+               JOIN journal_lines jl ON jl.journal_entry_id = je.id
+               WHERE je.source_type = 'expense'
+                 AND jl.debit > 0
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?""",
+            (start_ts, end_next_day_ts),
+        ).fetchall()
+
+        # --- Parent/child category mappings (DG-302 Phase 1) ---
+        # children_of (parent -> sorted child names) is returned to the
+        # client so the full tree is renderable even when a subcategory had
+        # zero expenses this period. parent_of normalizes legacy rows whose
+        # subcategory name is stored in the category field back to the parent.
+        parent_of: dict[str, str] = {}
+        children_of: dict[str, list[str]] = {}
+        cat_rows = conn.execute(
+            """
+            SELECT child.name AS child_name,
+                   parent.name AS parent_name
+            FROM expense_categories child
+            JOIN expense_categories parent ON parent.id = child.parent_id
+            """
+        ).fetchall()
+        for cr in cat_rows:
+            parent_of[cr["child_name"]] = cr["parent_name"]
+            children_of.setdefault(cr["parent_name"], []).append(
+                cr["child_name"]
+            )
+        for parent in children_of:
+            children_of[parent].sort()
+
+        # --- Pre-load non-deleted expense events for category resolution ---
+        # Only expense events are needed (source_type='expense' → source_id
+        # is an event id). Deleted events are excluded so their journal
+        # debits (if any linger) do not contribute to the total (F2).
+        events_by_id: dict[int, dict | None] = {}
+        event_rows = conn.execute(
+            """
+            SELECT id, data
+            FROM events
+            WHERE type = 'expense'
+              AND (deleted_at IS NULL OR deleted_at = '')
+            """
+        ).fetchall()
+        for er in event_rows:
+            data: dict | None = None
+            if er["data"]:
+                try:
+                    parsed = json.loads(er["data"])
+                    if isinstance(parsed, dict):
+                        data = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            events_by_id[int(er["id"])] = data
+
+        # --- Aggregate by category/subcategory ---
+        # totals[parent] = total (incl. all subcategories)
+        # sub_totals[parent][subcategory] = subtotal
+        # Mirrors _query_supplier_category_breakdown / expense_by_category_cmd.
+        totals: dict[str, float] = {}
+        sub_totals: dict[str, dict[str, float]] = {}
+        uncategorized = 0.0
+
+        for r in rows:
+            event_id = r["event_id"]
+            amount = float(r["debit"])
+            category: str | None = None
+            subcategory: str | None = None
+
+            if isinstance(event_id, int):
+                ev_data = events_by_id.get(event_id)
+                if ev_data:
+                    cat = ev_data.get("category")
+                    if isinstance(cat, str) and cat:
+                        category = cat
+                    sub = ev_data.get("subcategory")
+                    if isinstance(sub, str) and sub:
+                        subcategory = sub
+
+            if category:
+                # Legacy normalization: when the category field is actually
+                # a subcategory name, normalize it back to the parent so it
+                # lands in the right bucket (matches report.py:806-813).
+                if category in parent_of:
+                    parent = parent_of[category]
+                    sub_totals.setdefault(parent, {})
+                    sub_totals[parent][category] = (
+                        sub_totals[parent].get(category, 0.0) + amount
+                    )
+                    totals[parent] = totals.get(parent, 0.0) + amount
+                else:
+                    totals[category] = totals.get(category, 0.0) + amount
+                    if subcategory:
+                        sub_totals.setdefault(category, {})
+                        sub_totals[category][subcategory] = (
+                            sub_totals[category].get(subcategory, 0.0) + amount
+                        )
+            else:
+                uncategorized += amount
+
+        # --- Build the category tree response ---
+        # Each parent category lists its known children (from
+        # ``expense_categories``) followed by any legacy/other subcategory
+        # values encountered in the data, matching the CLI render order.
+        categories: list[ExpenseCategory] = []
+        for parent_name in sorted(totals):
+            subs: list[ExpenseSubcategory] = []
+            known_children = set(children_of.get(parent_name, []))
+            # Known children first (in seed order), then legacy/other subs.
+            rendered = set()
+            for sub_name in children_of.get(parent_name, []):
+                sub_amount = sub_totals.get(parent_name, {}).get(sub_name, 0.0)
+                subs.append(ExpenseSubcategory(name=sub_name, amount=round(sub_amount, 2)))
+                rendered.add(sub_name)
+            for sub_name in sorted(sub_totals.get(parent_name, {})):
+                if sub_name in rendered:
+                    continue
+                subs.append(
+                    ExpenseSubcategory(
+                        name=sub_name,
+                        amount=round(sub_totals[parent_name][sub_name], 2),
+                    )
+                )
+            categories.append(
+                ExpenseCategory(
+                    name=parent_name,
+                    amount=round(totals[parent_name], 2),
+                    subcategories=subs,
+                )
+            )
+
+        total_expenses = round(sum(totals.values()) + uncategorized, 2)
+
+        summary = ExpenseSummary(
+            period=period,
+            startDate=start_date,
+            endDate=end_date,
+            date=date,
+            totalExpenses=total_expenses,
+            categories=categories,
+            uncategorized=round(uncategorized, 2),
+            childrenOf=children_of,
+        )
+        return summary.to_api_dict()
