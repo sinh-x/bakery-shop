@@ -306,6 +306,41 @@ def test_expense_summary_excludes_deleted_expenses(api_client):
     assert body["categories"] == []
 
 
+def test_expense_summary_excludes_locked_deleted_expense(api_client):
+    """M1 (DG-386 cycle 5): a soft-deleted expense whose journal entry is
+    locked (so delete reverses it instead of cascade-deleting) must still
+    be excluded from ``totalExpenses``. The original debit line lingers
+    after reversal, so the SQL must join ``events`` and filter
+    ``deleted_at`` to drop both the original and the reversal's debit."""
+    from baker.db.connection import get_db
+
+    exp = _create_expense(api_client, category="Vận chuyển", amount=60000)
+    eid = int(exp["id"])
+
+    # Lock the expense's journal entry so the delete path takes the
+    # reverse-entry branch instead of cascade-delete.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (eid,),
+        ).fetchone()
+        assert row is not None, "expense journal entry not found"
+        entry_id = int(row["id"])
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = ? WHERE id = ?",
+            ("2026-08-13T00:00:00Z", entry_id),
+        )
+
+    _delete_expense(api_client, eid)
+
+    body = _get_summary(api_client, period="week", date=_today())
+    assert body["totalExpenses"] == 0
+    assert body["categories"] == []
+    assert body["uncategorized"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Period-aware date filtering (F1)
 # ---------------------------------------------------------------------------

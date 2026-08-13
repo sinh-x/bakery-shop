@@ -53,6 +53,7 @@ def cash_account_placeholders(codes: tuple[str, ...]) -> str:
 
 def query_cash_period_activity(
     conn, since_b: str | None, until_b: str | None,
+    *, exclusive_until: bool = False,
 ) -> dict[str, dict[str, dict[str, float]]]:
     """Aggregate period cash-account movements grouped by ``source_type``.
 
@@ -61,6 +62,19 @@ def query_cash_period_activity(
     journal entry's ``transaction_date`` falls within ``[since_b, until_b]`` are
     summed. Entries that also touch the fixed-asset account 1600 are excluded —
     those are reported under investing activities to avoid double-counting.
+
+    ``exclusive_until`` controls the upper-bound operator:
+
+    - ``False`` (default, CLI behavior) — upper bound is inclusive
+      (``je.transaction_date <= until_b``), matching ``baker report cashflow``
+      which treats ``--until`` as end-of-day inclusive.
+    - ``True`` (used by the cashflow-summary API) — upper bound is exclusive
+      (``je.transaction_date < until_b``) so a journal entry timestamped
+      exactly at the next period's ``T00:00:00`` is not double-counted by
+      both the closing period and the opening period (Mn3, DG-386 cycle 5).
+      The API passes ``end_next_day_ts`` as ``until_b``; making the bound
+      exclusive keeps it consistent with the period-summary / expense-summary /
+      product-breakdown endpoints which all use ``< end_next_day_ts``.
     """
     placeholders = cash_account_placeholders(CASH_ACCOUNT_CODES)
     params: list = list(CASH_ACCOUNT_CODES)
@@ -69,7 +83,8 @@ def query_cash_period_activity(
         where_clauses.append("je.transaction_date >= ?")
         params.append(since_b)
     if until_b:
-        where_clauses.append("je.transaction_date <= ?")
+        op = "<" if exclusive_until else "<="
+        where_clauses.append(f"je.transaction_date {op} ?")
         params.append(until_b)
     # Exclude entries that touch the fixed-asset account — those are investing.
     where_clauses.append(
@@ -111,6 +126,7 @@ def query_cash_period_activity(
 
 def query_supplier_category_breakdown(
     conn, since_b: str | None, until_b: str | None,
+    *, exclusive_until: bool = False,
 ) -> dict:
     """Category/subcategory breakdown of cash paid to suppliers/employees.
 
@@ -130,6 +146,18 @@ def query_supplier_category_breakdown(
 
     ``order_shipping_release`` entries are excluded (FR3) — only
     ``expense`` and ``expense_settlement`` source types are queried.
+
+    Journal entries that also touch the fixed-asset account 1600 are
+    excluded — those are investing-activity flows and would otherwise
+    appear here in ``supplierCategories`` but not in ``suppliers.outflow``
+    (which is aggregated by ``query_cash_period_activity`` and already
+    excludes 1600). Mirroring the 1600 ``NOT EXISTS`` filter here keeps
+    the two views consistent (Mn2, DG-386 cycle 5).
+
+    ``exclusive_until`` controls the upper-bound operator — see
+    :func:`query_cash_period_activity`. Default ``False`` matches the CLI
+    (inclusive ``<=``); the cashflow-summary API passes ``True`` so the
+    next period's ``T00:00:00`` is not double-counted (Mn3).
 
     Aggregation follows the same tree pattern as ``expense_by_category_cmd``
     (report.py:756-823): ``expense_categories`` parent/child mappings are
@@ -157,8 +185,20 @@ def query_supplier_category_breakdown(
         where_clauses.append("je.transaction_date >= ?")
         params.append(since_b)
     if until_b:
-        where_clauses.append("je.transaction_date <= ?")
+        op = "<" if exclusive_until else "<="
+        where_clauses.append(f"je.transaction_date {op} ?")
         params.append(until_b)
+    # Exclude entries that touch the fixed-asset account 1600 — those are
+    # investing-activity flows. Mirrors query_cash_period_activity so the
+    # breakdown stays consistent with suppliers.outflow (Mn2).
+    where_clauses.append(
+        "NOT EXISTS ("
+        " SELECT 1 FROM journal_lines jl2"
+        " JOIN accounts a2 ON a2.id = jl2.account_id"
+        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
+        ")"
+    )
+    params.append(FIXED_ASSETS_CODE)
     where_sql = " AND ".join(where_clauses)
 
     rows = conn.execute(

@@ -564,6 +564,96 @@ def _create_expense_via_api(client, *, category, amount=100000, subcategory=None
 
 
 # ---------------------------------------------------------------------------
+# Fixed-asset (1600) exclusion from supplier breakdown (Mn2)
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_summary_supplier_categories_exclude_1600_expense(api_client):
+    """Mn2 (DG-386 cycle 5): an expense/expense_settlement journal entry that
+    also touches the fixed-asset account 1600 is excluded from the supplier
+    category breakdown, mirroring the 1600 NOT EXISTS filter already applied
+    to query_cash_period_activity (suppliers.outflow). Without this filter
+    the entry would appear in supplierCategories but not in suppliers.outflow.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        transport = _account_id(conn, "5300")
+        fixed_asset = _account_id(conn, "1600")
+        ts = f"{_today()}T10:00:00Z"
+        eid = _insert_expense_event(
+            conn, category="Vận chuyển", amount=30000, created_at=ts,
+        )
+        entry_id = _insert_entry(
+            conn, debit_account_id=transport, credit_account_id=cash,
+            amount=30000.0, source_type="expense", source_id=eid,
+            description="Expense: Vận chuyển (cash side)", created_at=ts,
+            transaction_date=ts,
+        )
+        # Add a 1600 debit line to the same journal entry so the entry now
+        # touches the fixed-asset account. query_cash_period_activity would
+        # exclude the whole entry (NOT EXISTS 1600), so suppliers.outflow
+        # must not include it; supplierCategories must also exclude it.
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, fixed_asset, 0.0, 5000.0, "fixed-asset credit line"),
+        )
+        # Re-balance: add an offsetting debit on 1600 is not needed for the
+        # filter test — the NOT EXISTS check is what matters.
+
+    body = _get_summary(api_client, period="week", date=_today())
+    by_name = {c["name"]: c for c in body["supplierCategories"]}
+    assert "Vận chuyển" not in by_name
+    # suppliers.outflow also excludes it (1600-touching entry), so the
+    # two views stay consistent.
+    assert body["suppliers"]["outflow"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Exclusive upper bound (Mn3) — next-period T00:00:00 not double-counted
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_summary_upper_bound_excludes_next_period_midnight(api_client):
+    """Mn3 (DG-386 cycle 5): a journal entry timestamped exactly at the
+    next period's T00:00:00 (e.g. the midnight starting the week after the
+    reference date's week) is not counted by the closing period. The
+    cashflow-summary API uses an exclusive upper bound so the entry is
+    attributed only to the period that opens at that timestamp.
+    """
+    from datetime import datetime, timedelta
+
+    ref = datetime.strptime(_today(), "%Y-%m-%d")
+    # Monday of the reference week and the next Monday (exclusive end).
+    monday = ref - timedelta(days=ref.weekday())
+    next_monday = monday + timedelta(days=7)
+    next_monday_ts = next_monday.strftime("%Y-%m-%dT00:00:00")
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        deposits = _account_id(conn, "2100")
+        # Customer deposit timestamped exactly at next Monday T00:00:00.
+        _insert_entry(
+            conn, debit_account_id=cash, credit_account_id=deposits,
+            amount=200000.0, source_type="payment_transaction", source_id=999,
+            description="Boundary entry", created_at=next_monday_ts,
+            transaction_date=next_monday_ts,
+        )
+
+    # The closing period (reference week) must NOT include the boundary entry.
+    body = _get_summary(api_client, period="week", date=_today())
+    assert body["operatingInflow"] == pytest.approx(0.0)
+    # The opening period (next week) DOES include it.
+    body_next = _get_summary(
+        api_client, period="week", date=next_monday.strftime("%Y-%m-%d"),
+    )
+    assert body_next["operatingInflow"] == pytest.approx(200000.0)
+
+
+# ---------------------------------------------------------------------------
 # Period-aware date filtering (F1)
 # ---------------------------------------------------------------------------
 

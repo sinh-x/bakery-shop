@@ -1,6 +1,6 @@
 """``baker report`` CLI group — accounting financial reports (FR5).
 
-Provides six read-only subcommands that aggregate ``journal_entries`` /
+Provides nine read-only subcommands that aggregate ``journal_entries`` /
 ``journal_lines`` into human-readable text reports printed to stdout:
 
 - ``trial-balance``      — per-account debit/credit/balance totals for a date range
@@ -10,6 +10,8 @@ Provides six read-only subcommands that aggregate ``journal_entries`` /
 - ``account-ledger``     — per-account journal line history (requires ``--account-code``)
 - ``expense-by-category``— expense totals grouped by source event category
 - ``cogs-audit``         — per-order COGS completeness and ratio audit (FR4)
+- ``order-status``       — order counts and total value grouped by status and delivery type
+- ``cashflow``           — direct-method cash-flow statement (operating / investing / financing)
 
 All commands accept ``--since`` and ``--until`` in ``YYYY-MM-DD`` format.
 ``--until`` is treated inclusively (end-of-day). Exit code is 0 on success

@@ -401,6 +401,67 @@ def test_product_breakdown_month_period_aggregates_full_month(api_client):
 
 
 # ---------------------------------------------------------------------------
+# Chunked batch query for periods with > 500 orders (Mn5)
+# ---------------------------------------------------------------------------
+
+
+def test_product_breakdown_chunked_query_handles_many_orders(api_client):
+    """Mn5 (DG-386 cycle 5): the per-order line-item query is chunked into
+    batches of 500 order ids to avoid exceeding SQLite's 32766 host
+    variable limit. A period with more than 500 revenue-recognized orders
+    must still aggregate correctly across all batches.
+    """
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema, _account_id_by_code
+
+    # Seed 600 delivered orders directly via SQL so we cross the 500-id
+    # batch boundary without paying the cost of the full orders API flow
+    # for each one. Each order gets a 4100 credit journal entry (source_type
+    # 'order') so it shows up in the revenue query, and one order_items row
+    # so the chunked item query has something to attribute.
+    revenue_per_order = 10000.0
+    n_orders = 600
+    with get_db() as conn:
+        ensure_schema(conn)
+        revenue_acc_id = _account_id_by_code(conn, "4100")
+        for oid in range(1, n_orders + 1):
+            conn.execute(
+                "INSERT INTO orders (id, order_ref, customer_name, due_date, total_price, status, items) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (oid, f"REF-{oid}", "Test", _today(), revenue_per_order, "delivered", "[]"),
+            )
+            conn.execute(
+                "INSERT INTO order_items (order_id, product_name, product_id, quantity, unit_price, is_gift) "
+                "VALUES (?, ?, ?, ?, ?, 0)",
+                (oid, "Bánh mì trắng", 1, 1, revenue_per_order),
+            )
+            conn.execute(
+                "INSERT INTO journal_entries (description, source_type, source_id, transaction_date) "
+                "VALUES (?, 'order', ?, ?)",
+                (f"Order {oid}", oid, f"{_today()}T10:00:00"),
+            )
+            je_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+            conn.execute(
+                "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+                "VALUES (?, ?, 0, ?, ?)",
+                (je_id, revenue_acc_id, revenue_per_order, "revenue"),
+            )
+
+    body = api_client.get(
+        "/api/reports/product-breakdown",
+        params={"period": "week", "date": _today()},
+    ).json()
+    # All 600 orders attributed to the single product.
+    by_name = {p["name"]: p for p in body["products"]}
+    assert "Bánh mì trắng" in by_name
+    assert by_name["Bánh mì trắng"]["quantity"] == n_orders
+    assert by_name["Bánh mì trắng"]["revenue"] == pytest.approx(
+        n_orders * revenue_per_order
+    )
+    assert body["totalRevenue"] == pytest.approx(n_orders * revenue_per_order)
+
+
+# ---------------------------------------------------------------------------
 # Validation (F1, NF4 — Vietnamese error messages)
 # ---------------------------------------------------------------------------
 

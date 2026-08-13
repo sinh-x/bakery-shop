@@ -48,12 +48,10 @@ active cash drawer (F2). Reuses the constants
 reconcile with ``baker report cashflow`` (FR5 / AC5).
 """
 
-import calendar
 import json
-from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from baker.services.cashflow import (
     CASH_ACCOUNT_CODES,
@@ -85,7 +83,11 @@ from baker.models.product_breakdown import (
     ProductBreakdownRow,
 )
 from baker.api.orders import _parse_payment_methods
-from baker.utils.time import now_utc
+from baker.api.reports._shared import (
+    _day_bounds,
+    _period_bounds,
+    _resolve_date_param,
+)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -111,59 +113,6 @@ _PRODUCT_BREAKDOWN_TOP_N = 10
 # attribution because their cost is handled by the ``order_gift_cogs``
 # journal entry and they do not contribute to the 4100 revenue credit.
 _ORDER_ITEM_GIFT_EXCLUDE = "oi.is_gift = 0"
-
-
-def _day_bounds(date_str: str) -> tuple[str, str]:
-    """Return (start, next_day_start) timestamps for string-range filtering."""
-    day = datetime.strptime(date_str, "%Y-%m-%d")
-    next_day = day + timedelta(days=1)
-    return (
-        f"{date_str}T00:00:00",
-        next_day.strftime("%Y-%m-%dT00:00:00"),
-    )
-
-
-def _period_bounds(period: str, date_str: str) -> tuple[str, str, str, str]:
-    """Return (start_date, end_date, start_ts, next_day_ts) for a period.
-
-    - ``day``: the single day containing ``date_str`` (start == end ==
-      ``date_str``). Mirrors [_day_bounds] so the day tab can reuse the
-      period endpoints without a separate code path.
-    - ``week``: Monday–Sunday of the week containing ``date_str``
-      (Monday-anchored, per FR1).
-    - ``month``: 1st day through last day of the month containing
-      ``date_str``.
-
-    The ``start_ts`` / ``next_day_ts`` pair mirrors ``_day_bounds`` so the
-    same ``>= start_ts AND < next_day_ts`` journal-entry filter works for
-    multi-day ranges.
-    """
-    ref = datetime.strptime(date_str, "%Y-%m-%d")
-    if period == "day":
-        start = ref
-        end = ref
-    elif period == "week":
-        # weekday(): Mon=0 .. Sun=6 — subtract to reach this week's Monday.
-        start = ref - timedelta(days=ref.weekday())
-        end = start + timedelta(days=6)
-    elif period == "month":
-        start = ref.replace(day=1)
-        last_day = calendar.monthrange(ref.year, ref.month)[1]
-        end = ref.replace(day=last_day)
-    else:
-        raise HTTPException(
-            status_code=422,
-            detail="period phải là 'day', 'week' hoặc 'month'",
-        )
-    start_str = start.strftime("%Y-%m-%d")
-    end_str = end.strftime("%Y-%m-%d")
-    next_day = end + timedelta(days=1)
-    return (
-        start_str,
-        end_str,
-        f"{start_str}T00:00:00",
-        next_day.strftime("%Y-%m-%dT00:00:00"),
-    )
 
 
 @router.get("/today-summary")
@@ -195,16 +144,7 @@ def get_today_summary(
     Order count = tất cả đơn hàng có dueDate == date (không lọc theo status),
     bao gồm cả đơn POS có due_date rỗng (match theo created_at).
     """
-    if date is None:
-        date = now_utc()[:10]
-    else:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="date phải có định dạng YYYY-MM-DD",
-            )
+    date = _resolve_date_param(date)
 
     day_start, day_end = _day_bounds(date)
 
@@ -360,16 +300,7 @@ def get_period_summary(
     - orderCount = số đơn có dueDate nằm trong kỳ (mọi status), bao gồm
       đơn POS/reconciliation có due_date rỗng (match theo created_at)
     """
-    if date is None:
-        date = now_utc()[:10]
-    else:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="date phải có định dạng YYYY-MM-DD",
-            )
+    date = _resolve_date_param(date)
 
     start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
 
@@ -535,16 +466,7 @@ def get_product_breakdown(
     giữ bảng phân tích theo sản phẩm khớp internally (sum-of-products),
     không phải lỗi đối soát.
     """
-    if date is None:
-        date = now_utc()[:10]
-    else:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="date phải có định dạng YYYY-MM-DD",
-            )
+    date = _resolve_date_param(date)
 
     start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
 
@@ -588,7 +510,6 @@ def get_product_breakdown(
             int(r["order_id"]): float(r["revenue"] or 0) for r in order_revenue_rows
         }
         order_ids = list(order_revenue.keys())
-        order_id_placeholders = ",".join("?" for _ in order_ids)
 
         # --- Per-order line items (excluding gifts) ---
         # Line value = unit_price * quantity. Products are joined by
@@ -596,18 +517,29 @@ def get_product_breakdown(
         # cannot be resolved (e.g. custom BKS-DG codes) fall back to the
         # order_items.product_name as the bucket name so their revenue is
         # still attributed and reconciles.
-        item_rows = conn.execute(
-            f"""SELECT oi.order_id AS order_id,
-                       oi.product_name AS product_name,
-                       COALESCE(p.name, oi.product_name) AS display_name,
-                       oi.quantity AS quantity,
-                       oi.unit_price AS unit_price
-                FROM order_items oi
-                LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
-                WHERE oi.order_id IN ({order_id_placeholders})
-                  AND {_ORDER_ITEM_GIFT_EXCLUDE}""",
-            order_ids,
-        ).fetchall()
+        #
+        # Chunk the order-id IN (...) list into batches (default 500) so a
+        # period with many orders does not exceed SQLite's 32766 host
+        # variable limit (Mn5, DG-386 cycle 5). Results are merged in
+        # order-id order so the proration loop below is stable.
+        item_rows = []
+        _PRODUCT_BREAKDOWN_CHUNK = 500
+        for i in range(0, len(order_ids), _PRODUCT_BREAKDOWN_CHUNK):
+            batch = order_ids[i:i + _PRODUCT_BREAKDOWN_CHUNK]
+            batch_placeholders = ",".join("?" for _ in batch)
+            batch_rows = conn.execute(
+                f"""SELECT oi.order_id AS order_id,
+                           oi.product_name AS product_name,
+                           COALESCE(p.name, oi.product_name) AS display_name,
+                           oi.quantity AS quantity,
+                           oi.unit_price AS unit_price
+                    FROM order_items oi
+                    LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
+                    WHERE oi.order_id IN ({batch_placeholders})
+                      AND {_ORDER_ITEM_GIFT_EXCLUDE}""",
+                batch,
+            ).fetchall()
+            item_rows.extend(batch_rows)
 
         # --- Prorate each order's revenue across its line items ---
         # An order with zero line value (e.g. all items 0 VND) skips
@@ -723,16 +655,7 @@ def get_expense_summary(
     logic lọc của màn hình chi phí (F2). Dòng legacy có subcategory lưu
     trong trường ``category`` được chuẩn hóa về danh mục cha.
     """
-    if date is None:
-        date = now_utc()[:10]
-    else:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="date phải có định dạng YYYY-MM-DD",
-            )
+    date = _resolve_date_param(date)
 
     start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
 
@@ -744,15 +667,26 @@ def get_expense_summary(
         # debit side is summed — credits would be reversal entries which are
         # excluded by the deleted-event filter and the natural net-out of
         # the expense journal sync.
+        #
+        # The events join (with deleted_at filter) is applied at the SQL
+        # level rather than only in Python category resolution so that a
+        # soft-deleted expense whose journal entry could not be
+        # cascade-deleted (locked entry → reversed instead) does not leak
+        # its original debit (and the reversal's swapped debit) into the
+        # period total. Both the original and reversal entries share the
+        # same source_id (the event id), so filtering on the joined
+        # event's deleted_at excludes both (M1, DG-386 cycle 5).
         rows = conn.execute(
             """SELECT je.source_id AS event_id,
                       jl.debit      AS debit
                FROM journal_entries je
                JOIN journal_lines jl ON jl.journal_entry_id = je.id
+               JOIN events e ON e.id = je.source_id
                WHERE je.source_type = 'expense'
                  AND jl.debit > 0
                  AND je.transaction_date >= ?
-                 AND je.transaction_date < ?""",
+                 AND je.transaction_date < ?
+                 AND (e.deleted_at IS NULL OR e.deleted_at = '')""",
             (start_ts, end_next_day_ts),
         ).fetchall()
 
@@ -937,40 +871,34 @@ def get_cashflow_summary(
     Bất kỳ journal entry nào chạm tài khoản tài sản cố định 1600 đều
     bị loại trừ (đó là hoạt động đầu tư, báo cáo riêng trong CLI).
     """
-    if date is None:
-        date = now_utc()[:10]
-    else:
-        try:
-            datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="date phải có định dạng YYYY-MM-DD",
-            )
+    date = _resolve_date_param(date)
 
     start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
 
     with get_db() as conn:
         # --- Operating cash activity grouped by source_type/account ---
-        # Reuses query_cash_period_activity from report.py so the totals
-        # reconcile with ``baker report cashflow``. The shared helper applies
-        # an inclusive upper bound (``je.transaction_date <= ?``) using the
-        # ``until_b`` argument; here we pass ``end_next_day_ts`` as ``until_b``
-        # so the bound is ``je.transaction_date <= end_next_day_ts``. Combined
-        # with the inclusive lower ``>= start_ts`` bound this covers the same
-        # day range for journal entries whose transaction_date carries a
-        # T00:00:00..T23:59:59 timestamp.
+        # Reuses query_cash_period_activity from cashflow.py so the totals
+        # reconcile with ``baker report cashflow``. The shared helper
+        # defaults to an inclusive upper bound (``je.transaction_date <= ?``)
+        # for the CLI, but the API passes ``exclusive_until=True`` so the
+        # bound becomes ``je.transaction_date < end_next_day_ts`` — matching
+        # the period-summary / expense-summary / product-breakdown endpoints
+        # and ensuring a journal entry timestamped exactly at the next
+        # period's ``T00:00:00`` is not double-counted by both periods
+        # (Mn3, DG-386 cycle 5).
         period_activity = query_cash_period_activity(
-            conn, start_ts, end_next_day_ts,
+            conn, start_ts, end_next_day_ts, exclusive_until=True,
         )
 
         # --- Supplier category/subcategory breakdown ---
         # expense + expense_settlement only (order_shipping_release is
         # excluded from the breakdown by query_supplier_category_breakdown
         # but its outflow is captured in the suppliers section total via
-        # sum_section below).
+        # sum_section below). ``exclusive_until=True`` mirrors the activity
+        # query so the breakdown stays consistent with suppliers.outflow
+        # across the period boundary (Mn3).
         supplier_breakdown = query_supplier_category_breakdown(
-            conn, start_ts, end_next_day_ts,
+            conn, start_ts, end_next_day_ts, exclusive_until=True,
         )
 
     # --- Aggregate customer and supplier sections ---
