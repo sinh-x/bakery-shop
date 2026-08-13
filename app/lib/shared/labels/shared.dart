@@ -223,6 +223,20 @@ class SharedLabels {
   static const todaySalesProductBreakdownOthers = 'Khác';
   static const todaySalesProductBreakdownEmpty = 'Không có dữ liệu';
 
+  // Today Sales screen — expense summary (DG-386 Phase 8 / FR4 / AC4)
+  //
+  // Section title, total line, category/subcategory labels, and empty state
+  // for the period expense breakdown. The full parent/child category tree
+  // from `expense_categories` is rendered even when a subcategory had zero
+  // expenses in the period (via the backend `childrenOf` mapping). The
+  // "Chưa phân loại" (uncategorized) line covers expenses whose category
+  // could not be resolved.
+  static const todaySalesExpenseSection = 'Chi phí';
+  static const todaySalesExpenseTotal = 'Tổng chi phí';
+  static const todaySalesExpenseSubcategory = 'Tiểu mục';
+  static const todaySalesExpenseUncategorized = 'Chưa phân loại';
+  static const todaySalesExpenseEmpty = 'Không có chi phí trong kỳ';
+
   // Today Sales screen — cash-source breakdown (DG-378 Phase 3 / FR3, AC3)
   //
   // Separate from the "Tổng tiền nhận được" payment group: this breakdown
