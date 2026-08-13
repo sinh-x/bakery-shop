@@ -209,6 +209,20 @@ class SharedLabels {
   static const todaySalesCashflowSection = 'Dòng tiền';
   static const todaySalesNoActiveDrawer = 'Chưa mở quầy hôm nay';
 
+  // Today Sales screen — product breakdown (DG-386 Phase 7 / FR3 / AC3)
+  //
+  // Section title and column/row labels for the per-product revenue
+  // attribution breakdown (top 10 products + a single "Khác"/Others row).
+  // The "Khác" label is centralized here so no inline Vietnamese string lives
+  // in widget code (NFR4 — VN Label Policy).
+  static const todaySalesProductBreakdownSection = 'Phân tích sản phẩm';
+  static const todaySalesProductBreakdownColumnProduct = 'Sản phẩm';
+  static const todaySalesProductBreakdownColumnQuantity = 'SL';
+  static const todaySalesProductBreakdownColumnRevenue = 'Doanh thu';
+  static const todaySalesProductBreakdownColumnShare = 'Tỷ trọng';
+  static const todaySalesProductBreakdownOthers = 'Khác';
+  static const todaySalesProductBreakdownEmpty = 'Không có dữ liệu';
+
   // Today Sales screen — cash-source breakdown (DG-378 Phase 3 / FR3, AC3)
   //
   // Separate from the "Tổng tiền nhận được" payment group: this breakdown
