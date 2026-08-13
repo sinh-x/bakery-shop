@@ -7,7 +7,7 @@ list of subcategory amounts; the grand total reconciles with the sum
 of expense journal debits (account 5xxx) recognized in the period.
 
 The breakdown reuses the aggregation pattern from
-``_query_supplier_category_breakdown`` (``src/baker/commands/report.py``)
+``query_supplier_category_breakdown`` (``src/baker/services/cashflow.py``)
 and ``expense-by-category`` CLI: category/subcategory is resolved from
 the originating expense event's ``data`` JSON, legacy rows whose
 subcategory is stored in the ``category`` field are normalized back to

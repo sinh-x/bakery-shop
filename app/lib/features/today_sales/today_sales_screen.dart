@@ -79,14 +79,25 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   void invalidateProviders() {
     ref.invalidate(todaySummaryProvider);
     ref.invalidate(dateSummaryProvider);
-    // Invalidate the combined period-report provider so the Tuần/Tháng tabs
-    // refresh via the AppBar refresh button, the 15-second auto-refresh, and
-    // app-resume (M-1). The family members are watched inside
-    // `periodReportDataProvider`, so invalidating the combined provider
-    // propagates to `periodSummaryProvider`, `productBreakdownProvider`,
-    // `expenseSummaryProvider`, and `cashflowSummaryProvider` for the active
-    // `PeriodQuery`. Preserve the Ngày-tab behavior above.
-    ref.invalidate(periodReportDataProvider);
+    // Invalidate the four period source families directly for each active
+    // period query (day/week/month) so the Tuần/Tháng tabs refresh via the
+    // AppBar refresh button, the 15-second auto-refresh, and app-resume
+    // (cycle-3 M1). Riverpod invalidation propagates from a provider to its
+    // dependents — not to the providers it `watch`es — so invalidating the
+    // combined `periodReportDataProvider` would re-run it against the
+    // still-cached source families and leave the tabs stale. Invalidating the
+    // source families instead propagates correctly to
+    // `periodReportDataProvider`. This mirrors the pull-to-refresh pattern in
+    // `day_tab_body.dart`, extended to the week/month queries.
+    final dayQuery = PeriodQuery(period: 'day', date: _selectedDate);
+    final weekQuery = PeriodQuery(period: 'week', date: _weekAnchor);
+    final monthQuery = PeriodQuery(period: 'month', date: _monthAnchor);
+    for (final query in [dayQuery, weekQuery, monthQuery]) {
+      ref.invalidate(periodSummaryProvider(query));
+      ref.invalidate(productBreakdownProvider(query));
+      ref.invalidate(expenseSummaryProvider(query));
+      ref.invalidate(cashflowSummaryProvider(query));
+    }
   }
 
   @override

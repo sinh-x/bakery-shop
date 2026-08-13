@@ -268,4 +268,72 @@ void main() {
       expect(reports.getProductBreakdownCalls, 0);
     });
   });
+
+  // Regression for cycle-3 M1 — the refresh path must invalidate the four
+  // source families, not the combined `periodReportDataProvider`. Riverpod
+  // invalidation propagates to dependents, not to watched providers, so
+  // invalidating the combined provider leaves the source families cached
+  // and the Tuần/Tháng tabs stale on the AppBar refresh button, the
+  // 15-second auto-refresh timer, and app-resume.
+  group('refresh invalidation (cycle-3 M1 regression)', () {
+    test(
+        'invalidating the four source families re-fetches every period '
+        'endpoint (call counts increment after refresh)', () async {
+      final reports = _FakeReportService();
+      final container = ProviderContainer(overrides: [
+        reportServiceProvider.overrideWithValue(reports),
+      ]);
+      addTearDown(container.dispose);
+
+      const query = PeriodQuery(period: 'week', date: '2026-08-13');
+      // Initial read fires each endpoint once.
+      await container.read(periodReportDataProvider(query).future);
+      expect(reports.getPeriodSummaryCalls, 1);
+      expect(reports.getProductBreakdownCalls, 1);
+      expect(reports.getExpenseSummaryCalls, 1);
+      expect(reports.getCashflowSummaryCalls, 1);
+
+      // Invalidate the four source families (the correct refresh pattern).
+      container.invalidate(periodSummaryProvider(query));
+      container.invalidate(productBreakdownProvider(query));
+      container.invalidate(expenseSummaryProvider(query));
+      container.invalidate(cashflowSummaryProvider(query));
+
+      // Re-reading the combined provider must trigger a fresh fetch of each
+      // source family (call counts → 2).
+      await container.read(periodReportDataProvider(query).future);
+      expect(reports.getPeriodSummaryCalls, 2);
+      expect(reports.getProductBreakdownCalls, 2);
+      expect(reports.getExpenseSummaryCalls, 2);
+      expect(reports.getCashflowSummaryCalls, 2);
+    });
+
+    test(
+        'invalidating only the combined provider does NOT re-fetch the '
+        'source families (documents the inverted-fix bug)', () async {
+      final reports = _FakeReportService();
+      final container = ProviderContainer(overrides: [
+        reportServiceProvider.overrideWithValue(reports),
+      ]);
+      addTearDown(container.dispose);
+
+      const query = PeriodQuery(period: 'week', date: '2026-08-13');
+      await container.read(periodReportDataProvider(query).future);
+      expect(reports.getPeriodSummaryCalls, 1);
+      expect(reports.getProductBreakdownCalls, 1);
+      expect(reports.getExpenseSummaryCalls, 1);
+      expect(reports.getCashflowSummaryCalls, 1);
+
+      // Invalidate only the combined provider (the buggy cycle-2 pattern).
+      container.invalidate(periodReportDataProvider(query));
+      await container.read(periodReportDataProvider(query).future);
+
+      // Source families stay cached — no re-fetch. This documents why the
+      // cycle-2 M1 fix was inverted and guards against regression.
+      expect(reports.getPeriodSummaryCalls, 1);
+      expect(reports.getProductBreakdownCalls, 1);
+      expect(reports.getExpenseSummaryCalls, 1);
+      expect(reports.getCashflowSummaryCalls, 1);
+    });
+  });
 }

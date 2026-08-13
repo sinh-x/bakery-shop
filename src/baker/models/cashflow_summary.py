@@ -3,7 +3,7 @@
 Operating-activity cash-flow summary for a week or month period,
 computed from journal entries on the bakery's cash accounts without
 requiring an active cash drawer (F2). Reuses the constants and query
-patterns from ``src/baker/commands/report.py``:
+patterns from ``src/baker/services/cashflow.py``:
 
 - ``CASH_ACCOUNT_CODES`` — the set of cash-equivalent accounts tracked
   by the direct-method cashflow statement.
@@ -12,7 +12,7 @@ patterns from ``src/baker/commands/report.py``:
 - ``OPERATING_OUTFLOW_SOURCE_TYPES`` (``expense``,
   ``expense_settlement``, ``order_shipping_release``) — cash paid to
   suppliers/employees and released shipping fees.
-- ``_query_supplier_category_breakdown`` — the parent/child category
+- ``query_supplier_category_breakdown`` — the parent/child category
   tree for cash paid to suppliers (expense + expense_settlement only;
   ``order_shipping_release`` carries no category data and is excluded
   from the breakdown but included in the supplier-section total).
