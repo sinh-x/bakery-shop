@@ -48,8 +48,6 @@ class DayTabBody extends ConsumerStatefulWidget {
 }
 
 class _DayTabBodyState extends ConsumerState<DayTabBody> {
-  bool _refreshError = false;
-
   @override
   Widget build(BuildContext context) {
     final summaryProvider = widget.isToday
@@ -72,72 +70,26 @@ class _DayTabBodyState extends ConsumerState<DayTabBody> {
     final expenseSummaryAsync = ref.watch(expenseSummaryProvider(dayQuery));
     final cashflowSummaryAsync = ref.watch(cashflowSummaryProvider(dayQuery));
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        ref.invalidate(summaryProvider);
-        ref.invalidate(productBreakdownProvider(dayQuery));
-        ref.invalidate(expenseSummaryProvider(dayQuery));
-        ref.invalidate(cashflowSummaryProvider(dayQuery));
-        var failed = false;
-        await ref.read(summaryProvider.future).catchError((_) {
-          failed = true;
-          return const TodaySummary(
-            date: '',
-            revenue: 0,
-            orderCount: 0,
-            cashTotal: 0,
-            bankTransferTotal: 0,
-            cashInTotal: 0,
-            cashOutTotal: 0,
-            orders: [],
-          );
-        });
-        if (!mounted) return;
-        if (failed) {
-          setState(() => _refreshError = true);
-          messenger?.showSnackBar(
-            const SnackBar(
-              content: Text(SharedLabels.refreshFailed),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        } else if (_refreshError) {
-          setState(() => _refreshError = false);
-        }
-      },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (_refreshError)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                SharedLabels.refreshFailed,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          RevenueSummarySection(
-            totalRevenue: totalRevenue,
-            orderCount: orderCount,
-            cashTotal: cashTotal,
-            bankTransferTotal: bankTransferTotal,
-            cashInTotal: cashInTotal,
-            cashOutTotal: cashOutTotal,
-          ),
-          const SizedBox(height: 20),
-          _DayProductBreakdownSection(asyncValue: productBreakdownAsync),
-          const SizedBox(height: 20),
-          _DayExpenseSection(asyncValue: expenseSummaryAsync),
-          const SizedBox(height: 20),
-          _DayCashflowSection(asyncValue: cashflowSummaryAsync),
-          const SizedBox(height: 20),
-          _DayOrderListSection(summaryAsync: summaryAsync),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        RevenueSummarySection(
+          totalRevenue: totalRevenue,
+          orderCount: orderCount,
+          cashTotal: cashTotal,
+          bankTransferTotal: bankTransferTotal,
+          cashInTotal: cashInTotal,
+          cashOutTotal: cashOutTotal,
+        ),
+        const SizedBox(height: 20),
+        _DayProductBreakdownSection(asyncValue: productBreakdownAsync),
+        const SizedBox(height: 20),
+        _DayExpenseSection(asyncValue: expenseSummaryAsync),
+        const SizedBox(height: 20),
+        _DayCashflowSection(asyncValue: cashflowSummaryAsync),
+        const SizedBox(height: 20),
+        _DayOrderListSection(summaryAsync: summaryAsync),
+      ],
     );
   }
 }
