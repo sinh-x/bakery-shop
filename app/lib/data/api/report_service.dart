@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/cashflow_summary.dart';
 import '../models/expense_summary.dart';
+import '../models/order_breakdown.dart';
 import '../models/period_summary.dart';
 import '../models/product_breakdown.dart';
 import '../models/today_summary.dart';
@@ -65,6 +66,30 @@ class ReportService {
       queryParameters: params,
     );
     return ProductBreakdown.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Fetches the order count and revenue breakdown grouped by order
+  /// source × delivery type for [period] anchored at [date]
+  /// (DG-391 Phase 2 / FR1 / AC5).
+  ///
+  /// The backend responds with a JSON array (not an object) of cells
+  /// `{source, deliveryType, orderCount, revenue}`. Revenue per cell is the
+  /// sum of `orders.total_price` for orders whose effective date
+  /// (`due_date`; POS/reconciliation sources fall back to `created_at`)
+  /// falls within the period — the same basis as [getPeriodSummary] after
+  /// the DG-391 Phase 1 alignment (FR3), so breakdown totals reconcile with
+  /// the period-summary revenue.
+  Future<OrderBreakdown> getOrderBreakdown({
+    required String period,
+    String? date,
+  }) async {
+    final params = <String, dynamic>{'period': period};
+    if (date != null && date.isNotEmpty) params['date'] = date;
+    final response = await _dio.get(
+      '/api/reports/order-breakdown',
+      queryParameters: params,
+    );
+    return OrderBreakdown.fromJsonList(response.data);
   }
 
   /// Fetches the expense summary for [period] anchored at [date]

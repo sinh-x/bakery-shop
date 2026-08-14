@@ -17,6 +17,7 @@ import 'package:bakery_app/data/models/cashflow_summary.dart';
 import 'package:bakery_app/data/models/expense_summary.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/order_breakdown.dart';
 import 'package:bakery_app/data/models/period_summary.dart';
 import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
@@ -72,6 +73,7 @@ class _FakeReportService extends ReportService {
   ExpenseSummary? expenseSummary;
   CashflowSummary? cashflowSummary;
   PeriodSummary? periodSummary;
+  OrderBreakdown? orderBreakdown;
 
   @override
   Future<TodaySummary> getTodaySummary({String? date}) async {
@@ -165,6 +167,13 @@ class _FakeReportService extends ReportService {
         cashOutTotal: 0,
         orders: const [],
       );
+
+  @override
+  Future<OrderBreakdown> getOrderBreakdown({
+    required String period,
+    String? date,
+  }) async =>
+      orderBreakdown ?? const OrderBreakdown(cells: []);
 }
 
 class _FakeAccountingService extends AccountingService {
