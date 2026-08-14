@@ -275,6 +275,37 @@ class SharedLabels {
   static const todaySalesCashSourceCashOut = 'Rút khỏi quầy';
   static const todaySalesCashSourceNetCash = 'Tiền mặt ròng';
 
+  // Today Sales screen — order breakdown (DG-391 Phase 3 / FR2, FR6, FR7 /
+  // AC1, AC2)
+  //
+  // Section title, dropdown mode labels, source-row heading, column headers,
+  // and empty state for the source × delivery_type order-breakdown matrix
+  // shown on the Tuần/Tháng tabs. The three dropdown modes select which
+  // metric is rendered in each cell: order count only, count + revenue, or
+  // count + revenue + revenue share. All VN copy lives here (NFR2 — VN Label
+  // Policy) so no inline Vietnamese string appears in widget code.
+  static const todaySalesOrderBreakdownSection = 'Phân tích đơn hàng';
+  static const todaySalesOrderBreakdownSourceHeader = 'Nguồn đặt hàng';
+  static const todaySalesOrderBreakdownModeCount = 'Số đơn';
+  static const todaySalesOrderBreakdownModeCountRevenue = 'Số đơn + Doanh thu';
+  static const todaySalesOrderBreakdownModeCountRevenueShare =
+      'Số đơn + Doanh thu + Tỷ trọng';
+  static const todaySalesOrderBreakdownColumnDeliveryType = 'Kiểu giao';
+  static const todaySalesOrderBreakdownColumnOrderCount = 'Số đơn';
+  static const todaySalesOrderBreakdownColumnRevenue = 'Doanh thu';
+  static const todaySalesOrderBreakdownColumnShare = 'Tỷ trọng';
+  static const todaySalesOrderBreakdownEmpty = 'Không có dữ liệu';
+  static const todaySalesOrderBreakdownTotal = 'Tổng';
+
+  // Today Sales screen — accounts receivable (AR) line (DG-391 Phase 3 /
+  // FR5 / AC4)
+  //
+  // AR = totalRevenue − (cashTotal + bankTransferTotal). Orange when AR > 0
+  // (still owed), green when AR ≤ 0 (fully collected or prepayment surplus).
+  // Displayed below the "Tổng tiền nhận được" group in [RevenueSummarySection]
+  // for both the Day and Period tabs (all three inputs are already passed in).
+  static const todaySalesAccountsReceivable = 'Công nợ';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';

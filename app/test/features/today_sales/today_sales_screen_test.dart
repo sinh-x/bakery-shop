@@ -289,6 +289,7 @@ Future<void> _pump(
   ExpenseSummary? expenseSummary,
   CashflowSummary? cashflowSummary,
   PeriodSummary? periodSummary,
+  OrderBreakdown? orderBreakdown,
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
   final reportService = _FakeReportService()
@@ -296,7 +297,8 @@ Future<void> _pump(
     ..productBreakdown = productBreakdown
     ..expenseSummary = expenseSummary
     ..cashflowSummary = cashflowSummary
-    ..periodSummary = periodSummary;
+    ..periodSummary = periodSummary
+    ..orderBreakdown = orderBreakdown;
   final accountingService = _FakeAccountingService()..entries = journal;
   final stockService = _FakeStockService()..items = stock;
   final cashDrawerService = _FakeCashDrawerService()
@@ -617,7 +619,7 @@ void main() {
 
   testWidgets(
       'Tuần tab shows revenue, product, expense, cashflow, and order '
-      'sections (F1 / AC1 / AC3-AC6)', (tester) async {
+      'breakdown sections (F1 / AC1 / AC3-AC6)', (tester) async {
     final today = _today;
     await _pump(
       tester,
@@ -674,6 +676,13 @@ void main() {
         uncategorizedSupplier: 0,
         childrenOf: {},
       ),
+      orderBreakdown: const OrderBreakdown(cells: [
+        OrderBreakdownCell(
+            source: 'Tại tiệm',
+            deliveryType: 'pickup',
+            orderCount: 2,
+            revenue: 500000),
+      ]),
     );
     // Tap the Tuần tab (index 1).
     await tester.tap(find.text(SharedLabels.todaySalesTabWeek));
@@ -712,13 +721,19 @@ void main() {
     expect(find.text(SharedLabels.todaySalesCashflowSection), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesCashflowInflow), findsOneWidget);
 
-    // Order list section.
+    // Order breakdown section (DG-391 Phase 3 — replaces the order-list card
+    // on the Tuần/Tháng tabs). The default dropdown mode is "Số đơn + Doanh
+    // thu", so the matrix shows source row + count + revenue.
     await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesOrderListSection),
+      find.text(SharedLabels.todaySalesOrderBreakdownSection),
       find.byType(Scrollable).first,
       const Offset(0, -600),
     );
-    expect(find.text(SharedLabels.todaySalesOrderListSection), findsOneWidget);
+    expect(find.text(SharedLabels.todaySalesOrderBreakdownSection),
+        findsOneWidget);
+    expect(find.text(SharedLabels.todaySalesOrderBreakdownModeCountRevenue),
+        findsOneWidget);
+    expect(find.text('Tại tiệm'), findsWidgets);
   });
 
   testWidgets(

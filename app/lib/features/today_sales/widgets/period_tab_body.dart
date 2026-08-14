@@ -3,16 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/cashflow_summary.dart';
 import '../../../data/models/expense_summary.dart';
-import '../../../data/models/order.dart';
+import '../../../data/models/order_breakdown.dart';
 import '../../../data/models/period_summary.dart';
 import '../../../data/models/product_breakdown.dart';
 import '../../../providers/dashboard/period_summary_providers.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/date_formatting.dart';
-import '../../../shared/widgets/section_title.dart';
-import '../../dashboard/widgets/today_order_list.dart';
 import 'cashflow_summary_section.dart';
 import 'expense_summary_section.dart';
+import 'order_breakdown_section.dart';
 import 'product_breakdown_section.dart';
 import 'revenue_summary_section.dart';
 
@@ -87,6 +86,7 @@ class PeriodTabBody extends ConsumerWidget {
         productBreakdown: report.productBreakdown,
         expenseSummary: report.expenseSummary,
         cashflowSummary: report.cashflowSummary,
+        orderBreakdown: report.orderBreakdown,
         query: query,
         onNavigate: onNavigate,
       ),
@@ -100,6 +100,7 @@ class _PeriodTabContent extends StatelessWidget {
     required this.productBreakdown,
     required this.expenseSummary,
     required this.cashflowSummary,
+    required this.orderBreakdown,
     required this.query,
     required this.onNavigate,
   });
@@ -108,6 +109,7 @@ class _PeriodTabContent extends StatelessWidget {
   final ProductBreakdown productBreakdown;
   final ExpenseSummary expenseSummary;
   final CashflowSummary cashflowSummary;
+  final OrderBreakdown orderBreakdown;
   final PeriodQuery query;
   final void Function(DateTime newAnchor) onNavigate;
 
@@ -162,7 +164,7 @@ class _PeriodTabContent extends StatelessWidget {
         const SizedBox(height: 20),
         CashflowSummarySection(summary: cashflowSummary),
         const SizedBox(height: 20),
-        _PeriodOrderListSection(orders: summary.orders),
+        OrderBreakdownSection(breakdown: orderBreakdown),
       ],
     );
   }
@@ -204,26 +206,6 @@ class _PeriodNavHeader extends StatelessWidget {
           tooltip: SharedLabels.todaySalesPeriodNext,
           onPressed: onNext,
         ),
-      ],
-    );
-  }
-}
-
-/// Order-list section for the week/month tabs. Renders the orders aggregated
-/// within the period using the same [TodayOrderList] grouping as the day tab.
-class _PeriodOrderListSection extends StatelessWidget {
-  const _PeriodOrderListSection({required this.orders});
-
-  final List<Order> orders;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle(title: SharedLabels.todaySalesOrderListSection),
-        const SizedBox(height: 8),
-        TodayOrderList(orders: orders),
       ],
     );
   }
