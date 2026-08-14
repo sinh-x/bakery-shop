@@ -13,8 +13,12 @@ import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/data/models/cash_drawer_transaction.dart';
+import 'package:bakery_app/data/models/cashflow_summary.dart';
+import 'package:bakery_app/data/models/expense_summary.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/data/models/period_summary.dart';
+import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -64,6 +68,10 @@ class _FakeOrderService extends OrderService {
 class _FakeReportService extends ReportService {
   _FakeReportService() : super(Dio());
   TodaySummary? summary;
+  ProductBreakdown? productBreakdown;
+  ExpenseSummary? expenseSummary;
+  CashflowSummary? cashflowSummary;
+  PeriodSummary? periodSummary;
 
   @override
   Future<TodaySummary> getTodaySummary({String? date}) async {
@@ -79,6 +87,84 @@ class _FakeReportService extends ReportService {
           orders: [],
         );
   }
+
+  // Phase 11 — the day/week/month tabs now watch the period providers, so
+  // the fake report service must answer the period endpoints with empty
+  // defaults (no backend in widget tests). Tests that need populated
+  // breakdown/expense/cashflow data set the fields above.
+  @override
+  Future<ProductBreakdown> getProductBreakdown({
+    required String period,
+    String? date,
+  }) async =>
+      productBreakdown ??
+      const ProductBreakdown(
+        period: 'day',
+        startDate: '',
+        endDate: '',
+        date: '',
+        totalRevenue: 0,
+        products: [],
+        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
+      );
+
+  @override
+  Future<ExpenseSummary> getExpenseSummary({
+    required String period,
+    String? date,
+  }) async =>
+      expenseSummary ??
+      const ExpenseSummary(
+        period: 'day',
+        startDate: '',
+        endDate: '',
+        date: '',
+        totalExpenses: 0,
+        categories: [],
+        uncategorized: 0,
+        childrenOf: {},
+      );
+
+  @override
+  Future<CashflowSummary> getCashflowSummary({
+    required String period,
+    String? date,
+  }) async =>
+      cashflowSummary ??
+      const CashflowSummary(
+        period: 'day',
+        startDate: '',
+        endDate: '',
+        date: '',
+        operatingInflow: 0,
+        operatingOutflow: 0,
+        netOperatingCashFlow: 0,
+        customers: CashflowSection(inflow: 0, outflow: 0, perAccount: []),
+        suppliers: CashflowSection(inflow: 0, outflow: 0, perAccount: []),
+        supplierCategories: [],
+        uncategorizedSupplier: 0,
+        childrenOf: {},
+      );
+
+  @override
+  Future<PeriodSummary> getPeriodSummary({
+    required String period,
+    String? date,
+  }) async =>
+      periodSummary ??
+      PeriodSummary(
+        period: period,
+        startDate: '',
+        endDate: '',
+        date: date ?? '',
+        revenue: 0,
+        orderCount: 0,
+        cashTotal: 0,
+        bankTransferTotal: 0,
+        cashInTotal: 0,
+        cashOutTotal: 0,
+        orders: const [],
+      );
 }
 
 class _FakeAccountingService extends AccountingService {
@@ -190,9 +276,18 @@ Future<void> _pump(
   List<StockOverviewItem> stock = const [],
   CashDrawer? activeDrawer,
   List<CashDrawerTransaction> drawerTransactions = const [],
+  ProductBreakdown? productBreakdown,
+  ExpenseSummary? expenseSummary,
+  CashflowSummary? cashflowSummary,
+  PeriodSummary? periodSummary,
 }) async {
   final orderService = _FakeOrderService()..orders = orders;
-  final reportService = _FakeReportService()..summary = summary;
+  final reportService = _FakeReportService()
+    ..summary = summary
+    ..productBreakdown = productBreakdown
+    ..expenseSummary = expenseSummary
+    ..cashflowSummary = cashflowSummary
+    ..periodSummary = periodSummary;
   final accountingService = _FakeAccountingService()..entries = journal;
   final stockService = _FakeStockService()..items = stock;
   final cashDrawerService = _FakeCashDrawerService()
@@ -449,5 +544,193 @@ void main() {
     expect(find.text('210.000đ'), findsOneWidget);
     expect(find.text('200.000đ'), findsWidgets); // sales cash
     expect(find.text('120.000đ'), findsOneWidget); // bank
+  });
+
+  // ── DG-386 Phase 11 — Integration + VN Labels ──────────────────────────
+  // F1: each tab (Ngày/Tuần/Tháng) shows revenue + product breakdown +
+  // expenses + cashflow + orders. AC3-AC5 require the section widgets on
+  // every tab. AC7: switching tabs/periods updates all sections.
+
+  testWidgets(
+      'Ngày tab shows product breakdown, expense, and cashflow section '
+      'titles (F1 / AC3-AC5)', (tester) async {
+    await _pump(tester, summary: _summary());
+    // The day tab now renders revenue + product + expense + cashflow + orders.
+    // Scroll to each section title in turn — the list is long on phones.
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesProductBreakdownSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesProductBreakdownSection),
+        findsOneWidget);
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesExpenseSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesExpenseSection), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesCashflowSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesCashflowSection), findsOneWidget);
+  });
+
+  testWidgets(
+      'Ngày tab product breakdown shows top product from period=day fetch '
+      '(AC3)', (tester) async {
+    await _pump(
+      tester,
+      summary: _summary(),
+      productBreakdown: const ProductBreakdown(
+        period: 'day',
+        startDate: '',
+        endDate: '',
+        date: '',
+        totalRevenue: 200000,
+        products: [
+          ProductBreakdownRow(
+              name: 'Bánh kem sô cô la', quantity: 1, revenue: 200000, percentage: 100),
+        ],
+        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
+      ),
+    );
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesProductBreakdownSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -500),
+    );
+    expect(find.text('Bánh kem sô cô la'), findsOneWidget);
+    expect(find.text('200.000đ'), findsWidgets);
+  });
+
+  testWidgets(
+      'Tuần tab shows revenue, product, expense, cashflow, and order '
+      'sections (F1 / AC1 / AC3-AC6)', (tester) async {
+    final today = _today;
+    await _pump(
+      tester,
+      periodSummary: PeriodSummary(
+        period: 'week',
+        startDate: today,
+        endDate: today,
+        date: today,
+        revenue: 500000,
+        orderCount: 2,
+        cashTotal: 300000,
+        bankTransferTotal: 200000,
+        cashInTotal: 0,
+        cashOutTotal: 0,
+        orders: [
+          _order(ref: 'W-1', dueDate: today, totalPrice: 300000, status: 'delivered'),
+        ],
+      ),
+      productBreakdown: const ProductBreakdown(
+        period: 'week',
+        startDate: '',
+        endDate: '',
+        date: '',
+        totalRevenue: 500000,
+        products: [
+          ProductBreakdownRow(
+              name: 'Bánh kem', quantity: 2, revenue: 500000, percentage: 100),
+        ],
+        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
+      ),
+      expenseSummary: const ExpenseSummary(
+        period: 'week',
+        startDate: '',
+        endDate: '',
+        date: '',
+        totalExpenses: 150000,
+        categories: [
+          ExpenseCategoryBreakdown(name: 'Nguyên liệu', amount: 150000, subcategories: []),
+        ],
+        uncategorized: 0,
+        childrenOf: {},
+      ),
+      cashflowSummary: const CashflowSummary(
+        period: 'week',
+        startDate: '',
+        endDate: '',
+        date: '',
+        operatingInflow: 300000,
+        operatingOutflow: 150000,
+        netOperatingCashFlow: 150000,
+        customers: CashflowSection(inflow: 300000, outflow: 0, perAccount: []),
+        suppliers: CashflowSection(inflow: 0, outflow: 150000, perAccount: []),
+        supplierCategories: [],
+        uncategorizedSupplier: 0,
+        childrenOf: {},
+      ),
+    );
+    // Tap the Tuần tab (index 1).
+    await tester.tap(find.text(SharedLabels.todaySalesTabWeek));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    // Revenue section is always rendered. todaySalesRevenueGroup and
+    // todaySalesTotalRevenue share the same VN text, so use findsWidgets.
+    expect(find.text(SharedLabels.todaySalesRevenueGroup), findsWidgets);
+
+    // Product breakdown section + product row.
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesProductBreakdownSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesProductBreakdownSection),
+        findsOneWidget);
+    expect(find.text('Bánh kem'), findsOneWidget);
+
+    // Expense section + category line.
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesExpenseSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesExpenseSection), findsOneWidget);
+    expect(find.text('Nguyên liệu'), findsOneWidget);
+    expect(find.text('150.000đ'), findsWidgets);
+
+    // Cashflow section + inflow label.
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesCashflowSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesCashflowSection), findsOneWidget);
+    expect(find.text(SharedLabels.todaySalesCashflowInflow), findsOneWidget);
+
+    // Order list section.
+    await tester.dragUntilVisible(
+      find.text(SharedLabels.todaySalesOrderListSection),
+      find.byType(Scrollable).first,
+      const Offset(0, -600),
+    );
+    expect(find.text(SharedLabels.todaySalesOrderListSection), findsOneWidget);
+  });
+
+  testWidgets(
+      'period navigation prev/next tooltips use VN labels (NFR4)', (tester) async {
+    await _pump(tester, periodSummary: PeriodSummary(
+      period: 'week',
+      startDate: _today,
+      endDate: _today,
+      date: _today,
+      revenue: 0,
+      orderCount: 0,
+      cashTotal: 0,
+      bankTransferTotal: 0,
+      cashInTotal: 0,
+      cashOutTotal: 0,
+      orders: const [],
+    ));
+    await tester.tap(find.text(SharedLabels.todaySalesTabWeek));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    // The prev/next chevron buttons use the dedicated period-nav tooltips.
+    expect(find.byTooltip(SharedLabels.todaySalesPeriodPrevious), findsOneWidget);
+    expect(find.byTooltip(SharedLabels.todaySalesPeriodNext), findsOneWidget);
   });
 }

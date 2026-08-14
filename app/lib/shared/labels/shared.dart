@@ -183,6 +183,23 @@ class SharedLabels {
   // Today Sales entry point (DG-374 Phase 1)
   static const dashboardMetricViewTodaySales = 'Xem doanh số hôm nay';
 
+  // Today Sales screen — period tabs (DG-386 Phase 6 / FR1 / AC1, AC2)
+  //
+  // Three tabs on the summary screen: Ngày (day, current behavior), Tuần
+  // (week, Monday–Sunday), Tháng (month, 1st–last day). Used as TabBar labels
+  // and AppBar title prefixes for week/month navigation.
+  static const todaySalesTabDay = 'Ngày';
+  static const todaySalesTabWeek = 'Tuần';
+  static const todaySalesTabMonth = 'Tháng';
+
+  // Today Sales screen — period navigation (DG-386 Phase 11 / FR1 / AC1, AC2)
+  //
+  // Tooltips for the prev/next arrow buttons on the Tuần/Tháng tabs. Distinct
+  // from `SharedLabels.back` (generic "Quay lại") so the period navigation
+  // affordance is unambiguous (NFR4 — no inline VN strings).
+  static const todaySalesPeriodPrevious = 'Kỳ trước';
+  static const todaySalesPeriodNext = 'Kỳ sau';
+
   // Today Sales screen (DG-374 Phase 2)
   static const todaySalesTitle = 'Doanh số hôm nay';
   static const todaySalesRevenueSection = 'Tổng quan doanh thu';
@@ -199,6 +216,49 @@ class SharedLabels {
   // Today Sales screen — cashflow breakdown (DG-374 Phase 3)
   static const todaySalesCashflowSection = 'Dòng tiền';
   static const todaySalesNoActiveDrawer = 'Chưa mở quầy hôm nay';
+
+  // Today Sales screen — product breakdown (DG-386 Phase 7 / FR3 / AC3)
+  //
+  // Section title and column/row labels for the per-product revenue
+  // attribution breakdown (top 10 products + a single "Khác"/Others row).
+  // The "Khác" label is centralized here so no inline Vietnamese string lives
+  // in widget code (NFR4 — VN Label Policy).
+  static const todaySalesProductBreakdownSection = 'Phân tích sản phẩm';
+  static const todaySalesProductBreakdownColumnProduct = 'Sản phẩm';
+  static const todaySalesProductBreakdownColumnQuantity = 'SL';
+  static const todaySalesProductBreakdownColumnRevenue = 'Doanh thu';
+  static const todaySalesProductBreakdownColumnShare = 'Tỷ trọng';
+  static const todaySalesProductBreakdownOthers = 'Khác';
+  static const todaySalesProductBreakdownEmpty = 'Không có dữ liệu';
+
+  // Today Sales screen — expense summary (DG-386 Phase 8 / FR4 / AC4)
+  //
+  // Section title, total line, category/subcategory labels, and empty state
+  // for the period expense breakdown. The full parent/child category tree
+  // from `expense_categories` is rendered even when a subcategory had zero
+  // expenses in the period (via the backend `childrenOf` mapping). The
+  // "Chưa phân loại" (uncategorized) line covers expenses whose category
+  // could not be resolved.
+  static const todaySalesExpenseSection = 'Chi phí';
+  static const todaySalesExpenseTotal = 'Tổng chi phí';
+  static const todaySalesExpenseSubcategory = 'Tiểu mục';
+  static const todaySalesExpenseUncategorized = 'Chưa phân loại';
+  static const todaySalesExpenseEmpty = 'Không có chi phí trong kỳ';
+
+  // Today Sales screen — cashflow summary (DG-386 Phase 9 / FR5 / AC5)
+  //
+  // Section title and line labels for the operating-activities cashflow
+  // summary rendered from journal entries (drawer-independent). Inflow is
+  // cash received from customers; outflow is cash paid to suppliers and
+  // employees. The supplier-outflow breakdown is grouped by expense
+  // category with subcategory lines, mirroring the expense-summary tree.
+  // An `Chưa phân loại` line covers supplier outflow whose category could
+  // not be resolved. The net line is inflow minus outflow.
+  static const todaySalesCashflowInflow = 'Tiền vào từ khách hàng';
+  static const todaySalesCashflowOutflow = 'Tiền trả nhà cung cấp / nhân viên';
+  static const todaySalesCashflowNet = 'Dòng tiền ròng';
+  static const todaySalesCashflowUncategorized = 'Chưa phân loại';
+  static const todaySalesCashflowEmpty = 'Không có dòng tiền trong kỳ';
 
   // Today Sales screen — cash-source breakdown (DG-378 Phase 3 / FR3, AC3)
   //
