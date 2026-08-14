@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/report_service.dart';
 import '../../data/models/cashflow_summary.dart';
 import '../../data/models/expense_summary.dart';
+import '../../data/models/order_breakdown.dart';
 import '../../data/models/period_summary.dart';
 import '../../data/models/product_breakdown.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -68,6 +69,18 @@ final cashflowSummaryProvider =
   return reports.getCashflowSummary(period: query.period, date: query.date);
 });
 
+/// Order-breakdown report family (DG-391 Phase 2 / FR1 / AC5).
+///
+/// Returns the source × delivery_type order count and revenue matrix for
+/// the queried period. Mirrors [productBreakdownProvider] but keyed by
+/// [OrderBreakdown] (a list of [OrderBreakdownCell]s) since the backend
+/// responds with a JSON array rather than an object.
+final orderBreakdownProvider =
+    FutureProvider.family<OrderBreakdown, PeriodQuery>((ref, query) async {
+  final reports = ref.watch(reportServiceProvider);
+  return reports.getOrderBreakdown(period: query.period, date: query.date);
+});
+
 /// Combined period data fetched in parallel for one [PeriodQuery]
 /// (NFR3 — parallel fetch via `Future.wait`, mirroring
 /// [dashboardRevenueStockProvider]).
@@ -77,15 +90,17 @@ class PeriodReportData {
     required this.productBreakdown,
     required this.expenseSummary,
     required this.cashflowSummary,
+    required this.orderBreakdown,
   });
 
   final PeriodSummary summary;
   final ProductBreakdown productBreakdown;
   final ExpenseSummary expenseSummary;
   final CashflowSummary cashflowSummary;
+  final OrderBreakdown orderBreakdown;
 }
 
-/// Fires all four period endpoints in parallel for one [PeriodQuery]
+/// Fires all five period endpoints in parallel for one [PeriodQuery]
 /// (NFR3 / AC7). Errors from any call propagate so the UI can show a retry
 /// affordance — partial failure is not silently swallowed.
 final periodReportDataProvider =
@@ -96,12 +111,14 @@ final periodReportDataProvider =
   final productFuture = ref.watch(productBreakdownProvider(query).future);
   final expenseFuture = ref.watch(expenseSummaryProvider(query).future);
   final cashflowFuture = ref.watch(cashflowSummaryProvider(query).future);
+  final orderBreakdownFuture = ref.watch(orderBreakdownProvider(query).future);
 
   final results = await Future.wait<dynamic>([
     summaryFuture,
     productFuture,
     expenseFuture,
     cashflowFuture,
+    orderBreakdownFuture,
   ]);
 
   return PeriodReportData(
@@ -109,5 +126,6 @@ final periodReportDataProvider =
     productBreakdown: results[1] as ProductBreakdown,
     expenseSummary: results[2] as ExpenseSummary,
     cashflowSummary: results[3] as CashflowSummary,
+    orderBreakdown: results[4] as OrderBreakdown,
   );
 });

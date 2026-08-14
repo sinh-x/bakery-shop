@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/dashboard/period_summary_providers.dart';
 import '../../shared/labels/shared.dart';
-import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/day_tab_body.dart';
@@ -36,7 +35,7 @@ class TodaySalesScreen extends ConsumerStatefulWidget {
 }
 
 class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
-    with WidgetsBindingObserver, AutoRefreshMixin, SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late final TabController _tabController = TabController(
     length: 3,
     vsync: this,
@@ -72,19 +71,14 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     setState(() => _monthAnchor = formatApiDate(newAnchor));
   }
 
-  @override
-  String screenRoutePath() => '/today-sales';
-
-  @override
-  void invalidateProviders() {
+  void _refreshAll() {
     ref.invalidate(todaySummaryProvider);
     ref.invalidate(dateSummaryProvider);
     // Invalidate the four period source families directly for each active
     // period query (day/week/month) so the Tuần/Tháng tabs refresh via the
-    // AppBar refresh button, the 15-second auto-refresh, and app-resume
-    // (cycle-3 M1). Riverpod invalidation propagates from a provider to its
-    // dependents — not to the providers it `watch`es — so invalidating the
-    // combined `periodReportDataProvider` would re-run it against the
+    // AppBar refresh button. Riverpod invalidation propagates from a provider
+    // to its dependents — not to the providers it `watch`es — so invalidating
+    // the combined `periodReportDataProvider` would re-run it against the
     // still-cached source families and leave the tabs stale. Invalidating the
     // source families instead propagates correctly to
     // `periodReportDataProvider`. This mirrors the pull-to-refresh pattern in
@@ -107,7 +101,6 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     // tab transition (Mn-4). Removed in `dispose` to avoid leaking the
     // listener once the controller is disposed.
     _tabController.addListener(_onTabChanged);
-    initAutoRefresh();
   }
 
   void _onTabChanged() {
@@ -117,16 +110,9 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    setupAutoRefreshRouteListener();
-  }
-
-  @override
   void dispose() {
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
-    disposeAutoRefresh();
     super.dispose();
   }
 
@@ -143,9 +129,11 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
                 onPressed: () => context.pop(),
               )
             : null,
-        title: Text(isToday
-            ? SharedLabels.todaySalesTitle
-            : formatDisplayDate(parseApiDate(_selectedDate))),
+        title: Text(
+          isToday
+              ? SharedLabels.todaySalesTitle
+              : formatDisplayDate(parseApiDate(_selectedDate)),
+        ),
         actions: [
           if (isDayTab)
             IconButton(
@@ -156,7 +144,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: SharedLabels.lamMoi,
-            onPressed: onAutoRefreshTriggered,
+            onPressed: _refreshAll,
           ),
           const AppBarOverflowMenu(),
         ],

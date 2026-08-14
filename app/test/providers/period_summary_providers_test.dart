@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/models/cashflow_summary.dart';
 import 'package:bakery_app/data/models/expense_summary.dart';
+import 'package:bakery_app/data/models/order_breakdown.dart';
 import 'package:bakery_app/data/models/period_summary.dart';
 import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/providers/dashboard/period_summary_providers.dart';
@@ -19,11 +20,13 @@ class _FakeReportService extends ReportService {
   int getProductBreakdownCalls = 0;
   int getExpenseSummaryCalls = 0;
   int getCashflowSummaryCalls = 0;
+  int getOrderBreakdownCalls = 0;
 
   PeriodSummary? summary;
   ProductBreakdown? productBreakdown;
   ExpenseSummary? expenseSummary;
   CashflowSummary? cashflowSummary;
+  OrderBreakdown? orderBreakdown;
 
   @override
   Future<PeriodSummary> getPeriodSummary({
@@ -109,6 +112,15 @@ class _FakeReportService extends ReportService {
           childrenOf: const {},
         );
   }
+
+  @override
+  Future<OrderBreakdown> getOrderBreakdown({
+    required String period,
+    String? date,
+  }) async {
+    getOrderBreakdownCalls++;
+    return orderBreakdown ?? const OrderBreakdown(cells: []);
+  }
 }
 
 void main() {
@@ -129,7 +141,7 @@ void main() {
   });
 
   group('periodReportDataProvider (NFR3 parallel fetch)', () {
-    test('fires all four endpoints exactly once for one query', () async {
+    test('fires all five endpoints exactly once for one query', () async {
       final reports = _FakeReportService()
         ..summary = const PeriodSummary(
           period: 'week',
@@ -200,11 +212,12 @@ void main() {
       const query = PeriodQuery(period: 'week', date: '2026-08-13');
       final result = await container.read(periodReportDataProvider(query).future);
 
-      // All four endpoints fire exactly once each (NFR3 — parallel).
+      // All five endpoints fire exactly once each (NFR3 — parallel).
       expect(reports.getPeriodSummaryCalls, 1);
       expect(reports.getProductBreakdownCalls, 1);
       expect(reports.getExpenseSummaryCalls, 1);
       expect(reports.getCashflowSummaryCalls, 1);
+      expect(reports.getOrderBreakdownCalls, 1);
 
       // Aggregated result surfaces each sub-report's data.
       expect(result.summary.revenue, 1000000);
@@ -213,6 +226,7 @@ void main() {
       expect(result.productBreakdown.products.first.name, 'Bánh kem');
       expect(result.expenseSummary.totalExpenses, 300000);
       expect(result.cashflowSummary.netOperatingCashFlow, 500000);
+      expect(result.orderBreakdown.cells, isEmpty);
     });
 
     test('different queries resolve independently', () async {
@@ -234,6 +248,7 @@ void main() {
       expect(reports.getProductBreakdownCalls, 2);
       expect(reports.getExpenseSummaryCalls, 2);
       expect(reports.getCashflowSummaryCalls, 2);
+      expect(reports.getOrderBreakdownCalls, 2);
     });
   });
 
@@ -269,7 +284,7 @@ void main() {
     });
   });
 
-  // Regression for cycle-3 M1 — the refresh path must invalidate the four
+  // Regression for cycle-3 M1 — the refresh path must invalidate the five
   // source families, not the combined `periodReportDataProvider`. Riverpod
   // invalidation propagates to dependents, not to watched providers, so
   // invalidating the combined provider leaves the source families cached
@@ -277,7 +292,7 @@ void main() {
   // 15-second auto-refresh timer, and app-resume.
   group('refresh invalidation (cycle-3 M1 regression)', () {
     test(
-        'invalidating the four source families re-fetches every period '
+        'invalidating the five source families re-fetches every period '
         'endpoint (call counts increment after refresh)', () async {
       final reports = _FakeReportService();
       final container = ProviderContainer(overrides: [
@@ -292,12 +307,14 @@ void main() {
       expect(reports.getProductBreakdownCalls, 1);
       expect(reports.getExpenseSummaryCalls, 1);
       expect(reports.getCashflowSummaryCalls, 1);
+      expect(reports.getOrderBreakdownCalls, 1);
 
-      // Invalidate the four source families (the correct refresh pattern).
+      // Invalidate the five source families (the correct refresh pattern).
       container.invalidate(periodSummaryProvider(query));
       container.invalidate(productBreakdownProvider(query));
       container.invalidate(expenseSummaryProvider(query));
       container.invalidate(cashflowSummaryProvider(query));
+      container.invalidate(orderBreakdownProvider(query));
 
       // Re-reading the combined provider must trigger a fresh fetch of each
       // source family (call counts → 2).
@@ -306,6 +323,7 @@ void main() {
       expect(reports.getProductBreakdownCalls, 2);
       expect(reports.getExpenseSummaryCalls, 2);
       expect(reports.getCashflowSummaryCalls, 2);
+      expect(reports.getOrderBreakdownCalls, 2);
     });
 
     test(
@@ -323,6 +341,7 @@ void main() {
       expect(reports.getProductBreakdownCalls, 1);
       expect(reports.getExpenseSummaryCalls, 1);
       expect(reports.getCashflowSummaryCalls, 1);
+      expect(reports.getOrderBreakdownCalls, 1);
 
       // Invalidate only the combined provider (the buggy cycle-2 pattern).
       container.invalidate(periodReportDataProvider(query));
@@ -334,6 +353,7 @@ void main() {
       expect(reports.getProductBreakdownCalls, 1);
       expect(reports.getExpenseSummaryCalls, 1);
       expect(reports.getCashflowSummaryCalls, 1);
+      expect(reports.getOrderBreakdownCalls, 1);
     });
   });
 }

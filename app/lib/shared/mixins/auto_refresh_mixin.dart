@@ -1,39 +1,25 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-/// A mixin that provides automatic data refresh for data-list screens.
+/// A mixin that provides manual (button-triggered) data refresh for
+/// data-list screens.
+///
+/// Auto-refresh is disabled app-wide: the 15-second [Timer.periodic], the
+/// app-resume refresh, and the navigate-back refresh were removed. Screens
+/// now refresh only when the user taps the refresh button, which invokes
+/// [onAutoRefreshTriggered].
 ///
 /// Screens apply this mixin to their `ConsumerState` and override:
 /// - [invalidateProviders] to call `ref.invalidate(...)` on the screen's
 ///   Riverpod providers (or [onAutoRefresh] for screens with local state).
-/// - [screenRoutePath] to return the screen's GoRouter path so the mixin can
-///   detect navigate-away / return transitions.
+/// - [screenRoutePath] to return the screen's GoRouter path (retained for
+///   API compatibility; no longer used by this mixin).
 ///
-/// The mixin manages three refresh triggers:
-/// 1. A 15-second [Timer.periodic] that fires while the screen is visible.
-/// 2. A [WidgetsBindingObserver] that refreshes on `AppLifecycleState.resumed`
-///    and cancels the timer on `paused`.
-/// 3. A GoRouter listener that refreshes when the user navigates back to this
-///    screen and cancels the timer when navigating away.
-///
-/// Screens that use local state instead of Riverpod providers (e.g.
-/// ExpenseScreen) may set [onAutoRefresh] — when non-null, it is invoked
-/// instead of [invalidateProviders].
-///
-/// The timer is cancelled on navigate-away, on app background, and in
-/// [dispose], guaranteeing no timer leaks (NFR3).
+/// The lifecycle hooks [initAutoRefresh], [setupAutoRefreshRouteListener],
+/// and [disposeAutoRefresh] are retained as documented no-ops so existing
+/// screens compile unchanged without starting any timer or listener.
 mixin AutoRefreshMixin<T extends ConsumerStatefulWidget>
     on ConsumerState<T>, WidgetsBindingObserver {
-  static const Duration refreshInterval = Duration(seconds: 15);
-
-  Timer? _autoRefreshTimer;
-  GoRouter? _goRouter;
-  bool _wasNavigatedAway = false;
-  bool _isLifecyclePaused = false;
-
   /// Invalidates the screen's Riverpod providers on each refresh tick.
   ///
   /// Override this in screens backed by Riverpod and call `ref.invalidate`
@@ -43,19 +29,19 @@ mixin AutoRefreshMixin<T extends ConsumerStatefulWidget>
 
   /// The GoRouter path that identifies this screen.
   ///
-  /// Used to detect when the user navigates back to this screen.
+  /// Retained for API compatibility; no longer used to detect navigation.
   String screenRoutePath();
 
   /// Optional callback for screens with local state (e.g. ExpenseScreen).
   ///
-  /// When non-null, it is invoked on each refresh tick instead of
-  /// [invalidateProviders].
+  /// When non-null, it is invoked when the user taps the refresh button
+  /// instead of [invalidateProviders].
   void Function()? onAutoRefresh;
 
-  /// Hook invoked on each refresh tick (timer, route return, app resume).
+  /// Hook invoked when the user taps the refresh button.
   ///
   /// The default implementation invokes [onAutoRefresh] when set, otherwise
-  /// calls [invalidateProviders]. Screens rarely need to override this.
+  /// calls [invalidateProviders].
   @mustCallSuper
   void onAutoRefreshTriggered() {
     final cb = onAutoRefresh;
@@ -66,94 +52,20 @@ mixin AutoRefreshMixin<T extends ConsumerStatefulWidget>
     invalidateProviders();
   }
 
-  /// Starts the 15-second periodic timer.
-  ///
-  /// Safe to call multiple times — an existing timer is cancelled first.
-  void startAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(refreshInterval, (_) {
-      if (!mounted) return;
-      onAutoRefreshTriggered();
-    });
-  }
-
-  /// Cancels the periodic timer without touching listeners.
-  void stopAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
-  }
-
-  /// Wires up the WidgetsBindingObserver and GoRouter route-change listener.
-  ///
-  /// Call from the screen's `initState` via `super` chain, or invoke
-  /// directly. Starts the periodic timer immediately.
+  /// No-op — auto-refresh (timer + lifecycle observer) is disabled app-wide.
   @mustCallSuper
-  void initAutoRefresh() {
-    WidgetsBinding.instance.addObserver(this);
-    startAutoRefreshTimer();
-  }
+  void initAutoRefresh() {}
 
-  /// Wires up the GoRouter route-change listener.
-  ///
-  /// Call from the screen's `didChangeDependencies` via `super` chain, or
-  /// invoke directly.
+  /// No-op — the GoRouter route-change listener is disabled app-wide.
   @mustCallSuper
-  void setupAutoRefreshRouteListener() {
-    try {
-      final router = GoRouter.of(context);
-      if (_goRouter != router) {
-        _goRouter?.routerDelegate.removeListener(_handleRouteChange);
-        _goRouter = router;
-        _goRouter?.routerDelegate.addListener(_handleRouteChange);
-      }
-    } catch (_) {
-      // No GoRouter in context (e.g. test environment) — skip route listener.
-      // Timer and lifecycle observer still function.
-    }
-  }
+  void setupAutoRefreshRouteListener() {}
 
-  /// Handles app lifecycle transitions.
-  ///
-  /// - `paused` → cancel timer.
-  /// - `resumed` → immediate refresh + restart timer.
+  /// No-op — no app-lifecycle refresh (manual refresh only).
   @mustCallSuper
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _isLifecyclePaused = true;
-      stopAutoRefreshTimer();
-    } else if (state == AppLifecycleState.resumed) {
-      if (_isLifecyclePaused) {
-        _isLifecyclePaused = false;
-        if (mounted) {
-          onAutoRefreshTriggered();
-          startAutoRefreshTimer();
-        }
-      }
-    }
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
-  /// Tears down the timer and listeners.
-  ///
-  /// Call from the screen's `dispose` via `super` chain, or invoke directly.
+  /// No-op — nothing to tear down (auto-refresh is disabled).
   @mustCallSuper
-  void disposeAutoRefresh() {
-    _goRouter?.routerDelegate.removeListener(_handleRouteChange);
-    _goRouter = null;
-    stopAutoRefreshTimer();
-    WidgetsBinding.instance.removeObserver(this);
-  }
-
-  void _handleRouteChange() {
-    if (!mounted) return;
-    final path = GoRouterState.of(context).uri.path;
-    if (path == screenRoutePath() && _wasNavigatedAway) {
-      _wasNavigatedAway = false;
-      onAutoRefreshTriggered();
-      startAutoRefreshTimer();
-    } else if (path != screenRoutePath()) {
-      _wasNavigatedAway = true;
-      stopAutoRefreshTimer();
-    }
-  }
+  void disposeAutoRefresh() {}
 }

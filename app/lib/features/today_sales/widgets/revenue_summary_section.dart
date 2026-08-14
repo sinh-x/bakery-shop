@@ -5,11 +5,14 @@ import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/metric_card.dart';
 
 /// Revenue + payment summary for the Today Sales screen (DG-374 Phase 2 /
-/// FR3), extended in DG-378 Phase 3 to add a cash-source breakdown.
+/// FR3), extended in DG-378 Phase 3 to add a cash-source breakdown, and in
+/// DG-391 Phase 3 to add an AR (accounts receivable) line.
 ///
 /// Split into three groups:
 /// - "Tổng doanh thu": revenue + order count
-/// - "Tổng tiền nhận được": cash + bank transfer (sales payment totals)
+/// - "Tổng tiền nhận được": cash + bank transfer (sales payment totals) +
+///   AR line (DG-391 / FR5 / AC4): `ar = revenue − (cash + bank)`, orange
+///   when AR > 0 (still owed), green when AR ≤ 0 (fully collected/surplus).
 /// - "Nguồn tiền mặt" (DG-378 / FR3 / AC3): sales cash, cash-in, cash-out,
 ///   net cash. Net cash = `cashTotal + cashInTotal - cashOutTotal` (§14
 ///   default) — reflects the actual drawer inflow from sales plus owner
@@ -55,6 +58,14 @@ class RevenueSummarySection extends StatelessWidget {
         ? cashTotal! + cashInTotal! - cashOutTotal!
         : null;
 
+    // AR (accounts receivable) = revenue − (cash + bank transfer). Only
+    // computed when all three inputs are loaded (DG-391 Phase 3 / FR5 / AC4).
+    // Positive AR means customers still owe money (orange); AR ≤ 0 means the
+    // period is fully collected or has a prepayment surplus (green).
+    final ar = (totalRevenue != null && totalReceived != null)
+        ? totalRevenue! - totalReceived
+        : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -98,6 +109,13 @@ class RevenueSummarySection extends StatelessWidget {
           value:
               totalReceived == null ? null : formatVND(totalReceived),
           color: Colors.teal,
+        ),
+        const SizedBox(height: 8),
+        MetricCard(
+          icon: Icons.account_balance_wallet_outlined,
+          label: SharedLabels.todaySalesAccountsReceivable,
+          value: ar == null ? null : formatVND(ar),
+          color: ar == null ? null : (ar > 0 ? Colors.orange : Colors.green),
         ),
         const SizedBox(height: 20),
         const SectionTitle(title: SharedLabels.todaySalesCashSourceSection),

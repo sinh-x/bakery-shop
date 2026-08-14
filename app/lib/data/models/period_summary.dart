@@ -19,6 +19,10 @@ import 'order.dart';
 /// - `bankTransferTotal` — debits to bank accounts from `payment_transaction`.
 /// - `cashInTotal`   — debits to 1101 from `cash_drawer_cash_in` entries.
 /// - `cashOutTotal`  — credits to 1101 from `cash_drawer_cash_out` entries.
+/// - `accountsReceivable` — `revenue` − (`cashTotal` + `bankTransferTotal`)
+///                          (DG-391 Phase 1); may be negative when prepayments
+///                          exceed period revenue. Defaults to `0.0` when the
+///                          backend omits it (backward compatible).
 /// - `orders`        — orders due within the period (no status filter), each
 ///                     decoded into an [Order].
 class PeriodSummary {
@@ -32,6 +36,7 @@ class PeriodSummary {
   final double bankTransferTotal;
   final double cashInTotal;
   final double cashOutTotal;
+  final double accountsReceivable;
   final List<Order> orders;
 
   const PeriodSummary({
@@ -45,6 +50,7 @@ class PeriodSummary {
     required this.bankTransferTotal,
     required this.cashInTotal,
     required this.cashOutTotal,
+    this.accountsReceivable = 0.0,
     required this.orders,
   });
 
@@ -61,6 +67,8 @@ class PeriodSummary {
       bankTransferTotal: (json['bankTransferTotal'] as num?)?.toDouble() ?? 0,
       cashInTotal: (json['cashInTotal'] as num?)?.toDouble() ?? 0,
       cashOutTotal: (json['cashOutTotal'] as num?)?.toDouble() ?? 0,
+      accountsReceivable:
+          (json['accountsReceivable'] as num?)?.toDouble() ?? 0,
       orders: ordersRaw
           .map((o) => Order.fromJson(o as Map<String, dynamic>))
           .toList(growable: false),

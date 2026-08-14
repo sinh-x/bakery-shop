@@ -53,6 +53,19 @@ into per-domain router modules (``period.py``, ``product_breakdown.py``,
 under the shared ``/api/reports`` prefix. The five aggregate metric
 queries shared by ``today-summary`` and ``period-summary`` were
 extracted into ``_metrics.summary_metrics`` (Mn2).
+
+DG-391 Phase 1: adds ``GET /api/reports/order-breakdown`` — a per-cell
+breakdown of order count and revenue grouped by ``orders.source`` ×
+``orders.delivery_type`` for a week or month period (FR1 / AC5).
+Revenue in ``summary_metrics`` is computed from ``journal_lines``
+credits to account 4100 (Doanh thu bán hàng), bucketed by due date for
+order-sourced entries (``COALESCE(o.due_date, DATE(je.transaction_date))``)
+within the period — see ``_revenue_from_journal`` in ``_metrics.py``.
+This mirrors ``baker report income-statement --date-basis due-date`` so
+the summary reconciles with the income-statement CLI and preserves the
+DG-376 partial-payment invariant (FR3 / AC3). ``PeriodSummary`` gains an
+``accountsReceivable`` field = revenue − (cashTotal + bankTransferTotal)
+(FR4 / AC4).
 """
 
 from typing import Optional
@@ -71,6 +84,7 @@ from baker.api.reports._shared import (
 )
 from baker.api.reports.cashflow import router as cashflow_router
 from baker.api.reports.expense import router as expense_router
+from baker.api.reports.order_breakdown import router as order_breakdown_router
 from baker.api.reports.period import router as period_router
 from baker.api.reports.product_breakdown import router as product_breakdown_router
 
@@ -81,6 +95,7 @@ router.include_router(period_router)
 router.include_router(product_breakdown_router)
 router.include_router(expense_router)
 router.include_router(cashflow_router)
+router.include_router(order_breakdown_router)
 
 
 @router.get("/today-summary")
@@ -94,8 +109,12 @@ def get_today_summary(
     """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal,
     bankTransferTotal, cashInTotal, cashOutTotal, orders.
 
-    Revenue = tổng credit tài khoản 4100 (Doanh thu bán hàng) trong ngày
-    (single source of truth, không cộng thêm order totalPrice).
+    Revenue = tổng ``journal_lines.credit`` tài khoản 4100 cho các bút
+    toán được ghi nhận trong ngày (DG-391 Phase 1 — căn chỉnh theo
+    due_date để khớp cash-in cùng kỳ, bucket theo
+    ``COALESCE(o.due_date, DATE(je.transaction_date))`` cho order-sourced
+    entries). POS / reconciliation orders có due_date rỗng fallback theo
+    ``DATE(je.transaction_date)``.
 
     Cash total = tổng debit tài khoản 1101 (Tiền mặt tại quầy) từ journal entries
     có source_type = 'payment_transaction'.
@@ -117,7 +136,13 @@ def get_today_summary(
     day_start, day_end = _day_bounds(date)
 
     with get_db() as conn:
-        metrics = summary_metrics(conn, day_start, day_end)
+        metrics = summary_metrics(
+            conn,
+            day_start,
+            day_end,
+            period_start_date=date,
+            period_end_date=date,
+        )
 
         # --- Orders: all orders due on `date` (no status filter) ---
         # POS orders with empty due_date are matched by created_at within

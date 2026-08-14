@@ -4,6 +4,10 @@ Aggregated revenue, payment, and cash-flow metrics over a date range
 spanning a full week (Monday–Sunday) or month (1st–last day). Mirrors the
 shape of ``GET /api/reports/today-summary`` but extends the bounds to the
 requested period instead of a single day.
+
+DG-391 Phase 1: adds ``accountsReceivable`` = revenue − (cashTotal +
+bankTransferTotal) — the outstanding receivable (or prepayment credit
+when negative) for the period (FR4 / AC4).
 """
 
 from dataclasses import dataclass, field
@@ -16,12 +20,17 @@ class PeriodSummary:
     Fields mirror ``get_today_summary`` so the Flutter client can reuse the
     same rendering layout across the Ngày/Tuần/Tháng tabs:
 
-    - ``revenue`` — sum of credits to account 4100 over the period
+    - ``revenue`` — sum of ``journal_lines.credit`` for account 4100
+      over the period (journal-based, bucketed by due date for
+      order-sourced entries; DG-391)
     - ``orderCount`` — number of orders due within the period (all statuses)
     - ``cashTotal`` — debits to 1101 from ``payment_transaction`` entries
     - ``bankTransferTotal`` — debits to bank accounts from ``payment_transaction``
     - ``cashInTotal`` — debits to 1101 from ``cash_drawer_cash_in`` entries
     - ``cashOutTotal`` — credits to 1101 from ``cash_drawer_cash_out`` entries
+    - ``accountsReceivable`` — revenue − (cashTotal + bankTransferTotal);
+      positive = outstanding receivable, negative = prepayment/credit
+      (DG-391 Phase 1 / FR4)
     - ``orders`` — list of order dicts (same shape as today-summary)
     """
 
@@ -35,6 +44,7 @@ class PeriodSummary:
     bankTransferTotal: float = 0.0
     cashInTotal: float = 0.0
     cashOutTotal: float = 0.0
+    accountsReceivable: float = 0.0
     orders: list = field(default_factory=list)
 
     def to_api_dict(self) -> dict:
@@ -49,5 +59,6 @@ class PeriodSummary:
             "bankTransferTotal": self.bankTransferTotal,
             "cashInTotal": self.cashInTotal,
             "cashOutTotal": self.cashOutTotal,
+            "accountsReceivable": self.accountsReceivable,
             "orders": self.orders,
         }
