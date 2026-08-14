@@ -20,7 +20,9 @@ class PeriodSummary:
     Fields mirror ``get_today_summary`` so the Flutter client can reuse the
     same rendering layout across the Ngày/Tuần/Tháng tabs:
 
-    - ``revenue`` — sum of ``orders.total_price`` over the period (DG-391)
+    - ``revenue`` — sum of ``journal_lines.credit`` for account 4100
+      over the period (journal-based, bucketed by due date for
+      order-sourced entries; DG-391)
     - ``orderCount`` — number of orders due within the period (all statuses)
     - ``cashTotal`` — debits to 1101 from ``payment_transaction`` entries
     - ``bankTransferTotal`` — debits to bank accounts from ``payment_transaction``

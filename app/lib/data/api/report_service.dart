@@ -74,11 +74,12 @@ class ReportService {
   ///
   /// The backend responds with a JSON array (not an object) of cells
   /// `{source, deliveryType, orderCount, revenue}`. Revenue per cell is the
-  /// sum of `orders.total_price` for orders whose effective date
-  /// (`due_date`; POS/reconciliation sources fall back to `created_at`)
-  /// falls within the period — the same basis as [getPeriodSummary] after
-  /// the DG-391 Phase 1 alignment (FR3), so breakdown totals reconcile with
-  /// the period-summary revenue.
+  /// sum of `journal_lines.credit` for account 4100 (Doanh thu bán hàng),
+  /// bucketed by due date for order-sourced entries
+  /// (`COALESCE(o.due_date, DATE(je.transaction_date))`) — the same
+  /// journal-based revenue basis as [getPeriodSummary] after the DG-391
+  /// cycle-1 fix (FR3), so breakdown totals reconcile with the
+  /// period-summary revenue and the income-statement CLI.
   Future<OrderBreakdown> getOrderBreakdown({
     required String period,
     String? date,

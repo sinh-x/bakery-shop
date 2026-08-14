@@ -38,7 +38,6 @@ def summary_metrics(
     *,
     period_start_date: str,
     period_end_date: str,
-    fallback_sources: tuple[str, ...] = (),
 ) -> dict[str, float]:
     """Return the six aggregate summary metrics for ``[start_ts, end_ts)``.
 
@@ -62,11 +61,6 @@ def summary_metrics(
       ``cash_drawer_cash_in`` (DG-378).
     - ``cashOutTotal`` — sum of credits to 1101 from
       ``cash_drawer_cash_out`` (DG-378).
-
-    ``fallback_sources`` is accepted for call-site compatibility but is
-    no longer used now that revenue is journal-based (order-sourced
-    entries are detected via ``je.source_type`` rather than
-    ``orders.source``).
 
     Returns a dict keyed by those five names; values are ``float``.
     """

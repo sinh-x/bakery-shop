@@ -57,12 +57,15 @@ extracted into ``_metrics.summary_metrics`` (Mn2).
 DG-391 Phase 1: adds ``GET /api/reports/order-breakdown`` — a per-cell
 breakdown of order count and revenue grouped by ``orders.source`` ×
 ``orders.delivery_type`` for a week or month period (FR1 / AC5).
-Revenue in ``summary_metrics`` now sums ``orders.total_price`` for
-orders due within the period (POS/reconciliation fallback to
-``created_at``) instead of journal 4100 credits filtered by
-``transaction_date``, aligning revenue with cash-in over the same
-period (FR3 / AC3). ``PeriodSummary`` gains an ``accountsReceivable``
-field = revenue − (cashTotal + bankTransferTotal) (FR4 / AC4).
+Revenue in ``summary_metrics`` is computed from ``journal_lines``
+credits to account 4100 (Doanh thu bán hàng), bucketed by due date for
+order-sourced entries (``COALESCE(o.due_date, DATE(je.transaction_date))``)
+within the period — see ``_revenue_from_journal`` in ``_metrics.py``.
+This mirrors ``baker report income-statement --date-basis due-date`` so
+the summary reconciles with the income-statement CLI and preserves the
+DG-376 partial-payment invariant (FR3 / AC3). ``PeriodSummary`` gains an
+``accountsReceivable`` field = revenue − (cashTotal + bankTransferTotal)
+(FR4 / AC4).
 """
 
 from typing import Optional
@@ -106,9 +109,12 @@ def get_today_summary(
     """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal,
     bankTransferTotal, cashInTotal, cashOutTotal, orders.
 
-    Revenue = tổng ``total_price`` của orders có dueDate == date (DG-391
-    Phase 1 — căn chỉnh theo due_date để khớp cash-in cùng kỳ). POS /
-    reconciliation orders có due_date rỗng fallback theo created_at.
+    Revenue = tổng ``journal_lines.credit`` tài khoản 4100 cho các bút
+    toán được ghi nhận trong ngày (DG-391 Phase 1 — căn chỉnh theo
+    due_date để khớp cash-in cùng kỳ, bucket theo
+    ``COALESCE(o.due_date, DATE(je.transaction_date))`` cho order-sourced
+    entries). POS / reconciliation orders có due_date rỗng fallback theo
+    ``DATE(je.transaction_date)``.
 
     Cash total = tổng debit tài khoản 1101 (Tiền mặt tại quầy) từ journal entries
     có source_type = 'payment_transaction'.
@@ -136,7 +142,6 @@ def get_today_summary(
             day_end,
             period_start_date=date,
             period_end_date=date,
-            fallback_sources=_FALLBACK_SOURCES,
         )
 
         # --- Orders: all orders due on `date` (no status filter) ---

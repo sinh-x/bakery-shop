@@ -4,9 +4,10 @@
 /// A cell aggregates all orders for one combination of order source
 /// (`orders.source`) and delivery type (`orders.delivery_type`) whose
 /// effective date (`due_date`; POS/reconciliation sources fall back to
-/// `created_at`) falls within the queried period. Revenue per cell is the
-/// sum of `orders.total_price`, so the breakdown totals reconcile with the
-/// period-summary revenue (FR3 alignment).
+/// `DATE(je.transaction_date)`) falls within the queried period. Revenue
+/// per cell is the sum of `journal_lines.credit` for account 4100, so the
+/// breakdown totals reconcile with the period-summary revenue and the
+/// income-statement CLI in `--date-basis due-date` mode (FR3 alignment).
 class OrderBreakdownCell {
   final String source;
   final String deliveryType;

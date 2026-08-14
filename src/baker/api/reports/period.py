@@ -50,8 +50,10 @@ def get_period_summary(
     Các metric được tính theo cùng pattern với today-summary nhưng thay
     single-day bounds bằng period bounds:
 
-    - revenue = tổng ``total_price`` của orders có due_date trong kỳ
-      (POS/reconciliation fallback theo created_at) — DG-391 Phase 1
+    - revenue = tổng ``journal_lines.credit`` tài khoản 4100 cho các bút
+      toán được ghi nhận trong kỳ (bucket theo due_date cho order-sourced
+      entries — ``COALESCE(o.due_date, DATE(je.transaction_date))``) —
+      DG-391 Phase 1 / cycle-1 fix
     - cashTotal = tổng debit 1101 từ ``payment_transaction``
     - bankTransferTotal = tổng debit 1200/1210/1220/1290 từ ``payment_transaction``
     - cashInTotal = tổng debit 1101 từ ``cash_drawer_cash_in``
@@ -70,7 +72,6 @@ def get_period_summary(
             end_next_day_ts,
             period_start_date=start_date,
             period_end_date=end_date,
-            fallback_sources=_FALLBACK_SOURCES,
         )
 
         # --- Orders: all orders due within [start_date, end_date] (no status filter) ---
