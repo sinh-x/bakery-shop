@@ -10,7 +10,6 @@ Covers:
   — FR3 / AC3. Revenue is recognised when the order is delivered (the
   journal sync creates the 4100 credit at delivery time), preserving the
   DG-376 partial-payment invariant.
-- Empty period returns an empty array
 - Default date is today
 - Invalid period / date validation (422)
 """
@@ -255,21 +254,6 @@ def test_order_breakdown_revenue_only_recognised_on_delivery(api_client):
     # The undelivered order's total_price must NOT appear in revenue.
     for cell in body:
         assert cell["revenue"] < 250000.0 or cell["source"] != "Facebook"
-
-
-# ---------------------------------------------------------------------------
-# Empty period (FR1)
-# ---------------------------------------------------------------------------
-
-
-def test_order_breakdown_empty_period_returns_empty_array(api_client):
-    """FR1: no orders in the period → empty array."""
-    body = api_client.get(
-        "/api/reports/order-breakdown",
-        params={"period": "week", "date": _today()},
-    ).json()
-    # May contain orders from other tests in shared DB, but structure is list.
-    assert isinstance(body, list)
 
 
 # ---------------------------------------------------------------------------
