@@ -53,6 +53,16 @@ into per-domain router modules (``period.py``, ``product_breakdown.py``,
 under the shared ``/api/reports`` prefix. The five aggregate metric
 queries shared by ``today-summary`` and ``period-summary`` were
 extracted into ``_metrics.summary_metrics`` (Mn2).
+
+DG-391 Phase 1: adds ``GET /api/reports/order-breakdown`` — a per-cell
+breakdown of order count and revenue grouped by ``orders.source`` ×
+``orders.delivery_type`` for a week or month period (FR1 / AC5).
+Revenue in ``summary_metrics`` now sums ``orders.total_price`` for
+orders due within the period (POS/reconciliation fallback to
+``created_at``) instead of journal 4100 credits filtered by
+``transaction_date``, aligning revenue with cash-in over the same
+period (FR3 / AC3). ``PeriodSummary`` gains an ``accountsReceivable``
+field = revenue − (cashTotal + bankTransferTotal) (FR4 / AC4).
 """
 
 from typing import Optional
@@ -71,6 +81,7 @@ from baker.api.reports._shared import (
 )
 from baker.api.reports.cashflow import router as cashflow_router
 from baker.api.reports.expense import router as expense_router
+from baker.api.reports.order_breakdown import router as order_breakdown_router
 from baker.api.reports.period import router as period_router
 from baker.api.reports.product_breakdown import router as product_breakdown_router
 
@@ -81,6 +92,7 @@ router.include_router(period_router)
 router.include_router(product_breakdown_router)
 router.include_router(expense_router)
 router.include_router(cashflow_router)
+router.include_router(order_breakdown_router)
 
 
 @router.get("/today-summary")
@@ -94,8 +106,9 @@ def get_today_summary(
     """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal,
     bankTransferTotal, cashInTotal, cashOutTotal, orders.
 
-    Revenue = tổng credit tài khoản 4100 (Doanh thu bán hàng) trong ngày
-    (single source of truth, không cộng thêm order totalPrice).
+    Revenue = tổng ``total_price`` của orders có dueDate == date (DG-391
+    Phase 1 — căn chỉnh theo due_date để khớp cash-in cùng kỳ). POS /
+    reconciliation orders có due_date rỗng fallback theo created_at.
 
     Cash total = tổng debit tài khoản 1101 (Tiền mặt tại quầy) từ journal entries
     có source_type = 'payment_transaction'.
@@ -117,7 +130,14 @@ def get_today_summary(
     day_start, day_end = _day_bounds(date)
 
     with get_db() as conn:
-        metrics = summary_metrics(conn, day_start, day_end)
+        metrics = summary_metrics(
+            conn,
+            day_start,
+            day_end,
+            period_start_date=date,
+            period_end_date=date,
+            fallback_sources=_FALLBACK_SOURCES,
+        )
 
         # --- Orders: all orders due on `date` (no status filter) ---
         # POS orders with empty due_date are matched by created_at within

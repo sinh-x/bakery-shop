@@ -537,3 +537,107 @@ def test_period_summary_month_includes_today_summary_orders(api_client):
     today_refs = {o["orderRef"] for o in today_body["orders"]}
     month_refs = {o["orderRef"] for o in month_body["orders"]}
     assert today_refs.issubset(month_refs)
+
+
+# ---------------------------------------------------------------------------
+# accountsReceivable field (DG-391 Phase 1 / FR4 / AC4)
+# ---------------------------------------------------------------------------
+
+
+def test_period_summary_includes_accounts_receivable_field(api_client):
+    """FR4/AC4: period-summary response includes the accountsReceivable
+    field (revenue − (cashTotal + bankTransferTotal))."""
+    body = api_client.get(
+        "/api/reports/period-summary",
+        params={"period": "week", "date": _today()},
+    ).json()
+    assert "accountsReceivable" in body
+    assert isinstance(body["accountsReceivable"], (int, float))
+
+
+def test_period_summary_accounts_receivable_equals_revenue_minus_payments(api_client):
+    """FR4/AC4: accountsReceivable = revenue − (cashTotal + bankTransferTotal).
+
+    An order delivered with a cash payment: revenue = total_price,
+    cashTotal = paid amount, bankTransferTotal = 0. AR = revenue − cash.
+    """
+    order = _create_order(api_client, total=200000)
+    _create_txn(api_client, order["orderRef"], amount=200000, type="payment", method="cash")
+    api_client.post(f"/api/orders/{order['orderRef']}/status", json={"status": "delivered"})
+
+    body = api_client.get(
+        "/api/reports/period-summary",
+        params={"period": "week", "date": _today()},
+    ).json()
+    expected_ar = body["revenue"] - (body["cashTotal"] + body["bankTransferTotal"])
+    assert body["accountsReceivable"] == pytest.approx(expected_ar)
+
+
+def test_period_summary_accounts_receivable_zero_when_fully_paid(api_client):
+    """FR4/AC4: AR ≈ 0 when revenue equals cash + bank (fully paid in period)."""
+    order = _create_order(api_client, total=150000)
+    _create_txn(api_client, order["orderRef"], amount=150000, type="payment", method="cash")
+    api_client.post(f"/api/orders/{order['orderRef']}/status", json={"status": "delivered"})
+
+    body = api_client.get(
+        "/api/reports/period-summary",
+        params={"period": "week", "date": _today()},
+    ).json()
+    assert body["accountsReceivable"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_period_summary_accounts_receivable_positive_when_unpaid_order_due(api_client):
+    """FR4: AR > 0 when an order is due in the period but not yet paid
+    (revenue counts total_price, but cashTotal/bankTotal = 0)."""
+    today = _today()
+    monday = _monday_of(today)
+    with get_db() as conn:
+        _insert_order_on_date(conn, monday, total=500000)
+
+    body = api_client.get(
+        "/api/reports/period-summary",
+        params={"period": "week", "date": today},
+    ).json()
+    # The unpaid order contributes revenue but no cash/bank, so AR > 0.
+    # Other tests may add paid orders, but the unpaid one pushes AR up.
+    assert body["accountsReceivable"] > 0
+
+
+def test_period_summary_accounts_receivable_can_be_negative(api_client):
+    """FR4: AR can be negative when prepayment > revenue for the period
+    (customer paid in advance, order due in a future period)."""
+    # Create an order due today and deliver it with a cash payment so
+    # revenue = 100000 and cashTotal includes 100000.
+    order = _create_order(api_client, total=100000)
+    _create_txn(api_client, order["orderRef"], amount=100000, type="payment", method="cash")
+    api_client.post(f"/api/orders/{order['orderRef']}/status", json={"status": "delivered"})
+
+    # Create a second order due in a FUTURE week and pay a deposit (cash)
+    # into it today. The deposit cash is collected this week (cashTotal),
+    # but the order's revenue (total_price) is bucketed to the future week
+    # (due_date outside this week), so this week's AR = revenue − cash < 0.
+    future_monday = _monday_of("2099-12-15")
+    future_order_payload = {
+        "customerName": "Khách trả trước",
+        "dueDate": future_monday,
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 300000, "productId": "BKS-16"}],
+        "source": "manual",
+    }
+    future_order = api_client.post("/api/orders", json=future_order_payload).json()
+    _create_txn(
+        api_client,
+        future_order["orderRef"],
+        amount=300000,
+        type="deposit",
+        method="cash",
+    )
+
+    body = api_client.get(
+        "/api/reports/period-summary",
+        params={"period": "week", "date": _today()},
+    ).json()
+    # This week: revenue = 100000 (delivered order due today). cashTotal =
+    # 100000 (delivered payment) + 300000 (future-order deposit) = 400000.
+    # AR = 100000 − 400000 = -300000. Other tests may add more, but the
+    # prepayment pushes AR below zero.
+    assert body["accountsReceivable"] < 0

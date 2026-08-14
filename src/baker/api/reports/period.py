@@ -50,7 +50,8 @@ def get_period_summary(
     Các metric được tính theo cùng pattern với today-summary nhưng thay
     single-day bounds bằng period bounds:
 
-    - revenue = tổng credit tài khoản 4100 trong kỳ
+    - revenue = tổng ``total_price`` của orders có due_date trong kỳ
+      (POS/reconciliation fallback theo created_at) — DG-391 Phase 1
     - cashTotal = tổng debit 1101 từ ``payment_transaction``
     - bankTransferTotal = tổng debit 1200/1210/1220/1290 từ ``payment_transaction``
     - cashInTotal = tổng debit 1101 từ ``cash_drawer_cash_in``
@@ -63,7 +64,14 @@ def get_period_summary(
     start_date, end_date, start_ts, end_next_day_ts = _period_bounds(period, date)
 
     with get_db() as conn:
-        metrics = summary_metrics(conn, start_ts, end_next_day_ts)
+        metrics = summary_metrics(
+            conn,
+            start_ts,
+            end_next_day_ts,
+            period_start_date=start_date,
+            period_end_date=end_date,
+            fallback_sources=_FALLBACK_SOURCES,
+        )
 
         # --- Orders: all orders due within [start_date, end_date] (no status filter) ---
         # POS/reconciliation orders with empty due_date fall back to created_at
@@ -112,6 +120,11 @@ def get_period_summary(
             bankTransferTotal=metrics["bankTransferTotal"],
             cashInTotal=metrics["cashInTotal"],
             cashOutTotal=metrics["cashOutTotal"],
+            accountsReceivable=round(
+                metrics["revenue"]
+                - (metrics["cashTotal"] + metrics["bankTransferTotal"]),
+                2,
+            ),
             orders=orders,
         )
         return summary.to_api_dict()
