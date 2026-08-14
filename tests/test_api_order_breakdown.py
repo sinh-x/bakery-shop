@@ -5,8 +5,11 @@ Covers:
   orderCount, revenue
 - Grouping by source × delivery_type
 - Period-aware date filtering (week / month / day)
-- Revenue per cell = sum of orders.total_price for orders due in the
-  period (POS/reconciliation fallback to created_at) — FR3 / AC3
+- Revenue per cell = sum of journal_lines.credit for account 4100
+  (Doanh thu bán hàng), bucketed by due_date for order-sourced entries
+  — FR3 / AC3. Revenue is recognised when the order is delivered (the
+  journal sync creates the 4100 credit at delivery time), preserving the
+  DG-376 partial-payment invariant.
 - Empty period returns an empty array
 - Default date is today
 - Invalid period / date validation (422)
@@ -16,7 +19,6 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
 
@@ -40,32 +42,49 @@ def _create_order(client, customer="Nguyễn Văn A", total=300000, items=None, 
     return resp.json()
 
 
-def _insert_order_on_date(
-    conn,
+def _create_txn(client, ref, amount=100000, **kwargs):
+    payload = {"amount": amount, **kwargs}
+    resp = client.post(f"/api/orders/{ref}/transactions", json=payload)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _deliver_order(client, ref):
+    """Mark an order delivered — triggers the journal sync that creates the
+    4100 revenue credit (deposit→revenue or AR→revenue entry)."""
+    resp = client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200
+
+
+def _insert_delivered_order_on_date(
+    client,
     due_date: str,
     total=100000,
     source="manual",
     delivery_type="pickup",
 ):
-    """Insert a minimal order directly with a specific due_date."""
-    conn.execute(
-        """INSERT INTO orders
-             (order_ref, customer_name, status, source, delivery_type, due_date,
-              public_order_code, total_price, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            f"OB-{due_date}-{total}-{abs(hash(due_date + str(total) + source + delivery_type)) % 100000}",
-            "Khách test breakdown",
-            "new",
-            source,
-            delivery_type,
-            due_date,
-            "",
-            total,
-            f"{due_date}T08:00:00",
-            f"{due_date}T08:00:00",
-        ),
-    )
+    """Create an order via the API with the given due_date/source/
+    delivery_type, pay the full amount, then deliver it. Delivering a
+    paid order creates the revenue entry (DR 2100 / CR 4100 for the
+    deposit balance = total) so its 4100 credit is bucketed by
+    due_date. Returns the orderRef."""
+    payload = {
+        "customerName": "Khách test breakdown",
+        "dueDate": due_date,
+        "source": source,
+        "deliveryType": delivery_type,
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": total, "productId": "BKS-16"}],
+    }
+    resp = client.post("/api/orders", json=payload)
+    assert resp.status_code == 201, resp.text
+    ref = resp.json()["orderRef"]
+    # Pay the full amount so the revenue entry debits 2100 (deposits) and
+    # credits 4100 for the deposit balance — exactly total. This keeps the
+    # recognised revenue equal to total for deterministic assertions while
+    # still exercising the journal-based revenue path.
+    _create_txn(client, ref, amount=total, type="payment", method="cash")
+    _deliver_order(client, ref)
+    return ref
 
 
 def _monday_of(date_str: str) -> str:
@@ -99,8 +118,9 @@ def test_order_breakdown_cell_shape(api_client):
     """AC5: each cell has source, deliveryType, orderCount, revenue."""
     today = _today()
     monday = _monday_of(today)
-    with get_db() as conn:
-        _insert_order_on_date(conn, monday, total=120000, source="Facebook", delivery_type="delivery")
+    _insert_delivered_order_on_date(
+        api_client, monday, total=120000, source="Facebook", delivery_type="delivery",
+    )
 
     body = api_client.get(
         "/api/reports/order-breakdown",
@@ -124,10 +144,15 @@ def test_order_breakdown_groups_by_source_and_delivery_type(api_client):
     one cell with summed orderCount and revenue."""
     today = _today()
     monday = _monday_of(today)
-    with get_db() as conn:
-        _insert_order_on_date(conn, monday, total=100000, source="Facebook", delivery_type="delivery")
-        _insert_order_on_date(conn, monday, total=200000, source="Facebook", delivery_type="delivery")
-        _insert_order_on_date(conn, monday, total=150000, source="Zalo", delivery_type="pickup")
+    _insert_delivered_order_on_date(
+        api_client, monday, total=100000, source="Facebook", delivery_type="delivery",
+    )
+    _insert_delivered_order_on_date(
+        api_client, monday, total=200000, source="Facebook", delivery_type="delivery",
+    )
+    _insert_delivered_order_on_date(
+        api_client, monday, total=150000, source="Zalo", delivery_type="pickup",
+    )
 
     body = api_client.get(
         "/api/reports/order-breakdown",
@@ -152,8 +177,9 @@ def test_order_breakdown_excludes_orders_outside_period(api_client):
     today = _today()
     # Insert an order in a far-future week.
     far_monday = _monday_of("2099-06-15")
-    with get_db() as conn:
-        _insert_order_on_date(conn, far_monday, total=999999, source="Zalo", delivery_type="pickup")
+    _insert_delivered_order_on_date(
+        api_client, far_monday, total=999999, source="Zalo", delivery_type="pickup",
+    )
 
     body = api_client.get(
         "/api/reports/order-breakdown",
@@ -168,8 +194,9 @@ def test_order_breakdown_month_includes_orders_across_month(api_client):
     today = _today()
     d = datetime.strptime(today, "%Y-%m-%d")
     first = d.replace(day=1).strftime("%Y-%m-%d")
-    with get_db() as conn:
-        _insert_order_on_date(conn, first, total=80000, source="Zalo", delivery_type="door")
+    _insert_delivered_order_on_date(
+        api_client, first, total=80000, source="Zalo", delivery_type="door",
+    )
 
     body = api_client.get(
         "/api/reports/order-breakdown",
@@ -181,18 +208,22 @@ def test_order_breakdown_month_includes_orders_across_month(api_client):
 
 
 # ---------------------------------------------------------------------------
-# Revenue = sum of orders.total_price due in period (FR3 / AC3)
+# Revenue = sum of journal 4100 credit for delivered orders (FR3 / AC3)
 # ---------------------------------------------------------------------------
 
 
 def test_order_breakdown_revenue_matches_period_summary_total(api_client):
     """FR3/AC3: the sum of revenue across all breakdown cells equals the
-    period-summary revenue (both now use orders.total_price by due_date)."""
+    period-summary revenue (both use journal 4100 credit bucketed by
+    due_date)."""
     today = _today()
     monday = _monday_of(today)
-    with get_db() as conn:
-        _insert_order_on_date(conn, monday, total=130000, source="Facebook", delivery_type="delivery")
-        _insert_order_on_date(conn, monday, total=70000, source="Zalo", delivery_type="pickup")
+    _insert_delivered_order_on_date(
+        api_client, monday, total=130000, source="Facebook", delivery_type="delivery",
+    )
+    _insert_delivered_order_on_date(
+        api_client, monday, total=70000, source="Zalo", delivery_type="pickup",
+    )
 
     breakdown = api_client.get(
         "/api/reports/order-breakdown",
@@ -207,10 +238,10 @@ def test_order_breakdown_revenue_matches_period_summary_total(api_client):
     assert breakdown_total == pytest.approx(period["revenue"], rel=0.01)
 
 
-def test_order_breakdown_revenue_uses_total_price_not_journal(api_client):
-    """FR3: revenue is sum of total_price (not journal 4100 credit) — an
-    order created but NOT delivered still contributes to breakdown revenue
-    because its due_date is in the period."""
+def test_order_breakdown_revenue_only_recognised_on_delivery(api_client):
+    """FR3 / DG-376 invariant: revenue is the journal 4100 credit created
+    at delivery — an order created but NOT delivered contributes NO
+    breakdown revenue (no 4100 credit exists yet)."""
     # Create an order (due today) but do NOT deliver it — no 4100 credit.
     order = _create_order(api_client, total=250000, source="Facebook")
     # Do not deliver, do not create a payment transaction.
@@ -221,7 +252,9 @@ def test_order_breakdown_revenue_uses_total_price_not_journal(api_client):
         params={"period": "week", "date": today},
     ).json()
     total = sum(c["revenue"] for c in body)
-    assert total >= 250000.0
+    # The undelivered order's total_price must NOT appear in revenue.
+    for cell in body:
+        assert cell["revenue"] < 250000.0 or cell["source"] != "Facebook"
 
 
 # ---------------------------------------------------------------------------

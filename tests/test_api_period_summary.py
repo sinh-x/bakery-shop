@@ -587,12 +587,25 @@ def test_period_summary_accounts_receivable_zero_when_fully_paid(api_client):
 
 
 def test_period_summary_accounts_receivable_positive_when_unpaid_order_due(api_client):
-    """FR4: AR > 0 when an order is due in the period but not yet paid
-    (revenue counts total_price, but cashTotal/bankTotal = 0)."""
+    """FR4: AR > 0 when an order is due in the period and delivered but
+    not yet paid (revenue = journal 4100 credit via AR entry,
+    cashTotal/bankTotal = 0)."""
     today = _today()
     monday = _monday_of(today)
-    with get_db() as conn:
-        _insert_order_on_date(conn, monday, total=500000)
+    # Create an order due on Monday and deliver it WITHOUT a payment —
+    # the journal sync creates the AR revenue entry (DR 1500 / CR 4100
+    # for total_price), so revenue = total_price but cashTotal = 0.
+    payload = {
+        "customerName": "Khách chưa trả tiền",
+        "dueDate": monday,
+        "source": "manual",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 500000, "productId": "BKS-16"}],
+    }
+    resp = api_client.post("/api/orders", json=payload)
+    assert resp.status_code == 201, resp.text
+    ref = resp.json()["orderRef"]
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200
 
     body = api_client.get(
         "/api/reports/period-summary",

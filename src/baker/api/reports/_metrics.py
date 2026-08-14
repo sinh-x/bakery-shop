@@ -7,17 +7,19 @@ nearly verbatim between ``get_today_summary`` and
 single helper parameterized by the timestamp bounds, so both endpoints
 call it with their respective ``(start_ts, end_ts)`` pair.
 
-DG-391 Phase 1: revenue is now computed from ``orders.total_price`` for
-orders whose effective date (``due_date`` with POS/reconciliation
-fallback to ``created_at``) falls within the period — mirroring the
-order-list query and aligning revenue with cash-in over the same period.
-Previously revenue summed ``journal_lines`` credits to account 4100
-filtered by ``journal_entries.transaction_date``, which bucketed by the
-recognition date rather than the business-event (due) date. The order-list
-query is intentionally NOT included here because its parameters differ
-between the day and period endpoints (single ``due_date`` vs.
-``due_date`` range) and the day endpoint returns a different response
-shape.
+DG-391 Phase 1 / cycle-1 fix: revenue is computed from ``journal_lines``
+credits to account 4100 (Doanh thu bán hàng), bucketed by due date for
+order-sourced entries — ``COALESCE(o.due_date, DATE(je.transaction_date))``
+for entries whose ``source_type`` is ``order``/``order_cogs`` (LEFT JOIN
+``orders`` on ``je.source_id = o.id``), and ``je.transaction_date`` for
+non-order entries. This mirrors ``baker report income-statement
+--date-basis due-date`` (``_income_statement_due_date``) so the summary
+reconciles with the income-statement CLI, preserves the DG-376
+partial-payment invariant (revenue = recognized journal credit, NOT
+``total_price``), and satisfies FR3 (revenue bucketed by ``due_date``).
+``period_start_date``/``period_end_date`` bound the order-sourced
+date-string comparison; ``start_ts``/``end_ts`` bound the non-order
+timestamp comparison.
 """
 
 from __future__ import annotations
@@ -42,13 +44,15 @@ def summary_metrics(
 
     Computes:
 
-    - ``revenue`` — sum of ``orders.total_price`` for orders whose effective
-      date (``due_date``; POS/reconciliation sources fall back to
-      ``created_at`` when ``due_date`` is NULL/empty) falls within the
-      period ``[period_start_date, period_end_date]`` (inclusive). This
-      aligns revenue with the order-list and cash-in over the same period
-      (DG-391 Phase 1 / FR3). ``fallback_sources`` is the tuple of source
-      labels whose orders use ``created_at`` when ``due_date`` is empty.
+    - ``revenue`` — sum of ``journal_lines.credit`` for account 4100,
+      bucketed by due date for order-sourced entries
+      (``COALESCE(o.due_date, DATE(je.transaction_date))`` within
+      ``[period_start_date, period_end_date]``) and by
+      ``je.transaction_date`` for non-order entries (within
+      ``[start_ts, end_ts)``). Mirrors
+      ``_income_statement_due_date`` so the summary reconciles with the
+      income-statement CLI (``--date-basis due-date``) and preserves the
+      DG-376 partial-payment invariant (FR3 / AC3).
     - ``cashTotal`` — sum of debits to 1101 from ``payment_transaction``,
       via ``journal_lines`` + ``journal_entries`` join with a half-open
       ``>= start_ts AND < end_ts`` transaction-date bound.
@@ -59,18 +63,20 @@ def summary_metrics(
     - ``cashOutTotal`` — sum of credits to 1101 from
       ``cash_drawer_cash_out`` (DG-378).
 
+    ``fallback_sources`` is accepted for call-site compatibility but is
+    no longer used now that revenue is journal-based (order-sourced
+    entries are detected via ``je.source_type`` rather than
+    ``orders.source``).
+
     Returns a dict keyed by those five names; values are ``float``.
     """
-    revenue = _revenue_from_orders(
+    revenue = _revenue_from_journal(
         conn,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
         start_ts=start_ts,
         end_ts=end_ts,
-        fallback_sources=fallback_sources,
     )
-
-    cash_acc_id = _account_id_by_code(conn, "1101")
 
     cash_acc_id = _account_id_by_code(conn, "1101")
     cash_row = conn.execute(
@@ -132,48 +138,52 @@ def summary_metrics(
     }
 
 
-def _revenue_from_orders(
+def _revenue_from_journal(
     conn,
     *,
     period_start_date: str,
     period_end_date: str,
     start_ts: str,
     end_ts: str,
-    fallback_sources: tuple[str, ...],
 ) -> float:
-    """Sum ``orders.total_price`` for orders due within the period.
+    """Sum ``journal_lines.credit`` for account 4100, bucketed by due date.
 
-    Orders with a non-empty ``due_date`` in ``[period_start_date,
-    period_end_date]`` (inclusive date-string comparison) contribute their
-    ``total_price``. Orders whose ``due_date`` is NULL/empty and whose
-    ``source`` is in ``fallback_sources`` (POS / reconciliation) fall back
-    to ``created_at`` within ``[start_ts, end_ts)`` — mirroring the
-    order-list query in ``period.py`` and ``today-summary`` (FR3 / AC3).
+    Order-sourced entries (``je.source_type IN ('order', 'order_cogs')``)
+    are bucketed by ``COALESCE(o.due_date, DATE(je.transaction_date))``
+    within ``[period_start_date, period_end_date]`` (inclusive
+    date-string comparison). Non-order entries are bucketed by
+    ``je.transaction_date`` within ``[start_ts, end_ts)`` (half-open
+    timestamp comparison).
 
-    The ``fallback_sources`` tuple may be empty, in which case the
-    fallback branch is omitted from the query.
+    This mirrors ``_income_statement_due_date`` in
+    ``baker.commands.report`` so the summary reconciles with the
+    income-statement CLI in ``--date-basis due-date`` mode, preserves the
+    DG-376 partial-payment invariant (revenue = recognized journal
+    credit — NOT ``orders.total_price``), and satisfies FR3 (revenue
+    bucketed by ``due_date``).
     """
-    fallback_branch = ""
-    fallback_params: list = []
-    if fallback_sources:
-        placeholders = ",".join("?" for _ in fallback_sources)
-        fallback_branch = (
-            " OR ("
-            "  (orders.due_date IS NULL OR orders.due_date = '')"
-            f"  AND orders.source IN ({placeholders})"
-            "  AND orders.created_at >= ?"
-            "  AND orders.created_at < ?"
-            ")"
-        )
-        fallback_params = [*fallback_sources, start_ts, end_ts]
-
+    revenue_acc_id = _account_id_by_code(conn, "4100")
     row = conn.execute(
-        f"""SELECT COALESCE(SUM(orders.total_price), 0) AS total
-            FROM orders
-            WHERE (
-                orders.due_date >= ? AND orders.due_date <= ?
-                {fallback_branch}
-            )""",
-        [period_start_date, period_end_date, *fallback_params],
+        """SELECT COALESCE(SUM(jl.credit), 0) AS total
+             FROM journal_lines jl
+             JOIN journal_entries je ON je.id = jl.journal_entry_id
+             LEFT JOIN orders o
+               ON je.source_type IN ('order', 'order_cogs')
+              AND je.source_id = o.id
+            WHERE jl.account_id = ?
+              AND (
+                (je.source_type IN ('order', 'order_cogs')
+                 AND COALESCE(o.due_date, DATE(je.transaction_date)) >= ?
+                 AND COALESCE(o.due_date, DATE(je.transaction_date)) <= ?)
+                OR
+                (je.source_type NOT IN ('order', 'order_cogs')
+                 AND je.transaction_date >= ?
+                 AND je.transaction_date < ?)
+              )""",
+        (
+            revenue_acc_id,
+            period_start_date, period_end_date,
+            start_ts, end_ts,
+        ),
     ).fetchone()
     return float(row["total"] or 0)
