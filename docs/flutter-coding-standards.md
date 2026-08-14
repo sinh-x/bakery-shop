@@ -45,7 +45,7 @@
 | File Type | Max Lines | Location | Evidence from Audit |
 |-----------|-----------|----------|---------------------|
 | Screen | 300 | `lib/features/<feature>/` | 16 High-severity files >500 lines; `order_detail_screen.dart` at 2,557 lines |
-| Widget | 200 | `lib/features/<feature>/widgets/` | `expandable_item_card.dart` at 616 lines; `order_photo_section.dart` at 592 |
+| Widget | 300 | `lib/features/<feature>/widgets/` | Raised from 200 to 300 per DG-332; aligns widget threshold with Screen/Service (300). Largest widgets: `expandable_item_card.dart` at 616 lines, `order_photo_section.dart` at 592. Audit baseline files ≥300 lines = 38 (16 High >500 + 22 Medium 300-500) |
 | Provider | 400 | `lib/data/providers/` or `lib/providers/` | `reconciliation_provider.dart` at 651; `order_providers.dart` at 530 |
 | Service | 300 | `lib/data/api/` | `reconciliation_service.dart` at 519; `printer_service.dart` at 328 |
 
@@ -62,7 +62,7 @@ When a file must exceed its threshold:
 
 ### Pre-existing Oversized Files (Baseline)
 
-The audit identified 46 files ≥200 lines. The 16 High-severity files (>500 lines) are the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
+The audit identified 38 files ≥300 lines under the updated widget threshold (16 High-severity >500 lines + 22 Medium 300-500 lines). The 16 High-severity files (>500 lines) remain the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
 
 ---
 
