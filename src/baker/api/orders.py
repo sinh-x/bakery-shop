@@ -638,7 +638,15 @@ def list_orders(
     due_date_to: Optional[str] = Query(
         None, description="Lọc theo ngày giao kết thúc (YYYY-MM-DD)"
     ),
-    limit: int = Query(50, description="Số lượng tối đa"),
+    limit: int = Query(
+        50,
+        description=(
+            "Số lượng tối đa. Giá trị âm (ví dụ -1) là sentinel 'không giới "
+            "hạn' — trả về mọi đơn phù hợp (SQLite hiểu LIMIT -1). Chỉ dùng "
+            "cho nhánh due_date/terminal-status; không áp dụng cho "
+            "active_only/status-active (FR9)."
+        ),
+    ),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
     active_only: bool = Query(
         False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"
@@ -663,6 +671,16 @@ def list_orders(
     ``paginated=true`` bị bỏ qua im lặng ở nhánh này; giờ endpoint báo rõ
     kết hợp không được hỗ trợ thay vì trả mảng trần khi client yêu cầu
     envelope.
+
+    CQ-14 (cycle-2 re-review): ``limit`` âm (ví dụ ``limit=-1``) là sentinel
+    'không giới hạn' — trả về mọi đơn phù hợp thay vì bị cắt bớt. SQLite hiểu
+    ``LIMIT -1`` là không giới hạn, nên nhánh due_date/terminal-status dùng
+    sentinel này để tránh silent truncation trong các ngày đông đơn (xem
+    ``app/lib/providers/order/due_date_order_list_providers.dart``). Sentinel
+    này KHÔNG tương thích với ``clamp_limit``/``paginate_params`` (nhánh
+    paginated sẽ clamp về default), nên chỉ có hiệu lực ở nhánh bare-array
+    (``paginated=false``/mặc định và ``active_only``/status-active vốn đã
+    không phân trang). Không thay đổi hành vi FR9 của active orders.
     """
     # CQ-5: reject the paginated+active-status combination explicitly instead
     # of silently returning a bare array. The status-active branch is an
