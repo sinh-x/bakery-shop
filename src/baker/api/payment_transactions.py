@@ -3,11 +3,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from baker.api.auth import resolve_actor
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
 from baker.utils.time import now_utc
 
@@ -51,14 +52,36 @@ def _resolve_order_id(conn, ref: str) -> int:
 
 
 @router.get("/{ref}/transactions")
-def list_transactions(ref: str):
-    """Danh sách giao dịch thanh toán của đơn hàng."""
+def list_transactions(
+    ref: str,
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N giao dịch đầu"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409)"),
+):
+    """Danh sách giao dịch thanh toán của đơn hàng.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
-        rows = conn.execute(
-            "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
-            (order_id,),
-        ).fetchall()
+        base_sql = "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id"
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM payment_transactions WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                base_sql + " LIMIT ? OFFSET ?",
+                (order_id, lim, off),
+            ).fetchall()
+            items = [PaymentTransaction.from_row(r).to_api_dict() for r in rows]
+            return paginated_envelope(items, total, lim, off)
+        rows = conn.execute(base_sql, (order_id,)).fetchall()
         return [PaymentTransaction.from_row(r).to_api_dict() for r in rows]
 
 

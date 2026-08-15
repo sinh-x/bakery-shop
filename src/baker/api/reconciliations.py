@@ -883,9 +883,25 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
 
 
 @router.get("/history")
-def get_reconciliation_history(limit: int = 30):
+def get_reconciliation_history(
+    limit: int = 30,
+    offset: int = 0,
+    paginated: bool = False,
+):
+    """Lịch sử phiên đối soát (DG-409 Phase 3: thêm ``offset`` + envelope).
+
+    Mặc định trả shape cũ ``{"sessions": [...]}`` (backward-compatible, NFR6).
+    Khi ``paginated=true``, bổ sung ``total``, ``has_more``, ``limit``,
+    ``offset`` vào cùng envelope (additive).
+    """
     bounded_limit = max(1, min(limit, 200))
+    bounded_offset = max(0, offset)
     with get_db() as conn:
+        if paginated:
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM reconciliation_sessions"
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
         rows = conn.execute(
             """SELECT rs.id,
                       rs.reconciliation_date,
@@ -899,24 +915,32 @@ def get_reconciliation_history(limit: int = 30):
                LEFT JOIN reconciliation_lines rl ON rl.session_id = rs.id
                GROUP BY rs.id
                ORDER BY rs.id DESC
-               LIMIT ?""",
-            (bounded_limit,),
+               LIMIT ? OFFSET ?""",
+            (bounded_limit, bounded_offset),
         ).fetchall()
-        return {
-            "sessions": [
-                {
-                    "id": row["id"],
-                    "reconciliation_date": row["reconciliation_date"],
-                    "staff_name": row["staff_name"],
-                    "payment_method": row["payment_method"] or "",
-                    "waste_reason": row["waste_reason"] or "",
-                    "linked_order_ref": row["linked_order_ref"],
-                    "created_at": row["created_at"],
-                    "line_count": row["line_count"],
-                }
-                for row in rows
-            ]
-        }
+        sessions = [
+            {
+                "id": row["id"],
+                "reconciliation_date": row["reconciliation_date"],
+                "staff_name": row["staff_name"],
+                "payment_method": row["payment_method"] or "",
+                "waste_reason": row["waste_reason"] or "",
+                "linked_order_ref": row["linked_order_ref"],
+                "created_at": row["created_at"],
+                "line_count": row["line_count"],
+            }
+            for row in rows
+        ]
+        if paginated:
+            has_more = (bounded_offset + len(sessions)) < total
+            return {
+                "sessions": sessions,
+                "total": total,
+                "has_more": has_more,
+                "limit": bounded_limit,
+                "offset": bounded_offset,
+            }
+        return {"sessions": sessions}
 
 
 @router.get("/history/{session_id}")

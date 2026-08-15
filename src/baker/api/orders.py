@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.config import get_delivery_critical_threshold
@@ -892,8 +893,18 @@ def create_order(body: OrderCreate, request: Request):
 
 
 @router.get("/{ref}/events")
-def get_order_events(ref: str):
-    """Danh sách sự kiện liên kết với đơn hàng, sắp xếp mới nhất trước."""
+def get_order_events(
+    ref: str,
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N sự kiện đầu"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409)"),
+):
+    """Danh sách sự kiện liên kết với đơn hàng, sắp xếp mới nhất trước.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         order_row = conn.execute(
             "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -902,13 +913,27 @@ def get_order_events(ref: str):
         if not order_row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-        rows = conn.execute(
-            "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC",
-            (order_row["id"],),
-        ).fetchall()
+        base_sql = "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC"
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM events WHERE order_id = ?",
+                (order_row["id"],),
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                base_sql + " LIMIT ? OFFSET ?",
+                (order_row["id"], lim, off),
+            ).fetchall()
+        else:
+            rows = conn.execute(base_sql, (order_row["id"],)).fetchall()
 
         from baker.api.events import _row_to_dict
-        return [_row_to_dict(r) for r in rows]
+        items = [_row_to_dict(r) for r in rows]
+        if use_envelope:
+            return paginated_envelope(items, total, lim, off)
+        return items
 
 
 @router.get("/{ref}")

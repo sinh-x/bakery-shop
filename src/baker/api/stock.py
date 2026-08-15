@@ -1,6 +1,6 @@
 """Stock management API routes for trưng bày product inventory."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,7 @@ from baker.services.inventory_fifo import (
     resolve_price_bucket_option,
 )
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.models.event import Event
 from baker.utils.time import now_utc
 
@@ -283,9 +284,18 @@ def adjust_stock(product_id: int, body: AdjustRequest):
         }
 
 
-@router.get("/stock/overview", response_model=list[StockOverviewItem])
-def stock_overview():
-    """List all trưng bày products with current stock quantity and configured price chips."""
+@router.get("/stock/overview")
+def stock_overview(
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N sản phẩm đầu"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 FR6)"),
+):
+    """List all trưng bày products with current stock quantity and configured price chips.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR6, FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         # Get all trưng bày products
         products = conn.execute(
@@ -342,6 +352,8 @@ def stock_overview():
         for c in all_chips:
             chips_map.setdefault(c["product_id"], []).append(c)
 
+        # Build full result list first (per-chip aggregation requires all
+        # products' chips/stock which are already loaded above).
         result: list[StockOverviewItem] = []
         for p in products:
             pid = p["id"]
@@ -398,4 +410,12 @@ def stock_overview():
                 per_chip=chips,
             ))
 
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            total = len(result)
+            page = result[off:off + lim]
+            return paginated_envelope(
+                [item.model_dump() for item in page], total, lim, off
+            )
         return result

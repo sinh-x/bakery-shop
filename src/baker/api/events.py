@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
-from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person
+from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person, paginate_params
 from baker.db.schema import (
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
@@ -598,12 +598,30 @@ def list_outstanding_debts(
     since: str | None = Query(None, description="Từ ngày (ISO format)"),
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
     status: str | None = Query("all", description="Trạng thái: all/unpaid/paid/partial"),
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N công nợ đầu"),
 ):
-    """Danh sách công nợ đang còn (FR5). Nhóm theo chủ nợ + tổng còn nợ."""
+    """Danh sách công nợ đang còn (FR5). Nhóm theo chủ nợ + tổng còn nợ.
+
+    Phân trang (DG-409 Phase 3): khi ``limit`` được cung cấp, áp dụng
+    ``LIMIT ? OFFSET ?`` lên danh sách công nợ phẳng (sau khi lọc) rồi mới
+    nhóm theo chủ nợ. Response envelope bổ sung ``total``, ``has_more``,
+    ``limit``, ``offset`` (additive — NFR6).
+    """
     with get_db() as conn:
         debts = fetch_debts(
             conn, creditor=creditor, since=since, until=until, status=status
         )
+
+    use_pagination = limit is not None
+    if use_pagination:
+        lim, off = paginate_params(limit, offset)
+        total = len(debts)
+        debts = debts[off:off + lim]
+    else:
+        lim, off = paginate_params(None, offset)
+        total = len(debts)
+
     # Group by creditor with totals.
     by_creditor: dict[str, list] = {}
     total_owed = 0.0
@@ -620,11 +638,18 @@ def list_outstanding_debts(
         }
         for name, items in by_creditor.items()
     ]
-    return {
+    response: dict = {
         "creditors": groups,
         "total_owed": total_owed,
         "count": len(debts),
     }
+    if use_pagination:
+        has_more = (off + len(debts)) < total
+        response["total"] = total
+        response["has_more"] = has_more
+        response["limit"] = lim
+        response["offset"] = off
+    return response
 
 
 @expenses_router.post("/{event_id}/settle")

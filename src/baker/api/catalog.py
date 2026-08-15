@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import baker.config
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.utils.db import row_to_dict as _row_to_dict
 from baker.utils.time import now_utc
 
@@ -117,17 +118,41 @@ def _get_product_or_404(conn, product_id: int):
 
 
 @router.get("/{product_id}/catalog")
-def list_catalog_photos(product_id: int):
-    """Danh sách ảnh bộ sưu tập của sản phẩm (theo thứ tự position)."""
+def list_catalog_photos(
+    product_id: int,
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N ảnh đầu"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409)"),
+):
+    """Danh sách ảnh bộ sưu tập của sản phẩm (theo thứ tự position).
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         _get_product_or_404(conn, product_id)
-        rows = conn.execute(
+        base_sql = (
             "SELECT cp.*, ph.hash as photo_hash "
             "FROM product_catalog_photos cp "
             "LEFT JOIN photos ph ON cp.photo_id = ph.id "
-            "WHERE cp.product_id = ? ORDER BY cp.position, cp.id",
-            (product_id,),
-        ).fetchall()
+            "WHERE cp.product_id = ? ORDER BY cp.position, cp.id"
+        )
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM product_catalog_photos WHERE product_id = ?",
+                (product_id,),
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                base_sql + " LIMIT ? OFFSET ?",
+                (product_id, lim, off),
+            ).fetchall()
+            items = [_row_to_dict(r) for r in rows]
+            return paginated_envelope(items, total, lim, off)
+        rows = conn.execute(base_sql, (product_id,)).fetchall()
         return [_row_to_dict(r) for r in rows]
 
 
