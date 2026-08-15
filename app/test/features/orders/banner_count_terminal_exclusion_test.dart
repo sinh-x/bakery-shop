@@ -2,7 +2,7 @@ import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/filtered_orders_screen.dart' show filterUrgencyActive, filterIncompleteActive;
 import 'package:bakery_app/providers/order/incomplete_count_provider.dart';
-import 'package:bakery_app/providers/order/order_crud_providers.dart';
+import 'package:bakery_app/providers/order/order_counts_provider.dart';
 import 'package:bakery_app/providers/order/urgency_count_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,160 +28,110 @@ Order _order({
   );
 }
 
+/// Fake [OrderService] that returns canned badge counts from
+/// [fetchOrderCounts] (DG-409 Phase 2). The count providers no longer derive
+/// from the order list, so [listOrders]/[listActiveOrders] are unused by the
+/// count-provider tests below — they remain for any future list-side test.
 class _FakeOrderService extends OrderService {
   _FakeOrderService() : super(Dio());
 
-  List<Order> orders = [];
+  int urgencyCount = 0;
+  int incompleteCount = 0;
+  Object? fetchError;
 
   @override
-  Future<List<Order>> listOrders({
-    String? status,
-    String? dueDate,
-    String? dueDateFrom,
-    String? dueDateTo,
-    int limit = 50,
-    int offset = 0,
-    bool activeOnly = false,
-  }) async {
-    return orders;
-  }
-
-  @override
-  Future<List<Order>> listActiveOrders({int limit = 200}) async {
-    return orders;
+  Future<({int urgency, int incomplete})> fetchOrderCounts() async {
+    if (fetchError != null) throw fetchError!;
+    return (urgency: urgencyCount, incomplete: incompleteCount);
   }
 }
 
 void main() {
-  group('urgencyCountProvider', () {
-    test('counts critical and urgent active orders', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', urgency: 'critical'),
-        _order(ref: 'B', status: 'confirmed', urgency: 'urgent'),
-        _order(ref: 'C', status: 'new', urgency: 'normal'),
-      ];
+  group('urgencyCountProvider (count API)', () {
+    test('returns urgency count from /api/orders/counts', () async {
+      final fakeService = _FakeOrderService()..urgencyCount = 3;
       final container = ProviderContainer(
         overrides: [orderServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
-      expect(container.read(urgencyCountProvider), 2);
-    });
-
-    test('excludes completed orders from count - FR-5/AC5', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', urgency: 'critical'),
-        _order(ref: 'B', status: 'completed', urgency: 'critical'),
-        _order(ref: 'C', status: 'completed', urgency: 'urgent'),
-        _order(ref: 'D', status: 'new', urgency: 'urgent'),
-      ];
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
-      );
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
-      // Only A and D are active + critical/urgent.
-      expect(container.read(urgencyCountProvider), 2);
-    });
-
-    test('excludes cancelled orders from count - FR-5/AC5', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', urgency: 'critical'),
-        _order(ref: 'B', status: 'cancelled', urgency: 'critical'),
-        _order(ref: 'C', status: 'cancelled', urgency: 'urgent'),
-      ];
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
-      );
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
-      expect(container.read(urgencyCountProvider), 1);
-    });
-
-    test('counts all active statuses (delivered is still active)', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'delivered', urgency: 'critical'),
-        _order(ref: 'B', status: 'ready', urgency: 'urgent'),
-        _order(ref: 'C', status: 'in_progress', urgency: 'critical'),
-      ];
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
-      );
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
+      await container.read(orderCountsProvider.future);
       expect(container.read(urgencyCountProvider), 3);
     });
 
-    test('zero when all urgent orders are terminal', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'completed', urgency: 'critical'),
-        _order(ref: 'B', status: 'cancelled', urgency: 'urgent'),
-      ];
+    test('returns 0 when urgency count is zero', () async {
+      final fakeService = _FakeOrderService()..urgencyCount = 0;
       final container = ProviderContainer(
         overrides: [orderServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
+      await container.read(orderCountsProvider.future);
+      expect(container.read(urgencyCountProvider), 0);
+    });
+
+    test('returns 0 on fetch error (degraded UX, FR2)', () async {
+      final fakeService = _FakeOrderService()
+        ..fetchError = StateError('network down');
+      final container = ProviderContainer(
+        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
+      );
+      addTearDown(container.dispose);
+
+      // Read the future so the error settles before reading the sync provider.
+      try {
+        await container.read(orderCountsProvider.future);
+      } catch (_) {}
+      expect(container.read(urgencyCountProvider), 0);
+    });
+
+    test('returns 0 while loading (before first value)', () {
+      final fakeService = _FakeOrderService()..urgencyCount = 5;
+      final container = ProviderContainer(
+        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
+      );
+      addTearDown(container.dispose);
+
+      // Do NOT await — provider is still in loading state.
       expect(container.read(urgencyCountProvider), 0);
     });
   });
 
-  group('incompleteCountProvider', () {
-    test('counts incomplete active orders', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', completeness: 'incomplete'),
-        _order(ref: 'B', status: 'confirmed', completeness: 'incomplete'),
-        _order(ref: 'C', status: 'new', completeness: 'complete'),
-      ];
+  group('incompleteCountProvider (count API)', () {
+    test('returns incomplete count from /api/orders/counts', () async {
+      final fakeService = _FakeOrderService()..incompleteCount = 2;
       final container = ProviderContainer(
         overrides: [orderServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
+      await container.read(orderCountsProvider.future);
       expect(container.read(incompleteCountProvider), 2);
     });
 
-    test('excludes completed incomplete orders - FR-7/AC6', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', completeness: 'incomplete'),
-        _order(ref: 'B', status: 'completed', completeness: 'incomplete'),
-        _order(ref: 'C', status: 'completed', completeness: 'incomplete'),
-      ];
+    test('returns 0 when incomplete count is zero', () async {
+      final fakeService = _FakeOrderService()..incompleteCount = 0;
       final container = ProviderContainer(
         overrides: [orderServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
-      expect(container.read(incompleteCountProvider), 1);
+      await container.read(orderCountsProvider.future);
+      expect(container.read(incompleteCountProvider), 0);
     });
 
-    test('excludes cancelled incomplete orders - FR-7/AC6', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', completeness: 'incomplete'),
-        _order(ref: 'B', status: 'cancelled', completeness: 'incomplete'),
-      ];
+    test('returns 0 on fetch error (degraded UX, FR2)', () async {
+      final fakeService = _FakeOrderService()
+        ..fetchError = StateError('network down');
       final container = ProviderContainer(
         overrides: [orderServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
-      await container.read(orderListProvider.future);
-      expect(container.read(incompleteCountProvider), 1);
+      try {
+        await container.read(orderCountsProvider.future);
+      } catch (_) {}
+      expect(container.read(incompleteCountProvider), 0);
     });
   });
 
@@ -207,54 +157,18 @@ void main() {
       expect(filtered, hasLength(1));
       expect(filtered.first.orderRef, 'C');
     });
-
-    test('listing count matches urgencyCountProvider count', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
-        _order(ref: 'A', status: 'new', urgency: 'critical'),
-        _order(ref: 'B', status: 'confirmed', urgency: 'urgent'),
-        _order(ref: 'C', status: 'completed', urgency: 'critical'),
-        _order(ref: 'D', status: 'cancelled', urgency: 'urgent'),
-        _order(ref: 'E', status: 'ready', urgency: 'normal'),
-        _order(ref: 'F', status: 'delivered', urgency: 'critical'),
-      ];
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
-      );
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
-      final orders = container.read(orderListProvider).asData!.value;
-      final providerCount = container.read(urgencyCountProvider);
-      final listingCount = filterUrgencyActive(orders).length;
-
-      expect(providerCount, listingCount);
-      expect(providerCount, 3);
-    });
   });
 
-  group('FR-7: incomplete listing matches incompleteCountProvider', () {
-    test('listing count matches incompleteCountProvider count', () async {
-      final fakeService = _FakeOrderService();
-      fakeService.orders = [
+  group('FR-7: incomplete listing filter', () {
+    test('excludes terminal incomplete orders from listing', () {
+      final orders = [
         _order(ref: 'A', status: 'new', completeness: 'incomplete'),
         _order(ref: 'B', status: 'completed', completeness: 'incomplete'),
-        _order(ref: 'C', status: 'confirmed', completeness: 'incomplete'),
-        _order(ref: 'D', status: 'cancelled', completeness: 'incomplete'),
-        _order(ref: 'E', status: 'new', completeness: 'complete'),
+        _order(ref: 'C', status: 'cancelled', completeness: 'incomplete'),
       ];
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(fakeService)],
-      );
-      addTearDown(container.dispose);
-
-      await container.read(orderListProvider.future);
-      final orders = container.read(orderListProvider).asData!.value;
-      final providerCount = container.read(incompleteCountProvider);
-      final listingCount = filterIncompleteActive(orders).length;
-
-      expect(providerCount, listingCount);
-      expect(providerCount, 2);
+      final filtered = filterIncompleteActive(orders);
+      expect(filtered, hasLength(1));
+      expect(filtered.first.orderRef, 'A');
     });
   });
 }

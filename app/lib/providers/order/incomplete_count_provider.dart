@@ -1,23 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../shared/utils/order_helpers.dart';
-import 'order_crud_providers.dart';
+import 'order_counts_provider.dart';
 
-/// Count of active orders with completeness "incomplete".
+/// Count of active orders with completeness "incomplete" (FR1/NFR2).
 ///
-/// Only counts orders whose status is currently active (new, confirmed,
-/// in_progress, ready, delivered). Completed and cancelled orders are
-/// excluded even if they are incomplete.
+/// Backed by the lightweight `GET /api/orders/counts` endpoint (via
+/// [orderCountsProvider]) instead of the full order list so the shell
+/// scaffold's bottom-nav badge no longer forces a full order fetch on app
+/// start.
 ///
-/// Derived from [orderListProvider] so it updates automatically whenever the
-/// order list refreshes (handled by AutoRefreshMixin's 15s poll cycle).
-///
-/// Design decision: returns 0 (empty) on API error rather than showing stale
-/// counts. This means badges will be hidden during API outages — degraded UX
-/// is intentional to avoid displaying potentially incorrect counts.
+/// Design decision: returns 0 (empty) on error or during loading rather than
+/// showing stale counts. This means badges will be hidden during API outages
+/// — degraded UX is intentional to avoid displaying potentially incorrect
+/// counts (FR2 degraded UX).
 final incompleteCountProvider = Provider<int>((ref) {
-  final orders = ref.watch(orderListProvider).asData?.value ?? [];
-  return orders.where(
-    (o) => o.completeness == completenessIncomplete && activeOrderStatuses.contains(o.status),
-  ).length;
+  final counts = ref.watch(orderCountsProvider);
+  return counts.maybeWhen(data: (d) => d.incomplete, orElse: () => 0);
 });

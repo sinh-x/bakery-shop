@@ -277,6 +277,22 @@ class OrderService {
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Fetches lightweight order badge counts (urgency, incomplete) for active
+  /// orders from `GET /api/orders/counts` (DG-409 Phase 2 / FR1/NFR2/NFR4).
+  ///
+  /// Returns a record `({urgency, incomplete})`. The backend already degrades
+  /// to `{"urgency": 0, "incomplete": 0}` on error, so callers can rely on
+  /// non-null ints. Used by shell-scaffold badge providers so the bottom nav
+  /// no longer depends on the full order list fetch.
+  Future<({int urgency, int incomplete})> fetchOrderCounts() async {
+    final response = await _dio.get('/api/orders/counts');
+    final data = response.data as Map<String, dynamic>;
+    return (
+      urgency: (data['urgency'] as num?)?.toInt() ?? 0,
+      incomplete: (data['incomplete'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   /// Fetches all active (non-terminal) orders for the dashboard view.
   Future<List<Order>> listActiveOrders({int limit = 200}) async {
     final response = await _dio.get(
