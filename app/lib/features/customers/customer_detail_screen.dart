@@ -8,6 +8,7 @@ import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/customers_provider.dart';
+import '../../shared/services/session_cache.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -47,6 +48,11 @@ class CustomerDetailScreen extends ConsumerWidget {
     try {
       await ref.read(customerServiceProvider).deleteCustomer(customerId);
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): invalidate the session cache so the
+      // paginated customer list re-fetches after a delete.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       if (context.mounted) {
         showTopSnackBar(context, VN.customerDeleted);
         Navigator.of(context).pop();

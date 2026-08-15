@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/customer_service.dart';
 import '../data/models/customer.dart';
+import '../shared/services/session_cache.dart';
 
 /// Current search query for the customer list. Empty string = no filter.
 /// Setting this re-triggers [CustomerListNotifier] via `ref.watch`.
@@ -155,11 +156,25 @@ class CustomerPaginationState {
 /// Paginated customer list notifier (FR11, AC4). Watches
 /// [customerSearchProvider] so a new server-side search resets to the first
 /// page of the new result set. Modeled on [JournalPaginationNotifier].
+///
+/// DG-409 Phase 5 (FR13, AC5): `build()` consults the session cache first,
+/// keyed by the current search query. On a hit the cached
+/// [CustomerPaginationState] is returned without a network request. Pull-to-
+/// refresh and customer mutations invalidate the cache so the next build
+/// re-fetches.
 class CustomerPaginationNotifier
     extends AsyncNotifier<CustomerPaginationState> {
+  SessionCacheKey _cacheKeyFor(String search) =>
+      SessionCacheKey(SessionCacheEntity.customers, parameter: search);
+
   @override
   Future<CustomerPaginationState> build() async {
     final search = ref.watch(customerSearchProvider);
+    final cache = ref.read(sessionCacheProvider);
+    return cache.readOrFetch(_cacheKeyFor(search), () => _fetchFirstPage(search));
+  }
+
+  Future<CustomerPaginationState> _fetchFirstPage(String search) async {
     final service = ref.read(customerServiceProvider);
     final response = await service.listCustomersPaginated(
       search: search,
@@ -193,14 +208,16 @@ class CustomerPaginationNotifier
       );
       final merged = List<Customer>.from(current.loaded)
         ..addAll(response.items);
-      state = AsyncData(
-        CustomerPaginationState(
-          loaded: merged,
-          total: response.total,
-          offset: nextOffset,
-          isLoadingMore: false,
-        ),
+      final next = CustomerPaginationState(
+        loaded: merged,
+        total: response.total,
+        offset: nextOffset,
+        isLoadingMore: false,
       );
+      // Keep the cache in sync with the accumulated state so a later
+      // cache hit returns the full loaded set, not just page 1 (AC5).
+      ref.read(sessionCacheProvider).put(_cacheKeyFor(search), next);
+      state = AsyncData(next);
     } catch (error) {
       state = AsyncData(
         current.copyWith(isLoadingMore: false, loadMoreError: error),
@@ -208,10 +225,18 @@ class CustomerPaginationNotifier
     }
   }
 
-  /// Re-fetch from the first page (pull-to-refresh or mutation invalidation).
+  /// Re-fetch from the first page, bypassing the cache (pull-to-refresh or
+  /// mutation invalidation). The cache is invalidated first so the fetch
+  /// always hits the network, then re-populated with the fresh result.
   Future<void> refresh() async {
+    ref.read(sessionCacheProvider).invalidateEntityType(
+      SessionCacheEntity.customers,
+    );
     state = const AsyncLoading();
-    state = await AsyncValue.guard(build);
+    state = await AsyncValue.guard(() {
+      ref.invalidateSelf();
+      return future;
+    });
   }
 }
 

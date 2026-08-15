@@ -11,6 +11,7 @@ import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/providers/customers_provider.dart';
 import 'package:bakery_app/providers/order/order_list_providers.dart';
 import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -315,4 +316,161 @@ void main() {
       expect(state.offset, 0);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // DG-409 Phase 5 — session cache integration (FR13, AC5, AC6).
+  // Verifies that the paginated notifiers serve cached state on a rebuild
+  // without a new network request, and that entity-type invalidation
+  // forces a fresh fetch.
+  // -------------------------------------------------------------------------
+
+  group('SessionCache integration — products (AC5, AC6, FR13)', () {
+    test('rebuild serves cached state without a new network request', () async {
+      final service = _CountingProductService(_products(3));
+      final cache = SessionCache();
+      final container = ProviderContainer(
+        overrides: [
+          productServiceProvider.overrideWithValue(service),
+          sessionCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(productsPaginationProvider.future);
+      expect(service.paginatedCalls, 1);
+
+      // Rebuild the provider (simulates navigating away and back, which
+      // re-runs `build()`). The cached state should be served without a
+      // second network call (AC5).
+      container.invalidate(productsPaginationProvider);
+      await container.read(productsPaginationProvider.future);
+      expect(service.paginatedCalls, 1);
+      expect(
+        container.read(productsPaginationProvider).value!.loaded,
+        hasLength(3),
+      );
+    });
+
+    test('refresh bypasses the cache and re-fetches from the network',
+        () async {
+      final service = _CountingProductService(_products(3));
+      final cache = SessionCache();
+      final container = ProviderContainer(
+        overrides: [
+          productServiceProvider.overrideWithValue(service),
+          sessionCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(productsPaginationProvider.future);
+      expect(service.paginatedCalls, 1);
+
+      await container.read(productsPaginationProvider.notifier).refresh();
+      expect(service.paginatedCalls, 2);
+    });
+
+    test(
+        'invalidateEntityType(products) forces a fresh fetch on the next build',
+        () async {
+      final service = _CountingProductService(_products(3));
+      final cache = SessionCache();
+      final container = ProviderContainer(
+        overrides: [
+          productServiceProvider.overrideWithValue(service),
+          sessionCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(productsPaginationProvider.future);
+      expect(service.paginatedCalls, 1);
+
+      // Simulate a product mutation: the mutation path calls
+      // invalidateEntityType(SessionCacheEntity.products). The next build
+      // must miss the cache and fetch fresh data (AC6/FR13).
+      cache.invalidateEntityType(SessionCacheEntity.products);
+      container.invalidate(productsPaginationProvider);
+      await container.read(productsPaginationProvider.future);
+      expect(service.paginatedCalls, 2);
+    });
+  });
+
+  group('SessionCache integration — customers (AC5, AC6, FR13)', () {
+    test('rebuild serves cached state for the same search query', () async {
+      final service = _PagedCustomerService(_customers(5));
+      final cache = SessionCache();
+      final container = ProviderContainer(
+        overrides: [
+          customerServiceProvider.overrideWithValue(service),
+          sessionCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(customerPaginationProvider.future);
+      // A new query string triggers a fresh fetch (cache key differs).
+      container.read(customerSearchProvider.notifier).set('Khach 1');
+      await container.read(customerPaginationProvider.future);
+      expect(
+        container.read(customerPaginationProvider).value!.total,
+        1,
+      );
+
+      // Rebuild with the same query → cached state is reused.
+      container.invalidate(customerPaginationProvider);
+      await container.read(customerPaginationProvider.future);
+      expect(
+        container.read(customerPaginationProvider).value!.total,
+        1,
+      );
+    });
+
+    test(
+        'invalidateEntityType(customers) forces fresh fetch after a mutation',
+        () async {
+      final service = _PagedCustomerService(_customers(5));
+      final cache = SessionCache();
+      final container = ProviderContainer(
+        overrides: [
+          customerServiceProvider.overrideWithValue(service),
+          sessionCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(customerPaginationProvider.future);
+      expect(cache.length, 1);
+
+      cache.invalidateEntityType(SessionCacheEntity.customers);
+      expect(cache.length, 0);
+
+      container.invalidate(customerPaginationProvider);
+      await container.read(customerPaginationProvider.future);
+      // Cache re-populated after the fresh fetch.
+      expect(cache.length, 1);
+    });
+  });
+}
+
+/// Wrapper around [_PagedProductService] that counts paginated fetch calls
+/// so cache-hit tests can assert the network was not touched (DG-409 Phase 5).
+class _CountingProductService extends _PagedProductService {
+  _CountingProductService(super.products);
+  int paginatedCalls = 0;
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    paginatedCalls++;
+    return super.listProductsPaginated(
+      category: category,
+      active: active,
+      limit: limit,
+      offset: offset,
+    );
+  }
 }

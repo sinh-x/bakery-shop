@@ -4,6 +4,7 @@ import '../../data/api/order_service.dart';
 import '../../data/models/order.dart';
 import '../../data/models/paginated_response.dart';
 import '../../shared/labels/shared.dart';
+import '../../shared/services/session_cache.dart';
 import '../../shared/utils/date_formatting.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -152,10 +153,22 @@ class OrderHistoryPaginationState {
 /// using the active date range, then accumulates pages via [loadMore]. Active
 /// orders are NOT paginated (FR9) — this notifier always uses
 /// ``active_only=false``.
+///
+/// DG-409 Phase 5 (FR13, AC5): `build()` consults the session cache first,
+/// keyed by the active date range. On a hit the cached
+/// [OrderHistoryPaginationState] is returned without a network request.
+/// Pull-to-refresh and order mutations invalidate the cache so the next
+/// build re-fetches.
 class OrderHistoryPaginationNotifier
     extends AsyncNotifier<OrderHistoryPaginationState> {
   DateTime _fromDate = DateTime.now();
   DateTime _toDate = DateTime.now();
+
+  SessionCacheKey _cacheKeyFor(DateTime from, DateTime to) =>
+      SessionCacheKey(
+        SessionCacheEntity.orderHistory,
+        parameter: '${formatApiDate(from)}..${formatApiDate(to)}',
+      );
 
   @override
   Future<OrderHistoryPaginationState> build() async {
@@ -163,7 +176,8 @@ class OrderHistoryPaginationNotifier
     final today = DateTime(now.year, now.month, now.day);
     _toDate = today;
     _fromDate = today.subtract(const Duration(days: 1));
-    return _fetchPage(0);
+    final cache = ref.read(sessionCacheProvider);
+    return cache.readOrFetch(_cacheKeyFor(_fromDate, _toDate), () => _fetchPage(0));
   }
 
   DateTime get fromDate => _fromDate;
@@ -186,7 +200,13 @@ class OrderHistoryPaginationNotifier
     _fromDate = DateTime(fromDate.year, fromDate.month, fromDate.day);
     _toDate = DateTime(toDate.year, toDate.month, toDate.day);
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetchPage(0));
+    state = await AsyncValue.guard(() async {
+      final page = await _fetchPage(0);
+      // Populate the cache for the new range so a later tab-away/back
+      // reuses this first page (AC5).
+      ref.read(sessionCacheProvider).put(_cacheKeyFor(_fromDate, _toDate), page);
+      return page;
+    });
   }
 
   Future<void> setSingleDate(DateTime date) {
@@ -203,14 +223,18 @@ class OrderHistoryPaginationNotifier
       final nextOffset = current.loaded.length;
       final page = await _fetchPageRaw(nextOffset);
       final merged = List<Order>.from(current.loaded)..addAll(page.items);
-      state = AsyncData(
-        OrderHistoryPaginationState(
-          loaded: merged,
-          total: page.total,
-          offset: nextOffset,
-          isLoadingMore: false,
-        ),
+      final next = OrderHistoryPaginationState(
+        loaded: merged,
+        total: page.total,
+        offset: nextOffset,
+        isLoadingMore: false,
       );
+      // Keep the cache in sync with the accumulated state so a later
+      // cache hit returns the full loaded set, not just page 1 (AC5).
+      ref
+          .read(sessionCacheProvider)
+          .put(_cacheKeyFor(_fromDate, _toDate), next);
+      state = AsyncData(next);
     } catch (error) {
       state = AsyncData(
         current.copyWith(isLoadingMore: false, loadMoreError: error),
@@ -218,9 +242,18 @@ class OrderHistoryPaginationNotifier
     }
   }
 
+  /// Re-fetch from the first page, bypassing the cache (pull-to-refresh or
+  /// mutation invalidation). The cache is invalidated first so the fetch
+  /// always hits the network, then re-populated with the fresh result.
   Future<void> refresh() async {
+    ref.read(sessionCacheProvider).invalidateEntityType(
+      SessionCacheEntity.orderHistory,
+    );
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetchPage(0));
+    state = await AsyncValue.guard(() {
+      ref.invalidateSelf();
+      return future;
+    });
   }
 
   Future<OrderHistoryPaginationState> _fetchPage(int offset) async {

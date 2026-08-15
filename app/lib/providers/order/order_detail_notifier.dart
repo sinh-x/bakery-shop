@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/models/order.dart';
+import '../../shared/services/session_cache.dart';
 import '../events_provider.dart';
 import 'order_list_providers.dart';
 
@@ -9,6 +10,15 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
   final String orderRef;
 
   OrderDetailNotifier(this.orderRef);
+
+  /// DG-409 Phase 5 (FR13, AC6): invalidate the session-level order-history
+  /// cache after any order mutation so the next history-tab visit re-fetches
+  /// fresh data instead of serving stale cached pages.
+  void _invalidateOrderHistoryCache() {
+    ref.read(sessionCacheProvider).invalidateEntityType(
+      SessionCacheEntity.orderHistory,
+    );
+  }
 
   @override
   Future<Order> build() async {
@@ -34,6 +44,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();
+    _invalidateOrderHistoryCache();
     return updated;
   }
 
@@ -87,6 +98,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();
+    _invalidateOrderHistoryCache();
     return updated;
   }
 
@@ -104,6 +116,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();
+    _invalidateOrderHistoryCache();
     return updated;
   }
 }

@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/customer_service.dart';
 import '../../providers/customers_provider.dart';
-import '../../shared/labels/customers.dart';
-import '../../shared/utils/diacritics.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/services/session_cache.dart';
+import 'package:bakery_app/shared/utils/diacritics.dart';
 import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
@@ -93,6 +94,11 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
             sourceId: choice.mergeFrom.id,
           );
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): merge mutates customer records, so
+      // invalidate the session cache for the customer entity type.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       await ref.read(duplicateGroupsProvider.notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, CustomersLabels.duplicateFinderMergeSuccess);
@@ -130,6 +136,11 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
             sourceCustomerIds: choice.sources.map((s) => s.id).toList(),
           );
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): batch merge mutates customer records,
+      // invalidate the session cache for the customer entity type.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       await ref.read(duplicateGroupsProvider.notifier).refresh();
       if (mounted) {
         showTopSnackBar(
