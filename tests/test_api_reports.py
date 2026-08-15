@@ -113,7 +113,7 @@ def test_today_summary_response_structure(api_client):
         "bankTransferTotal",
         "cashInTotal",
         "cashOutTotal",
-        "orders",
+        "statusBreakdown",
     ):
         assert key in body, f"Missing key: {key}"
     # Correct types
@@ -124,7 +124,11 @@ def test_today_summary_response_structure(api_client):
     assert isinstance(body["bankTransferTotal"], (int, float))
     assert isinstance(body["cashInTotal"], (int, float))
     assert isinstance(body["cashOutTotal"], (int, float))
-    assert isinstance(body["orders"], list)
+    assert isinstance(body["statusBreakdown"], dict)
+    # DG-409 Phase 1 (FR7/AC8): the embedded order list is no longer
+    # returned — only aggregate metrics. The dashboard fetches the order
+    # list via GET /api/orders?due_date=... separately.
+    assert "orders" not in body
 
 
 def test_today_summary_default_date_is_today(api_client):
@@ -150,7 +154,9 @@ def test_today_summary_empty_day(api_client):
     assert body["bankTransferTotal"] == 0
     assert body["cashInTotal"] == 0
     assert body["cashOutTotal"] == 0
-    assert body["orders"] == []
+    # DG-409 Phase 1: statusBreakdown replaces the embedded orders list.
+    assert body["statusBreakdown"] == {}
+    assert "orders" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -170,21 +176,23 @@ def test_today_summary_counts_all_statuses(api_client):
     assert resp.status_code == 200
 
     body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
-    # All three orders due today should be counted, regardless of status.
-    refs = {o["orderRef"] for o in body["orders"]}
-    assert o1["orderRef"] in refs
-    assert o2["orderRef"] in refs
-    assert o3["orderRef"] in refs
+    # DG-409 Phase 1: the orders list is no longer embedded — verify via
+    # orderCount and statusBreakdown instead. All three orders due today
+    # are counted regardless of status.
     assert body["orderCount"] >= 3
+    # statusBreakdown should include the new and cancelled statuses.
+    assert "new" in body["statusBreakdown"]
+    assert "cancelled" in body["statusBreakdown"]
 
 
 def test_today_summary_orders_include_status_field(api_client):
-    """The orders list includes the status field for client-side grouping."""
+    """DG-409 Phase 1: the orders list is no longer embedded; the
+    statusBreakdown dict carries the per-status counts instead. Verify the
+    new order shows up under the 'new' status bucket."""
     o = _create_order(api_client, total=100000)
     body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
-    found = [od for od in body["orders"] if od["orderRef"] == o["orderRef"]]
-    assert len(found) == 1
-    assert "status" in found[0]
+    assert "orders" not in body
+    assert body["statusBreakdown"].get("new", 0) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +360,8 @@ def test_today_summary_isolated_date(api_client):
     assert body["bankTransferTotal"] == 0
     assert body["cashInTotal"] == 0
     assert body["cashOutTotal"] == 0
-    assert body["orders"] == []
+    assert body["statusBreakdown"] == {}
+    assert "orders" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -474,8 +483,10 @@ def test_today_summary_cash_in_out_zero_on_empty_day(api_client):
 def test_today_summary_includes_reconciliation_orders(api_client):
     """DG-384 AC1: a stock reconciliation submitted today creates sale orders
     with ``source='reconciliation'`` and a non-empty ``publicOrderCode``. The
-    today-summary endpoint must include them in the ``orders`` array with
-    ``status='delivered'`` and ``source='reconciliation'``."""
+    today-summary endpoint must count them in ``orderCount`` and surface
+    their 'delivered' status via ``statusBreakdown`` (DG-409 Phase 1: the
+    full order list is no longer embedded; verify order presence via
+    ``GET /api/orders?due_date=<today>`` instead)."""
     session = _submit_reconciliation_with_sale(api_client, payment_method="cash",
                                                sale_qty=2, unit_price=15000)
     assert session["id"] > 0
@@ -489,14 +500,19 @@ def test_today_summary_includes_reconciliation_orders(api_client):
     recon_refs = {r["order_ref"] for r in rows}
 
     body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
-    summary_refs = {o["orderRef"] for o in body["orders"]}
+    # DG-409 Phase 1: the orders list is no longer embedded in the summary
+    # response — fetch via the dedicated orders endpoint to verify the
+    # reconciliation orders are present and well-formed.
+    orders_resp = api_client.get("/api/orders", params={"due_date": _today()})
+    assert orders_resp.status_code == 200
+    summary_refs = {o["orderRef"] for o in orders_resp.json()}
 
-    # Every reconciliation order must appear in the today-summary orders list.
+    # Every reconciliation order must appear in the today orders list.
     assert recon_refs.issubset(summary_refs), (
-        f"reconciliation orders {recon_refs} not all in today-summary {summary_refs}"
+        f"reconciliation orders {recon_refs} not all in today orders {summary_refs}"
     )
 
-    for order in body["orders"]:
+    for order in orders_resp.json():
         if order["orderRef"] in recon_refs:
             assert order["status"] == "delivered", (
                 f"reconciliation order {order['orderRef']} status should be 'delivered', "
@@ -512,6 +528,8 @@ def test_today_summary_includes_reconciliation_orders(api_client):
 
     # orderCount must reflect the reconciliation orders.
     assert body["orderCount"] >= 2
+    # statusBreakdown should include the delivered bucket for the recon orders.
+    assert body["statusBreakdown"].get("delivered", 0) >= 2
 
 
 def test_today_summary_reconciliation_orders_revenue_counted_once(api_client):
@@ -541,6 +559,9 @@ def test_today_summary_excludes_old_reconciliation_orders_without_due_date(api_c
     retroactively included in the today-summary. The fallback only matches
     reconciliation orders whose ``due_date`` equals the queried date.
 
+    DG-409 Phase 1: verify via ``orderCount`` and the dedicated orders
+    endpoint (the summary no longer embeds the orders list).
+
     This simulates a pre-fix reconciliation order by inserting one directly
     into the DB with a NULL ``due_date`` and an old ``created_at``."""
     with get_db() as conn:
@@ -562,8 +583,11 @@ def test_today_summary_excludes_old_reconciliation_orders_without_due_date(api_c
         )
 
     body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
-    refs = {o["orderRef"] for o in body["orders"]}
+    # The old reconciliation order should not be counted in orderCount for
+    # today. Use the dedicated orders endpoint to confirm absence.
+    orders_resp = api_client.get("/api/orders", params={"due_date": _today()})
+    refs = {o["orderRef"] for o in orders_resp.json()}
     assert "OLD-RECON-001" not in refs, (
-        "old reconciliation order without due_date must NOT appear in today-summary "
+        "old reconciliation order without due_date must NOT appear in today orders "
         "(forward-only fix)"
     )

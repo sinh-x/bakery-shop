@@ -8,6 +8,11 @@ requested period instead of a single day.
 DG-391 Phase 1: adds ``accountsReceivable`` = revenue − (cashTotal +
 bankTransferTotal) — the outstanding receivable (or prepayment credit
 when negative) for the period (FR4 / AC4).
+
+DG-409 Phase 1 (FR8/AC8): the embedded ``orders`` list is replaced by a
+``statusBreakdown`` dict (status → count) so the response carries only
+aggregate metrics. The Flutter dashboard fetches the full order list via
+``GET /api/orders`` when the user opens the period tab.
 """
 
 from dataclasses import dataclass, field
@@ -31,7 +36,9 @@ class PeriodSummary:
     - ``accountsReceivable`` — revenue − (cashTotal + bankTransferTotal);
       positive = outstanding receivable, negative = prepayment/credit
       (DG-391 Phase 1 / FR4)
-    - ``orders`` — list of order dicts (same shape as today-summary)
+    - ``statusBreakdown`` — dict mapping order status → count for orders
+      due within the period (DG-409 Phase 1 / FR8 / AC8). Replaces the
+      embedded ``orders`` list.
     """
 
     period: str
@@ -45,7 +52,7 @@ class PeriodSummary:
     cashInTotal: float = 0.0
     cashOutTotal: float = 0.0
     accountsReceivable: float = 0.0
-    orders: list = field(default_factory=list)
+    statusBreakdown: dict = field(default_factory=dict)
 
     def to_api_dict(self) -> dict:
         return {
@@ -60,5 +67,5 @@ class PeriodSummary:
             "cashInTotal": self.cashInTotal,
             "cashOutTotal": self.cashOutTotal,
             "accountsReceivable": self.accountsReceivable,
-            "orders": self.orders,
+            "statusBreakdown": self.statusBreakdown,
         }

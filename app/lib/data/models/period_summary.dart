@@ -23,8 +23,17 @@ import 'order.dart';
 ///                          (DG-391 Phase 1); may be negative when prepayments
 ///                          exceed period revenue. Defaults to `0.0` when the
 ///                          backend omits it (backward compatible).
-/// - `orders`        — orders due within the period (no status filter), each
-///                     decoded into an [Order].
+/// - `statusBreakdown` — map of order status → count for orders due within
+///                        the period (DG-409 Phase 1 / FR8 / AC8). Replaces
+///                        the embedded `orders` list. Empty when the backend
+///                        omits it (backward compatible with older servers).
+/// - `orders`        — optional list of orders due within the period.
+///                     **Removed from the backend response in DG-409 Phase 1**
+///                     — the dashboard now fetches the order list via
+///                     `GET /api/orders` separately. Kept on the model so
+///                     older-server responses still decode and the widget
+///                     can be migrated incrementally. Always empty when the
+///                     backend follows the new shape.
 class PeriodSummary {
   final String period;
   final String startDate;
@@ -37,6 +46,7 @@ class PeriodSummary {
   final double cashInTotal;
   final double cashOutTotal;
   final double accountsReceivable;
+  final Map<String, int> statusBreakdown;
   final List<Order> orders;
 
   const PeriodSummary({
@@ -51,11 +61,13 @@ class PeriodSummary {
     required this.cashInTotal,
     required this.cashOutTotal,
     this.accountsReceivable = 0.0,
-    required this.orders,
+    this.statusBreakdown = const {},
+    this.orders = const [],
   });
 
   factory PeriodSummary.fromJson(Map<String, dynamic> json) {
     final ordersRaw = json['orders'] as List? ?? const [];
+    final statusRaw = json['statusBreakdown'] as Map? ?? const {};
     return PeriodSummary(
       period: json['period'] as String? ?? '',
       startDate: json['startDate'] as String? ?? '',
@@ -69,6 +81,9 @@ class PeriodSummary {
       cashOutTotal: (json['cashOutTotal'] as num?)?.toDouble() ?? 0,
       accountsReceivable:
           (json['accountsReceivable'] as num?)?.toDouble() ?? 0,
+      statusBreakdown: statusRaw.map(
+        (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+      ),
       orders: ordersRaw
           .map((o) => Order.fromJson(o as Map<String, dynamic>))
           .toList(growable: false),

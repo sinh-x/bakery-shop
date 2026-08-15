@@ -10,11 +10,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
-from baker.models.order import Order
 from baker.models.period_summary import PeriodSummary
-from baker.api.orders import _parse_payment_methods
 from baker.api.reports._metrics import summary_metrics
 from baker.api.reports._shared import (
     _FALLBACK_SOURCES,
@@ -42,7 +39,7 @@ def get_period_summary(
 
     Trả về cùng hình dạng với ``GET /api/reports/today-summary`` (revenue,
     orderCount, cashTotal, bankTransferTotal, cashInTotal, cashOutTotal,
-    orders) nhưng tổng hợp trên toàn bộ khoảng thời gian của kỳ:
+    statusBreakdown) nhưng tổng hợp trên toàn bộ khoảng thời gian của kỳ:
 
     - ``week``: thứ 2 đến chủ nhật của tuần chứa ``date`` (FR1).
     - ``month``: từ ngày 1 đến cuối tháng chứa ``date`` (FR1).
@@ -60,6 +57,11 @@ def get_period_summary(
     - cashOutTotal = tổng credit 1101 từ ``cash_drawer_cash_out``
     - orderCount = số đơn có dueDate nằm trong kỳ (mọi status), bao gồm
       đơn POS/reconciliation có due_date rỗng (match theo created_at)
+
+    DG-409 Phase 1 (FR8/AC8): danh sách đơn hàng đầy đủ không còn được nhúng
+    trong phản hồi — chỉ trả về các metric tổng hợp (revenue, orderCount,
+    statusBreakdown). Flutter dashboard sẽ gọi ``GET /api/orders`` riêng
+    khi cần hiển thị danh sách đơn.
     """
     date = _resolve_date_param(date)
 
@@ -74,16 +76,19 @@ def get_period_summary(
             period_end_date=end_date,
         )
 
-        # --- Orders: all orders due within [start_date, end_date] (no status filter) ---
-        # POS/reconciliation orders with empty due_date fall back to created_at
-        # within the period bounds (same pattern as today-summary).
-        threshold_minutes = get_delivery_critical_threshold(conn)
+        # --- Order count + status breakdown (FR8/AC8) ---
+        # The full order list is no longer embedded in the response — only
+        # aggregate metrics are returned (revenue, order count, status
+        # breakdown). The Flutter dashboard fetches the order list via the
+        # dedicated ``GET /api/orders?due_date_from=...&due_date_to=...``
+        # endpoint when needed. This keeps the summary payload small and
+        # decouples the period metrics from the full order fetch
+        # (DG-409 Phase 1 / FR8 / AC8).
         source_placeholders = ",".join("?" for _ in _FALLBACK_SOURCES)
-        rows = conn.execute(
-            f"""SELECT orders.*, s.name AS assigned_staff_name,
-                (SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions
-                 WHERE order_id = orders.id AND invalidated_at IS NULL) AS payment_methods_concat
-                FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
+        count_row = conn.execute(
+            f"""SELECT COUNT(*) AS cnt,
+                   COALESCE(status, '') AS status
+                FROM orders
                 WHERE (
                     orders.due_date >= ? AND orders.due_date <= ?
                     OR (
@@ -93,22 +98,11 @@ def get_period_summary(
                         AND orders.created_at < ?
                     )
                 )
-                ORDER BY orders.id DESC""",
+                GROUP BY status""",
             (start_date, end_date, *_FALLBACK_SOURCES, start_ts, end_next_day_ts),
         ).fetchall()
-
-        orders = []
-        for r in rows:
-            staff_name = (
-                r["assigned_staff_name"]
-                if r["assigned_staff_name"] is not None
-                else ""
-            )
-            order = Order.from_row(
-                r, conn, assigned_staff_name=staff_name
-            )
-            payment_methods = _parse_payment_methods(r["payment_methods_concat"])
-            orders.append(order.to_api_dict(threshold_minutes=threshold_minutes, payment_methods=payment_methods))
+        order_count = sum(int(r["cnt"]) for r in count_row)
+        status_breakdown = {r["status"]: int(r["cnt"]) for r in count_row}
 
         summary = PeriodSummary(
             period=period,
@@ -116,7 +110,7 @@ def get_period_summary(
             endDate=end_date,
             date=date,
             revenue=metrics["revenue"],
-            orderCount=len(orders),
+            orderCount=order_count,
             cashTotal=metrics["cashTotal"],
             bankTransferTotal=metrics["bankTransferTotal"],
             cashInTotal=metrics["cashInTotal"],
@@ -126,6 +120,6 @@ def get_period_summary(
                 - (metrics["cashTotal"] + metrics["bankTransferTotal"]),
                 2,
             ),
-            orders=orders,
+            statusBreakdown=status_breakdown,
         )
         return summary.to_api_dict()

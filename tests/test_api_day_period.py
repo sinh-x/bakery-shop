@@ -203,8 +203,10 @@ def test_day_cashflow_summary_empty_when_no_activity(api_client):
 
 
 def test_day_period_orders_match_today_summary_orders(api_client):
-    """period=day orders list matches today-summary orders for the same
-    date (subset relationship both ways)."""
+    """period=day for today returns the same orderCount as the today-summary
+    endpoint for the same date (DG-409 Phase 1: the orders list is no longer
+    embedded in either response — verify via orderCount + statusBreakdown
+    instead of comparing orderRef sets)."""
     _create_order(api_client, total=120000)
     today = _today()
     today_body = api_client.get(
@@ -213,8 +215,13 @@ def test_day_period_orders_match_today_summary_orders(api_client):
     day_body = api_client.get(
         "/api/reports/period-summary", params={"period": "day", "date": today}
     ).json()
-    today_refs = {o["orderRef"] for o in today_body["orders"]}
-    day_refs = {o["orderRef"] for o in day_body["orders"]}
-    assert today_refs == day_refs, (
-        f"today-summary orders {today_refs} != day-period orders {day_refs}"
+    # Both endpoints aggregate over the same day, so orderCount and the
+    # statusBreakdown 'new' bucket must match exactly.
+    assert day_body["orderCount"] == today_body["orderCount"], (
+        f"day-period orderCount {day_body['orderCount']} != "
+        f"today-summary orderCount {today_body['orderCount']}"
+    )
+    assert (
+        day_body["statusBreakdown"].get("new", 0)
+        == today_body["statusBreakdown"].get("new", 0)
     )

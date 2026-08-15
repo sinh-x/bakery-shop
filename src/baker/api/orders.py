@@ -13,12 +13,16 @@ from baker.logging import log_context, logger
 from baker.config import get_delivery_critical_threshold
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
+    TRANSIT_DELIVERY_TYPES,
+    WALK_IN_CUSTOMER_NAME,
     Order,
     OrderItem,
     OrderStatus,
+    compute_urgency,
     delivery_type_to_public_suffix,
     generate_public_order_code_candidate,
     is_backward_transition,
+    is_junk_phone,
     validate_transition,
 )
 from baker.models.order import _ORDER_STATUS_RANK
@@ -468,6 +472,122 @@ def _raise_status_transition_rejection(
         rejection_detail=rejection_detail,
     )
     raise HTTPException(status_code=status_code, detail=rejection_detail)
+
+
+@router.get("/counts")
+def get_order_counts():
+    """Đếm số lượng đơn hàng đang hoạt động theo nhóm badge (FR2/NFR4).
+
+    Trả về ``{"urgency": N, "incomplete": N}`` cho các đơn hàng đang hoạt
+    động (status IN new, confirmed, in_progress, ready, delivered). Đơn
+    ``delivered`` đã thanh toán đủ được loại khỏi badge (cùng quy tắc với
+    ``GET /api/orders?active_only=true``). Đơn ``completed``/``cancelled``
+    bị loại bỏ.
+
+    - ``urgency`` = số đơn có ``compute_urgency`` trả về ``critical`` hoặc
+      ``urgent`` (dùng ngưỡng cấu hình runtime từ DB).
+    - ``incomplete`` = số đơn có ``completeness = incomplete`` (thiếu
+      trường bắt buộc).
+
+    Sử dụng COUNT queries nhẹ thay vì fetch toàn bộ order list để badge
+    shell scaffold không phụ thuộc vào việc tải danh sách đơn (NFR4 < 100ms
+    p95). Trả về ``{"urgency": 0, "incomplete": 0}`` khi có lỗi — tránh hiển
+    thị badge sai trong quá trình giảm cấp (FR2).
+    """
+    try:
+        with get_db() as conn:
+            # Active statuses exclude terminal completed/cancelled. Delivered
+            # orders remain "active" but delivered+fully-paid orders are
+            # filtered out (same rule as active_only in list_orders).
+            active_statuses = ["new", "confirmed", "in_progress", "ready", "delivered"]
+            placeholders = ",".join("?" for _ in active_statuses)
+            threshold_minutes = get_delivery_critical_threshold(conn)
+
+            rows = conn.execute(
+                f"""SELECT orders.*
+                    FROM orders
+                    WHERE status IN ({placeholders})
+                    ORDER BY orders.id DESC""",
+                active_statuses,
+            ).fetchall()
+
+            urgency = 0
+            incomplete = 0
+            for r in rows:
+                # Skip delivered+fully-paid (same filter as active_only in
+                # list_orders — DG-274 Phase 3 / review-auto c1 CQ-1).
+                fully_paid, _ = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
+                    continue
+                # Compute urgency directly from the row fields without
+                # constructing the full api dict (NFR4 — keep the query
+                # lightweight so the badge endpoint returns < 100ms p95).
+                urgency_tier = compute_urgency(
+                    r["due_date"],
+                    r["due_time"],
+                    r["status"],
+                    r["acknowledged_at"],
+                    delivery_type=r["delivery_type"],
+                    threshold_minutes=threshold_minutes,
+                )
+                if urgency_tier in ("critical", "urgent"):
+                    urgency += 1
+                # Compute completeness directly from row fields — same
+                # required-field checks as Order.compute_completeness but
+                # avoids loading the items JSON / re-validating each item.
+                if _is_row_incomplete(r):
+                    incomplete += 1
+
+            return {"urgency": urgency, "incomplete": incomplete}
+    except Exception:
+        logger.exception("order_counts_failed")
+        return {"urgency": 0, "incomplete": 0}
+
+
+def _is_row_incomplete(row) -> bool:
+    """Return True when an order row is missing a required field.
+
+    Mirrors the required-field checks in ``Order.compute_completeness`` but
+    operates directly on the DB row to avoid loading the items JSON and
+    re-validating each item (NFR4 — lightweight count query). The checks are
+    intentionally a subset that stays in sync with the model: the items and
+    total_price checks rely on the stored columns rather than the parsed
+    model list (an empty/zero-value row is incomplete).
+    """
+    customer_name = (row["customer_name"] or "").strip()
+    if not customer_name or customer_name == WALK_IN_CUSTOMER_NAME:
+        return True
+
+    raw_items = row["items"]
+    if not raw_items or raw_items == "[]" or raw_items == "null":
+        return True
+
+    if not row["total_price"] or float(row["total_price"]) <= 0:
+        return True
+
+    if not row["due_date"]:
+        return True
+
+    if not row["due_time"]:
+        return True
+
+    delivery_type = row["delivery_type"] or "pickup"
+    if delivery_type in TRANSIT_DELIVERY_TYPES and not (row["delivery_address"] or "").strip():
+        return True
+
+    customer_phone = row["customer_phone"] or ""
+    if not customer_phone or is_junk_phone(customer_phone):
+        return True
+
+    delivery_phone = row["delivery_phone"] or ""
+    if not delivery_phone or is_junk_phone(delivery_phone):
+        if not customer_phone or is_junk_phone(customer_phone):
+            return True
+
+    if not row["source"]:
+        return True
+
+    return False
 
 
 @router.get("")
