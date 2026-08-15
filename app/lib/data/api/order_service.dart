@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/order.dart';
 import '../models/order_photo.dart';
+import '../models/paginated_response.dart';
 import 'api_client.dart';
 
 class OrderService {
@@ -32,6 +33,30 @@ class OrderService {
     return list
         .map((json) => Order.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Paginated order history fetch (DG-409 Phase 4 / FR12). Opts into the
+  /// backend envelope via ``paginated=true`` (active_only stays false) and
+  /// returns ``{items, total, has_more, limit, offset}`` (FR14). Used by the
+  /// order history screen; the active-orders list is NOT paginated (FR9).
+  Future<PaginatedResponse<Order>> listOrdersPaginated({
+    String? dueDateFrom,
+    String? dueDateTo,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final params = <String, dynamic>{
+      'paginated': true,
+      'limit': limit,
+      'offset': offset,
+    };
+    if (dueDateFrom != null) params['due_date_from'] = dueDateFrom;
+    if (dueDateTo != null) params['due_date_to'] = dueDateTo;
+    final response = await _dio.get('/api/orders', queryParameters: params);
+    return PaginatedResponse.fromJson(
+      response.data as Map<String, dynamic>,
+      Order.fromJson,
+    );
   }
 
   Future<Order> getOrder(String ref) async {

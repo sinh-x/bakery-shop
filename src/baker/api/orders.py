@@ -600,8 +600,16 @@ def list_orders(
     limit: int = Query(50, description="Số lượng tối đa"),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
     active_only: bool = Query(False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 Phase 4)"),
 ):
-    """Danh sách đơn hàng."""
+    """Danh sách đơn hàng.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    (và không dùng ``active_only``), trả về envelope ``{items, total, has_more,
+    limit, offset}`` cho lịch sử đơn hàng (FR12, DG-409 Phase 4). Nhánh
+    ``active_only`` luôn trả mảng trần đầy đủ (FR9 — không phân trang đơn đang
+    hoạt động).
+    """
     with get_db() as conn:
         conditions = []
         params: list = []
@@ -731,12 +739,22 @@ def list_orders(
                 result.append(order_dict)
             return result
 
+        # DG-409 Phase 4 (FR12): history branch — support an opt-in paginated
+        # envelope. The active_only branch above returns a bare array (FR9 —
+        # active orders stay unpaginated), so the envelope only applies to the
+        # history view (active_only=false) that already uses LIMIT/OFFSET.
+        use_envelope = paginated and not active_only
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+        else:
+            lim, off = limit, offset
+
         rows = conn.execute(
             f"SELECT orders.*, s.name AS assigned_staff_name, "
             f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
             f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
             f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
-            params + [limit, offset],
+            params + [lim, off],
         ).fetchall()
 
         result = []
@@ -749,6 +767,12 @@ def list_orders(
             order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
             order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
             result.append(order_dict)
+        if use_envelope:
+            count_row = conn.execute(
+                f"SELECT COUNT(*) AS c FROM orders {where}", params,
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            return paginated_envelope(result, total, lim, off)
         return result
 
 

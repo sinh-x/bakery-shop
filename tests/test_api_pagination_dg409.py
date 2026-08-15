@@ -486,3 +486,64 @@ def test_total_reflects_filtered_count_not_page_size(api_client):
     data = resp.json()
     assert len(data["items"]) == 2
     assert data["total"] >= 5
+
+
+# ---------------------------------------------------------------------------
+# GET /api/orders (history branch — DG-409 Phase 4 / FR12)
+#
+# The history branch (active_only=false) opts into the paginated envelope
+# when ``paginated=true``. The active_only branch always returns a bare
+# array (FR9 — active orders stay unpaginated).
+# ---------------------------------------------------------------------------
+
+
+def test_order_history_bare_array_backward_compat(api_client):
+    """Without paginated=true, /api/orders returns a bare array (NFR6)."""
+    _create_order(api_client)
+    resp = api_client.get("/api/orders", params={"active_only": "false"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+
+
+def test_order_history_envelope_when_paginated(api_client):
+    """paginated=true returns {items,total,has_more,limit,offset} for history."""
+    _create_order(api_client)
+    resp = api_client.get(
+        "/api/orders",
+        params={"paginated": "true", "limit": 50, "offset": 0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)
+    assert {"items", "total", "has_more", "limit", "offset"} <= set(data.keys())
+    assert isinstance(data["items"], list)
+
+
+def test_order_history_envelope_has_more_and_total(api_client):
+    """A single order + limit=1 → has_more false and total reflects the
+    full history count (DG-409 Phase 4 / FR14)."""
+    _create_order(api_client)
+    resp = api_client.get(
+        "/api/orders",
+        params={"paginated": "true", "limit": 50, "offset": 0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    # With limit 50 >= total, has_more must be false.
+    if data["limit"] >= data["total"]:
+        assert data["has_more"] is False
+
+
+def test_order_history_active_only_stays_bare_array_even_with_paginated(api_client):
+    """FR9: active orders stay unpaginated — even paginated=true must not
+    envelope the active_only branch."""
+    _create_order(api_client)
+    resp = api_client.get(
+        "/api/orders",
+        params={"active_only": "true", "paginated": "true"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list), "active_only must remain a bare array (FR9)"

@@ -1120,6 +1120,14 @@ class VN {
   static const accountingLocked = 'Đã khóa';
   static const accountingUnlocked = 'Chưa khóa';
   static const accountingLoadMore = 'Tải thêm';
+
+  /// Generic "load more" label for paginated list screens (DG-409 Phase 4 —
+  /// products, customers, order history). Reused across domains so the
+  /// pagination affordance stays consistent.
+  static const loadMore = 'Tải thêm';
+  /// Loading indicator label shown while fetching more pages (DG-409
+  /// Phase 4). Paired with [loadMore] on paginated screens.
+  static const loadingMore = 'Đang tải...';
   static const accountingNoAccounts = 'Không có tài khoản';
   static const accountingNoBalances = 'Không có số dư';
   static const accountingSourceTypeAll = 'Tất cả';

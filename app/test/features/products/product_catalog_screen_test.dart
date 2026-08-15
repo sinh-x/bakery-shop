@@ -2,6 +2,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/category.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_catalog_screen.dart';
 import 'package:bakery_app/features/products/widgets/product_card.dart';
@@ -47,6 +48,32 @@ class _FakeProductService extends ProductService {
       return List<Product>.from(source);
     }
     return source.where((product) => product.category == category).toList();
+  }
+
+  /// DG-409 Phase 4: paginated active products for the catalog screen.
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final source = active == 0 ? _inactiveProducts : _activeProducts;
+    var page = category == null
+        ? List<Product>.from(source)
+        : source.where((product) => product.category == category).toList();
+    final total = page.length;
+    final end = offset + limit;
+    page = offset >= total
+        ? const []
+        : page.sublist(offset, end > total ? total : end);
+    return PaginatedResponse<Product>(
+      items: page,
+      total: total,
+      hasMore: offset + page.length < total,
+      limit: limit,
+      offset: offset,
+    );
   }
 
   @override

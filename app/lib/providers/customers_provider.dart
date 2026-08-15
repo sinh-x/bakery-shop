@@ -105,3 +105,117 @@ final duplicateGroupsProvider =
     AsyncNotifierProvider<DuplicateGroupsNotifier, List<DuplicateGroup>>(
   DuplicateGroupsNotifier.new,
 );
+
+// ---------------------------------------------------------------------------
+// Paginated customer list (DG-409 Phase 4 / FR11, AC4)
+// ---------------------------------------------------------------------------
+
+/// Page size for the paginated customer list screen.
+const int customerPageSize = 50;
+
+/// Pagination-accumulation state for the customer list (FR11, AC4). Server-
+/// side search runs across ALL customers; only the result page is sliced, so
+/// `total` reflects the full search-result count (not just the loaded page).
+class CustomerPaginationState {
+  const CustomerPaginationState({
+    required this.loaded,
+    required this.total,
+    required this.offset,
+    required this.isLoadingMore,
+    this.loadMoreError,
+  });
+
+  final List<Customer> loaded;
+  final int total;
+  final int offset;
+  final bool isLoadingMore;
+  final Object? loadMoreError;
+
+  bool get hasMore => loaded.length < total;
+
+  CustomerPaginationState copyWith({
+    List<Customer>? loaded,
+    int? total,
+    int? offset,
+    bool? isLoadingMore,
+    Object? loadMoreError,
+    bool clearLoadMoreError = false,
+  }) {
+    return CustomerPaginationState(
+      loaded: loaded ?? this.loaded,
+      total: total ?? this.total,
+      offset: offset ?? this.offset,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      loadMoreError:
+          clearLoadMoreError ? null : (loadMoreError ?? this.loadMoreError),
+    );
+  }
+}
+
+/// Paginated customer list notifier (FR11, AC4). Watches
+/// [customerSearchProvider] so a new server-side search resets to the first
+/// page of the new result set. Modeled on [JournalPaginationNotifier].
+class CustomerPaginationNotifier
+    extends AsyncNotifier<CustomerPaginationState> {
+  @override
+  Future<CustomerPaginationState> build() async {
+    final search = ref.watch(customerSearchProvider);
+    final service = ref.read(customerServiceProvider);
+    final response = await service.listCustomersPaginated(
+      search: search,
+      limit: customerPageSize,
+      offset: 0,
+    );
+    return CustomerPaginationState(
+      loaded: response.items,
+      total: response.total,
+      offset: response.offset,
+      isLoadingMore: false,
+    );
+  }
+
+  /// Fetch the next page and append it to `loaded`. No-op if already loading
+  /// or no more pages remain.
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || current.isLoadingMore || !current.hasMore) return;
+
+    state = AsyncData(current.copyWith(isLoadingMore: true));
+
+    try {
+      final search = ref.read(customerSearchProvider);
+      final service = ref.read(customerServiceProvider);
+      final nextOffset = current.loaded.length;
+      final response = await service.listCustomersPaginated(
+        search: search,
+        limit: customerPageSize,
+        offset: nextOffset,
+      );
+      final merged = List<Customer>.from(current.loaded)
+        ..addAll(response.items);
+      state = AsyncData(
+        CustomerPaginationState(
+          loaded: merged,
+          total: response.total,
+          offset: nextOffset,
+          isLoadingMore: false,
+        ),
+      );
+    } catch (error) {
+      state = AsyncData(
+        current.copyWith(isLoadingMore: false, loadMoreError: error),
+      );
+    }
+  }
+
+  /// Re-fetch from the first page (pull-to-refresh or mutation invalidation).
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(build);
+  }
+}
+
+final customerPaginationProvider = AsyncNotifierProvider<
+    CustomerPaginationNotifier, CustomerPaginationState>(
+  CustomerPaginationNotifier.new,
+);

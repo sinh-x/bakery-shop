@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/customer.dart';
+import '../models/paginated_response.dart';
 import 'api_client.dart';
 
 /// One customer entry inside a duplicate-group payload (FR6).
@@ -213,6 +214,29 @@ class CustomerService {
     return list
         .map((json) => Customer.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Paginated customer list with server-side search (DG-409 Phase 4 / FR11,
+  /// AC4). Search runs across ALL customers server-side; only the result
+  /// page is sliced. Opts into the backend envelope (FR14).
+  Future<PaginatedResponse<Customer>> listCustomersPaginated({
+    String? search,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final params = <String, dynamic>{
+      'paginated': true,
+      'limit': limit,
+      'offset': offset,
+    };
+    if (search != null && search.trim().isNotEmpty) {
+      params['search'] = search.trim();
+    }
+    final response = await _dio.get('/api/customers', queryParameters: params);
+    return PaginatedResponse.fromJson(
+      response.data as Map<String, dynamic>,
+      Customer.fromJson,
+    );
   }
 
   /// Get a single customer by id (FR3).
