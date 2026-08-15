@@ -143,8 +143,9 @@ class OrderHistoryPaginationState {
       total: total ?? this.total,
       offset: offset ?? this.offset,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      loadMoreError:
-          clearLoadMoreError ? null : (loadMoreError ?? this.loadMoreError),
+      loadMoreError: clearLoadMoreError
+          ? null
+          : (loadMoreError ?? this.loadMoreError),
     );
   }
 }
@@ -164,11 +165,10 @@ class OrderHistoryPaginationNotifier
   DateTime _fromDate = DateTime.now();
   DateTime _toDate = DateTime.now();
 
-  SessionCacheKey _cacheKeyFor(DateTime from, DateTime to) =>
-      SessionCacheKey(
-        SessionCacheEntity.orderHistory,
-        parameter: '${formatApiDate(from)}..${formatApiDate(to)}',
-      );
+  SessionCacheKey _cacheKeyFor(DateTime from, DateTime to) => SessionCacheKey(
+    SessionCacheEntity.orderHistory,
+    parameter: '${formatApiDate(from)}..${formatApiDate(to)}',
+  );
 
   @override
   Future<OrderHistoryPaginationState> build() async {
@@ -177,7 +177,10 @@ class OrderHistoryPaginationNotifier
     _toDate = today;
     _fromDate = today.subtract(const Duration(days: 1));
     final cache = ref.read(sessionCacheProvider);
-    return cache.readOrFetch(_cacheKeyFor(_fromDate, _toDate), () => _fetchPage(0));
+    return cache.readOrFetch(
+      _cacheKeyFor(_fromDate, _toDate),
+      () => _fetchPage(0),
+    );
   }
 
   DateTime get fromDate => _fromDate;
@@ -204,7 +207,9 @@ class OrderHistoryPaginationNotifier
       final page = await _fetchPage(0);
       // Populate the cache for the new range so a later tab-away/back
       // reuses this first page (AC5).
-      ref.read(sessionCacheProvider).put(_cacheKeyFor(_fromDate, _toDate), page);
+      ref
+          .read(sessionCacheProvider)
+          .put(_cacheKeyFor(_fromDate, _toDate), page);
       return page;
     });
   }
@@ -246,9 +251,9 @@ class OrderHistoryPaginationNotifier
   /// mutation invalidation). The cache is invalidated first so the fetch
   /// always hits the network, then re-populated with the fresh result.
   Future<void> refresh() async {
-    ref.read(sessionCacheProvider).invalidateEntityType(
-      SessionCacheEntity.orderHistory,
-    );
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.orderHistory);
     state = const AsyncLoading();
     state = await AsyncValue.guard(() {
       ref.invalidateSelf();
@@ -277,7 +282,8 @@ class OrderHistoryPaginationNotifier
   }
 }
 
-final orderHistoryPaginationProvider = AsyncNotifierProvider<
-    OrderHistoryPaginationNotifier, OrderHistoryPaginationState>(
-  OrderHistoryPaginationNotifier.new,
-);
+final orderHistoryPaginationProvider =
+    AsyncNotifierProvider<
+      OrderHistoryPaginationNotifier,
+      OrderHistoryPaginationState
+    >(OrderHistoryPaginationNotifier.new);

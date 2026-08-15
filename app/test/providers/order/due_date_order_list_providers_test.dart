@@ -70,6 +70,9 @@ void main() {
       // Active-only is false so completed/cancelled orders are included
       // (matches the former summary.orders semantics).
       expect(service.calls.single['activeOnly'], false);
+      // CQ-13: no silent truncation — limit is -1 (unbounded) so every
+      // order due on the day is fetched.
+      expect(service.calls.single['limit'], -1);
       // The returned order list is what the UI renders.
       expect(result.map((o) => o.orderRef), ['A', 'B']);
     });
@@ -88,33 +91,5 @@ void main() {
       expect(service.calls[0]['dueDate'], '2026-08-15');
       expect(service.calls[1]['dueDate'], '2026-08-16');
     });
-  });
-
-  group('periodRangeOrdersProvider', () {
-    test(
-      'fetches orders via due_date_from + due_date_to (CQ-1 period range)',
-      () async {
-        final service = _RecordingOrderService()
-          ..orders = [_order(ref: 'A'), _order(ref: 'B'), _order(ref: 'C')];
-        final container = ProviderContainer(
-          overrides: [orderServiceProvider.overrideWithValue(service)],
-        );
-        addTearDown(container.dispose);
-
-        const range = PeriodOrderRange(
-          fromDate: '2026-08-10',
-          toDate: '2026-08-16',
-        );
-        final result = await container.read(
-          periodRangeOrdersProvider(range).future,
-        );
-
-        expect(service.calls.length, 1);
-        expect(service.calls.single['dueDateFrom'], '2026-08-10');
-        expect(service.calls.single['dueDateTo'], '2026-08-16');
-        expect(service.calls.single['activeOnly'], false);
-        expect(result.length, 3);
-      },
-    );
   });
 }

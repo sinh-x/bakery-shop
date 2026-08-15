@@ -27,9 +27,7 @@ class PaginatedResponse<T> {
   ) {
     final raw = json['items'] as List? ?? const [];
     return PaginatedResponse<T>(
-      items: raw
-          .map((e) => fromJsonT(e as Map<String, dynamic>))
-          .toList(),
+      items: raw.map((e) => fromJsonT(e as Map<String, dynamic>)).toList(),
       total: (json['total'] as num?)?.toInt() ?? 0,
       hasMore: (json['has_more'] as bool?) ?? false,
       limit: (json['limit'] as num?)?.toInt() ?? 0,

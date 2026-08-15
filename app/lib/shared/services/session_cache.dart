@@ -34,7 +34,9 @@ class SessionCacheKey {
 
   @override
   bool operator ==(Object other) =>
-      other is SessionCacheKey && other.entity == entity && other.parameter == parameter;
+      other is SessionCacheKey &&
+      other.entity == entity &&
+      other.parameter == parameter;
 
   @override
   int get hashCode => Object.hash(entity, parameter);

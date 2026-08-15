@@ -15,8 +15,9 @@ class CustomerSearchNotifier extends Notifier<String> {
   void clear() => state = '';
 }
 
-final customerSearchProvider =
-    NotifierProvider<CustomerSearchNotifier, String>(CustomerSearchNotifier.new);
+final customerSearchProvider = NotifierProvider<CustomerSearchNotifier, String>(
+  CustomerSearchNotifier.new,
+);
 
 /// Live-searched customer list. Re-fetches whenever the search query changes
 /// (FR1). Empty query returns the unfiltered list.
@@ -40,8 +41,8 @@ class CustomerListNotifier extends AsyncNotifier<List<Customer>> {
 
 final customerListProvider =
     AsyncNotifierProvider<CustomerListNotifier, List<Customer>>(
-  CustomerListNotifier.new,
-);
+      CustomerListNotifier.new,
+    );
 
 /// Current search query for the admin duplicate-finder screen
 /// (DG-372 Phase 4.2 — FR1/FR5). Empty string = no filter; the screen
@@ -56,13 +57,13 @@ class DuplicateFinderSearchNotifier extends Notifier<String> {
   void clear() => state = '';
 }
 
-final duplicateFinderSearchProvider = NotifierProvider<DuplicateFinderSearchNotifier, String>(
-  DuplicateFinderSearchNotifier.new,
-);
+final duplicateFinderSearchProvider =
+    NotifierProvider<DuplicateFinderSearchNotifier, String>(
+      DuplicateFinderSearchNotifier.new,
+    );
 
 /// Fetches a single customer by id (FR3).
-final customerProvider =
-    FutureProvider.family<Customer, int>((ref, id) async {
+final customerProvider = FutureProvider.family<Customer, int>((ref, id) async {
   final service = ref.read(customerServiceProvider);
   return service.getCustomer(id);
 });
@@ -72,17 +73,16 @@ final customerProvider =
 /// truth for order shape.
 final customerOrdersProvider =
     FutureProvider.family<List<Map<String, dynamic>>, int>((ref, id) async {
-  final service = ref.read(customerServiceProvider);
-  return service.getCustomerOrders(id);
-});
+      final service = ref.read(customerServiceProvider);
+      return service.getCustomerOrders(id);
+    });
 
 /// Admin duplicate-finder group list (DG-252 Phase 7 — FR7/AC4).
 ///
 /// AsyncNotifier wrapping `GET /api/customers/duplicates`. Screens call
 /// `refresh()` after a successful merge so the merged group disappears and
 /// any newly-revealed duplicates reload.
-class DuplicateGroupsNotifier
-    extends AsyncNotifier<List<DuplicateGroup>> {
+class DuplicateGroupsNotifier extends AsyncNotifier<List<DuplicateGroup>> {
   @override
   Future<List<DuplicateGroup>> build() async {
     final service = ref.read(customerServiceProvider);
@@ -104,8 +104,8 @@ class DuplicateGroupsNotifier
 
 final duplicateGroupsProvider =
     AsyncNotifierProvider<DuplicateGroupsNotifier, List<DuplicateGroup>>(
-  DuplicateGroupsNotifier.new,
-);
+      DuplicateGroupsNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // Paginated customer list (DG-409 Phase 4 / FR11, AC4)
@@ -147,8 +147,9 @@ class CustomerPaginationState {
       total: total ?? this.total,
       offset: offset ?? this.offset,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      loadMoreError:
-          clearLoadMoreError ? null : (loadMoreError ?? this.loadMoreError),
+      loadMoreError: clearLoadMoreError
+          ? null
+          : (loadMoreError ?? this.loadMoreError),
     );
   }
 }
@@ -171,7 +172,10 @@ class CustomerPaginationNotifier
   Future<CustomerPaginationState> build() async {
     final search = ref.watch(customerSearchProvider);
     final cache = ref.read(sessionCacheProvider);
-    return cache.readOrFetch(_cacheKeyFor(search), () => _fetchFirstPage(search));
+    return cache.readOrFetch(
+      _cacheKeyFor(search),
+      () => _fetchFirstPage(search),
+    );
   }
 
   Future<CustomerPaginationState> _fetchFirstPage(String search) async {
@@ -229,9 +233,9 @@ class CustomerPaginationNotifier
   /// mutation invalidation). The cache is invalidated first so the fetch
   /// always hits the network, then re-populated with the fresh result.
   Future<void> refresh() async {
-    ref.read(sessionCacheProvider).invalidateEntityType(
-      SessionCacheEntity.customers,
-    );
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.customers);
     state = const AsyncLoading();
     state = await AsyncValue.guard(() {
       ref.invalidateSelf();
@@ -240,7 +244,7 @@ class CustomerPaginationNotifier
   }
 }
 
-final customerPaginationProvider = AsyncNotifierProvider<
-    CustomerPaginationNotifier, CustomerPaginationState>(
-  CustomerPaginationNotifier.new,
-);
+final customerPaginationProvider =
+    AsyncNotifierProvider<CustomerPaginationNotifier, CustomerPaginationState>(
+      CustomerPaginationNotifier.new,
+    );

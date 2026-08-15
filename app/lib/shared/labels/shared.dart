@@ -320,5 +320,4 @@ class SharedLabels {
   // Used by the product catalog grid footer and any future paginated list
   // that surfaces an explicit tap-to-load affordance.
   static const loadMore = 'Tải thêm';
-  static const loadingMore = 'Đang tải...';
 }

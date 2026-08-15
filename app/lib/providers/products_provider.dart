@@ -41,9 +41,9 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   /// after any product mutation so the next paginated-catalog build fetches
   /// fresh data instead of serving stale cached pages.
   void _invalidateProductSessionCache() {
-    ref.read(sessionCacheProvider).invalidateEntityType(
-      SessionCacheEntity.products,
-    );
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.products);
   }
 
   Future<Product> createProduct({
@@ -219,8 +219,9 @@ class ProductPaginationState {
       total: total ?? this.total,
       offset: offset ?? this.offset,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-      loadMoreError:
-          clearLoadMoreError ? null : (loadMoreError ?? this.loadMoreError),
+      loadMoreError: clearLoadMoreError
+          ? null
+          : (loadMoreError ?? this.loadMoreError),
     );
   }
 }
@@ -233,10 +234,10 @@ class ProductPaginationState {
 /// a hit the cached [ProductPaginationState] is returned without a network
 /// request. Pull-to-refresh and mutations invalidate the cache so the next
 /// build re-fetches.
-class ProductsPaginationNotifier
-    extends AsyncNotifier<ProductPaginationState> {
-  static const SessionCacheKey _cacheKey =
-      SessionCacheKey(SessionCacheEntity.products);
+class ProductsPaginationNotifier extends AsyncNotifier<ProductPaginationState> {
+  static const SessionCacheKey _cacheKey = SessionCacheKey(
+    SessionCacheEntity.products,
+  );
 
   @override
   Future<ProductPaginationState> build() async {
@@ -295,9 +296,9 @@ class ProductsPaginationNotifier
   /// mutation invalidation). The cache is invalidated first so the fetch
   /// always hits the network, then re-populated with the fresh result.
   Future<void> refresh() async {
-    ref.read(sessionCacheProvider).invalidateEntityType(
-      SessionCacheEntity.products,
-    );
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.products);
     state = const AsyncLoading();
     state = await AsyncValue.guard(() {
       ref.invalidateSelf();
@@ -306,7 +307,7 @@ class ProductsPaginationNotifier
   }
 }
 
-final productsPaginationProvider = AsyncNotifierProvider<
-    ProductsPaginationNotifier, ProductPaginationState>(
-  ProductsPaginationNotifier.new,
-);
+final productsPaginationProvider =
+    AsyncNotifierProvider<ProductsPaginationNotifier, ProductPaginationState>(
+      ProductsPaginationNotifier.new,
+    );
