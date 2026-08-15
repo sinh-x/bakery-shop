@@ -8,9 +8,9 @@ import '../../data/models/product.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/product_card.dart';
 
 class ProductCatalogScreen extends ConsumerStatefulWidget {
@@ -382,12 +382,35 @@ class _ProductGrid extends ConsumerWidget {
           itemCount: items.length + (paginationState.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index == items.length) {
-              // Load-more footer cell: spinner while fetching the next page.
-              return const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+              // CQ-9 (review-auto): explicit tap-to-load footer. The
+              // perpetual spinner dead-end is replaced by a tappable
+              // "Tải thêm" cell that shows a spinner ONLY while
+              // `isLoadingMore`. Tapping triggers `onLoadMore` (still also
+              // fired by the scroll-end listener above for infinite-scroll
+              // parity).
+              if (paginationState.isLoadingMore) {
+                return const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                );
+              }
+              return InkWell(
+                onTap: onLoadMore,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(12),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.expand_more, size: 28),
+                      SizedBox(height: 4),
+                      Text(SharedLabels.loadMore),
+                    ],
+                  ),
                 ),
               );
             }

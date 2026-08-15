@@ -13,7 +13,13 @@ from pydantic import BaseModel
 from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
-from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person, paginate_params
+from baker.db.queries import (
+    fetch_debts,
+    fetch_events,
+    find_staff_by_name,
+    link_event_person,
+    paginate_params,
+)
 from baker.db.schema import (
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
@@ -31,7 +37,15 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 # the requirements doc (FR4, FR5) without disturbing the events route map.
 expenses_router = APIRouter(prefix="/api/expenses", tags=["expenses"])
 
-VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
+VALID_TYPES = {
+    "note",
+    "equipment",
+    "production",
+    "inventory",
+    "expense",
+    "delivery",
+    "order",
+}
 
 STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
 
@@ -101,7 +115,10 @@ def create_event(body: EventCreate, request: Request):
         event_id = event.save(conn)
 
         actor = resolve_actor(
-            request, body.logged_by if body.logged_by else ("CLI" if body.source == "cli" else "")
+            request,
+            body.logged_by
+            if body.logged_by
+            else ("CLI" if body.source == "cli" else ""),
         )
         _log_event_history(conn, event_id, "create", actor=actor)
 
@@ -115,10 +132,18 @@ def create_event(body: EventCreate, request: Request):
         # Accounting failure must never block the primary business operation.
         accounting_sync_warning = None
         if body.type == "expense":
-            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import (
+                _sync_expense_journal,
+                run_journal_sync,
+                sync_status_to_warning,
+            )
+
             sync_status = run_journal_sync(
                 _sync_expense_journal,
-                conn, event_id, body.data, body.summary,
+                conn,
+                event_id,
+                body.data,
+                body.summary,
                 log_label=f"expense journal sync for event {event_id}",
                 source_type="expense",
                 source_id=event_id,
@@ -141,13 +166,29 @@ def list_events(
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
     logged_by: str | None = Query(None, description="Lọc theo người ghi"),
     expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
-    expense_subcategory: str | None = Query(None, description="Lọc chi phí theo subcategory (json_extract e.data.subcategory)"),
-    expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
-    expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
-    expense_paid_by_name: str | None = Query(None, description="Lọc chi phí theo người trả"),
-    expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
-    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, người trả, nguồn tiền"),
-    debt_status: str | None = Query(None, description="Lọc chi phí nợ theo trạng thái: all/unpaid/paid/partial"),
+    expense_subcategory: str | None = Query(
+        None,
+        description="Lọc chi phí theo subcategory (json_extract e.data.subcategory)",
+    ),
+    expense_payment_method: str | None = Query(
+        None, description="Lọc chi phí theo phương thức thanh toán"
+    ),
+    expense_staff_name: str | None = Query(
+        None, description="Lọc chi phí theo nhân viên"
+    ),
+    expense_paid_by_name: str | None = Query(
+        None, description="Lọc chi phí theo người trả"
+    ),
+    expense_payment_source: str | None = Query(
+        None, description="Lọc chi phí theo nguồn tiền"
+    ),
+    expense_search: str | None = Query(
+        None,
+        description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, người trả, nguồn tiền",
+    ),
+    debt_status: str | None = Query(
+        None, description="Lọc chi phí nợ theo trạng thái: all/unpaid/paid/partial"
+    ),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -196,7 +237,9 @@ class EventUpdate(BaseModel):
     timestamp: str | None = None
 
 
-def _log_event_history(conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""):
+def _log_event_history(
+    conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""
+):
     conn.execute(
         """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -204,7 +247,7 @@ def _log_event_history(conn, event_id, action_type, actor="", field_name="", old
     )
 
 
-_TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
+_TZ_RE = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
 
 
 def _normalize_timestamp(raw: str | None) -> str | None:
@@ -216,7 +259,9 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
+        raise HTTPException(
+            status_code=422, detail="timestamp không đúng định dạng ISO"
+        ) from exc
     if not _TZ_RE.search(value):
         # Treat bare timestamps as UTC and append the Z suffix so all stored
         # timestamps are UTC (DG-202 FR1). Previously these were assumed to be
@@ -255,7 +300,9 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
 
     amount_vnd = data.get("amount_vnd")
     if not isinstance(amount_vnd, int) or amount_vnd <= 0:
-        raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
+        raise HTTPException(
+            status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0"
+        )
 
     payment_method = data.get("payment_method", "")
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
@@ -277,7 +324,10 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         )
 
     payment_source = data.get("payment_source", "")
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("paid_by_name", "").strip():
+    if (
+        payment_source == STAFF_ADVANCE_PAYMENT_SOURCE
+        and not data.get("paid_by_name", "").strip()
+    ):
         raise HTTPException(
             status_code=422,
             detail="Tên người nhận là bắt buộc khi chọn Nhân viên ứng trước",
@@ -313,7 +363,9 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
 
         if "summary" in data:
             if not data["summary"].strip():
-                raise HTTPException(status_code=422, detail="summary không được để trống")
+                raise HTTPException(
+                    status_code=422, detail="summary không được để trống"
+                )
             fields.append("summary = ?")
             values.append(data["summary"].strip())
 
@@ -362,26 +414,54 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
                 old_json = row["data"] or ""
                 new_json = json.dumps(data["data"])
                 if old_json != new_json:
-                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
-                                       old_value=old_json, new_value=new_json)
+                    _log_event_history(
+                        conn,
+                        event_id,
+                        "edit",
+                        actor=actor,
+                        field_name=field_name,
+                        old_value=old_json,
+                        new_value=new_json,
+                    )
             elif field_name == "tags":
                 old_tags = row["tags"] or ""
                 new_tags = ",".join(data["tags"])
                 if old_tags != new_tags:
-                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
-                                       old_value=old_tags, new_value=new_tags)
+                    _log_event_history(
+                        conn,
+                        event_id,
+                        "edit",
+                        actor=actor,
+                        field_name=field_name,
+                        old_value=old_tags,
+                        new_value=new_tags,
+                    )
             elif field_name == "timestamp":
                 old_ts = row["timestamp"] or ""
                 new_ts = _normalize_timestamp(data["timestamp"]) or ""
                 if old_ts != new_ts:
-                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
-                                       old_value=old_ts, new_value=new_ts)
+                    _log_event_history(
+                        conn,
+                        event_id,
+                        "edit",
+                        actor=actor,
+                        field_name=field_name,
+                        old_value=old_ts,
+                        new_value=new_ts,
+                    )
             else:
                 old_val = str(row[field_name]) if row[field_name] is not None else ""
                 new_val = str(new_val) if new_val is not None else ""
                 if old_val != new_val:
-                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
-                                       old_value=old_val, new_value=new_val)
+                    _log_event_history(
+                        conn,
+                        event_id,
+                        "edit",
+                        actor=actor,
+                        field_name=field_name,
+                        old_value=old_val,
+                        new_value=new_val,
+                    )
 
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
@@ -389,10 +469,18 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
         # Re-sync double-entry journal if this is an expense event (DG-175).
         accounting_sync_warning = None
         if next_type == "expense":
-            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import (
+                _sync_expense_journal,
+                run_journal_sync,
+                sync_status_to_warning,
+            )
+
             sync_status = run_journal_sync(
                 _sync_expense_journal,
-                conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]),
+                conn,
+                event_id,
+                next_data,
+                str(row["summary"] if "summary" not in data else data["summary"]),
                 log_label=f"expense journal re-sync for event {event_id}",
                 source_type="expense",
                 source_id=event_id,
@@ -407,7 +495,11 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
 
 
 @router.delete("/{event_id}", status_code=204)
-def delete_event(event_id: int, request: Request, deleted_by: str = Query("", description="Người thực hiện xóa")):
+def delete_event(
+    event_id: int,
+    request: Request,
+    deleted_by: str = Query("", description="Người thực hiện xóa"),
+):
     """Xóa mềm sự kiện theo id."""
     with get_db() as conn:
         row = conn.execute(
@@ -432,9 +524,14 @@ def delete_event(event_id: int, request: Request, deleted_by: str = Query("", de
                 _sync_expense_journal,
                 run_journal_sync,
             )
+
             run_journal_sync(
                 _sync_expense_journal,
-                conn, event_id, {}, str(row["summary"]), deleted=True,
+                conn,
+                event_id,
+                {},
+                str(row["summary"]),
+                deleted=True,
                 log_label=f"expense journal delete-sync for event {event_id}",
                 source_type="expense",
                 source_id=event_id,
@@ -455,8 +552,13 @@ def delete_event(event_id: int, request: Request, deleted_by: str = Query("", de
                         continue
                     run_journal_sync(
                         _sync_debt_settlement_journal,
-                        conn, int(sid), event_id, str(row["summary"]),
-                        0.0, "", deleted=True,
+                        conn,
+                        int(sid),
+                        event_id,
+                        str(row["summary"]),
+                        0.0,
+                        "",
+                        deleted=True,
                         log_label=(
                             f"debt settlement journal delete-sync for "
                             f"settlement {sid} on event {event_id}"
@@ -517,7 +619,9 @@ async def upload_event_photo(
     try:
         hash_hex = save_photo(data, file.filename or "")
     except (UnidentifiedImageError, OSError, ValueError):
-        logger.exception("Event photo upload failed for event %d, file: %s", event_id, file.filename)
+        logger.exception(
+            "Event photo upload failed for event %d, file: %s", event_id, file.filename
+        )
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:
@@ -597,8 +701,12 @@ def list_outstanding_debts(
     creditor: str | None = Query(None, description="Lọc theo chủ nợ (vendor)"),
     since: str | None = Query(None, description="Từ ngày (ISO format)"),
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
-    status: str | None = Query("all", description="Trạng thái: all/unpaid/paid/partial"),
-    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    status: str | None = Query(
+        "all", description="Trạng thái: all/unpaid/paid/partial"
+    ),
+    limit: int | None = Query(
+        None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"
+    ),
     offset: int = Query(0, ge=0, description="Bỏ qua N công nợ đầu"),
 ):
     """Danh sách công nợ đang còn (FR5). Nhóm theo chủ nợ + tổng còn nợ.
@@ -607,28 +715,35 @@ def list_outstanding_debts(
     ``LIMIT ? OFFSET ?`` lên danh sách công nợ phẳng (sau khi lọc) rồi mới
     nhóm theo chủ nợ. Response envelope bổ sung ``total``, ``has_more``,
     ``limit``, ``offset`` (additive — NFR6).
+
+    CQ-3 (review-auto): ``total_owed`` và ``count``顶层 được tính trên toàn
+    bộ danh sách công nợ (pre-slice) — không phụ thuộc ``limit``/``offset`` —
+    để chúng luôn khớp với ``total``. Per-creditor ``groups`` vẫn là trang
+    hiện tại (slice) vì đó là dữ liệu được hiển thị.
     """
     with get_db() as conn:
         debts = fetch_debts(
             conn, creditor=creditor, since=since, until=until, status=status
         )
 
+    # CQ-3: compute the full-scope totals BEFORE slicing so `total_owed`
+    # and `count` agree with `total` regardless of the page requested.
+    total = len(debts)
+    full_total_owed = sum(d["remaining"] for d in debts)
+
     use_pagination = limit is not None
     if use_pagination:
         lim, off = paginate_params(limit, offset)
-        total = len(debts)
-        debts = debts[off:off + lim]
+        page_debts = debts[off : off + lim]
     else:
         lim, off = paginate_params(None, offset)
-        total = len(debts)
+        page_debts = debts
 
-    # Group by creditor with totals.
+    # Group the page slice by creditor with per-creditor totals.
     by_creditor: dict[str, list] = {}
-    total_owed = 0.0
-    for d in debts:
+    for d in page_debts:
         creditor_name = d["vendor"] or "(không rõ)"
         by_creditor.setdefault(creditor_name, []).append(d)
-        total_owed += d["remaining"]
     groups = [
         {
             "creditor": name,
@@ -640,11 +755,12 @@ def list_outstanding_debts(
     ]
     response: dict = {
         "creditors": groups,
-        "total_owed": total_owed,
-        "count": len(debts),
+        # CQ-3: full-scope totals (pre-slice), not page-scoped.
+        "total_owed": full_total_owed,
+        "count": total,
     }
     if use_pagination:
-        has_more = (off + len(debts)) < total
+        has_more = (off + len(page_debts)) < total
         response["total"] = total
         response["has_more"] = has_more
         response["limit"] = lim
@@ -665,7 +781,9 @@ def settle_debt(
     settlement journal entry: DR 2500 (Accounts Payable) / CR Asset.
     """
     if not isinstance(body.amount, int) or body.amount <= 0:
-        raise HTTPException(status_code=422, detail="amount phải là số nguyên lớn hơn 0")
+        raise HTTPException(
+            status_code=422, detail="amount phải là số nguyên lớn hơn 0"
+        )
     if not body.payment_source.strip():
         raise HTTPException(status_code=422, detail="payment_source là bắt buộc")
 
@@ -693,7 +811,9 @@ def settle_debt(
 
         amount_vnd = data.get("amount_vnd")
         if not isinstance(amount_vnd, int) or amount_vnd <= 0:
-            raise HTTPException(status_code=422, detail="expense data amount_vnd không hợp lệ")
+            raise HTTPException(
+                status_code=422, detail="expense data amount_vnd không hợp lệ"
+            )
 
         settlements = data.get("settlements") or []
         settled_so_far = sum(
@@ -709,10 +829,13 @@ def settle_debt(
             )
 
         # Assign a stable settlement id (monotonic within the event).
-        next_id = max(
-            (s.get("id", 0) for s in settlements if isinstance(s, dict)),
-            default=0,
-        ) + 1
+        next_id = (
+            max(
+                (s.get("id", 0) for s in settlements if isinstance(s, dict)),
+                default=0,
+            )
+            + 1
+        )
         settlement_entry = {
             "id": next_id,
             "amount": body.amount,
@@ -729,7 +852,10 @@ def settle_debt(
             (json.dumps(data), event_id),
         )
         _log_event_history(
-            conn, event_id, "settle", actor=settled_by or body.settled_by,
+            conn,
+            event_id,
+            "settle",
+            actor=settled_by or body.settled_by,
             field_name="settlement",
             old_value=str(settled_so_far),
             new_value=str(settled_so_far + body.amount),
@@ -740,10 +866,15 @@ def settle_debt(
             _sync_debt_settlement_journal,
             run_journal_sync,
         )
+
         sync_status = run_journal_sync(
             _sync_debt_settlement_journal,
-            conn, next_id, event_id, str(row["summary"]),
-            float(body.amount), body.payment_source,
+            conn,
+            next_id,
+            event_id,
+            str(row["summary"]),
+            float(body.amount),
+            body.payment_source,
             log_label=f"debt settlement journal sync for event {event_id} settlement {next_id}",
             source_type="debt_settlement",
             source_id=next_id,

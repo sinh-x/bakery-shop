@@ -18,10 +18,12 @@ import 'package:bakery_app/data/models/expense_summary.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/order_breakdown.dart';
+import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/data/models/period_summary.dart';
 import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
+import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 Order _order({
@@ -64,6 +66,12 @@ class _FakeOrderService extends OrderService {
 
   @override
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
+
+  // CQ-1: the day-tab OrderCards watch orderPhotosProvider, which would
+  // otherwise hit the real Dio and leave a pending timer. Return an empty
+  // list synchronously so no network timer is scheduled.
+  @override
+  Future<List<OrderPhoto>> listOrderPhotos(String orderRef) async => const [];
 }
 
 class _FakeReportService extends ReportService {
@@ -357,17 +365,23 @@ void main() {
 
   testWidgets('shows today order list grouped by status (AC6)',
       (tester) async {
+    final orders = [
+      _order(
+        ref: 'ORD-1',
+        dueDate: _today,
+        status: 'confirmed',
+        totalPrice: 250000,
+        isPaid: true,
+      ),
+    ];
     await _pump(
       tester,
-      summary: _summary(orders: [
-        _order(
-          ref: 'ORD-1',
-          dueDate: _today,
-          status: 'confirmed',
-          totalPrice: 250000,
-          isPaid: true,
-        ),
-      ]),
+      // CQ-1: the day-tab order list now comes from a separate
+      // dueDateOrdersProvider fetch, not summary.orders. Pass the orders
+      // via `orders:` so the fake listOrders returns them for the
+      // due_date-scoped call.
+      orders: orders,
+      summary: _summary(orders: orders),
     );
     await tester.dragUntilVisible(
       find.text(SharedLabels.todaySalesOrderListSection),
@@ -382,13 +396,15 @@ void main() {
 
   testWidgets('groups orders by status with count badges',
       (tester) async {
+    final orders = [
+      _order(ref: 'A', dueDate: _today, status: 'new', totalPrice: 50000),
+      _order(ref: 'B', dueDate: _today, status: 'new', totalPrice: 60000),
+      _order(ref: 'C', dueDate: _today, status: 'ready', totalPrice: 70000),
+    ];
     await _pump(
       tester,
-      summary: _summary(orders: [
-        _order(ref: 'A', dueDate: _today, status: 'new', totalPrice: 50000),
-        _order(ref: 'B', dueDate: _today, status: 'new', totalPrice: 60000),
-        _order(ref: 'C', dueDate: _today, status: 'ready', totalPrice: 70000),
-      ]),
+      orders: orders,
+      summary: _summary(orders: orders),
     );
     await tester.dragUntilVisible(
       find.text(VN.statusNew),

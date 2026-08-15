@@ -26,7 +26,11 @@ def _seed_products(api_client, n: int, category: str = "bread") -> list[int]:
     for i in range(n):
         resp = api_client.post(
             "/api/products",
-            json={"name": f"{category}-P{i}", "category": category, "base_price": 1000 + i},
+            json={
+                "name": f"{category}-P{i}",
+                "category": category,
+                "base_price": 1000 + i,
+            },
         )
         assert resp.status_code == 201, resp.text
         ids.append(resp.json()["id"])
@@ -93,9 +97,9 @@ def test_products_limit_offset_honored(api_client):
     assert len(data["items"]) == 2
     assert data["offset"] == 2
     # The two items returned should differ from page 1.
-    page1 = api_client.get(
-        "/api/products", params={"limit": 2, "offset": 0}
-    ).json()["items"]
+    page1 = api_client.get("/api/products", params={"limit": 2, "offset": 0}).json()[
+        "items"
+    ]
     page2_ids = {item["id"] for item in data["items"]}
     page1_ids = {item["id"] for item in page1}
     assert page2_ids.isdisjoint(page1_ids)
@@ -283,9 +287,7 @@ def test_stock_overview_limit_offset_honored(api_client):
     pids = _seed_products(api_client, 3)
     for pid in pids:
         _mark_trung_bay(pid)
-    resp = api_client.get(
-        "/api/stock/overview", params={"limit": 1, "offset": 0}
-    )
+    resp = api_client.get("/api/stock/overview", params={"limit": 1, "offset": 0})
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, dict)
@@ -459,9 +461,7 @@ def test_order_events_404_when_order_missing(api_client):
 
 def test_has_more_false_on_last_page(api_client):
     _seed_products(api_client, 3)
-    resp = api_client.get(
-        "/api/products", params={"limit": 100, "offset": 0}
-    )
+    resp = api_client.get("/api/products", params={"limit": 100, "offset": 0})
     assert resp.status_code == 200
     data = resp.json()
     assert data["has_more"] is False
@@ -469,9 +469,7 @@ def test_has_more_false_on_last_page(api_client):
 
 def test_has_more_true_when_more_pages(api_client):
     _seed_products(api_client, 3)
-    resp = api_client.get(
-        "/api/products", params={"limit": 1, "offset": 0}
-    )
+    resp = api_client.get("/api/products", params={"limit": 1, "offset": 0})
     assert resp.status_code == 200
     data = resp.json()
     assert data["has_more"] is True
@@ -479,9 +477,7 @@ def test_has_more_true_when_more_pages(api_client):
 
 def test_total_reflects_filtered_count_not_page_size(api_client):
     _seed_products(api_client, 5)
-    resp = api_client.get(
-        "/api/products", params={"limit": 2, "offset": 0}
-    )
+    resp = api_client.get("/api/products", params={"limit": 2, "offset": 0})
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 2
@@ -547,3 +543,38 @@ def test_order_history_active_only_stays_bare_array_even_with_paginated(api_clie
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list), "active_only must remain a bare array (FR9)"
+
+
+def test_order_paginated_with_active_status_rejected_explicitly(api_client):
+    """CQ-5 (review-auto): paginated=true combined with an active status
+    filter (new/confirmed/in_progress/ready/delivered) is rejected with 422
+    instead of silently returning a bare array. The status-active branch is
+    an active view (FR9 — unpaginated), so the envelope is unsupported."""
+    _create_order(api_client)
+    for active_status in ("new", "confirmed", "in_progress", "ready", "delivered"):
+        resp = api_client.get(
+            "/api/orders",
+            params={"status": active_status, "paginated": "true"},
+        )
+        assert resp.status_code == 422, (
+            f"expected 422 for status={active_status} + paginated=true, "
+            f"got {resp.status_code}"
+        )
+        assert "paginated" in resp.json()["detail"].lower()
+
+
+def test_order_paginated_with_terminal_status_envelope_honored(api_client):
+    """CQ-5: paginated=true with a terminal status (completed/cancelled) is
+    NOT an active view, so the envelope IS honored (returns a dict, not a
+    bare array)."""
+    ref = _create_order(api_client)
+    # Cancel the order so a terminal status exists in the history.
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled"})
+    resp = api_client.get(
+        "/api/orders",
+        params={"status": "cancelled", "paginated": "true", "limit": 50},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict), "terminal status + paginated must envelope"
+    assert {"items", "total", "has_more", "limit", "offset"} <= set(data.keys())

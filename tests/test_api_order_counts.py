@@ -225,9 +225,7 @@ def test_order_counts_incomplete_excludes_complete_orders(api_client):
     # Get baseline incomplete count from orders created by other tests in
     # this session — verify our complete order is NOT in the incomplete
     # count by checking via the dedicated orders endpoint.
-    orders_resp = api_client.get(
-        "/api/orders", params={"active_only": True}
-    )
+    orders_resp = api_client.get("/api/orders", params={"active_only": True})
     assert orders_resp.status_code == 200
     our_order = next(
         (o for o in orders_resp.json() if o["customerName"] == "Nguyễn Văn B"),
@@ -261,6 +259,96 @@ def test_order_counts_returns_zero_on_db_error(monkeypatch, api_client):
 
 
 # ---------------------------------------------------------------------------
+# CQ-2 — batched amount_paid (no N+1 per-order SUM query)
+# ---------------------------------------------------------------------------
+
+
+def test_order_counts_uses_batched_amount_paid_not_per_row_queries(
+    monkeypatch, api_client
+):
+    """CQ-2: the counts endpoint computes amount_paid for all delivered orders
+    in a single grouped SUM query (sum_paid_excl_outflows_batch), NOT one
+    total_paid_excl_outflows call per delivered row (N+1). Verified by
+    monkeypatching the per-row helper to fail if invoked and the batch
+    helper to record a single call."""
+    import baker.api.orders as orders_mod
+    from baker.models.payment_transaction import PaymentTransaction
+
+    # Create several delivered orders so the N+1 path would issue multiple
+    # per-row SUM queries.
+    delivered_paid_count = 3
+    for i in range(delivered_paid_count):
+        order = _create_order(api_client, customer=f"Khách {i}", total=200000)
+        _create_txn(
+            api_client,
+            order["orderRef"],
+            amount=200000,
+            type="payment",
+            method="cash",
+        )
+        resp = api_client.post(
+            f"/api/orders/{order['orderRef']}/status",
+            json={"status": "delivered"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    batch_calls = {"count": 0, "ids": []}
+
+    def _fake_batch(conn, order_ids):
+        batch_calls["count"] += 1
+        batch_calls["ids"].append(list(order_ids))
+        # Delegate to the real implementation so the counts are correct.
+        return PaymentTransaction.sum_paid_excl_outflows_batch(conn, order_ids)
+
+    def _fail_per_row(*args, **kwargs):
+        raise AssertionError(
+            "CQ-2: counts endpoint must not call per-row "
+            "total_paid_excl_outflows — use the batched helper instead."
+        )
+
+    monkeypatch.setattr(orders_mod, "_sum_paid_excl_outflows_batch", _fake_batch)
+    # The per-row helper is still imported by list_orders; only fail it
+    # within the counts endpoint path by patching the model method that
+    # _is_delivered_and_fully_paid delegates to.
+    monkeypatch.setattr(PaymentTransaction, "total_paid_excl_outflows", _fail_per_row)
+
+    body = api_client.get("/api/orders/counts").json()
+
+    # The batched helper was called exactly once with all delivered order ids.
+    assert batch_calls["count"] == 1, (
+        f"expected 1 batched amount_paid query, got {batch_calls['count']}"
+    )
+    assert len(batch_calls["ids"][0]) == delivered_paid_count, (
+        f"expected {delivered_paid_count} delivered ids in one batch, "
+        f"got {len(batch_calls['ids'][0])}"
+    )
+    # All delivered+paid orders are excluded from urgency.
+    assert body["urgency"] == 0
+
+
+def test_sum_paid_excl_outflows_batch_returns_grouped_totals(api_client):
+    """CQ-2: PaymentTransaction.sum_paid_excl_outflows_batch returns a
+    {order_id: amount_paid} map from a single grouped query, and matches
+    the per-order total_paid_excl_outflows values."""
+    from baker.db.connection import get_db
+    from baker.models.payment_transaction import PaymentTransaction
+
+    order_a = _create_order(api_client, customer="A", total=100000)
+    order_b = _create_order(api_client, customer="B", total=300000)
+    _create_txn(api_client, order_a["orderRef"], amount=60000, type="payment")
+    _create_txn(api_client, order_b["orderRef"], amount=300000, type="payment")
+
+    with get_db() as conn:
+        ids = [int(order_a["id"]), int(order_b["id"])]
+        batch = PaymentTransaction.sum_paid_excl_outflows_batch(conn, ids)
+        # Matches per-order totals.
+        assert batch[int(order_a["id"])] == pytest.approx(60000)
+        assert batch[int(order_b["id"])] == pytest.approx(300000)
+        # Empty input issues no query.
+        assert PaymentTransaction.sum_paid_excl_outflows_batch(conn, []) == {}
+
+
+# ---------------------------------------------------------------------------
 # Consistency with active_only list (FR2)
 # ---------------------------------------------------------------------------
 
@@ -283,18 +371,11 @@ def test_order_counts_matches_active_only_filtering(api_client):
     _create_order(api_client, customer="Khách xa", total=150000, dueDate="2099-12-31")
 
     counts = api_client.get("/api/orders/counts").json()
-    active = api_client.get(
-        "/api/orders", params={"active_only": True}
-    ).json()
-    expected_urgency = sum(
-        1 for o in active if o["urgency"] in ("critical", "urgent")
-    )
-    expected_incomplete = sum(
-        1 for o in active if o["completeness"] == "incomplete"
-    )
+    active = api_client.get("/api/orders", params={"active_only": True}).json()
+    expected_urgency = sum(1 for o in active if o["urgency"] in ("critical", "urgent"))
+    expected_incomplete = sum(1 for o in active if o["completeness"] == "incomplete")
     assert counts["urgency"] == expected_urgency, (
-        f"urgency {counts['urgency']} != active-only urgent count "
-        f"{expected_urgency}"
+        f"urgency {counts['urgency']} != active-only urgent count {expected_urgency}"
     )
     assert counts["incomplete"] == expected_incomplete, (
         f"incomplete {counts['incomplete']} != active-only incomplete count "

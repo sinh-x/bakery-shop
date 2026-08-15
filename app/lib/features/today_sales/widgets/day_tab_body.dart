@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/cashflow_summary.dart';
 import '../../../data/models/expense_summary.dart';
 import '../../../data/models/product_breakdown.dart';
-import '../../../data/models/today_summary.dart';
 import '../../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../../providers/dashboard/period_summary_providers.dart';
+import '../../../providers/order/due_date_order_list_providers.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/today_order_list.dart';
@@ -88,7 +88,7 @@ class _DayTabBodyState extends ConsumerState<DayTabBody> {
         const SizedBox(height: 20),
         _DayCashflowSection(asyncValue: cashflowSummaryAsync),
         const SizedBox(height: 20),
-        _DayOrderListSection(summaryAsync: summaryAsync),
+        _DayOrderListSection(selectedDate: widget.selectedDate),
       ],
     );
   }
@@ -159,23 +159,27 @@ class _DayCashflowSection extends StatelessWidget {
   }
 }
 
-/// Order-list section for the day tab using the today-summary API. Orders
-/// are grouped by status with due-date/time ordering within each group
-/// (DG-376 FR6/AC6).
-class _DayOrderListSection extends StatelessWidget {
-  const _DayOrderListSection({required this.summaryAsync});
+/// Order-list section for the day tab. CQ-1: the order rows now come from a
+/// dedicated [dueDateOrdersProvider] fetch (`GET /api/orders?due_date=<date>`)
+/// instead of the removed `summary.orders` list. The summary endpoint remains
+/// the source of truth for revenue, order count, and status breakdown; only
+/// the order rows are fetched separately. Orders are grouped by status with
+/// due-date/time ordering within each group (DG-376 FR6/AC6).
+class _DayOrderListSection extends ConsumerWidget {
+  const _DayOrderListSection({required this.selectedDate});
 
-  final AsyncValue<TodaySummary> summaryAsync;
+  final String selectedDate;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ordersAsync = ref.watch(dueDateOrdersProvider(selectedDate));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SectionTitle(title: SharedLabels.todaySalesOrderListSection),
         const SizedBox(height: 8),
-        summaryAsync.when(
-          data: (summary) => TodayOrderList(orders: summary.orders),
+        ordersAsync.when(
+          data: (orders) => TodayOrderList(orders: orders),
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => Center(
             child: Text(

@@ -109,27 +109,27 @@ class _PagedOrderService extends OrderService {
 }
 
 List<Product> _products(int n) => List.generate(
-      n,
-      (i) => Product(id: i + 1, name: 'P$i', category: 'bread', active: 1),
-    );
+  n,
+  (i) => Product(id: i + 1, name: 'P$i', category: 'bread', active: 1),
+);
 
 List<Customer> _customers(int n) => List.generate(
-      n,
-      (i) => Customer(id: i + 1, name: 'Khach $i', phone: '090000$i'),
-    );
+  n,
+  (i) => Customer(id: i + 1, name: 'Khach $i', phone: '090000$i'),
+);
 
 Order _order(int id) => Order(
-      id: '$id',
-      orderRef: 'REF-$id',
-      customerName: 'KH$id',
-      customerPhone: '0900',
-      items: const [],
-      totalPrice: 0,
-      status: 'completed',
-      dueDate: '2026-08-15',
-      createdAt: DateTime(2026, 8, 15),
-      updatedAt: DateTime(2026, 8, 15),
-    );
+  id: '$id',
+  orderRef: 'REF-$id',
+  customerName: 'KH$id',
+  customerPhone: '0900',
+  items: const [],
+  totalPrice: 0,
+  status: 'completed',
+  dueDate: '2026-08-15',
+  createdAt: DateTime(2026, 8, 15),
+  updatedAt: DateTime(2026, 8, 15),
+);
 
 void main() {
   group('ProductsPaginationNotifier (FR10, AC3)', () {
@@ -148,7 +148,6 @@ void main() {
     });
 
     test('loadMore accumulates pages until hasMore is false', () async {
-      final service = _PagedProductService(_products(3));
       final container = ProviderContainer(
         overrides: [
           productServiceProvider.overrideWithValue(
@@ -200,33 +199,35 @@ void main() {
   });
 
   group('CustomerPaginationNotifier (FR11, AC4)', () {
-    test('server-side search resets to the first page of the result set',
-        () async {
-      final service = _PagedCustomerService(_customers(5));
-      final container = ProviderContainer(
-        overrides: [customerServiceProvider.overrideWithValue(service)],
-      );
-      addTearDown(container.dispose);
+    test(
+      'server-side search resets to the first page of the result set',
+      () async {
+        final service = _PagedCustomerService(_customers(5));
+        final container = ProviderContainer(
+          overrides: [customerServiceProvider.overrideWithValue(service)],
+        );
+        addTearDown(container.dispose);
 
-      // First page: all 5 customers (page size 50).
-      var state = await container.read(customerPaginationProvider.future);
-      expect(state.loaded, hasLength(5));
-      expect(state.total, 5);
-      expect(state.hasMore, isFalse);
+        // First page: all 5 customers (page size 50).
+        var state = await container.read(customerPaginationProvider.future);
+        expect(state.loaded, hasLength(5));
+        expect(state.total, 5);
+        expect(state.hasMore, isFalse);
 
-      // Apply a server-side search that narrows the result to 1.
-      container.read(customerSearchProvider.notifier).set('Khach 2');
-      state = await container.read(customerPaginationProvider.future);
-      expect(state.loaded, hasLength(1));
-      expect(state.total, 1);
-      expect(state.hasMore, isFalse);
+        // Apply a server-side search that narrows the result to 1.
+        container.read(customerSearchProvider.notifier).set('Khach 2');
+        state = await container.read(customerPaginationProvider.future);
+        expect(state.loaded, hasLength(1));
+        expect(state.total, 1);
+        expect(state.hasMore, isFalse);
 
-      // Clear search → back to all 5.
-      container.read(customerSearchProvider.notifier).clear();
-      state = await container.read(customerPaginationProvider.future);
-      expect(state.loaded, hasLength(5));
-      expect(state.total, 5);
-    });
+        // Clear search → back to all 5.
+        container.read(customerSearchProvider.notifier).clear();
+        state = await container.read(customerPaginationProvider.future);
+        expect(state.loaded, hasLength(5));
+        expect(state.total, 5);
+      },
+    );
 
     test('search runs across ALL customers (not just loaded page)', () async {
       final service = _PagedCustomerService(_customers(60));
@@ -251,28 +252,31 @@ void main() {
   });
 
   group('OrderHistoryPaginationNotifier (FR12)', () {
-    test('first page loads and loadMore accumulates remaining orders',
-        () async {
-      final service = _PagedOrderService(
-        List.generate(60, (i) => _order(i + 1)),
-      );
-      final container = ProviderContainer(
-        overrides: [orderServiceProvider.overrideWithValue(service)],
-      );
-      addTearDown(container.dispose);
+    test(
+      'first page loads and loadMore accumulates remaining orders',
+      () async {
+        final service = _PagedOrderService(
+          List.generate(60, (i) => _order(i + 1)),
+        );
+        final container = ProviderContainer(
+          overrides: [orderServiceProvider.overrideWithValue(service)],
+        );
+        addTearDown(container.dispose);
 
-      final notifier = container.read(orderHistoryPaginationProvider.notifier);
-      var state =
-          await container.read(orderHistoryPaginationProvider.future);
-      expect(state.loaded, hasLength(50));
-      expect(state.total, 60);
-      expect(state.hasMore, isTrue);
+        final notifier = container.read(
+          orderHistoryPaginationProvider.notifier,
+        );
+        var state = await container.read(orderHistoryPaginationProvider.future);
+        expect(state.loaded, hasLength(50));
+        expect(state.total, 60);
+        expect(state.hasMore, isTrue);
 
-      await notifier.loadMore();
-      state = container.read(orderHistoryPaginationProvider).value!;
-      expect(state.loaded, hasLength(60));
-      expect(state.hasMore, isFalse);
-    });
+        await notifier.loadMore();
+        state = container.read(orderHistoryPaginationProvider).value!;
+        expect(state.loaded, hasLength(60));
+        expect(state.hasMore, isFalse);
+      },
+    );
 
     test('validateRange blocks ranges longer than 7 days', () {
       final container = ProviderContainer(
@@ -282,8 +286,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final notifier =
-          container.read(orderHistoryPaginationProvider.notifier);
+      final notifier = container.read(orderHistoryPaginationProvider.notifier);
       final message = notifier.validateRange(
         DateTime(2026, 5, 1),
         DateTime(2026, 5, 8),
@@ -291,8 +294,7 @@ void main() {
       expect(message, isNotNull);
     });
 
-    test('setDateRange re-fetches the first page for the new range',
-        () async {
+    test('setDateRange re-fetches the first page for the new range', () async {
       final service = _PagedOrderService(
         List.generate(3, (i) => _order(i + 1)),
       );
@@ -301,8 +303,7 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      final notifier =
-          container.read(orderHistoryPaginationProvider.notifier);
+      final notifier = container.read(orderHistoryPaginationProvider.notifier);
       await container.read(orderHistoryPaginationProvider.future);
       expect(
         container.read(orderHistoryPaginationProvider).value!.loaded,
@@ -310,8 +311,7 @@ void main() {
       );
 
       await notifier.setDateRange(DateTime(2026, 5, 10), DateTime(2026, 5, 11));
-      final state =
-          container.read(orderHistoryPaginationProvider).value!;
+      final state = container.read(orderHistoryPaginationProvider).value!;
       expect(state.loaded, hasLength(3));
       expect(state.offset, 0);
     });
@@ -351,49 +351,52 @@ void main() {
       );
     });
 
-    test('refresh bypasses the cache and re-fetches from the network',
-        () async {
-      final service = _CountingProductService(_products(3));
-      final cache = SessionCache();
-      final container = ProviderContainer(
-        overrides: [
-          productServiceProvider.overrideWithValue(service),
-          sessionCacheProvider.overrideWithValue(cache),
-        ],
-      );
-      addTearDown(container.dispose);
+    test(
+      'refresh bypasses the cache and re-fetches from the network',
+      () async {
+        final service = _CountingProductService(_products(3));
+        final cache = SessionCache();
+        final container = ProviderContainer(
+          overrides: [
+            productServiceProvider.overrideWithValue(service),
+            sessionCacheProvider.overrideWithValue(cache),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      await container.read(productsPaginationProvider.future);
-      expect(service.paginatedCalls, 1);
+        await container.read(productsPaginationProvider.future);
+        expect(service.paginatedCalls, 1);
 
-      await container.read(productsPaginationProvider.notifier).refresh();
-      expect(service.paginatedCalls, 2);
-    });
+        await container.read(productsPaginationProvider.notifier).refresh();
+        expect(service.paginatedCalls, 2);
+      },
+    );
 
     test(
-        'invalidateEntityType(products) forces a fresh fetch on the next build',
-        () async {
-      final service = _CountingProductService(_products(3));
-      final cache = SessionCache();
-      final container = ProviderContainer(
-        overrides: [
-          productServiceProvider.overrideWithValue(service),
-          sessionCacheProvider.overrideWithValue(cache),
-        ],
-      );
-      addTearDown(container.dispose);
+      'invalidateEntityType(products) forces a fresh fetch on the next build',
+      () async {
+        final service = _CountingProductService(_products(3));
+        final cache = SessionCache();
+        final container = ProviderContainer(
+          overrides: [
+            productServiceProvider.overrideWithValue(service),
+            sessionCacheProvider.overrideWithValue(cache),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      await container.read(productsPaginationProvider.future);
-      expect(service.paginatedCalls, 1);
+        await container.read(productsPaginationProvider.future);
+        expect(service.paginatedCalls, 1);
 
-      // Simulate a product mutation: the mutation path calls
-      // invalidateEntityType(SessionCacheEntity.products). The next build
-      // must miss the cache and fetch fresh data (AC6/FR13).
-      cache.invalidateEntityType(SessionCacheEntity.products);
-      container.invalidate(productsPaginationProvider);
-      await container.read(productsPaginationProvider.future);
-      expect(service.paginatedCalls, 2);
-    });
+        // Simulate a product mutation: the mutation path calls
+        // invalidateEntityType(SessionCacheEntity.products). The next build
+        // must miss the cache and fetch fresh data (AC6/FR13).
+        cache.invalidateEntityType(SessionCacheEntity.products);
+        container.invalidate(productsPaginationProvider);
+        await container.read(productsPaginationProvider.future);
+        expect(service.paginatedCalls, 2);
+      },
+    );
   });
 
   group('SessionCache integration — customers (AC5, AC6, FR13)', () {
@@ -412,44 +415,39 @@ void main() {
       // A new query string triggers a fresh fetch (cache key differs).
       container.read(customerSearchProvider.notifier).set('Khach 1');
       await container.read(customerPaginationProvider.future);
-      expect(
-        container.read(customerPaginationProvider).value!.total,
-        1,
-      );
+      expect(container.read(customerPaginationProvider).value!.total, 1);
 
       // Rebuild with the same query → cached state is reused.
       container.invalidate(customerPaginationProvider);
       await container.read(customerPaginationProvider.future);
-      expect(
-        container.read(customerPaginationProvider).value!.total,
-        1,
-      );
+      expect(container.read(customerPaginationProvider).value!.total, 1);
     });
 
     test(
-        'invalidateEntityType(customers) forces fresh fetch after a mutation',
-        () async {
-      final service = _PagedCustomerService(_customers(5));
-      final cache = SessionCache();
-      final container = ProviderContainer(
-        overrides: [
-          customerServiceProvider.overrideWithValue(service),
-          sessionCacheProvider.overrideWithValue(cache),
-        ],
-      );
-      addTearDown(container.dispose);
+      'invalidateEntityType(customers) forces fresh fetch after a mutation',
+      () async {
+        final service = _PagedCustomerService(_customers(5));
+        final cache = SessionCache();
+        final container = ProviderContainer(
+          overrides: [
+            customerServiceProvider.overrideWithValue(service),
+            sessionCacheProvider.overrideWithValue(cache),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      await container.read(customerPaginationProvider.future);
-      expect(cache.length, 1);
+        await container.read(customerPaginationProvider.future);
+        expect(cache.length, 1);
 
-      cache.invalidateEntityType(SessionCacheEntity.customers);
-      expect(cache.length, 0);
+        cache.invalidateEntityType(SessionCacheEntity.customers);
+        expect(cache.length, 0);
 
-      container.invalidate(customerPaginationProvider);
-      await container.read(customerPaginationProvider.future);
-      // Cache re-populated after the fresh fetch.
-      expect(cache.length, 1);
-    });
+        container.invalidate(customerPaginationProvider);
+        await container.read(customerPaginationProvider.future);
+        // Cache re-populated after the fresh fetch.
+        expect(cache.length, 1);
+      },
+    );
   });
 }
 

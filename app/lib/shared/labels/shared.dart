@@ -147,8 +147,7 @@ class SharedLabels {
   static const internalReceiptPrinted = 'Đã in phiếu nội bộ';
   static const customerReceiptPrinted = 'Đã in hóa đơn khách hàng';
   static const orderAutoConfirmed = 'Đã tự động xác nhận đơn hàng';
-  static const printInternalPrompt =
-      'Đơn hàng chưa in phiếu nội bộ. In ngay?';
+  static const printInternalPrompt = 'Đơn hàng chưa in phiếu nội bộ. In ngay?';
 
   // Receipts
   static const printReceipt = 'In';
@@ -316,4 +315,10 @@ class SharedLabels {
   static const daLuuNTrenM = 'Đã lưu n/m ảnh';
   static const khongTheTaiNTrenM = 'Không thể tải n/m ảnh';
   static const daChiaSeNAnh = 'Đã chia sẻ n ảnh';
+
+  // Pagination load-more (cross-feature — DG-409 review-auto CQ-9).
+  // Used by the product catalog grid footer and any future paginated list
+  // that surfaces an explicit tap-to-load affordance.
+  static const loadMore = 'Tải thêm';
+  static const loadingMore = 'Đang tải...';
 }
