@@ -3,18 +3,18 @@
 > Date: 2026-05-09
 > Scope: God file audit of non-generated Dart files under `app/lib/`
 > Files scanned: 120 non-generated `.dart` files (30,479 total lines)
-> Severity thresholds: High >500, Medium 300-500, Low 200-300
+> Severity thresholds: High >500, Medium 400-500, Low 300-400
 
 ## Summary
 
 | Severity | Count | Total Lines | % of All Lines |
 |----------|-------|-------------|----------------|
 | High (>500) | 16 | 16,873 | 55.4% |
-| Medium (300-500) | 22 | 8,277 | 27.2% |
-| Low (200-300) | 8 | 2,039 | 6.7% |
-| **Audited** | **46** | **27,189** | **89.2%** |
+| Medium (400-500) | 8 | 3,601 | 11.8% |
+| Low (300-400) | 14 | 4,763 | 15.6% |
+| **Audited** | **38** | **25,237** | **82.8%** |
 
-> 46 of 120 files (38.3%) are at least 200 lines. 16 files exceed 500 lines and are High severity.
+> 38 of 120 files (31.7%) are at least 300 lines. 16 files exceed 500 lines and are High severity.
 
 ## God Files: High Severity (>500 lines)
 
@@ -37,7 +37,7 @@
 | 15 | `providers/order_providers.dart` | 530 | 0 | 1 | High | Separate draft model classes to `data/models/`. Split providers by concern: order CRUD vs. draft management. |
 | 16 | `data/api/reconciliation_service.dart` | 519 | 0 | 0 | High | Split scan reconciliation into smaller endpoint handlers. Extract date-range helper methods. |
 
-## God Files: Medium Severity (300-500 lines)
+## God Files: Medium Severity (400-500 lines)
 
 | # | File | Lines | Widget Classes | Top-Level Funcs | Severity | Recommendation |
 |---|------|-------|----------------|-----------------|----------|----------------|
@@ -49,33 +49,25 @@
 | 6 | `features/pos/widgets/pos_product_grid.dart` | 435 | 2 | 2 | Medium | Extract grid item widget and category tabs. Move category filter logic to provider. |
 | 7 | `features/knowledge/knowledge_form_screen.dart` | 434 | 1 | 0 | Medium | Extract form sections: metadata fields, content editor, photo picker, tag editor. |
 | 8 | `features/dashboard/dashboard_screen.dart` | 401 | 6 | 0 | Medium | 6 inner widgets → extraction required. Create `dashboard/widgets/` and move stat cards. |
-| 9 | `shared/widgets/printer_picker_dialog.dart` | 392 | 1 | 0 | Medium | Extract printer list tile, connection status indicator, test print button. |
-| 10 | `features/events/widgets/event_history_list.dart` | 392 | 2 | 2 | Medium | Extract event tile, filter controls, export button to sub-widgets. |
-| 11 | `features/stock/stock_screen.dart` | 385 | 2 | 2 | Medium | Extract ingredient list tile, filter bar, stock level indicator widgets. |
-| 12 | `features/checklist/checklist_config_screen.dart` | 374 | 2 | 0 | Medium | Extract template editor, entry list manager, import/export controls. |
-| 13 | `features/checklist/checklist_history_screen.dart` | 371 | 5 | 0 | Medium | 5 inner widgets → extraction required. Extract history card, date filter, status badge. |
-| 14 | `features/events/event_form_screen.dart` | 333 | 1 | 0 | Medium | Extract form fields: datetime picker, recurrence config, description editor. |
-| 15 | `features/knowledge/widgets/knowledge_photo_gallery.dart` | 330 | 3 | 0 | Medium | Widget count triggers extraction. Extract photo tile, lightbox overlay, upload button. |
-| 16 | `data/services/printer_service.dart` | 328 | 0 | 1 | Medium | Split connection management from print job formatting. Extract receipt template builder. |
-| 17 | `features/knowledge/knowledge_list_screen.dart` | 322 | 2 | 0 | Medium | Extract search bar, list tile, filter chips, empty state widgets. |
-| 18 | `features/categories/category_form.dart` | 319 | 2 | 0 | Medium | Extract name field, color picker, icon selector, parent category picker. |
-| 19 | `features/stock/widgets/stock_action_sheet.dart` | 310 | 1 | 0 | Medium | Extract action type selector, quantity input, reason field, confirm button. |
-| 20 | `features/checklist/checklist_screen.dart` | 304 | 4 | 0 | Medium | 4 inner widgets → extraction required. Extract entry card, progress bar, action buttons. |
-| 21 | `features/categories/category_management_screen.dart` | 303 | 5 | 1 | Medium | 5 inner widgets → extraction required. Extract category tree, drag handle, edit sheet. |
-| 22 | `features/pos/pos_screen.dart` | 300 | 1 | 0 | Medium | At screen threshold limit. Extract category sidebar, search bar, cart panel sections. |
 
-## God Files: Low Severity (200-300 lines)
+## God Files: Low Severity (300-400 lines)
 
 | # | File | Lines | Widget Classes | Top-Level Funcs | Severity | Recommendation |
 |---|------|-------|----------------|-----------------|----------|----------------|
-| 1 | `features/events/widgets/event_log_form.dart` | 295 | 1 | 0 | Low | Extract outcome selector, timestamp picker, notes field. |
-| 2 | `features/products/product_catalog_screen.dart` | 255 | 2 | 0 | Low | Extract catalog card, filter toolbar, import button widgets. |
-| 3 | `features/orders/receipt_preview_screen.dart` | 255 | 1 | 0 | Low | Extract receipt content widget, print action bar, share button. |
-| 4 | `features/products/widgets/catalog_tag_edit_sheet.dart` | 250 | 2 | 1 | Low | Extract tag color picker, name field, preview chip widgets. |
-| 5 | `features/orders/widgets/product_picker_page.dart` | 250 | 1 | 0 | Low | Extract search bar, product chip, quantity stepper widgets. |
-| 6 | `features/stock/stock_reconciliation_history_screen.dart` | 235 | 4 | 0 | Low | 4 inner widgets → extraction recommended. Extract history card, diff summary, date filter. |
-| 7 | `data/api/product_service.dart` | 224 | 0 | 0 | Low | Split catalog queries from product CRUD. Extract DTO mapping helpers. |
-| 8 | `data/api/order_service.dart` | 205 | 0 | 0 | Low | Split order CRUD from list/search/filter endpoints. Extract query param builder. |
+| 1 | `shared/widgets/printer_picker_dialog.dart` | 392 | 1 | 0 | Low | Extract printer list tile, connection status indicator, test print button. |
+| 2 | `features/events/widgets/event_history_list.dart` | 392 | 2 | 2 | Low | Extract event tile, filter controls, export button to sub-widgets. |
+| 3 | `features/stock/stock_screen.dart` | 385 | 2 | 2 | Low | Extract ingredient list tile, filter bar, stock level indicator widgets. |
+| 4 | `features/checklist/checklist_config_screen.dart` | 374 | 2 | 0 | Low | Extract template editor, entry list manager, import/export controls. |
+| 5 | `features/checklist/checklist_history_screen.dart` | 371 | 5 | 0 | Low | 5 inner widgets → extraction required. Extract history card, date filter, status badge. |
+| 6 | `features/events/event_form_screen.dart` | 333 | 1 | 0 | Low | Extract form fields: datetime picker, recurrence config, description editor. |
+| 7 | `features/knowledge/widgets/knowledge_photo_gallery.dart` | 330 | 3 | 0 | Low | Widget count triggers extraction. Extract photo tile, lightbox overlay, upload button. |
+| 8 | `data/services/printer_service.dart` | 328 | 0 | 1 | Low | Split connection management from print job formatting. Extract receipt template builder. |
+| 9 | `features/knowledge/knowledge_list_screen.dart` | 322 | 2 | 0 | Low | Extract search bar, list tile, filter chips, empty state widgets. |
+| 10 | `features/categories/category_form.dart` | 319 | 2 | 0 | Low | Extract name field, color picker, icon selector, parent category picker. |
+| 11 | `features/stock/widgets/stock_action_sheet.dart` | 310 | 1 | 0 | Low | Extract action type selector, quantity input, reason field, confirm button. |
+| 12 | `features/checklist/checklist_screen.dart` | 304 | 4 | 0 | Low | 4 inner widgets → extraction required. Extract entry card, progress bar, action buttons. |
+| 13 | `features/categories/category_management_screen.dart` | 303 | 5 | 1 | Low | 5 inner widgets → extraction required. Extract category tree, drag handle, edit sheet. |
+| 14 | `features/pos/pos_screen.dart` | 300 | 1 | 0 | Low | At screen threshold limit. Extract category sidebar, search bar, cart panel sections. |
 
 ## Follow-up Tickets
 
