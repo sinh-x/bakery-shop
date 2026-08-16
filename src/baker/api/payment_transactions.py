@@ -3,12 +3,13 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 from baker.api.auth import resolve_actor
 from baker.api.photos import read_image_upload, save_photo
+from baker.api.photos import SHA256_HEX_RE
 from baker.db.connection import get_db
 from baker.db.queries import paginate_params, paginated_envelope
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
@@ -528,19 +529,34 @@ def link_transaction_photo(ref: str, txn_id: int, body: TransactionPhotoLink):
     to the newly-created transaction by hash — avoids a second upload of the
     same bytes. Uses ``upsert_for_transaction`` so a re-link replaces the
     existing edge (FR3 replace).
+
+    SEC-1: the link is scoped to photos owned by the same order — the
+    photo hash must (a) match ``SHA256_HEX_RE`` and (b) be referenced by an
+    ``order_photos`` row for this order, so a caller cannot link another
+    order's (or a knowledge-base/catalog) photo by guessing its hash.
     """
+    if not SHA256_HEX_RE.fullmatch(body.photoHash):
+        raise HTTPException(status_code=400, detail="Hash ảnh không hợp lệ")
+
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         _resolve_txn_or_404(conn, order_id, txn_id)
 
-        photo_row = conn.execute(
-            "SELECT id FROM photos WHERE hash = ?", (body.photoHash,)
+        # Scope: the photo must be linked to the same order via order_photos.
+        # The bare ``photos`` row alone is intentionally NOT sufficient — a
+        # catalog/knowledge-base photo could otherwise be hijacked by hash.
+        link_row = conn.execute(
+            "SELECT p.id AS photo_id "
+            "FROM photos p "
+            "JOIN order_photos op ON op.photo_id = p.id "
+            "WHERE p.hash = ? AND op.order_id = ?",
+            (body.photoHash, order_id),
         ).fetchone()
-        if not photo_row:
+        if not link_row:
             raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
 
         link_id = PaymentTransactionPhoto.upsert_for_transaction(
-            conn, txn_id, int(photo_row[0])
+            conn, txn_id, int(link_row["photo_id"])
         )
         conn.commit()
 

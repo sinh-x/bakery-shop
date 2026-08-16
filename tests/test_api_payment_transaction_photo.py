@@ -281,6 +281,49 @@ def test_link_transaction_photo_404_when_txn_not_found(api_client):
     assert resp.status_code == 404
 
 
+def test_link_transaction_photo_400_when_hash_invalid(api_client):
+    """SEC-1: malformed photo hashes are rejected before any DB lookup."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref)
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions/{txn['id']}/photo/link",
+        json={"photoHash": "not-a-sha256-hash"},
+    )
+    assert resp.status_code == 400
+
+
+def test_link_transaction_photo_rejects_cross_order_photo(api_client):
+    """SEC-1 regression: a photo owned by another order cannot be linked
+    by hash. The link endpoint scopes the lookup to ``order_photos`` for
+    the same order, so even with the foreign photo's real hash the link
+    must 404 rather than silently hijack another order's photo.
+    """
+    order_a = _create_order(api_client, customer="Khách A")
+    ref_a = order_a["orderRef"]
+    order_b = _create_order(api_client, customer="Khách B")
+    ref_b = order_b["orderRef"]
+
+    # Upload a photo to order A (order-level, tagged chuyen-khoan).
+    image = _make_test_image(color="pink")
+    order_photo = _upload_order_photo(api_client, ref_a, image_data=image)
+    foreign_hash = order_photo["photo_hash"]
+
+    # Create a transaction under order B and attempt to link order A's photo.
+    txn_b = _create_txn(api_client, ref_b)
+    resp = api_client.post(
+        f"/api/orders/{ref_b}/transactions/{txn_b['id']}/photo/link",
+        json={"photoHash": foreign_hash},
+    )
+    assert resp.status_code == 404
+
+    # Confirm the transaction still has no photo attached (no hijack).
+    got = api_client.get(
+        f"/api/orders/{ref_b}/transactions/{txn_b['id']}/photo"
+    )
+    assert got.status_code == 404
+
+
 # --- DELETE photo ---------------------------------------------------------
 
 
