@@ -11,6 +11,7 @@ import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
 import 'order_detail_row.dart';
+import 'txn_photo_section.dart';
 
 /// Bottom sheet showing a single payment transaction's details with
 /// invalidate / restore / edit actions.
@@ -127,6 +128,13 @@ class _OrderTransactionDetailSheetState
               ),
           ],
           const SizedBox(height: 20),
+          TxnPhotoSection(
+            orderRef: widget.orderRef,
+            txnId: txn.id,
+            showRemove: false,
+            showEmptyState: true,
+          ),
+          const SizedBox(height: 20),
           if (_acting)
             const Center(child: CircularProgressIndicator())
           else ...[
@@ -160,6 +168,14 @@ class _OrderTransactionDetailSheetState
       ),
     );
   }
+
+  // ── Per-transaction photo (DG-410 Phase 4 / CQ-1) ─────────────────────────
+  //
+  // The detail sheet's photo section is now rendered by the shared
+  // [TxnPhotoSection] widget (see txn_photo_section.dart), which centralizes
+  // the pick / remove / busy-state logic that previously lived as
+  // duplicated `_pickTxnPhoto` / `_buildTxnPhotoSection` copies here and in
+  // the edit sheet.
 
   Future<void> _onInvalidate() async {
     final reason = await _showInvalidateReasonDialog();

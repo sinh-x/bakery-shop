@@ -6,6 +6,7 @@ import '../../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'txn_photo_section.dart';
 
 /// Bottom sheet for editing an existing payment transaction.
 class OrderEditPaymentSheet extends ConsumerStatefulWidget {
@@ -175,6 +176,13 @@ class _OrderEditPaymentSheetState
                     setState(() => _paymentSource = value),
               ),
             ],
+            const SizedBox(height: 12),
+            TxnPhotoSection(
+              orderRef: widget.orderRef,
+              txnId: widget.txn.id,
+              showRemove: true,
+              showEmptyState: false,
+            ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,

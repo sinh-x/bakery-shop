@@ -98,6 +98,7 @@ from ._constants import (  # noqa: F401
     MESSAGE_TEMPLATES_SCHEMA,
     SEED_MESSAGE_TEMPLATES,
     ADDRESS_LIBRARY_SCHEMA,
+    PAYMENT_TRANSACTION_PHOTOS_SCHEMA,
 )
 from ._helpers import (  # noqa: F401
     _normalize_accessory_name,
@@ -272,6 +273,7 @@ __all__ = [
     'SEED_NHAN_BANH_OPTIONS',
     'SEED_MESSAGE_TEMPLATES',
     'ADDRESS_LIBRARY_SCHEMA',
+    'PAYMENT_TRANSACTION_PHOTOS_SCHEMA',
     'SEED_ORDER_SOURCES',
     'SEED_PRODUCTS',
     'SEED_PRODUCT_ATTRIBUTES',

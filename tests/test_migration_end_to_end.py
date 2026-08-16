@@ -94,6 +94,8 @@ _EXPECTED_TABLES = {
     "message_templates",
     # v101
     "address_library", "customer_addresses",
+    # v104
+    "payment_transaction_photos",
 }
 
 # Key composite / unique indexes that must exist after the full chain.

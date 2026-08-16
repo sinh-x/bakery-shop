@@ -5374,3 +5374,108 @@ def test_schema_migration_v102_adds_no_new_tables_or_columns():
                 f"added={after_columns[table] - before_columns[table]}, "
                 f"removed={before_columns[table] - after_columns[table]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Migration v104 — payment_transaction_photos join table (DG-410 Phase 1).
+# v104 is pure DDL (no callable): it creates the join table that links a
+# single photo to an individual payment transaction. The UNIQUE constraint
+# on payment_transaction_id enforces the single-photo-per-transaction rule
+# (FR1). These tests verify the table/columns/FKs/indexes exist after the
+# full migration chain runs, that v104 applies cleanly on top of v103, and
+# that re-running v104 is a no-op (idempotent — NFR2). Model behavior
+# (upsert/delete/get) is exercised in tests/test_payment_transaction_photo.py.
+# ---------------------------------------------------------------------------
+
+
+def _assert_payment_transaction_photos_schema(conn) -> None:
+    """DG-410 Phase 1: v104 creates payment_transaction_photos join table."""
+    cols = _schema_columns(conn, "payment_transaction_photos")
+    assert set(cols) >= {
+        "id",
+        "payment_transaction_id",
+        "photo_id",
+        "created_at",
+    }
+    for name in ("payment_transaction_id", "photo_id"):
+        assert cols[name]["notnull"] == 1
+    # created_at has a DEFAULT; notnull is 1 but the default supplies a value.
+    assert cols["created_at"]["notnull"] == 1
+
+    # FKs: payment_transaction_id → payment_transactions (CASCADE),
+    # photo_id → photos.
+    fk_rows = conn.execute(
+        "PRAGMA foreign_key_list(payment_transaction_photos)"
+    ).fetchall()
+    fk_targets = {(fk["from"], fk["table"], fk["on_delete"]) for fk in fk_rows}
+    assert ("payment_transaction_id", "payment_transactions", "CASCADE") in fk_targets
+    assert ("photo_id", "photos", "NO ACTION") in fk_targets
+
+    # Indexes: per-txn + per-photo lookup, plus the UNIQUE-txn index that
+    # enforces single-photo-per-transaction (FR1).
+    indexes = [
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA index_list(payment_transaction_photos)"
+        ).fetchall()
+    ]
+    assert "idx_payment_transaction_photos_txn" in indexes
+    assert "idx_payment_transaction_photos_photo" in indexes
+    # The UNIQUE constraint creates an auto-index on payment_transaction_id.
+    unique_indexes = [
+        row
+        for row in conn.execute(
+            "PRAGMA index_list(payment_transaction_photos)"
+        ).fetchall()
+        if row["origin"] == "u" or row["unique"] == 1
+    ]
+    assert unique_indexes, (
+        f"no UNIQUE index on payment_transaction_photos (FR1 not enforced): "
+        f"{indexes}"
+    )
+
+
+def test_schema_migration_v104_fresh_db():
+    """v104 runs via ensure_schema on a fresh DB and creates the join table."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_schema_migration_v103_to_v104():
+    """v104 applies cleanly on top of v103 and advances version to 104."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 103)
+        assert _migrated_version(conn) == 103
+
+        _migrate_to_version(conn, 104)
+        assert _migrated_version(conn) == 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_schema_migration_v104_idempotent():
+    """Re-running v104 on an already-migrated DB is a no-op (NFR2).
+
+    CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS make the SQL
+    block safe to re-run.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_v104_registered_in_migration_chain():
+    """v104 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 104 in MIGRATIONS
+    assert (
+        MIGRATIONS[104]["description"]
+        == "payment_transaction_photos join table linking a single photo to an individual payment transaction (DG-410 Phase 1)"
+    )
+    # v104 is pure DDL — no callable, SQL block carries the schema.
+    assert MIGRATIONS[104]["sql"].strip() != ""
+    assert "callable" not in MIGRATIONS[104] or MIGRATIONS[104]["callable"] is None
