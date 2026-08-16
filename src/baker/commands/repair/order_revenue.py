@@ -136,7 +136,7 @@ def _delivered_orders_with_cogs(conn):
         FROM orders o
         WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
         ORDER BY o.id ASC
-        """,
+        """,  # nosec B608
         list(DELIVERED_STATUSES),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -321,7 +321,7 @@ def _bus_orders_with_shipping_held(conn):
           AND (o.delivery_type IS NULL OR o.delivery_type = 'bus')
           AND COALESCE(o.shipping_fee, 0) > 0
         ORDER BY o.id ASC
-        """,
+        """,  # nosec B608
         list(DELIVERED_STATUSES),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -574,7 +574,7 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, repair_shipping_
                     SELECT o.id AS order_id
                     FROM orders o
                     WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                """
+                """  # nosec B608
                 params = list(DELIVERED_STATUSES)
                 if since_date:
                     sql += " AND o.due_date >= ?"

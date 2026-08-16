@@ -159,7 +159,7 @@ def update_option(
         _require_option(conn, option_id)
         values.append(option_id)
         conn.execute(
-            f"UPDATE product_attribute_options SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE product_attribute_options SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             values,
         )
         row = conn.execute(

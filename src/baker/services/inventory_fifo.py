@@ -156,7 +156,7 @@ def consume_fifo_items(
         conn.execute(
             f"""UPDATE inventory_items
                 SET status = 'consumed', consumed_by_movement_id = ?
-                WHERE id IN ({placeholders})""",
+                WHERE id IN ({placeholders})""",  # nosec B608
             [consumed_by_movement_id] + item_ids,
         )
         consumed_count = len(item_ids)

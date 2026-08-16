@@ -127,7 +127,7 @@ def _load_display_products(conn) -> list[dict]:
                FROM stock_lots sl
                LEFT JOIN inventory_items ii
                  ON ii.lot_id = sl.id AND ii.status = 'available'
-               WHERE sl.product_id IN ("""
+               WHERE sl.product_id IN ("""  # nosec B608
             + placeholders
             + ") GROUP BY sl.product_id, sl.price_chip_id",
             product_ids,
@@ -153,7 +153,7 @@ def _load_display_products(conn) -> list[dict]:
         neg_rows = conn.execute(
             f"""SELECT product_id, price_chip_id, qty
                FROM negative_balance
-               WHERE product_id IN ({placeholders})""",
+               WHERE product_id IN ({placeholders})""",  # nosec B608
             product_ids,
         ).fetchall()
         for neg_row in neg_rows:
@@ -162,7 +162,7 @@ def _load_display_products(conn) -> list[dict]:
             expected_by_option[key] = current - int(neg_row["qty"])
 
         chip_rows = conn.execute(
-            "SELECT id, product_id, label, price, position "
+            "SELECT id, product_id, label, price, position "  # nosec B608
             f"FROM product_price_chips WHERE product_id IN ({placeholders}) "
             "ORDER BY product_id, position, id",
             product_ids,

@@ -372,12 +372,12 @@ def _sync_order_items_table(conn, order_id: int, items: list[OrderItem]) -> None
     if surplus_ids:
         placeholders = ",".join("?" * len(surplus_ids))
         conn.execute(
-            f"UPDATE order_photos SET work_item_id = NULL "
+            f"UPDATE order_photos SET work_item_id = NULL "  # nosec B608
             f"WHERE work_item_id IN ({placeholders})",
             surplus_ids,
         )
         conn.execute(
-            f"DELETE FROM order_items WHERE id IN ({placeholders})",
+            f"DELETE FROM order_items WHERE id IN ({placeholders})",  # nosec B608
             surplus_ids,
         )
 
@@ -549,7 +549,7 @@ def get_order_counts():
                 f"""SELECT orders.*
                     FROM orders
                     WHERE status IN ({placeholders})
-                    ORDER BY orders.id DESC""",
+                    ORDER BY orders.id DESC""",  # nosec B608
                 active_statuses,
             ).fetchall()
 
@@ -786,7 +786,7 @@ def list_orders(
 
         if active_only:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "  # nosec B608
                 f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
@@ -824,7 +824,7 @@ def list_orders(
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
         if status and status in active_statuses:
             rows = conn.execute(
-                f"SELECT orders.*, s.name AS assigned_staff_name, "
+                f"SELECT orders.*, s.name AS assigned_staff_name, "  # nosec B608
                 f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
                 f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
                 f"{where} ORDER BY orders.id DESC",
@@ -864,7 +864,7 @@ def list_orders(
             lim, off = limit, offset
 
         rows = conn.execute(
-            f"SELECT orders.*, s.name AS assigned_staff_name, "
+            f"SELECT orders.*, s.name AS assigned_staff_name, "  # nosec B608
             f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
             f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
             f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
@@ -889,7 +889,7 @@ def list_orders(
             result.append(order_dict)
         if use_envelope:
             count_row = conn.execute(
-                f"SELECT COUNT(*) AS c FROM orders {where}",
+                f"SELECT COUNT(*) AS c FROM orders {where}",  # nosec B608
                 params,
             ).fetchone()
             total = int(count_row["c"]) if count_row is not None else 0
@@ -1366,7 +1366,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         params.append(now_utc())
         params.append(row["id"])
         conn.execute(
-            f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
 

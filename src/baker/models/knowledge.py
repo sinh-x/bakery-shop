@@ -66,7 +66,7 @@ class Knowledge:
 
         values.append(self.id)
         conn.execute(
-            f"UPDATE knowledge_entries SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE knowledge_entries SET {', '.join(fields)} WHERE id = ?",  # nosec B608
             values,
         )
         # Refresh updated_at

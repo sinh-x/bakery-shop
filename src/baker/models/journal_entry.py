@@ -233,7 +233,7 @@ class JournalEntry:
         entry_ids = [e.id for e in entries]
         placeholders = ",".join("?" for _ in entry_ids)
         lines_rows = conn.execute(
-            f"SELECT jl.*, a.code AS account_code, a.name AS account_name "
+            f"SELECT jl.*, a.code AS account_code, a.name AS account_name "  # nosec B608
             f"FROM journal_lines jl "
             f"JOIN accounts a ON a.id = jl.account_id "
             f"WHERE jl.journal_entry_id IN ({placeholders}) "

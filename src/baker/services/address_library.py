@@ -252,7 +252,7 @@ def _autocomplete_past_orders(
         WHERE normalize_address(o.delivery_address) LIKE ? ESCAPE '\\'
         ORDER BY latest.last_order_id DESC
         LIMIT ?
-        """,
+        """,  # nosec B608
         (
             customer_id,
             *DOOR_DELIVERY_TYPES,
@@ -452,7 +452,7 @@ def _count_other_orders_with_pair(
     _ensure_normalize_function(conn)
     placeholders = ",".join("?" for _ in DOOR_DELIVERY_TYPES)
     row = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM orders "
+        f"SELECT COUNT(*) AS cnt FROM orders "  # nosec B608
         f"WHERE google_maps_url = ? "
         f"  AND delivery_type IN ({placeholders}) "
         f"  AND delivery_address IS NOT NULL "
@@ -531,7 +531,7 @@ def list_missing_links(conn, limit: int = 100) -> list[dict]:
         GROUP BY delivery_address
         ORDER BY order_count DESC, delivery_address ASC
         LIMIT ?
-        """,
+        """,  # nosec B608
         (*DOOR_DELIVERY_TYPES, limit),
     ).fetchall()
     return [

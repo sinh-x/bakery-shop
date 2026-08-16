@@ -155,7 +155,7 @@ def _attach_blanks(conn, items: list) -> None:
         return
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
-        f"SELECT * FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+        f"SELECT * FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",  # nosec B608
         ids,
     ).fetchall()
     by_item: dict[int, list] = {}
@@ -177,7 +177,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     }
     has_assigned_price = "assigned_price" in oi_columns
     rows = conn.execute(
-        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"  # nosec B608
         + (", assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
         + "FROM order_items WHERE order_id = ?",
         (order_id,),
@@ -187,7 +187,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     if item_ids:
         placeholders = ",".join("?" * len(item_ids))
         blank_rows = conn.execute(
-            f"SELECT order_item_id, blank_id, quantity, notes FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+            f"SELECT order_item_id, blank_id, quantity, notes FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",  # nosec B608
             item_ids,
         ).fetchall()
         for br in blank_rows:
@@ -388,7 +388,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
 
         params.append(item_id)
         conn.execute(
-            f"UPDATE order_items SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE order_items SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
@@ -505,7 +505,7 @@ def update_blank_assignment(
 
         params.append(blank_item_id)
         conn.execute(
-            f"UPDATE order_item_blanks SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE order_item_blanks SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
         updated = conn.execute(

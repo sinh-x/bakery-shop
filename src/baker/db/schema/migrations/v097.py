@@ -111,7 +111,7 @@ def _migrate_v97_cash_drawer_breakdown_snapshot(conn):
         JOIN accounts a ON a.id = jl.account_id AND a.code IN ('1101', '2200')
         WHERE cdje.cash_drawer_id IN ({placeholders})
         GROUP BY cdje.cash_drawer_id, je.id, je.source_type
-        """,
+        """,  # nosec B608
         closed_drawer_ids,
     ).fetchall()
 

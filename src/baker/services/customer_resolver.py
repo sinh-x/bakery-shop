@@ -77,7 +77,7 @@ def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str]
         # the customer whose earliest order has the minimum created_at, then id.
         placeholders = ",".join("?" for _ in customer_ids)
         winner = conn.execute(
-            f"SELECT customer_id, MIN(created_at) AS first_at "
+            f"SELECT customer_id, MIN(created_at) AS first_at "  # nosec B608
             f"FROM orders WHERE customer_id IN ({placeholders}) "
             f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
             customer_ids,

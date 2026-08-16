@@ -74,7 +74,7 @@ def _migrate_v102_backfill_address_library(conn):
           AND google_maps_url IS NOT NULL
           AND google_maps_url != ''
         GROUP BY normalized_address, google_maps_url
-        """,
+        """,  # nosec B608
         _DOOR_DELIVERY_TYPES,
     ).fetchall()
 
@@ -126,7 +126,7 @@ def _migrate_v102_backfill_address_library(conn):
               AND google_maps_url = ?
               AND customer_id IS NOT NULL
               AND normalize_address(delivery_address) = ?
-            """,
+            """,  # nosec B608
             (*_DOOR_DELIVERY_TYPES, url, normalized),
         ).fetchall()
 

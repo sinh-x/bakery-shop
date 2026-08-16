@@ -347,7 +347,7 @@ def list_demand():
                 GROUP BY blank_id
             ) d ON d.blank_id = b.id
             ORDER BY b.id
-            """,
+            """,  # nosec B608
             excluded_statuses + excluded_statuses,  # duplicated for both UNION branches
         ).fetchall()
 

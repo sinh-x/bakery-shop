@@ -41,7 +41,7 @@ def check_shipping_release_gaps_cmd():
                         AND je.source_id = o.id
                   )
                 ORDER BY o.id ASC
-                """,
+                """,  # nosec B608
                 list(DELIVERED_STATUSES),
             ).fetchall()
             # Filter to orders with held shipping in 2200 > 0 (AC6 gap

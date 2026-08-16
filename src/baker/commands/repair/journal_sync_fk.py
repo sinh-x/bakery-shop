@@ -16,7 +16,7 @@ def _orders_with_fk_failures(conn, order_id=None):
           ON jsfl.source_type = 'order' AND jsfl.source_id = o.id
         WHERE jsfl.error_message LIKE '%FOREIGN KEY%'
           AND o.status IN ({','.join('?' * len(DELIVERED_STATUSES))})
-    """
+    """  # nosec B608
     params = [*DELIVERED_STATUSES]
     if order_id is not None:
         sql += " AND o.id = ?"

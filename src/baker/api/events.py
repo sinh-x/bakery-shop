@@ -464,7 +464,7 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
                     )
 
         values.append(event_id)
-        conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
+        conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)  # nosec B608
 
         # Re-sync double-entry journal if this is an expense event (DG-175).
         accounting_sync_warning = None

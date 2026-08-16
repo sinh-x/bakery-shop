@@ -87,7 +87,7 @@ def list_work_items_queue(
               AND COALESCE(oi.is_gift, 0) = 0
             ORDER BY o.due_date ASC NULLS LAST, o.due_time ASC NULLS LAST, oi.id ASC
             LIMIT ? OFFSET ?
-            """,
+            """,  # nosec B608
             params + [limit, offset],
         ).fetchall()
 

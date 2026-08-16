@@ -193,12 +193,12 @@ def list_customers(
             )
             body_params: list = [search_like, like, like]
             list_sql = f"SELECT DISTINCT c.* {body_sql} ORDER BY c.id DESC"
-            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT DISTINCT c.id {body_sql})"
+            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT DISTINCT c.id {body_sql})"  # nosec B608
         else:
             body_sql = "FROM customers"
             body_params = []
             list_sql = f"SELECT * {body_sql} ORDER BY id DESC"
-            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT 1 {body_sql})"
+            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT 1 {body_sql})"  # nosec B608
 
         if use_envelope:
             lim, off = paginate_params(limit, offset)

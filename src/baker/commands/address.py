@@ -44,7 +44,7 @@ def missing_links_cmd():
                   AND (google_maps_url IS NULL OR google_maps_url = '')
                 GROUP BY delivery_address
                 ORDER BY order_count DESC, delivery_address ASC
-                """,
+                """,  # nosec B608
                 list(DOOR_DELIVERY_TYPES),
             ).fetchall()
     except Exception:  # noqa: BLE001 — top-level CLI guard

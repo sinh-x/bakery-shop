@@ -236,18 +236,18 @@ def list_products(
         if use_envelope:
             lim, off = paginate_params(limit, offset)
             count_row = conn.execute(
-                f"SELECT COUNT(*) AS c FROM products p {join_sql} WHERE {where}",
+                f"SELECT COUNT(*) AS c FROM products p {join_sql} WHERE {where}",  # nosec B608
                 params,
             ).fetchone()
             total = int(count_row["c"]) if count_row is not None else 0
             rows = conn.execute(
-                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} "
+                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} "  # nosec B608
                 f"ORDER BY {order_by} LIMIT ? OFFSET ?",
                 params + [lim, off],
             ).fetchall()
         else:
             rows = conn.execute(
-                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY {order_by}",
+                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY {order_by}",  # nosec B608
                 params,
             ).fetchall()
 
@@ -430,7 +430,7 @@ def update_product(product_id: int, product: ProductUpdate, actor: str = Depends
 
         params.append(product_id)
         conn.execute(
-            f"UPDATE products SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE products SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
 

@@ -131,7 +131,7 @@ def _load_customer_phones_for_many(conn, customer_ids: list[int]) -> dict[int, l
     try:
         placeholders = ",".join("?" for _ in customer_ids)
         rows = conn.execute(
-            f"SELECT customer_id, phone, is_primary FROM customer_phones "
+            f"SELECT customer_id, phone, is_primary FROM customer_phones "  # nosec B608
             f"WHERE customer_id IN ({placeholders}) "
             f"ORDER BY is_primary DESC, id ASC",
             tuple(customer_ids),

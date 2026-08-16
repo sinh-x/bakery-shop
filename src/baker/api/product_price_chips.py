@@ -150,7 +150,7 @@ def update_product_price_chip(
         _ensure_chip_exists(conn, chip_id, product_id)
         values.append(chip_id)
         conn.execute(
-            f"UPDATE product_price_chips SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE product_price_chips SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             values,
         )
         row = conn.execute(

@@ -295,13 +295,14 @@ jobs:
       - name: Bandit SAST scan
         # Phase 4.4 (FR-CI-1) — static security analysis of the Python source.
         # `-ll` restricts to medium+high severity; `-q` suppresses noise.
-        # `--skip B608,B104` excludes two known false-positive classes:
-        #   - B608 (hardcoded SQL): the codebase builds SQL from a fixed,
-        #     allow-listed set of fragments with parameterized values (never
-        #     user-controlled identifiers); 144 findings are all this pattern.
-        #   - B104 (bind all interfaces): the server binds 0.0.0.0 by design
-        #     (config.py HOST default) and is fronted by Caddy in production.
-        run: bandit -r src -ll -q --skip B608,B104
+        # B608 (hardcoded SQL) and B104 (bind all interfaces) findings are
+        # suppressed per-line with `# nosec` annotations at the verified-safe
+        # sites: 144 SQL-construction sites use fixed/allow-listed fragments
+        # with parameterized values (never user-controlled identifiers), and
+        # the single `0.0.0.0` HOST default in src/baker/config.py is fronted
+        # by Caddy in production. This keeps all bandit plugin classes active
+        # for new code instead of globally disabling B608/B104 detection.
+        run: bandit -r src -ll -q
 
       - name: pip-audit dependency vulnerability scan
         # Phase 4.4 (FR-CI-1/FR-CI-2) — audit installed dependencies against

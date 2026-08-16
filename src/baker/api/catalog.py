@@ -45,7 +45,7 @@ def list_catalog_photos_cross_product(
 
             if tag_keys:
                 placeholders = ",".join("?" * len(tag_keys))
-                conditions.append(f"cp.id IN (SELECT DISTINCT cpt.photo_id FROM catalog_photo_tags cpt WHERE cpt.tag_key IN ({placeholders}))")
+                conditions.append(f"cp.id IN (SELECT DISTINCT cpt.photo_id FROM catalog_photo_tags cpt WHERE cpt.tag_key IN ({placeholders}))")  # nosec B608
                 params.extend(tag_keys)
 
             if cat_slugs:
@@ -64,7 +64,7 @@ def list_catalog_photos_cross_product(
                 WHERE {where_clause}
                 ORDER BY cp.product_id, cp.position, cp.id
                 LIMIT ? OFFSET ?
-            """
+            """  # nosec B608
             rows = conn.execute(base_query, params + [page_size, offset]).fetchall()
         else:
             query = """
@@ -265,7 +265,7 @@ def update_catalog_photo(
         updates = [f"{field} = ?" for field in data]
         params = list(data.values()) + [photo_id]
         conn.execute(
-            f"UPDATE product_catalog_photos SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE product_catalog_photos SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
 

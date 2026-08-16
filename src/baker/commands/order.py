@@ -140,7 +140,7 @@ def order_list(show_all, status, due):
 
         where = " AND ".join(conditions) if conditions else "1=1"
         rows = conn.execute(
-            f"SELECT * FROM orders WHERE {where} ORDER BY due_date, due_time",
+            f"SELECT * FROM orders WHERE {where} ORDER BY due_date, due_time",  # nosec B608
             params,
         ).fetchall()
 
@@ -229,7 +229,7 @@ def order_edit(ref, notes, due_date, due_time, phone, address):
         params.append(now_utc())
         params.append(row["id"])
 
-        conn.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)
+        conn.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608
         console.print(f"  [green]Updated[/green] {row['order_ref']}")
 
 

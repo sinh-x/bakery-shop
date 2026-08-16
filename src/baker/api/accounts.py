@@ -192,13 +192,13 @@ def list_journal(
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total_row = conn.execute(
-            f"SELECT COUNT(*) AS c FROM journal_entries je {where}",
+            f"SELECT COUNT(*) AS c FROM journal_entries je {where}",  # nosec B608
             params,
         ).fetchone()
         total = int(total_row["c"])
 
         rows = conn.execute(
-            f"SELECT je.* FROM journal_entries je {where} "
+            f"SELECT je.* FROM journal_entries je {where} "  # nosec B608
             "ORDER BY je.transaction_date DESC, je.id DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()

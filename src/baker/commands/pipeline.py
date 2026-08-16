@@ -113,7 +113,7 @@ def undelivered_deposits_cmd():
                 WHERE o.status NOT IN ({",".join("?" * len(UNDELIVERED_EXCLUDED))})
                   AND COALESCE(pt.total_deposits, 0) > 0
                 ORDER BY o.due_date IS NULL, o.due_date ASC, o.order_ref ASC
-                """,
+                """,  # nosec B608
                 [*_OUTFLOW_TYPES, *UNDELIVERED_EXCLUDED],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
@@ -170,7 +170,7 @@ def cancelled_unrefunded_cmd():
                 WHERE o.status = 'cancelled'
                   AND COALESCE(d.total_deposits, 0) > COALESCE(r.total_refunds, 0)
                 ORDER BY o.order_ref ASC
-                """,
+                """,  # nosec B608
                 [*_OUTFLOW_TYPES, *_OUTFLOW_TYPES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
@@ -240,7 +240,7 @@ def deposit_revenue_gap_cmd():
                 ) rev ON rev.order_id = o.id
                 WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
                 ORDER BY o.order_ref ASC
-                """,
+                """,  # nosec B608
                 [*_OUTFLOW_TYPES, *_OUTFLOW_TYPES, CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
@@ -305,7 +305,7 @@ def refunds_cmd():
                 JOIN orders o ON o.id = pt.order_id
                 WHERE pt.type IN ({placeholders})
                 ORDER BY pt.created_at DESC, pt.id DESC
-                """,
+                """,  # nosec B608
                 _REFUND_REPORT_TYPES,
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
@@ -358,7 +358,7 @@ def new_no_deposit_cmd():
                 WHERE o.status IN ({placeholders})
                   AND COALESCE(pt.total_deposits, 0) = 0
                 ORDER BY o.created_at DESC, o.order_ref ASC
-                """,
+                """,  # nosec B608
                 [*_OUTFLOW_TYPES, *NEW_PENDING_STATUSES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
