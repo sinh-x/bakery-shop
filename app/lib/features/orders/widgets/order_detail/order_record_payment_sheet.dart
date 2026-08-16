@@ -109,7 +109,8 @@ class _OrderRecordPaymentSheetState
     final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
     setState(() => _submitting = true);
     try {
-      await ref
+      // Capture the created txn so its id can link the uploaded photo (FR2).
+      final txn = await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
           .record(
             amount: amount,
@@ -128,12 +129,28 @@ class _OrderRecordPaymentSheetState
             ? 'chuyen-khoan'
             : 'chuyen-khoan,$accountTag';
         try {
-          await ref.read(orderServiceProvider).uploadOrderPhoto(
+          final photo = await ref.read(orderServiceProvider).uploadOrderPhoto(
                 widget.orderRef,
                 pendingPhoto,
                 tags: tags,
               );
           ref.invalidate(orderPhotosProvider(widget.orderRef));
+          // Link the just-uploaded order-level photo to the new transaction
+          // via the join table (FR2 / AC1). Best-effort: a link failure does
+          // not roll back the recorded payment or the order-level upload.
+          try {
+            await ref
+                .read(orderPaymentTransactionsProvider(widget.orderRef)
+                    .notifier)
+                .linkPhoto(txn.id, photo.photoHash);
+            if (mounted) {
+              showTopSnackBar(context, VN.txnPhotoLinked);
+            }
+          } catch (e) {
+            if (mounted) {
+              showTopSnackBar(context, VN.txnPhotoLinkFailed);
+            }
+          }
           if (mounted) {
             showTopSnackBar(context, VN.transferPhotoUploaded);
           }

@@ -4,13 +4,20 @@
 // Reviewed 2026-07-30.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart'
+    show ImagePicker, ImageSource, XFile;
 
+import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
+import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
+import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
 import 'order_detail_row.dart';
+import 'order_photo_thumbnail.dart';
+import '../order_photo_section.dart';
 
 /// Bottom sheet showing a single payment transaction's details with
 /// invalidate / restore / edit actions.
@@ -34,12 +41,14 @@ class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
 class _OrderTransactionDetailSheetState
     extends ConsumerState<OrderTransactionDetailSheet> {
   bool _acting = false;
+  bool _photoBusy = false;
 
   PaymentTransaction get txn => widget.txn;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final baseUrl = ref.watch(apiBaseUrlProvider);
     final color = txnColor(txn.type);
     final typeLabel = txnTypeLabel(txn.type);
     final methodLabel = paymentMethodLabel(txn.method);
@@ -127,6 +136,8 @@ class _OrderTransactionDetailSheetState
               ),
           ],
           const SizedBox(height: 20),
+          _buildTxnPhotoSection(theme, baseUrl),
+          const SizedBox(height: 20),
           if (_acting)
             const Center(child: CircularProgressIndicator())
           else ...[
@@ -158,6 +169,143 @@ class _OrderTransactionDetailSheetState
           ],
         ],
       ),
+    );
+  }
+
+  // ── Per-transaction photo (DG-410 Phase 4) ─────────────────────────────
+  //
+  // The detail sheet lazily fetches the transaction's attached photo via
+  // [transactionPhotoProvider] (NFR3 — no extra fetch on tab switch) and
+  // shows it as a thumbnail (tap to enlarge). Inline add/replace uses the
+  // same `showTransferSourceDialog` + `ImagePicker` pattern as the record
+  // and edit sheets (FR4 / AC3).
+
+  Future<void> _pickTxnPhoto() async {
+    FocusScope.of(context).unfocus();
+    final source = await showTransferSourceDialog(context);
+    if (source == null || source == 'skip' || !mounted) return;
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source as ImageSource,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+    setState(() => _photoBusy = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .attachPhoto(txn.id, image);
+      if (mounted) {
+        showTopSnackBar(context, VN.txnPhotoSaved);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.txnPhotoSaveFailed}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
+  }
+
+  Widget _buildTxnPhotoSection(ThemeData theme, String baseUrl) {
+    final photoAsync =
+        ref.watch(transactionPhotoProvider((widget.orderRef, txn.id)));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(VN.txnPhotoSection, style: theme.textTheme.labelMedium),
+        const SizedBox(height: 8),
+        photoAsync.when(
+          loading: () => const SizedBox(
+            height: 90,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+          error: (e, _) => Text(
+            '${VN.txnPhotoSaveFailed}: $e',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.error),
+          ),
+          data: (photo) {
+            if (photo == null || photo.photoHash == null) {
+              // No photo attached — empty state + inline attach (AC3).
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      VN.txnPhotoEmpty,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                  Tooltip(
+                    message: VN.txnPhotoAttach,
+                    child: TextButton.icon(
+                      onPressed: _photoBusy ? null : _pickTxnPhoto,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 20),
+                      label: const Text(VN.txnPhotoAttach),
+                    ),
+                  ),
+                ],
+              );
+            }
+            final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
+            // Synthesize an [OrderPhoto] so the shared [OrderPhotoViewer]
+            // (which only reads photoHash + tags) can display the single
+            // transaction photo full-screen (FR4 reuse / tap to enlarge).
+            final viewerPhoto = OrderPhoto(
+              id: int.tryParse(photo.id) ?? 0,
+              orderId: 0,
+              photoHash: photo.photoHash!,
+              tags: 'chuyen-khoan',
+            );
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Tooltip(
+                  message: VN.txnPhotoTapToEnlarge,
+                  child: OrderPhotoThumbnail(
+                    url: url,
+                    tags: 'chuyen-khoan',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => OrderPhotoViewer(
+                          photos: [viewerPhoto],
+                          initialIndex: 0,
+                          baseUrl: baseUrl,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Tooltip(
+                      message: VN.txnPhotoReplace,
+                      child: TextButton.icon(
+                        onPressed: _photoBusy ? null : _pickTxnPhoto,
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text(VN.txnPhotoReplace),
+                      ),
+                    ),
+                  ),
+                ),
+                if (_photoBusy)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, top: 32),
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 

@@ -610,6 +610,48 @@ class VN {
   /// is recorded. DG-364 Phase 4.3 / FR3.
   static const transferPhotoUploadFailed = 'Không tải được ảnh chuyển khoản';
 
+  // ── Per-transaction photo (DG-410 Phase 4) ─────────────────────────────
+  /// Section header above the transaction's attached photo in the detail sheet.
+  static const txnPhotoSection = 'Ảnh giao dịch';
+
+  /// Empty-state hint shown when a transaction has no attached photo.
+  static const txnPhotoEmpty = 'Chưa có ảnh giao dịch';
+
+  /// Button label for attaching a photo to a transaction (add).
+  static const txnPhotoAttach = 'Đính kèm ảnh';
+
+  /// Button label for replacing a transaction's attached photo.
+  static const txnPhotoReplace = 'Đổi ảnh';
+
+  /// Button label for removing a transaction's attached photo.
+  static const txnPhotoRemove = 'Gỡ ảnh';
+
+  /// Confirmation dialog title for removing a transaction's attached photo.
+  static const txnPhotoRemoveConfirm = 'Gỡ ảnh khỏi giao dịch này?';
+
+  /// Tooltip for the transaction photo thumbnail (tap to enlarge).
+  static const txnPhotoTapToEnlarge = 'Chạm để xem ảnh lớn';
+
+  /// SnackBar shown when a transaction photo is attached/replaced.
+  static const txnPhotoSaved = 'Đã lưu ảnh giao dịch';
+
+  /// SnackBar shown when a transaction photo is removed.
+  static const txnPhotoRemoved = 'Đã gỡ ảnh giao dịch';
+
+  /// SnackBar shown when attaching/replacing/removing a transaction photo
+  /// fails.
+  static const txnPhotoSaveFailed = 'Không lưu được ảnh giao dịch';
+
+  /// SnackBar shown when the record sheet links the just-uploaded photo to
+  /// the new transaction. DG-410 Phase 4 / FR2 / AC1.
+  static const txnPhotoLinked = 'Đã gắn ảnh vào giao dịch';
+
+  /// SnackBar shown when the record sheet fails to link the just-uploaded
+  /// photo to the new transaction. The payment itself remains recorded.
+  /// DG-410 Phase 4 / FR2.
+  static const txnPhotoLinkFailed =
+      'Đã ghi thanh toán nhưng không gắn được ảnh vào giao dịch';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart'
+    show ImagePicker, ImageSource, XFile;
 
+import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
+import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
+import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'order_photo_thumbnail.dart';
+import '../order_photo_section.dart';
 
 /// Bottom sheet for editing an existing payment transaction.
 class OrderEditPaymentSheet extends ConsumerStatefulWidget {
@@ -32,6 +39,7 @@ class _OrderEditPaymentSheetState
   late final TextEditingController _notesCtrl;
   final _formKey = GlobalKey<FormState>();
   bool _submitting = false;
+  bool _photoBusy = false;
 
   @override
   void initState() {
@@ -81,9 +89,189 @@ class _OrderEditPaymentSheetState
     }
   }
 
+  /// Opens the camera/gallery picker (FR3 add/replace). Reuses the POS
+  /// `showTransferSourceDialog` pattern. The keyboard is dismissed before
+  /// showing the picker so the bottom sheet does not overflow.
+  Future<void> _pickTxnPhoto() async {
+    FocusScope.of(context).unfocus();
+    final source = await showTransferSourceDialog(context);
+    if (source == null || source == 'skip' || !mounted) return;
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source as ImageSource,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+    setState(() => _photoBusy = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .attachPhoto(widget.txn.id, image);
+      if (mounted) {
+        showTopSnackBar(context, VN.txnPhotoSaved);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.txnPhotoSaveFailed}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
+  }
+
+  /// Removes the transaction's attached photo (FR3 remove).
+  Future<void> _removeTxnPhoto() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.txnPhotoRemoveConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(VN.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(VN.remove),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _photoBusy = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .detachPhoto(widget.txn.id);
+      if (mounted) {
+        showTopSnackBar(context, VN.txnPhotoRemoved);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.txnPhotoSaveFailed}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
+  }
+
+  /// Renders the per-transaction photo section: thumbnail (tap to enlarge),
+  /// Replace and Remove buttons when a photo is attached; Attach button when
+  /// none. Reuses [OrderPhotoThumbnail] / [OrderPhotoViewer] (FR3 / AC2).
+  Widget _buildTxnPhotoSection(
+    WidgetRef ref,
+    ThemeData theme,
+    String baseUrl,
+  ) {
+    final photoAsync =
+        ref.watch(transactionPhotoProvider((widget.orderRef, widget.txn.id)));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(VN.txnPhotoSection, style: theme.textTheme.labelMedium),
+        const SizedBox(height: 8),
+        photoAsync.when(
+          loading: () => const SizedBox(
+            height: 90,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+          error: (e, _) => Text(
+            '${VN.txnPhotoSaveFailed}: $e',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.error),
+          ),
+          data: (photo) {
+            if (photo == null || photo.photoHash == null) {
+              // No photo attached — show the attach button.
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  message: VN.txnPhotoAttach,
+                  child: TextButton.icon(
+                    onPressed: _photoBusy ? null : _pickTxnPhoto,
+                    icon:
+                        const Icon(Icons.photo_camera_outlined, size: 20),
+                    label: const Text(VN.txnPhotoAttach),
+                  ),
+                ),
+              );
+            }
+            final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
+            // Synthesize an [OrderPhoto] so the shared [OrderPhotoViewer]
+            // (which only reads photoHash + tags) can display the single
+            // transaction photo full-screen (FR4 reuse).
+            final viewerPhoto = OrderPhoto(
+              id: int.tryParse(photo.id) ?? 0,
+              orderId: 0,
+              photoHash: photo.photoHash!,
+              tags: 'chuyen-khoan',
+            );
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OrderPhotoThumbnail(
+                  url: url,
+                  tags: 'chuyen-khoan',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OrderPhotoViewer(
+                        photos: [viewerPhoto],
+                        initialIndex: 0,
+                        baseUrl: baseUrl,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Tooltip(
+                        message: VN.txnPhotoReplace,
+                        child: TextButton.icon(
+                          onPressed:
+                              _photoBusy ? null : _pickTxnPhoto,
+                          icon: const Icon(Icons.swap_horiz, size: 18),
+                          label: const Text(VN.txnPhotoReplace),
+                        ),
+                      ),
+                      Tooltip(
+                        message: VN.txnPhotoRemove,
+                        child: TextButton.icon(
+                          onPressed:
+                              _photoBusy ? null : _removeTxnPhoto,
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text(VN.txnPhotoRemove),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_photoBusy)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, top: 32),
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final baseUrl = ref.watch(apiBaseUrlProvider);
 
     const types = [
       ('deposit', VN.txnTypeDeposit),
@@ -175,6 +363,8 @@ class _OrderEditPaymentSheetState
                     setState(() => _paymentSource = value),
               ),
             ],
+            const SizedBox(height: 12),
+            _buildTxnPhotoSection(ref, theme, baseUrl),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,
