@@ -587,6 +587,10 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v103_orders_delivery_type_index,
     },
+    104: {
+        "description": "payment_transaction_photos join table linking a single photo to an individual payment transaction (DG-410 Phase 1)",
+        "sql": PAYMENT_TRANSACTION_PHOTOS_SCHEMA,
+    },
 }
 
 def ensure_schema(conn):

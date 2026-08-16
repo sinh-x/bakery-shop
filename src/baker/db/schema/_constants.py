@@ -1369,6 +1369,31 @@ CREATE INDEX IF NOT EXISTS idx_customer_addresses_address
 """
 
 
+# DG-410 Phase 1: per-transaction photo link join table.
+# `payment_transaction_photos` links a single photo to an individual payment
+# transaction. The UNIQUE constraint on `payment_transaction_id` enforces the
+# single-photo-per-transaction rule (FR1) at the DB level — the API layer
+# uses INSERT OR REPLACE to swap an existing link. The `photos` table and
+# `save_photo` storage layer are reused unchanged (no new storage); this
+# table only records the (transaction ↔ photo) edge. Order-level
+# `order_photos` remain independent and unaffected (FR5).
+# Follows the v095 idempotency pattern: `CREATE TABLE IF NOT EXISTS` makes
+# re-running v104 on an already-migrated DB a no-op (NFR2).
+PAYMENT_TRANSACTION_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS payment_transaction_photos (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_transaction_id  INTEGER NOT NULL REFERENCES payment_transactions(id) ON DELETE CASCADE,
+    photo_id                INTEGER NOT NULL REFERENCES photos(id),
+    created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    UNIQUE(payment_transaction_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_transaction_photos_txn
+    ON payment_transaction_photos(payment_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transaction_photos_photo
+    ON payment_transaction_photos(photo_id);
+"""
+
 __all__ = [
     'INITIAL_SCHEMA',
     'STAFF_AND_PEOPLE_SCHEMA',
@@ -1458,4 +1483,5 @@ __all__ = [
     'MESSAGE_TEMPLATES_SCHEMA',
     'SEED_MESSAGE_TEMPLATES',
     'ADDRESS_LIBRARY_SCHEMA',
+    'PAYMENT_TRANSACTION_PHOTOS_SCHEMA',
 ]
