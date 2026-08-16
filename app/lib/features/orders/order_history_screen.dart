@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
-import '../../providers/order_providers.dart';
+import '../../providers/order/order_list_providers.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -63,7 +63,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
       _mode = _DateFilterMode.single;
       _rangeError = null;
     });
-    await ref.read(orderHistoryProvider.notifier).setSingleDate(picked);
+    await ref.read(orderHistoryPaginationProvider.notifier).setSingleDate(picked);
   }
 
   Future<void> _pickRange(DateTime initialFrom, DateTime initialTo) async {
@@ -75,7 +75,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
     );
     if (picked == null) return;
 
-    final notifier = ref.read(orderHistoryProvider.notifier);
+    final notifier = ref.read(orderHistoryPaginationProvider.notifier);
     final validation = notifier.validateRange(picked.start, picked.end);
     if (validation != null) {
       setState(() {
@@ -94,8 +94,11 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final historyAsync = ref.watch(orderHistoryProvider);
-    final notifier = ref.read(orderHistoryProvider.notifier);
+    // DG-409 Phase 4 (FR12): paginated order history with infinite-scroll +
+    // loading indicator. Active orders remain unpaginated (FR9) via the
+    // separate orderListProvider.
+    final historyAsync = ref.watch(orderHistoryPaginationProvider);
+    final notifier = ref.read(orderHistoryPaginationProvider.notifier);
     final fromDate = notifier.fromDate;
     final toDate = notifier.toDate;
 
@@ -194,7 +197,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
           ),
           Expanded(
             child: historyAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const _OrderHistorySkeleton(),
               error: (error, _) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -211,7 +214,8 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   ),
                 ),
               ),
-              data: (orders) {
+              data: (state) {
+                final orders = state.loaded;
                 if (orders.isEmpty) {
                   return const Center(child: Text(VN.lichSuDonHangTrong));
                 }
@@ -231,48 +235,136 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   grouped.putIfAbsent(order.status, () => <Order>[]).add(order);
                 }
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  children: [
-                    for (final status in _historyStatuses)
-                      if ((grouped[status] ?? const <Order>[]).isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color:
-                                      BakeryTheme.statusColors[status] ??
-                                      Colors.grey,
-                                  shape: BoxShape.circle,
+                return NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification is ScrollEndNotification &&
+                        notification.metrics.pixels >=
+                            notification.metrics.maxScrollExtent - 200 &&
+                        state.hasMore &&
+                        !state.isLoadingMore) {
+                      notifier.loadMore();
+                    }
+                    return false;
+                  },
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    children: [
+                      for (final status in _historyStatuses)
+                        if ((grouped[status] ?? const <Order>[]).isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        BakeryTheme.statusColors[status] ??
+                                        Colors.grey,
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                statusMap[status] ?? status,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
+                                const SizedBox(width: 8),
+                                Text(
+                                  statusMap[status] ?? status,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        ...grouped[status]!.map(
-                          (order) => OrderCard(
-                            order: order,
-                            onTap: () =>
-                                context.push('/orders/${order.orderRef}'),
+                          ...grouped[status]!.map(
+                            (order) => OrderCard(
+                              order: order,
+                              onTap: () =>
+                                  context.push('/orders/${order.orderRef}'),
+                            ),
                           ),
-                        ),
-                      ],
-                  ],
+                        ],
+                      _OrderHistoryLoadMore(
+                        state: state,
+                        onLoadMore: notifier.loadMore,
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Footer widget shown at the end of the order history list. Renders a
+/// loading spinner while fetching the next page, or a "Tải thêm" button when
+/// more pages remain (DG-409 Phase 4 / FR12).
+class _OrderHistoryLoadMore extends StatelessWidget {
+  const _OrderHistoryLoadMore({required this.state, required this.onLoadMore});
+
+  final OrderHistoryPaginationState state;
+  final Future<void> Function() onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!state.hasMore && !state.isLoadingMore) {
+      return const SizedBox.shrink();
+    }
+    if (state.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: OutlinedButton.icon(
+          onPressed: onLoadMore,
+          icon: const Icon(Icons.expand_more),
+          label: Text(
+            '${VN.loadMore} (${state.total - state.loaded.length})',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Loading skeleton shown while the first history page loads (DG-409
+/// Phase 4 / loading indicators).
+class _OrderHistorySkeleton extends StatelessWidget {
+  const _OrderHistorySkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      children: List.generate(
+        6,
+        (_) => const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Card(
+            child: ListTile(
+              title: SizedBox(
+                height: 16,
+                child: LinearProgressIndicator(),
+              ),
+              subtitle: SizedBox(
+                height: 12,
+                child: LinearProgressIndicator(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

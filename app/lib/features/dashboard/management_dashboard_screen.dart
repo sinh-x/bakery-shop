@@ -10,8 +10,10 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/section_title.dart';
 import '../../providers/dashboard/dashboard_metrics_provider.dart';
 import '../../providers/order/critical_alert_provider.dart';
+import '../../providers/order/due_date_order_list_providers.dart';
 import '../../providers/order/order_list_providers.dart';
 import '../../providers/today_journal_provider.dart';
+import '../../shared/utils/date_formatting.dart';
 import 'widgets/alert_section.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/shortcut_grid.dart';
@@ -60,6 +62,9 @@ class _ManagementDashboardScreenState
     ref.invalidate(todayJournalProvider);
     ref.invalidate(dashboardRevenueStockProvider);
     ref.invalidate(todaySummaryProvider);
+    // CQ-1: today's order rows now come from a separate fetch — invalidate
+    // it alongside the summary so auto-refresh re-fetches the list too.
+    ref.invalidate(dueDateOrdersProvider(formatApiDate(DateTime.now())));
   }
 
   @override
@@ -118,9 +123,7 @@ class _ManagementDashboardScreenState
           ),
         ],
       ),
-      body: const SafeArea(
-        child: _ManagementDashboardBody(),
-      ),
+      body: const SafeArea(child: _ManagementDashboardBody()),
     );
   }
 }
@@ -148,11 +151,10 @@ class _ManagementDashboardBodyState
   Widget build(BuildContext context) {
     // NFR1: orders fetch fires first. NFR2: revenue + order count + low-stock
     // run in parallel via dashboardRevenueStockProvider (today-summary API +
-    // stock overview). todaySummaryProvider feeds the TodayOrderList section
-    // (FR6/AC6 — today's orders grouped by status).
+    // stock overview). The TodayOrderList section now fetches its own rows
+    // via dueDateOrdersProvider (CQ-1 — summary.orders was removed).
     final ordersAsync = ref.watch(orderListProvider);
     final revenueStockAsync = ref.watch(dashboardRevenueStockProvider);
-    final summaryAsync = ref.watch(todaySummaryProvider);
 
     final orders = ordersAsync.asData?.value ?? const <Order>[];
     final criticalCount = ordersAsync.asData != null
@@ -174,6 +176,10 @@ class _ManagementDashboardBodyState
         ref.invalidate(todayJournalProvider);
         ref.invalidate(dashboardRevenueStockProvider);
         ref.invalidate(todaySummaryProvider);
+        // CQ-1: invalidate the separate today-orders fetch so pull-to-refresh
+        // re-fetches the order rows as well as the summary metrics.
+        final todayStr = formatApiDate(DateTime.now());
+        ref.invalidate(dueDateOrdersProvider(todayStr));
         var failed = false;
         await Future.wait<void>([
           ref.read(orderListProvider.future).catchError((_) {
@@ -200,6 +206,10 @@ class _ManagementDashboardBodyState
               cashOutTotal: 0,
               orders: [],
             );
+          }),
+          ref.read(dueDateOrdersProvider(todayStr).future).catchError((_) {
+            failed = true;
+            return <Order>[];
           }),
         ]);
         if (!mounted) return;
@@ -236,7 +246,7 @@ class _ManagementDashboardBodyState
             onTap: () => context.push('/today-sales'),
           ),
           const SizedBox(height: 20),
-          _TodayOrdersSection(summaryAsync: summaryAsync),
+          const _TodayOrdersSection(),
           const SizedBox(height: 20),
           const SectionTitle(title: SharedLabels.dashboardSectionShortcuts),
           const SizedBox(height: 8),
@@ -283,20 +293,25 @@ class _TodaySalesEntryCard extends StatelessWidget {
 /// Today's orders section (FR6/AC6): today's orders grouped by status.
 /// Extracted to keep the body widget under the 300-line screen threshold
 /// (flutter-coding-standards §1).
-class _TodayOrdersSection extends StatelessWidget {
-  const _TodayOrdersSection({required this.summaryAsync});
-
-  final AsyncValue<TodaySummary> summaryAsync;
+///
+/// CQ-1: the order rows now come from a dedicated [dueDateOrdersProvider]
+/// fetch (`GET /api/orders?due_date=<today>`) instead of the removed
+/// `summary.orders` list. The summary endpoint remains the source of truth
+/// for revenue and order count; only the order rows are fetched separately.
+class _TodayOrdersSection extends ConsumerWidget {
+  const _TodayOrdersSection();
 
   @override
-  Widget build(BuildContext context) {
-    final todayOrders = summaryAsync.asData?.value.orders ?? const <Order>[];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final todayStr = formatApiDate(DateTime.now());
+    final ordersAsync = ref.watch(dueDateOrdersProvider(todayStr));
+    final todayOrders = ordersAsync.asData?.value ?? const <Order>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SectionTitle(title: VN.todayOrders),
         const SizedBox(height: 8),
-        if (summaryAsync.isLoading)
+        if (ordersAsync.isLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(child: CircularProgressIndicator()),

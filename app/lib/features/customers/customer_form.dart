@@ -5,6 +5,7 @@ import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
 import 'widgets/phone_entry_row.dart';
 
@@ -234,6 +235,11 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       setState(() => _sharedPhone = result.sharedPhoneCustomers);
       // Invalidate the customer list so the parent screen refreshes.
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): invalidate the session cache so the
+      // paginated customer list re-fetches on the next visit.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       if (_isEditing) {
         ref.invalidate(customerProvider(widget.customer!.id));
       }

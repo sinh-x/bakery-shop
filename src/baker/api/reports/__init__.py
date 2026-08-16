@@ -72,10 +72,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from baker.config import get_delivery_critical_threshold
 from baker.db.connection import get_db
-from baker.models.order import Order
-from baker.api.orders import _parse_payment_methods
 from baker.api.reports._metrics import summary_metrics
 from baker.api.reports._shared import (
     _FALLBACK_SOURCES,
@@ -107,7 +104,7 @@ def get_today_summary(
     ),
 ):
     """Tóm tắt doanh thu trong ngày — revenue, orderCount, cashTotal,
-    bankTransferTotal, cashInTotal, cashOutTotal, orders.
+    bankTransferTotal, cashInTotal, cashOutTotal, statusBreakdown.
 
     Revenue = tổng ``journal_lines.credit`` tài khoản 4100 cho các bút
     toán được ghi nhận trong ngày (DG-391 Phase 1 — căn chỉnh theo
@@ -130,6 +127,11 @@ def get_today_summary(
 
     Order count = tất cả đơn hàng có dueDate == date (không lọc theo status),
     bao gồm cả đơn POS có due_date rỗng (match theo created_at).
+
+    DG-409 Phase 1 (FR7/AC8): danh sách đơn hàng đầy đủ không còn được nhúng
+    trong phản hồi — chỉ trả về các metric tổng hợp (revenue, orderCount,
+    statusBreakdown). Flutter dashboard sẽ gọi ``GET /api/orders?due_date=...``
+    riêng khi cần hiển thị danh sách đơn.
     """
     date = _resolve_date_param(date)
 
@@ -144,16 +146,19 @@ def get_today_summary(
             period_end_date=date,
         )
 
-        # --- Orders: all orders due on `date` (no status filter) ---
-        # POS orders with empty due_date are matched by created_at within
-        # the day bounds (same pattern as GET /api/orders?due_date=...).
-        threshold_minutes = get_delivery_critical_threshold(conn)
+        # --- Order count + status breakdown (FR7/AC8) ---
+        # The full order list is no longer embedded in the response — only
+        # aggregate metrics are returned (revenue, order count, status
+        # breakdown). The Flutter dashboard fetches the order list via the
+        # dedicated ``GET /api/orders?due_date=...`` endpoint when the user
+        # opens the Today Sales tab. This keeps the summary payload small
+        # and decouples the dashboard metrics from the full order fetch
+        # (DG-409 Phase 1 / FR7 / AC8).
         source_placeholders = ",".join("?" for _ in _FALLBACK_SOURCES)
-        rows = conn.execute(
-            f"""SELECT orders.*, s.name AS assigned_staff_name,
-                (SELECT GROUP_CONCAT(DISTINCT method) FROM payment_transactions
-                 WHERE order_id = orders.id AND invalidated_at IS NULL) AS payment_methods_concat
-                FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id
+        count_row = conn.execute(
+            f"""SELECT COUNT(*) AS cnt,
+                   COALESCE(status, '') AS status
+                FROM orders
                 WHERE (
                     orders.due_date = ?
                     OR (
@@ -163,30 +168,19 @@ def get_today_summary(
                         AND orders.created_at < ?
                     )
                 )
-                ORDER BY orders.id DESC""",
+                GROUP BY status""",
             (date, *_FALLBACK_SOURCES, day_start, day_end),
         ).fetchall()
-
-        orders = []
-        for r in rows:
-            staff_name = (
-                r["assigned_staff_name"]
-                if r["assigned_staff_name"] is not None
-                else ""
-            )
-            order = Order.from_row(
-                r, conn, assigned_staff_name=staff_name
-            )
-            payment_methods = _parse_payment_methods(r["payment_methods_concat"])
-            orders.append(order.to_api_dict(threshold_minutes=threshold_minutes, payment_methods=payment_methods))
+        order_count = sum(int(r["cnt"]) for r in count_row)
+        status_breakdown = {r["status"]: int(r["cnt"]) for r in count_row}
 
         return {
             "date": date,
             "revenue": metrics["revenue"],
-            "orderCount": len(orders),
+            "orderCount": order_count,
             "cashTotal": metrics["cashTotal"],
             "bankTransferTotal": metrics["bankTransferTotal"],
             "cashInTotal": metrics["cashInTotal"],
             "cashOutTotal": metrics["cashOutTotal"],
-            "orders": orders,
+            "statusBreakdown": status_breakdown,
         }

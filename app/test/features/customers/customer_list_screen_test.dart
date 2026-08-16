@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/models/customer.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/features/customers/customer_list_screen.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:dio/dio.dart';
@@ -29,6 +30,30 @@ class _FakeCustomerService extends CustomerService {
           (c) => c.name.toLowerCase().contains(lower) || c.phone.contains(q),
         )
         .toList();
+  }
+
+  /// DG-409 Phase 4: paginated customer list with server-side search.
+  /// Mirrors [listCustomers] then slices the result page so the paginated
+  /// screen renders the same canned data.
+  @override
+  Future<PaginatedResponse<Customer>> listCustomersPaginated({
+    String? search,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final all = await listCustomers(search: search);
+    final total = all.length;
+    final end = offset + limit;
+    final page = offset >= total
+        ? const <Customer>[]
+        : all.sublist(offset, end > total ? total : end);
+    return PaginatedResponse<Customer>(
+      items: page,
+      total: total,
+      hasMore: offset + page.length < total,
+      limit: limit,
+      offset: offset,
+    );
   }
 }
 

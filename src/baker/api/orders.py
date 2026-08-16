@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.config import get_delivery_critical_threshold
@@ -16,6 +17,8 @@ from baker.models.order import (
     Order,
     OrderItem,
     OrderStatus,
+    compute_missing_fields,
+    compute_urgency,
     delivery_type_to_public_suffix,
     generate_public_order_code_candidate,
     is_backward_transition,
@@ -30,7 +33,10 @@ from baker.services.customer_resolver import (
     _resolve_customer_id_by_phone,
     _resolve_or_create_customer_id,
 )
-from baker.services.order_stock import auto_decrement_stock, reverse_order_stock_for_edit
+from baker.services.order_stock import (
+    auto_decrement_stock,
+    reverse_order_stock_for_edit,
+)
 from baker.services.address_library import (
     sync_on_order_edit as _sync_address_library_on_edit,
     sync_on_order_save as _sync_address_library_on_save,
@@ -99,6 +105,17 @@ def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
         return (False, None)
     amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
     return (amount_paid >= float(row["total_price"]), amount_paid)
+
+
+def _sum_paid_excl_outflows_batch(conn, order_ids: list[int]) -> dict[int, float]:
+    """Batched amount_paid for the counts endpoint (CQ-2).
+
+    Delegates to :meth:`PaymentTransaction.sum_paid_excl_outflows_batch` —
+    a single grouped SUM query instead of one ``total_paid_excl_outflows``
+    call per delivered order. Kept as a thin module-level wrapper so the
+    counts endpoint reads symmetrically with ``_is_delivered_and_fully_paid``.
+    """
+    return PaymentTransaction.sum_paid_excl_outflows_batch(conn, order_ids)
 
 
 class OrderItemIn(BaseModel):
@@ -242,12 +259,28 @@ class PaymentUpdate(BaseModel):
     changedBy: str = ""
 
 
-def _log_order_history(conn, order_id, action_type, field_name="", old_value="", new_value="", changed_by=""):
+def _log_order_history(
+    conn,
+    order_id,
+    action_type,
+    field_name="",
+    old_value="",
+    new_value="",
+    changed_by="",
+):
     """Insert an audit log entry into the order_history table."""
     conn.execute(
         """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (order_id, action_type, field_name, old_value, new_value, changed_by, now_utc()),
+        (
+            order_id,
+            action_type,
+            field_name,
+            old_value,
+            new_value,
+            changed_by,
+            now_utc(),
+        ),
     )
 
 
@@ -333,7 +366,9 @@ def _sync_order_items_table(conn, order_id: int, items: list[OrderItem]) -> None
     # ``order_photos.work_item_id`` for these rows first to avoid FK
     # constraint failure (no ON DELETE SET NULL on the column).
     new_positions = set(range(len(items)))
-    surplus_ids = [rid for pos, rid in existing_by_pos.items() if pos not in new_positions]
+    surplus_ids = [
+        rid for pos, rid in existing_by_pos.items() if pos not in new_positions
+    ]
     if surplus_ids:
         placeholders = ",".join("?" * len(surplus_ids))
         conn.execute(
@@ -381,6 +416,7 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
     items = [WorkItem.from_row(r) for r in item_rows]
     # Attach blanks lists via the order_item_blanks junction (DG-294)
     from baker.api.work_items import _attach_blanks
+
     _attach_blanks(conn, items)
     result["workItems"] = [it.to_api_dict() for it in items]
 
@@ -388,7 +424,9 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
         "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
         (row["id"],),
     ).fetchall()
-    result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
+    result["paymentTransactions"] = [
+        PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows
+    ]
 
     payment_methods = list({r["method"] for r in txn_rows if not r["invalidated_at"]})
     result["paymentMethods"] = payment_methods
@@ -400,7 +438,9 @@ def _generate_unique_public_order_code(conn, due_date: str, delivery_type: str) 
     for reference_len in range(3, PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN + 1):
         attempts = 30 if reference_len == 3 else 50
         for _ in range(attempts):
-            candidate = generate_public_order_code_candidate(delivery_type, reference_len)
+            candidate = generate_public_order_code_candidate(
+                delivery_type, reference_len
+            )
             exists = conn.execute(
                 "SELECT 1 FROM orders WHERE due_date = ? AND public_order_code = ? LIMIT 1",
                 (due_date, candidate),
@@ -410,7 +450,9 @@ def _generate_unique_public_order_code(conn, due_date: str, delivery_type: str) 
     raise HTTPException(status_code=500, detail="Không thể tạo mã nhận bánh hợp lệ")
 
 
-def _public_code_exists_for_due_date(conn, due_date: str, public_order_code: str, order_id: int) -> bool:
+def _public_code_exists_for_due_date(
+    conn, due_date: str, public_order_code: str, order_id: int
+) -> bool:
     existing = conn.execute(
         """SELECT 1 FROM orders
            WHERE due_date = ? AND public_order_code = ? AND id != ?
@@ -470,17 +512,192 @@ def _raise_status_transition_rejection(
     raise HTTPException(status_code=status_code, detail=rejection_detail)
 
 
+@router.get("/counts")
+def get_order_counts():
+    """Đếm số lượng đơn hàng đang hoạt động theo nhóm badge (FR2/NFR4).
+
+    Trả về ``{"urgency": N, "incomplete": N}`` cho các đơn hàng đang hoạt
+    động (status IN new, confirmed, in_progress, ready, delivered). Đơn
+    ``delivered`` đã thanh toán đủ được loại khỏi badge (cùng quy tắc với
+    ``GET /api/orders?active_only=true``). Đơn ``completed``/``cancelled``
+    bị loại bỏ.
+
+    - ``urgency`` = số đơn có ``compute_urgency`` trả về ``critical`` hoặc
+      ``urgent`` (dùng ngưỡng cấu hình runtime từ DB).
+    - ``incomplete`` = số đơn có ``completeness = incomplete`` (thiếu
+      trường bắt buộc).
+
+    CQ-2 (review-auto): thay vì fetch toàn bộ order rows rồi gọi
+    ``_is_delivered_and_fully_paid`` per-row (N+1 SUM query trên
+    ``payment_transactions``), endpoint tính ``amount_paid`` cho mọi đơn
+    ``delivered`` trong **một** grouped SUM query rồi lọc fully-paid trong
+    Python. Urgency/incomplete được tính trực tiếp từ các row fields (không
+    thêm query nào) — badge endpoint trả về < 100ms p95 (NFR4). Trả về
+    ``{"urgency": 0, "incomplete": 0}`` khi có lỗi — tránh hiển thị badge sai
+    trong quá trình giảm cấp (FR2).
+    """
+    try:
+        with get_db() as conn:
+            # Active statuses exclude terminal completed/cancelled. Delivered
+            # orders remain "active" but delivered+fully-paid orders are
+            # filtered out (same rule as active_only in list_orders).
+            active_statuses = ["new", "confirmed", "in_progress", "ready", "delivered"]
+            placeholders = ",".join("?" for _ in active_statuses)
+            threshold_minutes = get_delivery_critical_threshold(conn)
+
+            rows = conn.execute(
+                f"""SELECT orders.*
+                    FROM orders
+                    WHERE status IN ({placeholders})
+                    ORDER BY orders.id DESC""",
+                active_statuses,
+            ).fetchall()
+
+            # CQ-2: compute amount_paid for ALL delivered rows in a single
+            # grouped SUM query instead of one total_paid_excl_outflows
+            # call per delivered row (N+1 → 1). Non-delivered rows are
+            # never filtered out, so their amount_paid is not needed here.
+            delivered_ids = [r["id"] for r in rows if r["status"] == "delivered"]
+            paid_by_id: dict[int, float] = {}
+            if delivered_ids:
+                paid_by_id = _sum_paid_excl_outflows_batch(conn, delivered_ids)
+
+            urgency = 0
+            incomplete = 0
+            for r in rows:
+                # Skip delivered+fully-paid (same filter as active_only in
+                # list_orders — DG-274 Phase 3 / review-auto c1 CQ-1).
+                # CQ-2: amount_paid comes from the batched grouped query,
+                # not a per-row _is_delivered_and_fully_paid call.
+                if r["status"] == "delivered":
+                    amount_paid = paid_by_id.get(r["id"], 0.0)
+                    if amount_paid >= float(r["total_price"]):
+                        continue
+                # Compute urgency directly from the row fields without
+                # constructing the full api dict (NFR4 — keep the query
+                # lightweight so the badge endpoint returns < 100ms p95).
+                urgency_tier = compute_urgency(
+                    r["due_date"],
+                    r["due_time"],
+                    r["status"],
+                    r["acknowledged_at"],
+                    delivery_type=r["delivery_type"],
+                    threshold_minutes=threshold_minutes,
+                )
+                if urgency_tier in ("critical", "urgent"):
+                    urgency += 1
+                # Compute completeness directly from row fields — same
+                # required-field checks as Order.compute_completeness but
+                # avoids loading the items JSON / re-validating each item.
+                if _is_row_incomplete(r):
+                    incomplete += 1
+
+            return {"urgency": urgency, "incomplete": incomplete}
+    except Exception:
+        logger.exception("order_counts_failed")
+        return {"urgency": 0, "incomplete": 0}
+
+
+def _is_row_incomplete(row) -> bool:
+    """Return True when an order row is missing a required field.
+
+    CQ-4 (review-auto): delegates the required-field rules to
+    :func:`compute_missing_fields` — the single source of truth shared with
+    :meth:`Order.compute_completeness` — so the row-based lightweight check
+    and the model-based check can no longer drift. Operates directly on the
+    DB row to avoid loading the items JSON and re-validating each item
+    (NFR4 — the items check inspects the raw JSON string instead of parsing
+    the model list; an empty/zero-value row is incomplete).
+    """
+    raw_items = row["items"]
+    items_present = bool(raw_items) and raw_items not in ("[]", "null")
+    missing = compute_missing_fields(
+        customer_name=(row["customer_name"] or ""),
+        items_present=items_present,
+        total_price=row["total_price"] or 0.0,
+        due_date=row["due_date"],
+        due_time=row["due_time"],
+        delivery_type=row["delivery_type"] or "pickup",
+        delivery_address=row["delivery_address"] or "",
+        customer_phone=row["customer_phone"] or "",
+        delivery_phone=row["delivery_phone"] or "",
+        source=row["source"] or "",
+    )
+    return bool(missing)
+
+
 @router.get("")
 def list_orders(
     status: Optional[str] = Query(None, description="Lọc theo trạng thái"),
-    due_date: Optional[str] = Query(None, description="Lọc theo ngày giao (YYYY-MM-DD)"),
-    due_date_from: Optional[str] = Query(None, description="Lọc theo ngày giao bắt đầu (YYYY-MM-DD)"),
-    due_date_to: Optional[str] = Query(None, description="Lọc theo ngày giao kết thúc (YYYY-MM-DD)"),
-    limit: int = Query(50, description="Số lượng tối đa"),
+    due_date: Optional[str] = Query(
+        None, description="Lọc theo ngày giao (YYYY-MM-DD)"
+    ),
+    due_date_from: Optional[str] = Query(
+        None, description="Lọc theo ngày giao bắt đầu (YYYY-MM-DD)"
+    ),
+    due_date_to: Optional[str] = Query(
+        None, description="Lọc theo ngày giao kết thúc (YYYY-MM-DD)"
+    ),
+    limit: int = Query(
+        50,
+        description=(
+            "Số lượng tối đa. Giá trị âm (ví dụ -1) là sentinel 'không giới "
+            "hạn' — trả về mọi đơn phù hợp (SQLite hiểu LIMIT -1). Chỉ dùng "
+            "cho nhánh due_date/terminal-status; không áp dụng cho "
+            "active_only/status-active (FR9)."
+        ),
+    ),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
-    active_only: bool = Query(False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"),
+    active_only: bool = Query(
+        False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"
+    ),
+    paginated: bool = Query(
+        False,
+        description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 Phase 4)",
+    ),
 ):
-    """Danh sách đơn hàng."""
+    """Danh sách đơn hàng.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    (và không dùng ``active_only``), trả về envelope ``{items, total, has_more,
+    limit, offset}`` cho lịch sử đơn hàng (FR12, DG-409 Phase 4). Nhánh
+    ``active_only`` luôn trả mảng trần đầy đủ (FR9 — không phân trang đơn đang
+    hoạt động).
+
+    CQ-5 (review-auto): ``paginated=true`` kết hợp với ``status`` là một
+    trạng thái đang hoạt động (new/confirmed/in_progress/ready/delivered)
+    bị từ chối tường minh (422) vì nhánh status-active là một active view
+    (giống ``active_only`` — FR9 không phân trang). Trước đây
+    ``paginated=true`` bị bỏ qua im lặng ở nhánh này; giờ endpoint báo rõ
+    kết hợp không được hỗ trợ thay vì trả mảng trần khi client yêu cầu
+    envelope.
+
+    CQ-14 (cycle-2 re-review): ``limit`` âm (ví dụ ``limit=-1``) là sentinel
+    'không giới hạn' — trả về mọi đơn phù hợp thay vì bị cắt bớt. SQLite hiểu
+    ``LIMIT -1`` là không giới hạn, nên nhánh due_date/terminal-status dùng
+    sentinel này để tránh silent truncation trong các ngày đông đơn (xem
+    ``app/lib/providers/order/due_date_order_list_providers.dart``). Sentinel
+    này KHÔNG tương thích với ``clamp_limit``/``paginate_params`` (nhánh
+    paginated sẽ clamp về default), nên chỉ có hiệu lực ở nhánh bare-array
+    (``paginated=false``/mặc định và ``active_only``/status-active vốn đã
+    không phân trang). Không thay đổi hành vi FR9 của active orders.
+    """
+    # CQ-5: reject the paginated+active-status combination explicitly instead
+    # of silently returning a bare array. The status-active branch is an
+    # active view (same as active_only — FR9: active orders stay
+    # unpaginated), so the envelope is not supported there.
+    _active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
+    if paginated and status and status in _active_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "paginated=true không được hỗ trợ khi lọc theo trạng thái đang "
+                "hoạt động (new/confirmed/in_progress/ready/delivered). Nhánh "
+                "status-active là active view (FR9 — không phân trang). Bỏ "
+                "paginated hoặc dùng một trạng thái terminal (completed/cancelled)."
+            ),
+        )
+
     with get_db() as conn:
         conditions = []
         params: list = []
@@ -507,7 +724,9 @@ def list_orders(
                     )
                 )"""
             )
-            params.extend([due_date, *_FALLBACK_SOURCES, created_at_from, created_at_to])
+            params.extend(
+                [due_date, *_FALLBACK_SOURCES, created_at_from, created_at_to]
+            )
         elif due_date_from and due_date_to:
             created_at_from, _ = _day_bounds(due_date_from)
             _, created_at_to = _day_bounds(due_date_to)
@@ -522,7 +741,15 @@ def list_orders(
                     )
                 )"""
             )
-            params.extend([due_date_from, due_date_to, *_FALLBACK_SOURCES, created_at_from, created_at_to])
+            params.extend(
+                [
+                    due_date_from,
+                    due_date_to,
+                    *_FALLBACK_SOURCES,
+                    created_at_from,
+                    created_at_to,
+                ]
+            )
         elif due_date_from:
             created_at_from, _ = _day_bounds(due_date_from)
             conditions.append(
@@ -577,12 +804,20 @@ def list_orders(
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
-                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
+                staff_name = (
+                    r["assigned_staff_name"]
+                    if r["assigned_staff_name"] is not None
+                    else ""
+                )
+                order = Order.from_row(
+                    r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name
+                )
                 order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
                 # DG-384 Phase 3 (FR5/NFR2): attach distinct payment methods via
                 # the correlated subquery column (no N+1 per-order query).
-                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                order_dict["paymentMethods"] = _parse_payment_methods(
+                    r["payment_methods_concat"]
+                )
                 result.append(order_dict)
             return result
 
@@ -603,19 +838,37 @@ def list_orders(
                 fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
                 if fully_paid:
                     continue
-                staff_name = r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""
-                order = Order.from_row(r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name)
+                staff_name = (
+                    r["assigned_staff_name"]
+                    if r["assigned_staff_name"] is not None
+                    else ""
+                )
+                order = Order.from_row(
+                    r, conn, amount_paid=amount_paid, assigned_staff_name=staff_name
+                )
                 order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
-                order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+                order_dict["paymentMethods"] = _parse_payment_methods(
+                    r["payment_methods_concat"]
+                )
                 result.append(order_dict)
             return result
+
+        # DG-409 Phase 4 (FR12): history branch — support an opt-in paginated
+        # envelope. The active_only branch above returns a bare array (FR9 —
+        # active orders stay unpaginated), so the envelope only applies to the
+        # history view (active_only=false) that already uses LIMIT/OFFSET.
+        use_envelope = paginated and not active_only
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+        else:
+            lim, off = limit, offset
 
         rows = conn.execute(
             f"SELECT orders.*, s.name AS assigned_staff_name, "
             f"{_PAYMENT_METHODS_SUBQUERY} AS payment_methods_concat "
             f"FROM orders LEFT JOIN staff AS s ON s.id = orders.assigned_staff_id "
             f"{where} ORDER BY orders.id DESC LIMIT ? OFFSET ?",
-            params + [limit, offset],
+            params + [lim, off],
         ).fetchall()
 
         result = []
@@ -623,11 +876,24 @@ def list_orders(
             order = Order.from_row(
                 r,
                 conn,
-                assigned_staff_name=(r["assigned_staff_name"] if r["assigned_staff_name"] is not None else ""),
+                assigned_staff_name=(
+                    r["assigned_staff_name"]
+                    if r["assigned_staff_name"] is not None
+                    else ""
+                ),
             )
             order_dict = order.to_api_dict(threshold_minutes=threshold_minutes)
-            order_dict["paymentMethods"] = _parse_payment_methods(r["payment_methods_concat"])
+            order_dict["paymentMethods"] = _parse_payment_methods(
+                r["payment_methods_concat"]
+            )
             result.append(order_dict)
+        if use_envelope:
+            count_row = conn.execute(
+                f"SELECT COUNT(*) AS c FROM orders {where}",
+                params,
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            return paginated_envelope(result, total, lim, off)
         return result
 
 
@@ -642,7 +908,9 @@ def create_order(body: OrderCreate, request: Request):
         created_staff_name = resolve_staff_name(request)
 
         if body.customerId is not None:
-            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
+            exists = conn.execute(
+                "SELECT 1 FROM customers WHERE id = ?", (body.customerId,)
+            ).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
         else:
@@ -654,7 +922,9 @@ def create_order(body: OrderCreate, request: Request):
             body.customerId = _resolve_or_create_customer_id(
                 conn, body.customerPhone, body.customerName
             )
-        public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
+        public_order_code = _generate_unique_public_order_code(
+            conn, body.dueDate, body.deliveryType
+        )
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
@@ -712,7 +982,11 @@ def create_order(body: OrderCreate, request: Request):
 
         # POS quick-sale: record payment if paymentMethod is provided, but skip
         # for POS source (Flutter creates the transaction client-side).
-        if body.source != "Tại tiệm - POS" and body.paymentMethod and body.paymentMethod != "none":
+        if (
+            body.source != "Tại tiệm - POS"
+            and body.paymentMethod
+            and body.paymentMethod != "none"
+        ):
             total_price = float(order.total_price)
             if total_price > 0:
                 txn = PaymentTransaction(
@@ -722,23 +996,37 @@ def create_order(body: OrderCreate, request: Request):
                     method=body.paymentMethod,
                 )
                 txn.save(conn)
-                _log_order_history(conn, order.id, "payment", "amount",
-                                   old_value="", new_value=str(total_price),
-                                   changed_by=actor)
+                _log_order_history(
+                    conn,
+                    order.id,
+                    "payment",
+                    "amount",
+                    old_value="",
+                    new_value=str(total_price),
+                    changed_by=actor,
+                )
 
         # If status='delivered', also update order status and decrement stock
         accounting_sync_warning = None
         if body.status == "delivered":
             Order.update_status(conn, order.order_ref, "delivered", "")
-            _log_order_history(conn, order.id, "status_change", "status",
-                               "new", "delivered", actor)
+            _log_order_history(
+                conn, order.id, "status_change", "status", "new", "delivered", actor
+            )
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import (
+                _sync_delivered_order_journal,
+                run_journal_sync,
+                sync_status_to_warning,
+            )
+
             sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
-                conn, order.id, order.order_ref,
+                conn,
+                order.id,
+                order.order_ref,
                 log_label=f"delivered order journal sync for order {order.id}",
                 source_type="order",
                 source_id=order.id,
@@ -765,15 +1053,32 @@ def create_order(body: OrderCreate, request: Request):
             customer_id=body.customerId,
         )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
-        response = _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
+        response = _order_detail(
+            conn, row, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
 
 
 @router.get("/{ref}/events")
-def get_order_events(ref: str):
-    """Danh sách sự kiện liên kết với đơn hàng, sắp xếp mới nhất trước."""
+def get_order_events(
+    ref: str,
+    limit: int | None = Query(
+        None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"
+    ),
+    offset: int = Query(0, ge=0, description="Bỏ qua N sự kiện đầu"),
+    paginated: bool = Query(
+        False,
+        description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409)",
+    ),
+):
+    """Danh sách sự kiện liên kết với đơn hàng, sắp xếp mới nhất trước.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         order_row = conn.execute(
             "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -782,13 +1087,28 @@ def get_order_events(ref: str):
         if not order_row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-        rows = conn.execute(
-            "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC",
-            (order_row["id"],),
-        ).fetchall()
+        base_sql = "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC"
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM events WHERE order_id = ?",
+                (order_row["id"],),
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                base_sql + " LIMIT ? OFFSET ?",
+                (order_row["id"], lim, off),
+            ).fetchall()
+        else:
+            rows = conn.execute(base_sql, (order_row["id"],)).fetchall()
 
         from baker.api.events import _row_to_dict
-        return [_row_to_dict(r) for r in rows]
+
+        items = [_row_to_dict(r) for r in rows]
+        if use_envelope:
+            return paginated_envelope(items, total, lim, off)
+        return items
 
 
 @router.get("/{ref}")
@@ -801,7 +1121,9 @@ def get_order(ref: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
-        return _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
+        return _order_detail(
+            conn, row, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
 
 
 @router.post("/{ref}/acknowledge")
@@ -821,8 +1143,12 @@ def acknowledge_order(ref: str):
                 (now_utc(), now_utc(), row["id"]),
             )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
 
 
 @router.patch("/{ref}")
@@ -851,7 +1177,9 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             )
 
         if "customerId" in data and data["customerId"] is not None:
-            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
+            exists = conn.execute(
+                "SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)
+            ).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
         elif "customerId" in data and data["customerId"] is None:
@@ -910,7 +1238,9 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         new_due_date = data.get("dueDate", row["due_date"])
         new_delivery_type = data.get("deliveryType", row["delivery_type"])
         due_date_changed = "dueDate" in data and data["dueDate"] != row["due_date"]
-        delivery_type_changed = "deliveryType" in data and data["deliveryType"] != row["delivery_type"]
+        delivery_type_changed = (
+            "deliveryType" in data and data["deliveryType"] != row["delivery_type"]
+        )
         current_public_code = row["public_order_code"] or ""
 
         if due_date_changed and current_public_code:
@@ -922,7 +1252,9 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 )
 
             if decision == "regenerate":
-                new_public_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+                new_public_code = _generate_unique_public_order_code(
+                    conn, new_due_date, new_delivery_type
+                )
                 updates.append("public_order_code = ?")
                 params.append(new_public_code)
                 public_code_update = {
@@ -933,8 +1265,12 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 }
                 current_public_code = new_public_code
             else:
-                if _public_code_exists_for_due_date(conn, new_due_date, current_public_code, row["id"]):
-                    new_public_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+                if _public_code_exists_for_due_date(
+                    conn, new_due_date, current_public_code, row["id"]
+                ):
+                    new_public_code = _generate_unique_public_order_code(
+                        conn, new_due_date, new_delivery_type
+                    )
                     updates.append("public_order_code = ?")
                     params.append(new_public_code)
                     public_code_update = {
@@ -953,9 +1289,15 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     }
 
         if delivery_type_changed and current_public_code:
-            suffix_updated_code = _replace_public_code_suffix(current_public_code, new_delivery_type)
-            if _public_code_exists_for_due_date(conn, new_due_date, suffix_updated_code, row["id"]):
-                suffix_updated_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+            suffix_updated_code = _replace_public_code_suffix(
+                current_public_code, new_delivery_type
+            )
+            if _public_code_exists_for_due_date(
+                conn, new_due_date, suffix_updated_code, row["id"]
+            ):
+                suffix_updated_code = _generate_unique_public_order_code(
+                    conn, new_due_date, new_delivery_type
+                )
                 action = "suffix_updated_regenerated"
                 reason = "delivery_type_conflict"
             else:
@@ -995,12 +1337,15 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 cash_fee = sum(
                     float(i.attributes.get("cash_fee", 0))
                     for i in items
-                    if i.attributes.get("rut_tien") == "true" and i.attributes.get("cash_fee")
+                    if i.attributes.get("rut_tien") == "true"
+                    and i.attributes.get("cash_fee")
                 )
             else:
                 subtotal = sum(
-                    i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
-                    for i in raw_items if not i.get("is_gift", False)
+                    i.get("quantity", i.get("qty", 1))
+                    * i.get("unit_price", i.get("price", 0))
+                    for i in raw_items
+                    if not i.get("is_gift", False)
                 )
                 cash_fee = 0
                 for i in raw_items:
@@ -1044,16 +1389,19 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # the client can warn the user instead of silently dropping the
         # failure.
         edit_sync_warning = None
-        if items_changed and _ORDER_STATUS_RANK.get(
-            OrderStatus(row["status"]), 0
-        ) >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]:
+        if (
+            items_changed
+            and _ORDER_STATUS_RANK.get(OrderStatus(row["status"]), 0)
+            >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]
+        ):
             try:
                 reverse_order_stock_for_edit(conn, row["id"], row["order_ref"])
                 auto_decrement_stock(conn, row["id"], row["order_ref"])
             except Exception:
                 logger.exception(
                     "edit_order stock reversal/re-deduction failed for order %s (%s)",
-                    row["id"], row["order_ref"],
+                    row["id"],
+                    row["order_ref"],
                 )
                 edit_sync_warning = "journal_sync_failed"
 
@@ -1085,13 +1433,16 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     _sync_order_cogs_entry,
                 )
                 from baker.services.journal_sync.order import _replace_order_entry
+
                 # Reverse/delete the old COGS entries so the idempotent
                 # re-creation below produces entries reflecting the new
                 # items/prices (FR6/AC4). COGS only depends on items, so
                 # this runs only when items changed.
                 if items_changed:
                     for cogs_source_type in ("order_cogs", "order_gift_cogs"):
-                        old_cogs_id = _find_journal_entry(conn, cogs_source_type, row["id"])
+                        old_cogs_id = _find_journal_entry(
+                            conn, cogs_source_type, row["id"]
+                        )
                         if old_cogs_id is not None:
                             _replace_order_entry(conn, old_cogs_id, respect_locks=True)
                     _sync_order_cogs_entry(conn, row["id"], row["order_ref"])
@@ -1105,7 +1456,8 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             except Exception:
                 logger.exception(
                     "edit_order COGS/revenue journal adjustment failed for order %s (%s)",
-                    row["id"], row["order_ref"],
+                    row["id"],
+                    row["order_ref"],
                 )
                 edit_sync_warning = "journal_sync_failed"
 
@@ -1123,14 +1475,30 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                         "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
                         (mark_actor, row["id"]),
                     )
-                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, mark_actor, mark_actor)
+                    _log_order_history(
+                        conn,
+                        row["id"],
+                        "field_edit",
+                        "work_ticket_printed_by",
+                        old_printed_by,
+                        mark_actor,
+                        mark_actor,
+                    )
                 if not old_printed_staff_name:
                     conn.execute(
                         "UPDATE orders SET work_ticket_printed_staff_name = ? WHERE id = ?",
                         (print_staff_name, row["id"]),
                     )
                     if old_printed_staff_name != print_staff_name:
-                        _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, print_staff_name, mark_actor)
+                        _log_order_history(
+                            conn,
+                            row["id"],
+                            "field_edit",
+                            "work_ticket_printed_staff_name",
+                            old_printed_staff_name,
+                            print_staff_name,
+                            mark_actor,
+                        )
             else:
                 old_printed_by = row["work_ticket_printed_by"] or ""
                 old_printed_staff_name = row["work_ticket_printed_staff_name"] or ""
@@ -1139,13 +1507,34 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     ("", "", row["id"]),
                 )
                 changed_by = resolve_actor(request, data.get("changedBy", ""))
-                _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, "", changed_by)
+                _log_order_history(
+                    conn,
+                    row["id"],
+                    "field_edit",
+                    "work_ticket_printed_by",
+                    old_printed_by,
+                    "",
+                    changed_by,
+                )
                 if old_printed_staff_name:
-                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, "", changed_by)
+                    _log_order_history(
+                        conn,
+                        row["id"],
+                        "field_edit",
+                        "work_ticket_printed_staff_name",
+                        old_printed_staff_name,
+                        "",
+                        changed_by,
+                    )
 
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
-        if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
-            from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        if (shipping_fee_changed or delivery_type_changed) and row[
+            "delivery_type"
+        ] == "bus":
+            from baker.services.journal_sync import (
+                _sync_payment_journal,
+                run_journal_sync,
+            )
 
             txn_rows = conn.execute(
                 "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
@@ -1167,10 +1556,29 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         changed_by = resolve_actor(request, data.get("changedBy", ""))
         for camel, snake in field_map.items():
             if camel in data:
-                _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
+                _log_order_history(
+                    conn,
+                    row["id"],
+                    "field_edit",
+                    snake,
+                    str(row[snake]),
+                    str(data[camel]),
+                    changed_by,
+                )
         if items_changed:
-            _log_order_history(conn, row["id"], "field_edit", "items", row["items"], items_json, changed_by)
-        if public_code_update and public_code_update["previousCode"] != public_code_update["currentCode"]:
+            _log_order_history(
+                conn,
+                row["id"],
+                "field_edit",
+                "items",
+                row["items"],
+                items_json,
+                changed_by,
+            )
+        if (
+            public_code_update
+            and public_code_update["previousCode"] != public_code_update["currentCode"]
+        ):
             _log_order_history(
                 conn,
                 row["id"],
@@ -1193,11 +1601,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # Recompute the affected rows. items/shipping_fee changes affect the
         # order's own (customer_id, year) row; a customer_id change affects both
         # the old and new customer rows for the order's year.
-        if (
-            items_changed
-            or shipping_fee_changed
-            or ("customerId" in data)
-        ):
+        if items_changed or shipping_fee_changed or ("customerId" in data):
             if old_customer_id is not None and old_year is not None:
                 _recompute_customer_year_summary(conn, old_customer_id, old_year)
             if (
@@ -1220,7 +1624,9 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         old_delivery_address_edit = row["delivery_address"] or ""
         old_google_maps_url_edit = row["google_maps_url"]
         new_delivery_type_edit = data.get("deliveryType", old_delivery_type_edit)
-        new_delivery_address_edit = data.get("deliveryAddress", old_delivery_address_edit)
+        new_delivery_address_edit = data.get(
+            "deliveryAddress", old_delivery_address_edit
+        )
         new_google_maps_url_edit = data.get("googleMapsUrl", old_google_maps_url_edit)
         _sync_address_library_on_edit(
             conn,
@@ -1234,8 +1640,12 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             customer_id=new_customer_id,
         )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        response = _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
         response["publicOrderCodeUpdate"] = public_code_update or {
             "action": "unchanged",
             "reason": "none",
@@ -1272,7 +1682,10 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                 rejection_detail="Không tìm thấy đơn hàng",
             )
 
-        if is_backward_transition(row["status"], body.status) and not body.reason.strip():
+        if (
+            is_backward_transition(row["status"], body.status)
+            and not body.reason.strip()
+        ):
             _raise_status_transition_rejection(
                 requested_ref=ref,
                 order_row=row,
@@ -1311,7 +1724,15 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                 rejection_detail="Không thể chuyển trạng thái",
             )
 
-        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
+        _log_order_history(
+            conn,
+            row["id"],
+            "status_change",
+            "status",
+            row["status"],
+            body.status,
+            resolve_actor(request, body.changedBy),
+        )
 
         # Post-update side effects (delivered/completed journal sync, item
         # cascade, extras sync) run after the status row is updated.
@@ -1319,8 +1740,12 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
             conn, row["id"], row["order_ref"], row["status"], body.status, prior_warning
         )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        response = _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
@@ -1346,25 +1771,37 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
             (row["id"],),
         ).fetchone()
         if not txn_row:
-            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch thanh toán")
+            raise HTTPException(
+                status_code=404, detail="Không tìm thấy giao dịch thanh toán"
+            )
 
         conn.execute(
             "UPDATE payment_transactions SET method = ? WHERE id = ?",
             (body.method, txn_row["id"]),
         )
-        _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
+        _log_order_history(
+            conn, row["id"], "field_edit", "payment_method", "", body.method, ""
+        )
 
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
 
         run_journal_sync(
             _sync_payment_journal,
-            conn, txn_row["id"], txn_row["amount"], txn_row["type"], body.method,
+            conn,
+            txn_row["id"],
+            txn_row["amount"],
+            txn_row["type"],
+            body.method,
             order_id=row["id"],
             log_label=f"payment journal re-sync after method change for txn {txn_row['id']}",
         )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
 
 
 @router.patch("/{ref}/payment")
@@ -1390,12 +1827,21 @@ def update_payment(ref: str, body: PaymentUpdate, request: Request):
             )
             txn.save(conn)
             _log_order_history(
-                conn, row["id"], "payment", "amount",
-                old_value="", new_value=str(body.amountPaid), changed_by=resolve_actor(request, body.changedBy),
+                conn,
+                row["id"],
+                "payment",
+                "amount",
+                old_value="",
+                new_value=str(body.amountPaid),
+                changed_by=resolve_actor(request, body.changedBy),
             )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1483,8 +1929,12 @@ def assign_order(ref: str, request: Request):
             changed_by=resolve_actor(request, staff["name"]),
         )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )
 
 
 @router.post("/{ref}/unassign")
@@ -1538,5 +1988,9 @@ def unassign_order(ref: str, request: Request):
             changed_by=resolve_actor(request, staff["name"]),
         )
 
-        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
+        updated = conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (row["id"],)
+        ).fetchone()
+        return _order_detail(
+            conn, updated, threshold_minutes=get_delivery_critical_threshold(conn)
+        )

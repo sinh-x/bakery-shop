@@ -8,6 +8,7 @@ import '../../../providers/order/order_detail_notifier.dart';
 import '../../../providers/order/order_list_providers.dart';
 import '../../../providers/staff_provider.dart';
 import '../../../providers/user_binding_provider.dart';
+import '../../../shared/services/session_cache.dart';
 
 /// Snapshot of the currently logged-in staff member relevant to delivery
 /// claiming (DG-310 Phase 4 / FR5/AC9). Combines the staff-user binding
@@ -79,6 +80,11 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
     state = await AsyncValue.guard(() async {
       final updated = await service.assignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
+      // DG-409 Phase 5 (FR13, AC6): claim mutates the order, invalidate
+      // the order-history session cache.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.orderHistory);
       // Refresh the order detail screen so the new assignment shows
       // immediately (FR1/AC1). Matches the established pattern used by
       // payment/work-item notifiers.
@@ -93,6 +99,10 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
     state = await AsyncValue.guard(() async {
       final updated = await service.unassignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
+      // DG-409 Phase 5 (FR13, AC6): unclaim mutates the order.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.orderHistory);
       ref.read(orderDetailProvider(_orderRef).notifier).refresh();
       return updated;
     });

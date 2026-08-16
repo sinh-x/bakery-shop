@@ -5,6 +5,7 @@ import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/catalog_photo.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/enum_attribute.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_form_screen.dart';
@@ -28,6 +29,21 @@ class _FakeProductService implements ProductService {
     bool trungBay = false,
   }) async =>
       const [];
+
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async =>
+      PaginatedResponse<Product>(
+        items: const [],
+        total: 0,
+        hasMore: false,
+        limit: limit,
+        offset: offset,
+      );
 
   @override
   Future<Product> getProduct(int id) async => throw UnimplementedError();

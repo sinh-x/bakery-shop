@@ -2,10 +2,11 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/category.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_catalog_screen.dart';
 import 'package:bakery_app/features/products/widgets/product_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,6 +48,32 @@ class _FakeProductService extends ProductService {
       return List<Product>.from(source);
     }
     return source.where((product) => product.category == category).toList();
+  }
+
+  /// DG-409 Phase 4: paginated active products for the catalog screen.
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final source = active == 0 ? _inactiveProducts : _activeProducts;
+    var page = category == null
+        ? List<Product>.from(source)
+        : source.where((product) => product.category == category).toList();
+    final total = page.length;
+    final end = offset + limit;
+    page = offset >= total
+        ? const []
+        : page.sublist(offset, end > total ? total : end);
+    return PaginatedResponse<Product>(
+      items: page,
+      total: total,
+      hasMore: offset + page.length < total,
+      limit: limit,
+      offset: offset,
+    );
   }
 
   @override
@@ -106,7 +133,7 @@ GoRouter _buildRouter() {
 
 Future<void> _pumpScreen(
   WidgetTester tester, {
-  required _FakeProductService productService,
+  required ProductService productService,
   required _FakeCategoryService categoryService,
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -206,4 +233,100 @@ void main() {
     expect(find.text('Banh kem cu'), findsNothing);
     expect(find.byType(ProductCard), findsOneWidget);
   });
+
+  // CQ-9 (review-auto): the product grid load-more footer must NOT be a
+  // perpetual spinner. When `hasMore` is true it renders an explicit
+  // "Tải thêm" tap-to-load cell; the spinner shows ONLY while
+  // `isLoadingMore`. Tapping the footer triggers the next page fetch.
+  testWidgets('load-more footer renders Tải thêm and triggers loadMore '
+      '(CQ-9)', (tester) async {
+    // Custom service: first page returns 2 items but total = 5 → hasMore.
+    final productService = _Cq9ProductService();
+    final categoryService = _FakeCategoryService(const [
+      Category(
+        id: 1,
+        slug: 'banh_kem',
+        name: 'Banh kem',
+        codePrefix: 'BK',
+        active: 1,
+      ),
+    ]);
+
+    await _pumpScreen(
+      tester,
+      productService: productService,
+      categoryService: categoryService,
+    );
+
+    // Footer is the explicit "Tải thêm" cell — NOT a spinner.
+    expect(find.text(SharedLabels.loadMore), findsOneWidget);
+    // Two product cards from the first page.
+    expect(find.byType(ProductCard), findsNWidgets(2));
+
+    // Scroll the footer into view (it sits below the 2 product cards in
+    // the scrollable grid), then tap to trigger loadMore.
+    await tester.scrollUntilVisible(
+      find.text(SharedLabels.loadMore),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text(SharedLabels.loadMore));
+    await tester.pumpAndSettle();
+
+    // After loading the second page, hasMore flips to false (5 total loaded)
+    // and the footer disappears.
+    expect(find.byType(ProductCard), findsNWidgets(5));
+    expect(find.text(SharedLabels.loadMore), findsNothing);
+  });
+}
+
+/// Custom product service for the CQ-9 footer test: first page returns 2
+/// items with total = 5 (hasMore true); the next page returns the remaining
+/// 3 (hasMore false). This lets the test exercise the tap-to-load footer
+/// without creating 50+ widgets.
+class _Cq9ProductService extends ProductService {
+  _Cq9ProductService() : super(Dio());
+
+  static const List<Product> _all = [
+    Product(id: 1, name: 'Banh 1', category: 'banh_kem', active: 1),
+    Product(id: 2, name: 'Banh 2', category: 'banh_kem', active: 1),
+    Product(id: 3, name: 'Banh 3', category: 'banh_kem', active: 1),
+    Product(id: 4, name: 'Banh 4', category: 'banh_kem', active: 1),
+    Product(id: 5, name: 'Banh 5', category: 'banh_kem', active: 1),
+  ];
+
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    // Page 1: return 2 items, total 5 → hasMore true.
+    if (offset == 0) {
+      return PaginatedResponse<Product>(
+        items: _all.sublist(0, 2),
+        total: 5,
+        hasMore: true,
+        limit: 2,
+        offset: 0,
+      );
+    }
+    // Page 2: return the remaining 3 → hasMore false.
+    return PaginatedResponse<Product>(
+      items: _all.sublist(2),
+      total: 5,
+      hasMore: false,
+      limit: 2,
+      offset: 2,
+    );
+  }
+
+  @override
+  Future<List<Product>> listProducts({
+    String? category,
+    String? code,
+    int active = 1,
+    bool trungBay = false,
+  }) async => const [];
 }

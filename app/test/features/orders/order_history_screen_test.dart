@@ -50,6 +50,26 @@ class _OrderHistoryInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     if (options.path == '/api/orders') {
+      // DG-409 Phase 4: the order history screen opts into the paginated
+      // envelope (paginated=true). Return {items,total,has_more,...} when
+      // requested; otherwise return the bare array (backward-compatible).
+      final paginated = options.queryParameters['paginated'] == true;
+      if (paginated) {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'items': orders,
+              'total': orders.length,
+              'has_more': false,
+              'limit': options.queryParameters['limit'] ?? 50,
+              'offset': options.queryParameters['offset'] ?? 0,
+            },
+          ),
+        );
+        return;
+      }
       handler.resolve(
         Response(requestOptions: options, statusCode: 200, data: orders),
       );

@@ -18,6 +18,7 @@ import 'package:bakery_app/data/models/expense_summary.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/order_breakdown.dart';
+import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/data/models/period_summary.dart';
 import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
@@ -64,6 +65,12 @@ class _FakeOrderService extends OrderService {
 
   @override
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
+
+  // CQ-1: the day-tab OrderCards watch orderPhotosProvider, which would
+  // otherwise hit the real Dio and leave a pending timer. Return an empty
+  // list synchronously so no network timer is scheduled.
+  @override
+  Future<List<OrderPhoto>> listOrderPhotos(String orderRef) async => const [];
 }
 
 class _FakeReportService extends ReportService {
@@ -107,7 +114,12 @@ class _FakeReportService extends ReportService {
         date: '',
         totalRevenue: 0,
         products: [],
-        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
+        others: ProductBreakdownRow(
+          name: 'Khác',
+          quantity: 0,
+          revenue: 0,
+          percentage: 0,
+        ),
       );
 
   @override
@@ -172,8 +184,7 @@ class _FakeReportService extends ReportService {
   Future<OrderBreakdown> getOrderBreakdown({
     required String period,
     String? date,
-  }) async =>
-      orderBreakdown ?? const OrderBreakdown(cells: []);
+  }) async => orderBreakdown ?? const OrderBreakdown(cells: []);
 }
 
 class _FakeAccountingService extends AccountingService {
@@ -236,11 +247,11 @@ JournalLine _line(String accountCode, double debit, double credit) =>
     );
 
 JournalEntry _entry(List<JournalLine> lines) => JournalEntry(
-      id: 'e0',
-      description: 'test',
-      lines: lines,
-      createdAt: DateTime(2026, 8, 8),
-    );
+  id: 'e0',
+  description: 'test',
+  lines: lines,
+  createdAt: DateTime(2026, 8, 8),
+);
 
 TodaySummary _summary({
   List<Order> orders = const [],
@@ -264,18 +275,15 @@ TodaySummary _summary({
 }
 
 GoRouter _router() => GoRouter(
-      routes: [
-        GoRoute(
-          path: '/today-sales',
-          builder: (_, _) => const TodaySalesScreen(),
-        ),
-        GoRoute(
-          path: '/dashboard',
-          builder: (_, _) => const SizedBox(child: Text('dashboard-page')),
-        ),
-      ],
-      initialLocation: '/today-sales',
-    );
+  routes: [
+    GoRoute(path: '/today-sales', builder: (_, _) => const TodaySalesScreen()),
+    GoRoute(
+      path: '/dashboard',
+      builder: (_, _) => const SizedBox(child: Text('dashboard-page')),
+    ),
+  ],
+  initialLocation: '/today-sales',
+);
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -314,7 +322,8 @@ Future<void> _pump(
         stockServiceProvider.overrideWithValue(stockService),
         cashDrawerServiceProvider.overrideWithValue(cashDrawerService),
         sharedPreferencesProvider.overrideWithValue(
-          await SharedPreferences.getInstance()),
+          await SharedPreferences.getInstance(),
+        ),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -332,42 +341,51 @@ void main() {
   SharedPreferences.setMockInitialValues(<String, Object>{});
 
   testWidgets(
-      'renders app bar title and revenue summary section headers (AC5)',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [_order(ref: 'A', dueDate: _today, totalPrice: 100000)],
-      journal: [
-        _entry([
-          _line('4100', 0, 100000),
-          _line('1101', 60000, 0),
-          _line('1210', 40000, 0),
-        ]),
-      ],
-    );
-    expect(find.text(SharedLabels.todaySalesTitle), findsOneWidget);
-    // todaySalesRevenueGroup and todaySalesTotalRevenue share the same text
-    expect(find.text(SharedLabels.todaySalesRevenueGroup), findsWidgets);
-    expect(find.text(SharedLabels.todaySalesPaymentGroup), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesOrderCount), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesCashTotal), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesBankTransferTotal), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesTotalReceived), findsOneWidget);
-  });
+    'renders app bar title and revenue summary section headers (AC5)',
+    (tester) async {
+      await _pump(
+        tester,
+        orders: [_order(ref: 'A', dueDate: _today, totalPrice: 100000)],
+        journal: [
+          _entry([
+            _line('4100', 0, 100000),
+            _line('1101', 60000, 0),
+            _line('1210', 40000, 0),
+          ]),
+        ],
+      );
+      expect(find.text(SharedLabels.todaySalesTitle), findsOneWidget);
+      // todaySalesRevenueGroup and todaySalesTotalRevenue share the same text
+      expect(find.text(SharedLabels.todaySalesRevenueGroup), findsWidgets);
+      expect(find.text(SharedLabels.todaySalesPaymentGroup), findsOneWidget);
+      expect(find.text(SharedLabels.todaySalesOrderCount), findsOneWidget);
+      expect(find.text(SharedLabels.todaySalesCashTotal), findsOneWidget);
+      expect(
+        find.text(SharedLabels.todaySalesBankTransferTotal),
+        findsOneWidget,
+      );
+      expect(find.text(SharedLabels.todaySalesTotalReceived), findsOneWidget);
+    },
+  );
 
-  testWidgets('shows today order list grouped by status (AC6)',
-      (tester) async {
+  testWidgets('shows today order list grouped by status (AC6)', (tester) async {
+    final orders = [
+      _order(
+        ref: 'ORD-1',
+        dueDate: _today,
+        status: 'confirmed',
+        totalPrice: 250000,
+        isPaid: true,
+      ),
+    ];
     await _pump(
       tester,
-      summary: _summary(orders: [
-        _order(
-          ref: 'ORD-1',
-          dueDate: _today,
-          status: 'confirmed',
-          totalPrice: 250000,
-          isPaid: true,
-        ),
-      ]),
+      // CQ-1: the day-tab order list now comes from a separate
+      // dueDateOrdersProvider fetch, not summary.orders. Pass the orders
+      // via `orders:` so the fake listOrders returns them for the
+      // due_date-scoped call.
+      orders: orders,
+      summary: _summary(orders: orders),
     );
     await tester.dragUntilVisible(
       find.text(SharedLabels.todaySalesOrderListSection),
@@ -380,15 +398,16 @@ void main() {
     expect(find.text('1'), findsOneWidget);
   });
 
-  testWidgets('groups orders by status with count badges',
-      (tester) async {
+  testWidgets('groups orders by status with count badges', (tester) async {
+    final orders = [
+      _order(ref: 'A', dueDate: _today, status: 'new', totalPrice: 50000),
+      _order(ref: 'B', dueDate: _today, status: 'new', totalPrice: 60000),
+      _order(ref: 'C', dueDate: _today, status: 'ready', totalPrice: 70000),
+    ];
     await _pump(
       tester,
-      summary: _summary(orders: [
-        _order(ref: 'A', dueDate: _today, status: 'new', totalPrice: 50000),
-        _order(ref: 'B', dueDate: _today, status: 'new', totalPrice: 60000),
-        _order(ref: 'C', dueDate: _today, status: 'ready', totalPrice: 70000),
-      ]),
+      orders: orders,
+      summary: _summary(orders: orders),
     );
     await tester.dragUntilVisible(
       find.text(VN.statusNew),
@@ -402,8 +421,9 @@ void main() {
     expect(find.text('1'), findsOneWidget);
   });
 
-  testWidgets('shows empty orders message when no orders today',
-      (tester) async {
+  testWidgets('shows empty orders message when no orders today', (
+    tester,
+  ) async {
     await _pump(tester, summary: _summary());
     await tester.dragUntilVisible(
       find.text(VN.khongCoDonHomNay),
@@ -425,8 +445,7 @@ void main() {
 
   // ── DG-378 Phase 3 / FR3, AC1, AC2, AC3 — cash-source breakdown ─────────
 
-  testWidgets(
-      'renders cash-source breakdown section with 4 cards: sales cash, '
+  testWidgets('renders cash-source breakdown section with 4 cards: sales cash, '
       'cash-in, cash-out, net cash (AC3)', (tester) async {
     await _pump(
       tester,
@@ -443,93 +462,99 @@ void main() {
       const Offset(0, -200),
     );
     expect(find.text(SharedLabels.todaySalesCashSourceSection), findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesCashSourceSalesCash),
-        findsOneWidget);
+    expect(
+      find.text(SharedLabels.todaySalesCashSourceSalesCash),
+      findsOneWidget,
+    );
     expect(find.text(SharedLabels.todaySalesCashSourceCashIn), findsOneWidget);
     expect(find.text(SharedLabels.todaySalesCashSourceCashOut), findsOneWidget);
-    expect(
-        find.text(SharedLabels.todaySalesCashSourceNetCash), findsOneWidget);
+    expect(find.text(SharedLabels.todaySalesCashSourceNetCash), findsOneWidget);
   });
 
   testWidgets(
-      'cash-in card shows correct amount and net cash includes it (AC1)',
-      (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(
-        cashTotal: 100000,
-        cashInTotal: 30000,
-        cashOutTotal: 0,
-      ),
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesCashSourceCashIn),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    // Cash-in card value = 30.000đ
-    expect(find.text('30.000đ'), findsWidgets);
-    // Net cash = 100000 + 30000 - 0 = 130.000đ
-    expect(find.text('130.000đ'), findsOneWidget);
-  });
+    'cash-in card shows correct amount and net cash includes it (AC1)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(
+          cashTotal: 100000,
+          cashInTotal: 30000,
+          cashOutTotal: 0,
+        ),
+      );
+      await tester.dragUntilVisible(
+        find.text(SharedLabels.todaySalesCashSourceCashIn),
+        find.byType(Scrollable).first,
+        const Offset(0, -200),
+      );
+      // Cash-in card value = 30.000đ
+      expect(find.text('30.000đ'), findsWidgets);
+      // Net cash = 100000 + 30000 - 0 = 130.000đ
+      expect(find.text('130.000đ'), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'cash-out card shows correct amount and net cash reflects deduction '
-      '(AC2)', (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(
-        cashTotal: 100000,
-        cashInTotal: 30000,
-        cashOutTotal: 20000,
-      ),
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesCashSourceCashOut),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    // Cash-out card value = 20.000đ
-    expect(find.text('20.000đ'), findsWidgets);
-    // Net cash = 100000 + 30000 - 20000 = 110.000đ
-    expect(find.text('110.000đ'), findsOneWidget);
-  });
+    'cash-out card shows correct amount and net cash reflects deduction '
+    '(AC2)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(
+          cashTotal: 100000,
+          cashInTotal: 30000,
+          cashOutTotal: 20000,
+        ),
+      );
+      await tester.dragUntilVisible(
+        find.text(SharedLabels.todaySalesCashSourceCashOut),
+        find.byType(Scrollable).first,
+        const Offset(0, -200),
+      );
+      // Cash-out card value = 20.000đ
+      expect(find.text('20.000đ'), findsWidgets);
+      // Net cash = 100000 + 30000 - 20000 = 110.000đ
+      expect(find.text('110.000đ'), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'bank transfer card shows correct total from summary API (AC4/AC5)',
-      (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(cashTotal: 80000, bankTransferTotal: 70000),
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesBankTransferTotal),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text('70.000đ'), findsOneWidget);
-  });
+    'bank transfer card shows correct total from summary API (AC4/AC5)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(cashTotal: 80000, bankTransferTotal: 70000),
+      );
+      await tester.dragUntilVisible(
+        find.text(SharedLabels.todaySalesBankTransferTotal),
+        find.byType(Scrollable).first,
+        const Offset(0, -200),
+      );
+      expect(find.text('70.000đ'), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'revenue, cash, and bank cards show non-zero values when transactions '
-      'exist (AC7 — zero-card bug fixed)', (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(
-        revenue: 150000,
-        cashTotal: 90000,
-        bankTransferTotal: 60000,
-        orderCount: 3,
-      ),
-    );
-    expect(find.text('150.000đ'), findsWidgets); // revenue
-    expect(find.text('90.000đ'), findsWidgets); // cash (sales + cash-source)
-    expect(find.text('60.000đ'), findsOneWidget); // bank
-    expect(find.text('3'), findsOneWidget); // order count
-  });
+    'revenue, cash, and bank cards show non-zero values when transactions '
+    'exist (AC7 — zero-card bug fixed)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(
+          revenue: 150000,
+          cashTotal: 90000,
+          bankTransferTotal: 60000,
+          orderCount: 3,
+        ),
+      );
+      expect(find.text('150.000đ'), findsWidgets); // revenue
+      expect(find.text('90.000đ'), findsWidgets); // cash (sales + cash-source)
+      expect(find.text('60.000đ'), findsOneWidget); // bank
+      expect(find.text('3'), findsOneWidget); // order count
+    },
+  );
 
-  testWidgets(
-      'historical date shows correct cash/bank/cash-in/cash-out totals '
+  testWidgets('historical date shows correct cash/bank/cash-in/cash-out totals '
       '(AC6)', (tester) async {
     // The screen reads from dateSummaryProvider(<selectedDate>) when
     // isToday is false. Simulate a historical summary by injecting a
@@ -562,8 +587,7 @@ void main() {
   // expenses + cashflow + orders. AC3-AC5 require the section widgets on
   // every tab. AC7: switching tabs/periods updates all sections.
 
-  testWidgets(
-      'Ngày tab shows product breakdown, expense, and cashflow section '
+  testWidgets('Ngày tab shows product breakdown, expense, and cashflow section '
       'titles (F1 / AC3-AC5)', (tester) async {
     await _pump(tester, summary: _summary());
     // The day tab now renders revenue + product + expense + cashflow + orders.
@@ -573,8 +597,10 @@ void main() {
       find.byType(Scrollable).first,
       const Offset(0, -600),
     );
-    expect(find.text(SharedLabels.todaySalesProductBreakdownSection),
-        findsOneWidget);
+    expect(
+      find.text(SharedLabels.todaySalesProductBreakdownSection),
+      findsOneWidget,
+    );
     await tester.dragUntilVisible(
       find.text(SharedLabels.todaySalesExpenseSection),
       find.byType(Scrollable).first,
@@ -590,35 +616,45 @@ void main() {
   });
 
   testWidgets(
-      'Ngày tab product breakdown shows top product from period=day fetch '
-      '(AC3)', (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(),
-      productBreakdown: const ProductBreakdown(
-        period: 'day',
-        startDate: '',
-        endDate: '',
-        date: '',
-        totalRevenue: 200000,
-        products: [
-          ProductBreakdownRow(
-              name: 'Bánh kem sô cô la', quantity: 1, revenue: 200000, percentage: 100),
-        ],
-        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
-      ),
-    );
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.todaySalesProductBreakdownSection),
-      find.byType(Scrollable).first,
-      const Offset(0, -500),
-    );
-    expect(find.text('Bánh kem sô cô la'), findsOneWidget);
-    expect(find.text('200.000đ'), findsWidgets);
-  });
+    'Ngày tab product breakdown shows top product from period=day fetch '
+    '(AC3)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(),
+        productBreakdown: const ProductBreakdown(
+          period: 'day',
+          startDate: '',
+          endDate: '',
+          date: '',
+          totalRevenue: 200000,
+          products: [
+            ProductBreakdownRow(
+              name: 'Bánh kem sô cô la',
+              quantity: 1,
+              revenue: 200000,
+              percentage: 100,
+            ),
+          ],
+          others: ProductBreakdownRow(
+            name: 'Khác',
+            quantity: 0,
+            revenue: 0,
+            percentage: 0,
+          ),
+        ),
+      );
+      await tester.dragUntilVisible(
+        find.text(SharedLabels.todaySalesProductBreakdownSection),
+        find.byType(Scrollable).first,
+        const Offset(0, -500),
+      );
+      expect(find.text('Bánh kem sô cô la'), findsOneWidget);
+      expect(find.text('200.000đ'), findsWidgets);
+    },
+  );
 
-  testWidgets(
-      'Tuần tab shows revenue, product, expense, cashflow, and order '
+  testWidgets('Tuần tab shows revenue, product, expense, cashflow, and order '
       'breakdown sections (F1 / AC1 / AC3-AC6)', (tester) async {
     final today = _today;
     await _pump(
@@ -635,7 +671,12 @@ void main() {
         cashInTotal: 0,
         cashOutTotal: 0,
         orders: [
-          _order(ref: 'W-1', dueDate: today, totalPrice: 300000, status: 'delivered'),
+          _order(
+            ref: 'W-1',
+            dueDate: today,
+            totalPrice: 300000,
+            status: 'delivered',
+          ),
         ],
       ),
       productBreakdown: const ProductBreakdown(
@@ -646,9 +687,18 @@ void main() {
         totalRevenue: 500000,
         products: [
           ProductBreakdownRow(
-              name: 'Bánh kem', quantity: 2, revenue: 500000, percentage: 100),
+            name: 'Bánh kem',
+            quantity: 2,
+            revenue: 500000,
+            percentage: 100,
+          ),
         ],
-        others: ProductBreakdownRow(name: 'Khác', quantity: 0, revenue: 0, percentage: 0),
+        others: ProductBreakdownRow(
+          name: 'Khác',
+          quantity: 0,
+          revenue: 0,
+          percentage: 0,
+        ),
       ),
       expenseSummary: const ExpenseSummary(
         period: 'week',
@@ -657,7 +707,11 @@ void main() {
         date: '',
         totalExpenses: 150000,
         categories: [
-          ExpenseCategoryBreakdown(name: 'Nguyên liệu', amount: 150000, subcategories: []),
+          ExpenseCategoryBreakdown(
+            name: 'Nguyên liệu',
+            amount: 150000,
+            subcategories: [],
+          ),
         ],
         uncategorized: 0,
         childrenOf: {},
@@ -676,13 +730,16 @@ void main() {
         uncategorizedSupplier: 0,
         childrenOf: {},
       ),
-      orderBreakdown: const OrderBreakdown(cells: [
-        OrderBreakdownCell(
+      orderBreakdown: const OrderBreakdown(
+        cells: [
+          OrderBreakdownCell(
             source: 'Tại tiệm',
             deliveryType: 'pickup',
             orderCount: 2,
-            revenue: 500000),
-      ]),
+            revenue: 500000,
+          ),
+        ],
+      ),
     );
     // Tap the Tuần tab (index 1).
     await tester.tap(find.text(SharedLabels.todaySalesTabWeek));
@@ -698,8 +755,10 @@ void main() {
       find.byType(Scrollable).first,
       const Offset(0, -600),
     );
-    expect(find.text(SharedLabels.todaySalesProductBreakdownSection),
-        findsOneWidget);
+    expect(
+      find.text(SharedLabels.todaySalesProductBreakdownSection),
+      findsOneWidget,
+    );
     expect(find.text('Bánh kem'), findsOneWidget);
 
     // Expense section + category line.
@@ -729,32 +788,43 @@ void main() {
       find.byType(Scrollable).first,
       const Offset(0, -600),
     );
-    expect(find.text(SharedLabels.todaySalesOrderBreakdownSection),
-        findsOneWidget);
-    expect(find.text(SharedLabels.todaySalesOrderBreakdownModeCountRevenue),
-        findsOneWidget);
+    expect(
+      find.text(SharedLabels.todaySalesOrderBreakdownSection),
+      findsOneWidget,
+    );
+    expect(
+      find.text(SharedLabels.todaySalesOrderBreakdownModeCountRevenue),
+      findsOneWidget,
+    );
     expect(find.text('Tại tiệm'), findsWidgets);
   });
 
-  testWidgets(
-      'period navigation prev/next tooltips use VN labels (NFR4)', (tester) async {
-    await _pump(tester, periodSummary: PeriodSummary(
-      period: 'week',
-      startDate: _today,
-      endDate: _today,
-      date: _today,
-      revenue: 0,
-      orderCount: 0,
-      cashTotal: 0,
-      bankTransferTotal: 0,
-      cashInTotal: 0,
-      cashOutTotal: 0,
-      orders: const [],
-    ));
+  testWidgets('period navigation prev/next tooltips use VN labels (NFR4)', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      periodSummary: PeriodSummary(
+        period: 'week',
+        startDate: _today,
+        endDate: _today,
+        date: _today,
+        revenue: 0,
+        orderCount: 0,
+        cashTotal: 0,
+        bankTransferTotal: 0,
+        cashInTotal: 0,
+        cashOutTotal: 0,
+        orders: const [],
+      ),
+    );
     await tester.tap(find.text(SharedLabels.todaySalesTabWeek));
     await tester.pumpAndSettle(const Duration(seconds: 1));
     // The prev/next chevron buttons use the dedicated period-nav tooltips.
-    expect(find.byTooltip(SharedLabels.todaySalesPeriodPrevious), findsOneWidget);
+    expect(
+      find.byTooltip(SharedLabels.todaySalesPeriodPrevious),
+      findsOneWidget,
+    );
     expect(find.byTooltip(SharedLabels.todaySalesPeriodNext), findsOneWidget);
   });
 }

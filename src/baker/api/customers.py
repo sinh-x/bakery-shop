@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from baker.api.auth import RequireRole, record_audit_log
 from baker.db.connection import get_db
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.db.schema import (
     _recompute_customer_year_summary,
     _strip_diacritics,
@@ -40,7 +41,9 @@ CUSTOMER_MERGE_SOURCE_NOT_FOUND_MSG = "Không tìm thấy khách hàng nguồn c
 
 # DG-369 Phase 1 / FR1 / AC7 — centralized VN messages for the batch merge
 # endpoint. Reused by tests to avoid string drift.
-CUSTOMER_BATCH_MERGE_EMPTY_MSG = "Danh sách khách hàng nguồn cần gộp không được để trống."
+CUSTOMER_BATCH_MERGE_EMPTY_MSG = (
+    "Danh sách khách hàng nguồn cần gộp không được để trống."
+)
 CUSTOMER_BATCH_MERGE_SELF_MSG = "Khách hàng nguồn không được trùng với khách hàng đích."
 CUSTOMER_BATCH_MERGE_DUPLICATE_MSG = "Danh sách khách hàng nguồn có ID trùng lặp."
 CUSTOMER_BATCH_MERGE_SOURCE_NOT_FOUND_MSG = "Không tìm thấy khách hàng nguồn cần gộp"
@@ -82,7 +85,9 @@ class CustomerCreate(BaseModel):
                 self.phones = []
         elif self.phones:
             if not any(p.isPrimary for p in self.phones):
-                raise ValueError("Ít nhất một số điện thoại phải là số chính (isPrimary=true)")
+                raise ValueError(
+                    "Ít nhất một số điện thoại phải là số chính (isPrimary=true)"
+                )
         return self
 
 
@@ -109,7 +114,9 @@ class CustomerUpdate(BaseModel):
     def resolve_phones(self) -> "CustomerUpdate":
         if self.phones is not None and self.phones:
             if not any(p.isPrimary for p in self.phones):
-                raise ValueError("Ít nhất một số điện thoại phải là số chính (isPrimary=true)")
+                raise ValueError(
+                    "Ít nhất một số điện thoại phải là số chính (isPrimary=true)"
+                )
         return self
 
 
@@ -149,32 +156,77 @@ def _customer_response(conn, customer: Customer) -> dict:
 
 
 @router.get("")
-def list_customers(search: Optional[str] = Query(None, description="Tìm theo tên hoặc SĐT")):
-    """Danh sách khách hàng, hỗ trợ tìm kiếm partial theo tên/SĐT (FR1, FR7)."""
+def list_customers(
+    search: Optional[str] = Query(None, description="Tìm theo tên hoặc SĐT"),
+    limit: int | None = Query(
+        None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"
+    ),
+    offset: int = Query(0, ge=0, description="Bỏ qua N khách hàng đầu"),
+    paginated: bool = Query(
+        False,
+        description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 FR4)",
+    ),
+):
+    """Danh sách khách hàng, hỗ trợ tìm kiếm partial theo tên/SĐT (FR1, FR7).
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR4, FR14, DG-409 Phase 3). Tìm kiếm vẫn chạy trên toàn
+    bộ khách hàng (server-side search, AC4) — chỉ kết quả phân trang mới bị giới
+    hạn.
+    """
     with get_db() as conn:
+        use_envelope = paginated or limit is not None
         if search and search.strip():
             escaped = _escape_like(search.strip())
             like = f"%{escaped}%"
             search_like = f"%{_strip_diacritics(escaped)}%"
-            rows = conn.execute(
-                "SELECT DISTINCT c.* FROM customers c "
+            # CQ-6 (review-auto): build the count from a shared SELECT body
+            # instead of stripping ORDER BY from the list SQL via .replace().
+            # The body (FROM + JOIN + WHERE) is shared between the COUNT and
+            # the list query so they cannot drift; only the SELECT list and
+            # ORDER BY/LIMIT differ.
+            body_sql = (
+                "FROM customers c "
                 "LEFT JOIN customer_phones cp ON cp.customer_id = c.id "
-                "WHERE c.search_name LIKE ? OR c.phone LIKE ? OR cp.phone LIKE ? "
-                "ORDER BY c.id DESC",
-                (search_like, like, like),
+                "WHERE c.search_name LIKE ? OR c.phone LIKE ? OR cp.phone LIKE ?"
+            )
+            body_params: list = [search_like, like, like]
+            list_sql = f"SELECT DISTINCT c.* {body_sql} ORDER BY c.id DESC"
+            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT DISTINCT c.id {body_sql})"
+        else:
+            body_sql = "FROM customers"
+            body_params = []
+            list_sql = f"SELECT * {body_sql} ORDER BY id DESC"
+            count_sql = f"SELECT COUNT(*) AS c FROM (SELECT 1 {body_sql})"
+
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            # CQ-6: count uses the shared body — no fragile .replace() on the
+            # ORDER BY clause. The DISTINCT is preserved for the search path
+            # (a customer with multiple matching phones counts once).
+            count_row = conn.execute(count_sql, body_params).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                list_sql + " LIMIT ? OFFSET ?",
+                body_params + [lim, off],
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM customers ORDER BY id DESC"
-            ).fetchall()
+            rows = conn.execute(list_sql, body_params).fetchall()
+
         # Mn-3: batch-load phones for all returned customers in a single query
         # instead of one query per customer via Customer.from_row(r, conn).
         customers = [Customer.from_row(r) for r in rows]
-        phones_map = _load_customer_phones_for_many(conn, [c.id for c in customers if c.id is not None])
+        phones_map = _load_customer_phones_for_many(
+            conn, [c.id for c in customers if c.id is not None]
+        )
         for c in customers:
             if c.id is not None and c.id in phones_map:
                 c.phones = phones_map[c.id]
-        return [c.to_api_dict() for c in customers]
+        items = [c.to_api_dict() for c in customers]
+        if use_envelope:
+            return paginated_envelope(items, total, lim, off)
+        return items
 
 
 @router.get("/duplicates")
@@ -286,9 +338,13 @@ def create_customer(body: CustomerCreate):
     with get_db() as conn:
         phones_dicts = _phones_to_dicts(body.phones)
         primary = _primary_phone(phones_dicts)
-        customer = Customer(name=body.name, phone=primary or body.phone, phones=phones_dicts)
+        customer = Customer(
+            name=body.name, phone=primary or body.phone, phones=phones_dicts
+        )
         customer.save(conn)
-        row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer.id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer.id,)
+        ).fetchone()
         loaded = Customer.from_row(row, conn)
         return _customer_response(conn, loaded)
 
@@ -297,7 +353,9 @@ def create_customer(body: CustomerCreate):
 def get_customer(customer_id: int):
     """Chi tiết một khách hàng (FR3, FR6, FR7 — includes yearSummary)."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
         customer = Customer.from_row(row, conn)
@@ -313,7 +371,9 @@ def get_customer(customer_id: int):
 def update_customer(customer_id: int, body: CustomerUpdate):
     """Cập nhật tên và/hoặc SĐT. Trả về khách hàng khác cùng SĐT (FR4, FR2a, FR5)."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
 
@@ -321,7 +381,9 @@ def update_customer(customer_id: int, body: CustomerUpdate):
         if body.name is None and body.phone is None and body.phones is None:
             return _customer_response(conn, customer)
 
-        phones_dicts = _phones_to_dicts(body.phones) if body.phones is not None else None
+        phones_dicts = (
+            _phones_to_dicts(body.phones) if body.phones is not None else None
+        )
         # Legacy phone field: sync customer_phones primary row to new value
         if body.phones is None and body.phone is not None:
             phones_dicts = [
@@ -360,7 +422,9 @@ def delete_customer(
     DG-119 backward-compat baseline.
     """
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
 
@@ -378,7 +442,9 @@ def delete_customer(
 
         # FR9: cascade-delete customer_phones rows (also handled by ON DELETE CASCADE,
         # but explicit DELETE ensures correctness even if FK enforcement is off)
-        conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (customer_id,))
+        conn.execute(
+            "DELETE FROM customer_phones WHERE customer_id = ?", (customer_id,)
+        )
         conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
 
         record_audit_log(
@@ -399,18 +465,50 @@ def delete_customer(
 
 
 @router.get("/{customer_id}/orders")
-def get_customer_orders(customer_id: int):
-    """Lịch sử đơn hàng của khách hàng (FR6)."""
+def get_customer_orders(
+    customer_id: int,
+    limit: int | None = Query(
+        None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"
+    ),
+    offset: int = Query(0, ge=0, description="Bỏ qua N đơn đầu"),
+    paginated: bool = Query(
+        False,
+        description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 FR5)",
+    ),
+):
+    """Lịch sử đơn hàng của khách hàng (FR6).
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR5, FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (customer_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
 
-        order_rows = conn.execute(
-            "SELECT * FROM orders WHERE customer_id = ? ORDER BY id DESC",
-            (customer_id,),
-        ).fetchall()
-        return [Order.from_row(r, conn).to_api_dict() for r in order_rows]
+        use_envelope = paginated or limit is not None
+        base_sql = "SELECT * FROM orders WHERE customer_id = ? ORDER BY id DESC"
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM orders WHERE customer_id = ?",
+                (customer_id,),
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            order_rows = conn.execute(
+                base_sql + " LIMIT ? OFFSET ?",
+                (customer_id, lim, off),
+            ).fetchall()
+        else:
+            order_rows = conn.execute(base_sql, (customer_id,)).fetchall()
+
+        items = [Order.from_row(r, conn).to_api_dict() for r in order_rows]
+        if use_envelope:
+            return paginated_envelope(items, total, lim, off)
+        return items
 
 
 # ---------------------------------------------------------------------------
@@ -657,9 +755,7 @@ def merge_customer(
             "SELECT * FROM customers WHERE id = ?", (target_id,)
         ).fetchone()
         if not target_row:
-            raise HTTPException(
-                status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG
-            )
+            raise HTTPException(status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG)
         source_row = conn.execute(
             "SELECT * FROM customers WHERE id = ?", (source_id,)
         ).fetchone()
@@ -749,9 +845,7 @@ def batch_merge_customer(
             "SELECT * FROM customers WHERE id = ?", (target_id,)
         ).fetchone()
         if not target_row:
-            raise HTTPException(
-                status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG
-            )
+            raise HTTPException(status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG)
         # Validate every source exists before mutating anything so a
         # missing source id is a clean 404, not a partial batch.
         source_rows: list = []

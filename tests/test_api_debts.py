@@ -36,11 +36,17 @@ def _journal_for_source(conn, source_type: str, source_id: int):
 
 def _lines_for_entry(conn, entry_id: int):
     from baker.models.journal_entry import JournalLine
+
     return JournalLine.list_for_entry(conn, entry_id)
 
 
-def _create_debt_expense(client, amount=500000, vendor="Nhà cung cấp A",
-                         category="Vận chuyển", summary="Nợ bột mì"):
+def _create_debt_expense(
+    client,
+    amount=500000,
+    vendor="Nhà cung cấp A",
+    category="Vận chuyển",
+    summary="Nợ bột mì",
+):
     payload = {
         "summary": summary,
         "type": "expense",
@@ -67,19 +73,22 @@ def _create_debt_expense(client, amount=500000, vendor="Nhà cung cấp A",
 def test_debt_expense_creates_journal_entry_crediting_2500(api_client):
     """AC2 (DG-245 Phase 3): expense with payment_method='Nợ', vendor='Nhà cung cấp A'
     → debit expense account, credit a per-vendor 25xx sub-account under 2500."""
-    resp = api_client.post("/api/events", json={
-        "summary": "Nợ bột mì",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 200000,
-            "category": "Vận chuyển",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "Nhà cung cấp A",
-            "note": "ghi nợ",
-            "paid_by_name": "",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Nợ bột mì",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 200000,
+                "category": "Vận chuyển",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "Nhà cung cấp A",
+                "note": "ghi nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert resp.status_code == 201
     eid = int(resp.json()["id"])
     with get_db() as conn:
@@ -106,19 +115,22 @@ def test_debt_expense_creates_journal_entry_crediting_2500(api_client):
 def test_debt_expense_inventory_category_debits_inventory_credits_2500(api_client):
     """Debt expense for an inventory-purchase category (Nguyên liệu) debits
     Inventory (1300) and credits a per-vendor 25xx sub-account under 2500."""
-    resp = api_client.post("/api/events", json={
-        "summary": "Nợ nguyên liệu",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 150000,
-            "category": "Nguyên liệu",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "Nhà cung cấp B",
-            "note": "ghi nợ",
-            "paid_by_name": "",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Nợ nguyên liệu",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 150000,
+                "category": "Nguyên liệu",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "Nhà cung cấp B",
+                "note": "ghi nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert resp.status_code == 201
     eid = int(resp.json()["id"])
     with get_db() as conn:
@@ -138,36 +150,42 @@ def test_debt_expense_inventory_category_debits_inventory_credits_2500(api_clien
 
 def test_debt_expense_omits_payment_source(api_client):
     """FR2: payment_source is not required when payment_method is 'Nợ'."""
-    resp = api_client.post("/api/events", json={
-        "summary": "Nợ tiền",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 50000,
-            "category": "Khác",
-            "payment_method": "Nợ",
-            "vendor": "Nhà cung cấp C",
-            "note": "ghi nợ",
-            "paid_by_name": "",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Nợ tiền",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 50000,
+                "category": "Khác",
+                "payment_method": "Nợ",
+                "vendor": "Nhà cung cấp C",
+                "note": "ghi nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert resp.status_code == 201
 
 
 def test_debt_expense_rejects_empty_vendor(api_client):
     """FR2: vendor (creditor) is required when payment_method is 'Nợ'."""
-    resp = api_client.post("/api/events", json={
-        "summary": "Nợ không có chủ nợ",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 50000,
-            "category": "Khác",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "  ",
-            "note": "ghi nợ",
-            "paid_by_name": "",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Nợ không có chủ nợ",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 50000,
+                "category": "Khác",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "  ",
+                "note": "ghi nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert resp.status_code == 422
     assert "vendor" in resp.json()["detail"]
 
@@ -217,11 +235,14 @@ def test_settle_debt_full_creates_journal_entry(api_client):
     credited) / CR Asset."""
     expense = _create_debt_expense(api_client, amount=500000, vendor="Nhà cung cấp A")
     eid = int(expense["id"])
-    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 500000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 500000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["settled_amount"] == 500000
@@ -258,11 +279,14 @@ def test_settle_debt_full_nets_vendor_sub_account_to_zero(api_client):
     debited the same sub-account."""
     expense = _create_debt_expense(api_client, amount=400000, vendor="NCC SettleZero")
     eid = int(expense["id"])
-    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 400000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 400000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["status"] == "paid"
     with get_db() as conn:
@@ -287,11 +311,14 @@ def test_settle_debt_partial_keeps_vendor_sub_account_positive(api_client):
     sub-account with the remaining credit balance (not netted to zero)."""
     expense = _create_debt_expense(api_client, amount=500000, vendor="NCC PartialZero")
     eid = int(expense["id"])
-    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 200000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 200000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["remaining"] == 300000
     with get_db() as conn:
@@ -313,25 +340,32 @@ def test_settle_debt_partial_keeps_vendor_sub_account_positive(api_client):
 
 def test_settle_debt_partial_tracks_remaining_balance(api_client):
     """AC3: settle 300,000 of 500,000 → remaining 200,000, status 'Trả một phần'."""
-    expense = _create_debt_expense(api_client, amount=500000,
-                                   vendor="Nhà cung cấp A", summary="Nợ NCC A")
+    expense = _create_debt_expense(
+        api_client, amount=500000, vendor="Nhà cung cấp A", summary="Nợ NCC A"
+    )
     eid = int(expense["id"])
-    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 300000,
-        "payment_method": "Chuyển khoản",
-        "payment_source": "TK Phượng VCB",
-    })
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 300000,
+            "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["settled_amount"] == 300000
     assert body["remaining"] == 200000
     assert body["status"] == "partial"
     # Second partial settlement to clear the rest.
-    resp2 = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 200000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    resp2 = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 200000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert resp2.status_code == 200
     body2 = resp2.json()
     assert body2["settled_amount"] == 500000
@@ -351,47 +385,59 @@ def test_settle_debt_rejects_amount_exceeding_remaining(api_client):
     """Cannot settle more than the remaining debt balance."""
     expense = _create_debt_expense(api_client, amount=500000)
     eid = int(expense["id"])
-    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 600000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 600000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert resp.status_code == 422
 
 
 def test_settle_non_debt_expense_rejected(api_client):
     """Settlement endpoint only applies to debt expenses."""
-    resp = api_client.post("/api/events", json={
-        "summary": "Chi phí mặt",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 50000,
-            "category": "Khác",
-            "payment_method": "Tiền mặt",
-            "payment_source": "Tiền mặt tại quầy",
-            "vendor": "Chợ",
-            "note": "",
-            "paid_by_name": "Phượng",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Chi phí mặt",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 50000,
+                "category": "Khác",
+                "payment_method": "Tiền mặt",
+                "payment_source": "Tiền mặt tại quầy",
+                "vendor": "Chợ",
+                "note": "",
+                "paid_by_name": "Phượng",
+            },
         },
-    })
+    )
     assert resp.status_code == 201
     eid = int(resp.json()["id"])
-    settle = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 50000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    settle = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 50000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     assert settle.status_code == 422
 
 
 def test_list_outstanding_debts_grouped_by_creditor(api_client):
     """AC4: GET /api/expenses/debts groups by creditor with totals."""
-    _create_debt_expense(api_client, amount=500000, vendor="Nhà cung cấp A",
-                         summary="Nợ A1")
-    _create_debt_expense(api_client, amount=200000, vendor="Nhà cung cấp A",
-                         summary="Nợ A2")
-    _create_debt_expense(api_client, amount=100000, vendor="Nhà cung cấp B",
-                         summary="Nợ B1")
+    _create_debt_expense(
+        api_client, amount=500000, vendor="Nhà cung cấp A", summary="Nợ A1"
+    )
+    _create_debt_expense(
+        api_client, amount=200000, vendor="Nhà cung cấp A", summary="Nợ A2"
+    )
+    _create_debt_expense(
+        api_client, amount=100000, vendor="Nhà cung cấp B", summary="Nợ B1"
+    )
     resp = api_client.get("/api/expenses/debts")
     assert resp.status_code == 200
     body = resp.json()
@@ -410,11 +456,68 @@ def test_list_outstanding_debts_filter_by_creditor(api_client):
     """AC4: filtering by creditor returns only that creditor's debts."""
     _create_debt_expense(api_client, amount=500000, vendor="Nhà cung cấp A")
     _create_debt_expense(api_client, amount=100000, vendor="Nhà cung cấp B")
-    resp = api_client.get("/api/expenses/debts?creditor=Nh%C3%A0%20cung%20c%E1%BA%A5p%20A")
+    resp = api_client.get(
+        "/api/expenses/debts?creditor=Nh%C3%A0%20cung%20c%E1%BA%A5p%20A"
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["count"] == 1
     assert body["creditors"][0]["creditor"] == "Nhà cung cấp A"
+
+
+def test_list_outstanding_debts_total_owed_is_full_scope_with_limit(api_client):
+    """CQ-3 (review-auto): with ``limit`` set, the top-level ``total_owed``
+    and ``count`` must reflect the FULL pre-scope (all matching debts), not
+    just the current page — so they agree with ``total``. The per-creditor
+    ``groups`` remain the page slice (the displayed data)."""
+    # Create 3 debts across 2 creditors.
+    _create_debt_expense(
+        api_client, amount=500000, vendor="Nhà cung cấp A", summary="Nợ A1"
+    )
+    _create_debt_expense(
+        api_client, amount=200000, vendor="Nhà cung cấp A", summary="Nợ A2"
+    )
+    _create_debt_expense(
+        api_client, amount=100000, vendor="Nhà cung cấp B", summary="Nợ B1"
+    )
+
+    # Request only 1 debt per page — the page has 1 debt, but the totals
+    # must still reflect all 3 (800000).
+    resp = api_client.get("/api/expenses/debts?limit=1&offset=0")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Envelope fields.
+    assert body["total"] == 3
+    assert body["has_more"] is True
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+    # CQ-3: full-scope totals — NOT page-scoped (which would be 1 / one debt's
+    # amount).
+    assert body["count"] == 3, f"expected full-scope count 3, got {body['count']}"
+    assert body["total_owed"] == 800000.0, (
+        f"expected full-scope total_owed 800000.0, got {body['total_owed']}"
+    )
+    # The page slice still has only 1 debt (the displayed data).
+    page_debt_count = sum(g["count"] for g in body["creditors"])
+    assert page_debt_count == 1
+
+    # Page 2: totals stay full-scope, the page advances.
+    resp2 = api_client.get("/api/expenses/debts?limit=1&offset=1")
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["total"] == 3
+    assert body2["count"] == 3
+    assert body2["total_owed"] == 800000.0
+    assert body2["has_more"] is True
+
+    # Last page: has_more flips to False, totals unchanged.
+    resp3 = api_client.get("/api/expenses/debts?limit=1&offset=2")
+    assert resp3.status_code == 200
+    body3 = resp3.json()
+    assert body3["total"] == 3
+    assert body3["count"] == 3
+    assert body3["total_owed"] == 800000.0
+    assert body3["has_more"] is False
 
 
 def test_list_outstanding_debts_excludes_settled_by_default(api_client):
@@ -422,11 +525,14 @@ def test_list_outstanding_debts_excludes_settled_by_default(api_client):
     filtering by status=unpaid excludes fully-settled ones."""
     expense = _create_debt_expense(api_client, amount=300000, vendor="NCC X")
     eid = int(expense["id"])
-    api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 300000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 300000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     # status=all returns both
     all_resp = api_client.get("/api/expenses/debts?status=all")
     assert all_resp.json()["count"] == 1
@@ -440,19 +546,22 @@ def test_list_events_debt_status_filter_unpaid(api_client):
     """FR7: list events supports debt_status filter."""
     _create_debt_expense(api_client, amount=200000, vendor="NCC Y", summary="Nợ Y")
     # A non-debt expense should NOT appear when filtering for unpaid debts.
-    api_client.post("/api/events", json={
-        "summary": "Tiền mặt",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 50000,
-            "category": "Khác",
-            "payment_method": "Tiền mặt",
-            "payment_source": "Tiền mặt tại quầy",
-            "vendor": "Chợ",
-            "note": "",
-            "paid_by_name": "Phượng",
+    api_client.post(
+        "/api/events",
+        json={
+            "summary": "Tiền mặt",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 50000,
+                "category": "Khác",
+                "payment_method": "Tiền mặt",
+                "payment_source": "Tiền mặt tại quầy",
+                "vendor": "Chợ",
+                "note": "",
+                "paid_by_name": "Phượng",
+            },
         },
-    })
+    )
     resp = api_client.get("/api/events?type=expense&debt_status=unpaid")
     assert resp.status_code == 200
     events = resp.json()
@@ -464,11 +573,14 @@ def test_delete_debt_expense_reverses_settlement_journals(api_client):
     """FR9: deleting a debt expense reverses its settlement journal entries."""
     expense = _create_debt_expense(api_client, amount=400000, vendor="NCC Z")
     eid = int(expense["id"])
-    settle_resp = api_client.post(f"/api/expenses/{eid}/settle", json={
-        "amount": 200000,
-        "payment_method": "Tiền mặt",
-        "payment_source": "Tiền mặt tại quầy",
-    })
+    settle_resp = api_client.post(
+        f"/api/expenses/{eid}/settle",
+        json={
+            "amount": 200000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Tiền mặt tại quầy",
+        },
+    )
     sid = settle_resp.json()["settlement_id"]
     with get_db() as conn:
         before = _journal_for_source(conn, "expense_settlement", sid)
@@ -486,25 +598,29 @@ def test_delete_debt_expense_reverses_settlement_journals(api_client):
 
 def test_edit_debt_expense_re_syncs_journal(api_client):
     """FR10: editing a debt expense re-syncs its journal entry."""
-    expense = _create_debt_expense(api_client, amount=300000, vendor="NCC W",
-                                   category="Vận chuyển")
+    expense = _create_debt_expense(
+        api_client, amount=300000, vendor="NCC W", category="Vận chuyển"
+    )
     eid = int(expense["id"])
     with get_db() as conn:
         orig = _journal_for_source(conn, "expense", eid)
         assert len(orig) == 1
         orig_id = orig[0].id
     # Edit amount → journal should re-sync in place (unlocked).
-    patch_resp = api_client.patch(f"/api/events/{eid}", json={
-        "data": {
-            "amount_vnd": 450000,
-            "category": "Vận chuyển",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "NCC W",
-            "note": "ghi nợ (đã sửa)",
-            "paid_by_name": "",
+    patch_resp = api_client.patch(
+        f"/api/events/{eid}",
+        json={
+            "data": {
+                "amount_vnd": 450000,
+                "category": "Vận chuyển",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "NCC W",
+                "note": "ghi nợ (đã sửa)",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert patch_resp.status_code == 200
     with get_db() as conn:
         after = _journal_for_source(conn, "expense", eid)
@@ -524,12 +640,15 @@ def test_edit_debt_expense_re_syncs_journal(api_client):
 def test_per_vendor_sub_account_is_max_based_and_unique(api_client):
     """FR2: two distinct vendors get distinct 25xx sub-accounts, MAX-based,
     and the same vendor reuses its existing sub-account."""
-    _create_debt_expense(api_client, amount=100000, vendor="NCC Alpha",
-                         summary="Nợ Alpha 1")
-    _create_debt_expense(api_client, amount=100000, vendor="NCC Beta",
-                         summary="Nợ Beta 1")
-    _create_debt_expense(api_client, amount=100000, vendor="NCC Alpha",
-                         summary="Nợ Alpha 2")
+    _create_debt_expense(
+        api_client, amount=100000, vendor="NCC Alpha", summary="Nợ Alpha 1"
+    )
+    _create_debt_expense(
+        api_client, amount=100000, vendor="NCC Beta", summary="Nợ Beta 1"
+    )
+    _create_debt_expense(
+        api_client, amount=100000, vendor="NCC Alpha", summary="Nợ Alpha 2"
+    )
     with get_db() as conn:
         rows = conn.execute(
             "SELECT code, name FROM accounts "
@@ -557,19 +676,22 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
       update, no stale entries).
     """
     # 1. Create a cash expense.
-    resp = api_client.post("/api/events", json={
-        "summary": "Tiền mặt ban đầu",
-        "type": "expense",
-        "data": {
-            "amount_vnd": 200000,
-            "category": "Vận chuyển",
-            "payment_method": "Tiền mặt",
-            "payment_source": "Tiền mặt tại quầy",
-            "vendor": "NCC RoundTrip",
-            "note": "",
-            "paid_by_name": "",
+    resp = api_client.post(
+        "/api/events",
+        json={
+            "summary": "Tiền mặt ban đầu",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 200000,
+                "category": "Vận chuyển",
+                "payment_method": "Tiền mặt",
+                "payment_source": "Tiền mặt tại quầy",
+                "vendor": "NCC RoundTrip",
+                "note": "",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert resp.status_code == 201
     eid = int(resp.json()["id"])
 
@@ -586,17 +708,20 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
 
     # 2. Edit cash → debt. The existing unlocked JE is updated in place and
     #    its credit must now hit the vendor's 25xx sub-account (not 2500).
-    patch_debt = api_client.patch(f"/api/events/{eid}", json={
-        "data": {
-            "amount_vnd": 200000,
-            "category": "Vận chuyển",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "NCC RoundTrip",
-            "note": "chuyển sang nợ",
-            "paid_by_name": "",
+    patch_debt = api_client.patch(
+        f"/api/events/{eid}",
+        json={
+            "data": {
+                "amount_vnd": 200000,
+                "category": "Vận chuyển",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "NCC RoundTrip",
+                "note": "chuyển sang nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert patch_debt.status_code == 200
     with get_db() as conn:
         code_debt, entry_id_2 = _credit_code(conn)
@@ -607,17 +732,20 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
 
     # 3. Edit debt → cash. The credit must return to the asset 1101 and the
     #    entry must still be the same in-place JE (no stale entry left behind).
-    patch_cash = api_client.patch(f"/api/events/{eid}", json={
-        "data": {
-            "amount_vnd": 200000,
-            "category": "Vận chuyển",
-            "payment_method": "Tiền mặt",
-            "payment_source": "Tiền mặt tại quầy",
-            "vendor": "NCC RoundTrip",
-            "note": "chuyển lại tiền mặt",
-            "paid_by_name": "",
+    patch_cash = api_client.patch(
+        f"/api/events/{eid}",
+        json={
+            "data": {
+                "amount_vnd": 200000,
+                "category": "Vận chuyển",
+                "payment_method": "Tiền mặt",
+                "payment_source": "Tiền mặt tại quầy",
+                "vendor": "NCC RoundTrip",
+                "note": "chuyển lại tiền mặt",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert patch_cash.status_code == 200
     with get_db() as conn:
         code_cash2, entry_id_3 = _credit_code(conn)
@@ -628,10 +756,12 @@ def test_cash_to_debt_to_cash_edit_round_trip(api_client):
 def test_edit_debt_expense_vendor_change_switches_sub_account(api_client):
     """Editing a debt expense to a different vendor re-points the credit to
     that vendor's own 25xx sub-account (single source of truth)."""
-    _create_debt_expense(api_client, amount=150000, vendor="NCC Gamma",
-                         summary="Nợ Gamma")
-    expense = _create_debt_expense(api_client, amount=150000, vendor="NCC Delta",
-                                   summary="Nợ Delta")
+    _create_debt_expense(
+        api_client, amount=150000, vendor="NCC Gamma", summary="Nợ Gamma"
+    )
+    expense = _create_debt_expense(
+        api_client, amount=150000, vendor="NCC Delta", summary="Nợ Delta"
+    )
     eid = int(expense["id"])
     with get_db() as conn:
         entries = _journal_for_source(conn, "expense", eid)
@@ -642,17 +772,20 @@ def test_edit_debt_expense_vendor_change_switches_sub_account(api_client):
         assert delta_acc.name == "NCC Delta"
 
     # Re-point to the existing Gamma sub-account (must reuse, not create new).
-    patch_resp = api_client.patch(f"/api/events/{eid}", json={
-        "data": {
-            "amount_vnd": 150000,
-            "category": "Vận chuyển",
-            "payment_method": "Nợ",
-            "payment_source": "",
-            "vendor": "NCC Gamma",
-            "note": "đổi chủ nợ",
-            "paid_by_name": "",
+    patch_resp = api_client.patch(
+        f"/api/events/{eid}",
+        json={
+            "data": {
+                "amount_vnd": 150000,
+                "category": "Vận chuyển",
+                "payment_method": "Nợ",
+                "payment_source": "",
+                "vendor": "NCC Gamma",
+                "note": "đổi chủ nợ",
+                "paid_by_name": "",
+            },
         },
-    })
+    )
     assert patch_resp.status_code == 200
     with get_db() as conn:
         entries = _journal_for_source(conn, "expense", eid)

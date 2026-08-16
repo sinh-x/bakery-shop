@@ -27,8 +27,18 @@ import 'order.dart';
 /// - `cashOutTotal`    — sum of credits to account 1101 from journal entries
 ///                       with `source_type = 'cash_drawer_cash_out'`
 ///                       (owner draws from the drawer; DG-378).
-/// - `orders`          — all orders due on `date` (no status filter), each
-///                       decoded into an [Order].
+/// - `statusBreakdown` — map of order status → count for orders due on
+///                       `date` (DG-409 Phase 1 / FR7 / AC8). Replaces the
+///                       embedded `orders` list. Empty when the backend
+///                       omits it (backward compatible with older servers).
+/// - `orders`          — optional list of orders due on `date`. **Removed
+///                       from the backend response in DG-409 Phase 1** — the
+///                       dashboard now fetches the order list via
+///                       `GET /api/orders?due_date=...` separately. Kept on
+///                       the model so older-server responses still decode,
+///                       and so the local `TodayOrderList` widget can be
+///                       migrated incrementally. Always empty when the
+///                       backend follows the new shape.
 class TodaySummary {
   final String date;
   final double revenue;
@@ -37,6 +47,7 @@ class TodaySummary {
   final double bankTransferTotal;
   final double cashInTotal;
   final double cashOutTotal;
+  final Map<String, int> statusBreakdown;
   final List<Order> orders;
 
   const TodaySummary({
@@ -47,11 +58,13 @@ class TodaySummary {
     required this.bankTransferTotal,
     required this.cashInTotal,
     required this.cashOutTotal,
-    required this.orders,
+    this.statusBreakdown = const {},
+    this.orders = const [],
   });
 
   factory TodaySummary.fromJson(Map<String, dynamic> json) {
     final ordersRaw = json['orders'] as List? ?? const [];
+    final statusRaw = json['statusBreakdown'] as Map? ?? const {};
     return TodaySummary(
       date: json['date'] as String? ?? '',
       revenue: (json['revenue'] as num?)?.toDouble() ?? 0,
@@ -60,6 +73,9 @@ class TodaySummary {
       bankTransferTotal: (json['bankTransferTotal'] as num?)?.toDouble() ?? 0,
       cashInTotal: (json['cashInTotal'] as num?)?.toDouble() ?? 0,
       cashOutTotal: (json['cashOutTotal'] as num?)?.toDouble() ?? 0,
+      statusBreakdown: statusRaw.map(
+        (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+      ),
       orders: ordersRaw
           .map((o) => Order.fromJson(o as Map<String, dynamic>))
           .toList(growable: false),

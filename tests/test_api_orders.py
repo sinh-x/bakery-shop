@@ -207,6 +207,40 @@ def test_list_orders_due_date_range_preserves_limit_and_offset(api_client):
     assert len(resp.json()) == 2
 
 
+def test_list_orders_due_date_negative_limit_returns_all(api_client):
+    """CQ-14 (cycle-2 re-review): ``limit=-1`` is the unbounded sentinel.
+
+    The due-date branch must return every order due on the queried day when
+    ``limit=-1`` is requested, instead of silently truncating at the default
+    page size of 50. This protects the dashboard / Today Sales day-tab from
+    dropping orders on busy days. Seed >50 orders due on one day, request
+    ``limit=-1``, and assert all are returned. The default ``limit=50`` on
+    the same seed must truncate, proving the sentinel is what flips the
+    behavior.
+    """
+    n = 60  # > DEFAULT_PAGE_SIZE (50) to prove the sentinel matters
+    for _ in range(n):
+        _create_order(api_client, customer="Busy day", dueDate="2026-03-20")
+
+    # Default limit would truncate to 50 — assert the truncation baseline
+    # so the sentinel test below is meaningful (proves it isn't a no-op).
+    resp_default = api_client.get(
+        "/api/orders", params={"due_date": "2026-03-20"}
+    )
+    assert resp_default.status_code == 200
+    assert len(resp_default.json()) == 50
+
+    # limit=-1 sentinel: all matching orders returned (no truncation).
+    resp_unbounded = api_client.get(
+        "/api/orders", params={"due_date": "2026-03-20", "limit": -1}
+    )
+    assert resp_unbounded.status_code == 200
+    orders = resp_unbounded.json()
+    assert len(orders) == n
+    # Sanity: every returned order is due on the queried day.
+    assert all(o.get("dueDate") == "2026-03-20" for o in orders)
+
+
 def test_list_orders_pagination(api_client):
     for i in range(5):
         _create_order(api_client, customer=f"Customer {i}")

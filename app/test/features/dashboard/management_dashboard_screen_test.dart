@@ -41,6 +41,14 @@ class _FakeOrderService extends OrderService {
   _FakeOrderService() : super(Dio());
   List<Order> orders = const [];
 
+  /// Orders returned for the day-scoped `due_date` call (dueDateOrdersProvider
+  /// — CQ-1). Defaults to [orders] so tests that previously fed the today
+  /// section via `summary.orders` keep working when they pass `orders:`.
+  /// Tests that need to suppress the today-section rows (e.g. the
+  /// critical-alert test, whose infinite pulse animation would otherwise
+  /// stall `pumpAndSettle`) pass an explicit `dueDateOrders: const []`.
+  List<Order> dueDateOrders = const [];
+
   @override
   Future<List<Order>> listOrders({
     String? status,
@@ -50,7 +58,10 @@ class _FakeOrderService extends OrderService {
     int limit = 50,
     int offset = 0,
     bool activeOnly = false,
-  }) async => orders;
+  }) async {
+    if (dueDate != null) return dueDateOrders;
+    return orders;
+  }
 
   @override
   Future<List<Order>> listActiveOrders({int limit = 200}) async => orders;
@@ -97,40 +108,51 @@ class _FakeOrderPhotosNotifier extends OrderPhotosNotifier {
 }
 
 GoRouter _router() => GoRouter(
-      routes: [
-        GoRoute(
-          path: '/dashboard',
-          builder: (_, _) => const ManagementDashboardScreen(),
-        ),
-        GoRoute(
-          path: '/accounting',
-          builder: (_, _) => const SizedBox(child: Text('accounting-page')),
-        ),
-        GoRoute(
-          path: '/stock',
-          builder: (_, _) => const SizedBox(child: Text('stock-page')),
-        ),
-        GoRoute(
-          path: '/today-sales',
-          builder: (_, _) => const SizedBox(child: Text('today-sales-page')),
-        ),
-      ],
-      initialLocation: '/dashboard',
-    );
+  routes: [
+    GoRoute(
+      path: '/dashboard',
+      builder: (_, _) => const ManagementDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/accounting',
+      builder: (_, _) => const SizedBox(child: Text('accounting-page')),
+    ),
+    GoRoute(
+      path: '/stock',
+      builder: (_, _) => const SizedBox(child: Text('stock-page')),
+    ),
+    GoRoute(
+      path: '/today-sales',
+      builder: (_, _) => const SizedBox(child: Text('today-sales-page')),
+    ),
+  ],
+  initialLocation: '/dashboard',
+);
 
 Future<void> _pump(
   WidgetTester tester, {
   List<Order> orders = const [],
+
+  /// Orders returned by the separate `dueDateOrdersProvider` fetch (CQ-1).
+  /// Defaults to [orders] so tests that feed the today-orders section via
+  /// `orders:` keep working. Pass `const []` to suppress today-section
+  /// rows (used by the critical-alert test to avoid the OrderCard pulse
+  /// animation stalling `pumpAndSettle`).
+  List<Order>? dueDateOrders,
   TodaySummary? summary,
   List<StockOverviewItem> stock = const [],
 }) async {
-  final orderService = _FakeOrderService()..orders = orders;
+  final orderService = _FakeOrderService()
+    ..orders = orders
+    ..dueDateOrders = dueDateOrders ?? orders;
   final reportService = _FakeReportService()..summary = summary;
   final stockService = _FakeStockService()..items = stock;
   final summaryOrders = summary?.orders ?? const <Order>[];
+  final dueDateOrderList = dueDateOrders ?? orders;
   final allRefs = <String>{
     ...orders.map((o) => o.orderRef),
     ...summaryOrders.map((o) => o.orderRef),
+    ...dueDateOrderList.map((o) => o.orderRef),
   };
 
   await tester.pumpWidget(
@@ -141,8 +163,7 @@ Future<void> _pump(
         stockServiceProvider.overrideWithValue(stockService),
         apiBaseUrlProvider.overrideWith(_FakeApiBaseUrlNotifier.new),
         for (final ref in allRefs)
-          orderPhotosProvider(ref)
-              .overrideWith(_FakeOrderPhotosNotifier.new),
+          orderPhotosProvider(ref).overrideWith(_FakeOrderPhotosNotifier.new),
       ],
       child: MaterialApp.router(routerConfig: _router()),
     ),
@@ -172,26 +193,29 @@ TodaySummary _summary({
 }
 
 void main() {
-
   testWidgets(
-      'renders app bar, section titles, and the Xem doanh số hôm nay entry card',
-      (tester) async {
-    await _pump(tester);
-    expect(find.text(SharedLabels.tabManagement), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardSectionMetrics), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardMetricViewTodaySales),
-        findsOneWidget);
-    expect(find.text(SharedLabels.dashboardSectionShortcuts), findsOneWidget);
-    await tester.dragUntilVisible(
-      find.text(SharedLabels.dashboardSectionAlerts),
-      find.byType(Scrollable).first,
-      const Offset(0, -200),
-    );
-    expect(find.text(SharedLabels.dashboardSectionAlerts), findsOneWidget);
-  });
+    'renders app bar, section titles, and the Xem doanh số hôm nay entry card',
+    (tester) async {
+      await _pump(tester);
+      expect(find.text(SharedLabels.tabManagement), findsOneWidget);
+      expect(find.text(SharedLabels.dashboardSectionMetrics), findsOneWidget);
+      expect(
+        find.text(SharedLabels.dashboardMetricViewTodaySales),
+        findsOneWidget,
+      );
+      expect(find.text(SharedLabels.dashboardSectionShortcuts), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text(SharedLabels.dashboardSectionAlerts),
+        find.byType(Scrollable).first,
+        const Offset(0, -200),
+      );
+      expect(find.text(SharedLabels.dashboardSectionAlerts), findsOneWidget);
+    },
+  );
 
-  testWidgets('renders six shortcut tiles including Tiền tại quầy',
-      (tester) async {
+  testWidgets('renders six shortcut tiles including Tiền tại quầy', (
+    tester,
+  ) async {
     await _pump(tester);
     expect(find.text(SharedLabels.dashboardShortcutStock), findsOneWidget);
     expect(find.text(SharedLabels.dashboardShortcutCategories), findsOneWidget);
@@ -200,23 +224,24 @@ void main() {
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
     await tester.pump();
     expect(find.text(SharedLabels.dashboardShortcutBlanks), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardShortcutCashDrawer),
-        findsOneWidget);
+    expect(find.text(SharedLabels.dashboardShortcutCashDrawer), findsOneWidget);
   });
 
-  testWidgets('Xem doanh số hôm nay card tap navigates to /today-sales',
-      (tester) async {
+  testWidgets('Xem doanh số hôm nay card tap navigates to /today-sales', (
+    tester,
+  ) async {
     await _pump(tester);
-    await tester.tap(
-        find.text(SharedLabels.dashboardMetricViewTodaySales));
+    await tester.tap(find.text(SharedLabels.dashboardMetricViewTodaySales));
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text('today-sales-page'), findsOneWidget);
   });
 
   testWidgets('shortcut tap navigates via go router', (tester) async {
     await _pump(tester);
-    await tester.tap(find.text(SharedLabels.dashboardShortcutStock),
-        warnIfMissed: false);
+    await tester.tap(
+      find.text(SharedLabels.dashboardShortcutStock),
+      warnIfMissed: false,
+    );
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(find.text('stock-page'), findsOneWidget);
   });
@@ -243,44 +268,55 @@ void main() {
   // underlying providers remain covered by dashboard_metrics_provider_test.dart
   // and today_order_list_test.dart.
   testWidgets(
-      'revenue-today metric comes from API summary only (Bug 3 — no double-count)',
-      (tester) async {
-    await _pump(
-      tester,
-      summary: _summary(
-        revenue: 175000,
-        orderCount: 2,
+    'revenue-today metric comes from API summary only (Bug 3 — no double-count)',
+    (tester) async {
+      await _pump(
+        tester,
+        summary: _summary(
+          revenue: 175000,
+          orderCount: 2,
+          orders: [
+            _order(ref: 'A', dueDate: '2026-08-05', totalPrice: 50000),
+            _order(ref: 'B', dueDate: '2026-08-05', totalPrice: 25000),
+          ],
+        ),
+      );
+      // 175000 (API journal-only) — NOT 250000 (old double-count behavior).
+      expect(find.text('175.000đ'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'critical-order alert banner shows when urgency=critical (FR5/AC9)',
+    (tester) async {
+      await _pump(
+        tester,
         orders: [
-          _order(ref: 'A', dueDate: '2026-08-05', totalPrice: 50000),
-          _order(ref: 'B', dueDate: '2026-08-05', totalPrice: 25000),
+          _order(ref: 'A', urgency: 'critical'),
+          _order(ref: 'B', urgency: 'critical'),
+          _order(ref: 'C', urgency: 'normal'),
         ],
-      ),
-    );
-    // 175000 (API journal-only) — NOT 250000 (old double-count behavior).
-    expect(find.text('175.000đ'), findsOneWidget);
-  });
+        // Suppress today-section rows so the critical OrderCards' pulse
+        // animation does not stall `pumpAndSettle` (CQ-1 — the today section
+        // now fetches its rows separately).
+        dueDateOrders: const [],
+      );
+      await tester.dragUntilVisible(
+        find.byIcon(Icons.warning_amber_rounded),
+        find.byType(Scrollable).first,
+        const Offset(0, -300),
+      );
+      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      expect(
+        find.text(SharedLabels.dashboardCriticalOrdersAlert(2)),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('critical-order alert banner shows when urgency=critical (FR5/AC9)',
-      (tester) async {
-    await _pump(
-      tester,
-      orders: [
-        _order(ref: 'A', urgency: 'critical'),
-        _order(ref: 'B', urgency: 'critical'),
-        _order(ref: 'C', urgency: 'normal'),
-      ],
-    );
-    await tester.dragUntilVisible(
-      find.byIcon(Icons.warning_amber_rounded),
-      find.byType(Scrollable).first,
-      const Offset(0, -300),
-    );
-    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-    expect(find.text(SharedLabels.dashboardCriticalOrdersAlert(2)), findsOneWidget);
-  });
-
-  testWidgets('no critical alert banner when no critical orders (FR5/AC9)',
-      (tester) async {
+  testWidgets('no critical alert banner when no critical orders (FR5/AC9)', (
+    tester,
+  ) async {
     await _pump(
       tester,
       orders: [_order(ref: 'A', urgency: 'normal')],
@@ -288,17 +324,20 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
   });
 
-  // DG-376 Phase 5/6 — Today's orders section (FR6/AC6).
+  // DG-376 Phase 5/6 — Today's orders section (FR6/AC6). CQ-1: the order
+  // rows now come from a separate dueDateOrdersProvider fetch (not
+  // summary.orders), so the orders are injected via the OrderService fake.
   testWidgets('today orders section groups orders by status with a count '
       '(FR6/AC6)', (tester) async {
     await _pump(
       tester,
-      summary: _summary(orderCount: 4, orders: [
+      summary: _summary(orderCount: 4),
+      orders: [
         _order(ref: 'A', status: 'new', customerName: 'An'),
         _order(ref: 'B', status: 'new', customerName: 'Bình'),
         _order(ref: 'C', status: 'completed', customerName: 'Cúc'),
         _order(ref: 'D', status: 'cancelled', customerName: 'Dung'),
-      ]),
+      ],
     );
     // Scroll the today-orders section into view (it sits below metrics +
     // shortcuts).
@@ -320,9 +359,10 @@ void main() {
     expect(find.text('Dung'), findsOneWidget);
   });
 
-  testWidgets('today orders section shows empty state when no orders (FR6)',
-      (tester) async {
-    await _pump(tester, summary: _summary(orderCount: 0, orders: const []));
+  testWidgets('today orders section shows empty state when no orders (FR6)', (
+    tester,
+  ) async {
+    await _pump(tester, summary: _summary(orderCount: 0), orders: const []);
     await tester.dragUntilVisible(
       find.text(VN.khongCoDonHomNay),
       find.byType(Scrollable).first,
@@ -330,5 +370,38 @@ void main() {
     );
     expect(find.text(VN.todayOrders), findsOneWidget);
     expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
+  });
+
+  // CQ-1: the order rows must render from the separate dueDateOrdersProvider
+  // fetch, NOT from summary.orders. This test passes orders only via the
+  // dueDateOrdersProvider fake (summary.orders and the active order list are
+  // both empty) and asserts the rows still appear — proving the section no
+  // longer reads summary.orders.
+  testWidgets('today orders section renders rows from the separate order '
+      'fetch, not summary.orders (CQ-1)', (tester) async {
+    await _pump(
+      tester,
+      // Summary carries NO orders (mirrors the new backend shape where the
+      // orders list was removed in DG-409 Phase 1).
+      summary: _summary(orderCount: 3, orders: const []),
+      // The active order list is empty — the rows below come ONLY from the
+      // separate due-date fetch.
+      orders: const [],
+      dueDateOrders: [
+        _order(ref: 'SEP-1', status: 'new', customerName: 'Riêng-A'),
+        _order(ref: 'SEP-2', status: 'completed', customerName: 'Riêng-B'),
+        _order(ref: 'SEP-3', status: 'cancelled', customerName: 'Riêng-C'),
+      ],
+    );
+    await tester.dragUntilVisible(
+      find.text('Riêng-A'),
+      find.byType(Scrollable).first,
+      const Offset(0, -500),
+    );
+    // The rows from the separate fetch render even though summary.orders
+    // and the active order list were both empty.
+    expect(find.text('Riêng-A'), findsOneWidget);
+    expect(find.text('Riêng-B'), findsOneWidget);
+    expect(find.text('Riêng-C'), findsOneWidget);
   });
 }

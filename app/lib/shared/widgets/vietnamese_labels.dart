@@ -56,8 +56,10 @@ class VN {
   /// 4th tab title on the order detail screen. Reuses [customer] wording so
   /// the tab label stays consistent with the customer list/management copy.
   static const orderDetailTabCustomer = 'Khách hàng';
+
   /// Section header above the customer profile card (name, phone, created).
   static const orderDetailCustomerInfoTitle = 'Thông tin khách hàng';
+
   /// Empty state shown when an order has no linked `customerId` (FR10/AC8).
   static const orderDetailCustomerEmpty = 'Chưa có khách hàng';
 
@@ -174,7 +176,8 @@ class VN {
   static const eventPhotos = 'Ảnh đính kèm';
   static const addEventPhoto = 'Thêm ảnh';
   static const noEventPhotos = 'Chưa có ảnh';
-  static const eventPhotosUploadFailed = 'Đã lưu sự kiện nhưng không tải được ảnh';
+  static const eventPhotosUploadFailed =
+      'Đã lưu sự kiện nhưng không tải được ảnh';
 
   // Dashboard
   static const chonNgay = 'Chọn ngày';
@@ -415,12 +418,16 @@ class VN {
   // ── Photo upload progress (shared UploadProgressIndicator) ──────────────
   /// "X/N đã tải lên" — success-only count summary shown beneath per-photo
   /// rows. DG-333 Phase 1.
-  static String uploadedPhotosCount(int done, int total) => '$done/$total đã tải lên';
+  static String uploadedPhotosCount(int done, int total) =>
+      '$done/$total đã tải lên';
 
   /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
   /// DG-333 Phase 1.
-  static String uploadedPhotosCountWithErrors(int done, int failed, int total) =>
-      '$done/$total đã tải lên ($failed lỗi)';
+  static String uploadedPhotosCountWithErrors(
+    int done,
+    int failed,
+    int total,
+  ) => '$done/$total đã tải lên ($failed lỗi)';
 
   /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
   /// localized status words returned by [photoUploadStatusLabel]. DG-333
@@ -448,19 +455,25 @@ class VN {
   /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
   /// batch finished but some photos failed (AC6). DG-333 Phase 6.
   static String photoUploadCompleteWithErrors(
-          int done, int failed, int total) =>
-      'Đã tải lên xong — $done/$total ảnh ($failed lỗi)';
+    int done,
+    int failed,
+    int total,
+  ) => 'Đã tải lên xong — $done/$total ảnh ($failed lỗi)';
 
   // ── Markup (trưng bày) ──────────────────────────────────────────────────
   /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
   /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
   static const giaGoc = 'Giá gốc';
+
   /// "Giá bán" — the editable selling price field (markup). DG-296 Phase 3.
   static const giaBan = 'Giá bán';
+
   /// Price floor warning: selling price cannot be below the assigned price.
   static const markupFloorWarning = 'Giá bán không được thấp hơn giá gốc';
+
   /// Helper text for the markup price field (thousands of đ).
   static const markupThousandsHint = 'Nhập nghìn đồng (VD: 250 = 250.000đ)';
+
   /// "Phần cộng thêm" — the markup amount (unitPrice − assignedPrice) shown
   /// on trưng bày order line items in the order detail view. DG-296 Phase 5.
   static const markupAmount = 'Phần cộng thêm';
@@ -551,8 +564,10 @@ class VN {
   static const workItemSummaryUnit = 'công việc';
   static const paymentStatusSummaryOfTotal = 'trên tổng';
   static const workItemSummaryEmpty = 'Chưa có công việc';
+
   /// Renders "N công việc" for the work item summary count.
-  static String workItemSummaryCount(int count) => '$count $workItemSummaryUnit';
+  static String workItemSummaryCount(int count) =>
+      '$count $workItemSummaryUnit';
 
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
@@ -723,7 +738,8 @@ class VN {
   static const knowledgeBaseChecklistSubtitle = 'Công việc mở / đóng tiệm';
   static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
   static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
-  static const knowledgeBaseCashDrawerSubtitle = 'Quỹ tiền mặt hàng ngày & chênh lệch';
+  static const knowledgeBaseCashDrawerSubtitle =
+      'Quỹ tiền mặt hàng ngày & chênh lệch';
   static const pinnedSection = '📌 Đã ghim';
   static const pinSuccess = 'Đã ghim';
   static const unpinSuccess = 'Đã bỏ ghim';
@@ -839,7 +855,8 @@ class VN {
   static const debtStatusPartial = 'Trả một phần';
   static const expenseCreditorLabel = 'Chủ nợ';
   static const expenseVendorAutocompleteHint = 'Chọn từ nhà cung cấp đã dùng';
-  static const expenseDebtVendorRequired = 'Chủ nợ là bắt buộc khi chọn phương thức Nợ';
+  static const expenseDebtVendorRequired =
+      'Chủ nợ là bắt buộc khi chọn phương thức Nợ';
 
   // Debt list / settlement screens (DG-212 Phase 4)
   static const debtListTitle = 'Danh sách công nợ';
@@ -864,7 +881,8 @@ class VN {
   static const debtSettlementNoteLabel = 'Ghi chú';
   static const debtSettlementNoteHint = 'Ghi chú thanh toán (tùy chọn)';
   static const debtSettlementSaveAction = 'Xác nhận thanh toán';
-  static const debtSettlementAmountRequired = 'Vui lòng nhập số tiền thanh toán';
+  static const debtSettlementAmountRequired =
+      'Vui lòng nhập số tiền thanh toán';
   static const debtSettlementAmountInvalid = 'Số tiền không hợp lệ';
   static const debtSettlementAmountExceedsRemaining =
       'Số thanh toán vượt quá nợ còn lại';
@@ -938,6 +956,7 @@ class VN {
     assert(qty < 0, 'negativeStockLabel expects a negative quantity');
     return 'Âm ${qty.abs()}';
   }
+
   static const negativeStockLabelPrefix = 'Âm';
 
   // Stock management
@@ -1009,8 +1028,10 @@ class VN {
   /// Label for the surplus inflow quantity (counted - expected, when > 0).
   /// Reads as `Số lượng bù: +N`.
   static const soLuongBu = 'Số lượng bù';
+
   /// Restock indicator title shown next to a surplus option.
   static const nhapBuTonKho = 'Nhập bù tồn kho';
+
   /// Hint explaining that surplus will auto-create a restock inflow.
   static const nhapBuHint = 'Số dư sẽ tự nhập bù vào kho khi gửi đối soát';
   static const dongBan = 'Dòng bán';
@@ -1072,8 +1093,7 @@ class VN {
   static const customerNoOrders = 'Chưa có đơn hàng';
   static const customerOrderCountSuffix = 'đơn';
   static const customerSharedPhoneTitle = 'Cùng số điện thoại';
-  static const customerSharedPhoneHint =
-      'Khách hàng khác dùng chung số này:';
+  static const customerSharedPhoneHint = 'Khách hàng khác dùng chung số này:';
   static const customerPhoneField = 'Số điện thoại (tùy chọn)';
   static const customerNameField = 'Tên khách hàng';
   static const openCustomerManagement = 'Khách hàng';
@@ -1087,8 +1107,7 @@ class VN {
   static const customerSearchNoMatch = 'Không tìm thấy khách';
   static const customerSearchLoading = 'Đang tìm...';
   static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
-  static const customerSearchRefineHint =
-      'Nhập thêm để thu hẹp kết quả';
+  static const customerSearchRefineHint = 'Nhập thêm để thu hẹp kết quả';
 
   // Customer form multi-phone (DG-205 Phase 5)
   static const customerAddPhone = 'Thêm số điện thoại';
@@ -1120,6 +1139,11 @@ class VN {
   static const accountingLocked = 'Đã khóa';
   static const accountingUnlocked = 'Chưa khóa';
   static const accountingLoadMore = 'Tải thêm';
+
+  /// Generic "load more" label for paginated list screens (DG-409 Phase 4 —
+  /// products, customers, order history). Reused across domains so the
+  /// pagination affordance stays consistent.
+  static const loadMore = 'Tải thêm';
   static const accountingNoAccounts = 'Không có tài khoản';
   static const accountingNoBalances = 'Không có số dư';
   static const accountingSourceTypeAll = 'Tất cả';
@@ -1152,7 +1176,8 @@ class VN {
   // — the status card no longer shows an accumulator breakdown.
   static const cashDrawerHistory = 'Lịch sử quầy';
   static const cashDrawerNoActive = 'Không có quầy tiền mặt đang mở';
-  static const cashDrawerAlreadyOpen = 'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.';
+  static const cashDrawerAlreadyOpen =
+      'Đã có quầy tiền mặt đang mở — phải đóng quầy hiện tại trước khi mở quầy mới.';
   static const cashDrawerAmountLabel = 'Số tiền (VND)';
   static const cashDrawerNoteLabel = 'Ghi chú (tùy chọn)';
   static const cashDrawerOpenSuccess = 'Đã mở quầy tiền mặt';
@@ -1202,7 +1227,8 @@ class VN {
   /// DG-331 FR9: label for the previous close counted amount shown in the
   /// open dialog as a second reference point ("Số dư sau khi đóng quầy lần
   /// trước"). Follows the 1101 reference balance line.
-  static const cashDrawerPreviousCloseBalance = 'Số dư sau khi đóng quầy lần trước';
+  static const cashDrawerPreviousCloseBalance =
+      'Số dư sau khi đóng quầy lần trước';
 
   /// Phase 4.1 F5/F6: "current balance" helper shown in the cash-in and
   /// cash-out dialogs so the owner knows how much is already in the drawer.
@@ -1215,7 +1241,8 @@ class VN {
   static const cashDrawerCloseSurplusQuestion =
       'Số tiền đếm được lớn hơn số dư dự kiến. Chủ thêm tiền mặt hay ghi nhận doanh thu chưa xác định?';
   static const cashDrawerCloseSurplusOwnerCash = 'Chủ thêm tiền mặt';
-  static const cashDrawerCloseSurplusUnidentifiedSale = 'Doanh thu chưa xác định';
+  static const cashDrawerCloseSurplusUnidentifiedSale =
+      'Doanh thu chưa xác định';
 
   /// DG-331: close shortage confirmation dialog labels. Shown when closing
   /// the drawer with counted < expected and the shortage has not yet been
@@ -1230,13 +1257,15 @@ class VN {
   /// dialogs. The close flow uses "Số dư dự kiến"/"Số tiền đếm được"; the
   /// open flow (reusing the same dialog) shows the 1101 accounting reference
   /// and the entered opening amount instead.
-  static const cashDrawerOpenSurplusTitle = 'Xác nhận chênh lệch thừa khi mở quầy';
+  static const cashDrawerOpenSurplusTitle =
+      'Xác nhận chênh lệch thừa khi mở quầy';
   static const cashDrawerOpenSurplusReferenceLabel = 'Số dư kế toán 1101';
   static const cashDrawerOpenSurplusOpeningLabel = 'Số tiền mở quầy';
   static const cashDrawerOpenSurplusQuestion =
       'Số tiền mở quầy lớn hơn số dư kế toán 1101. Chủ thêm tiền mặt hay ghi nhận doanh thu chưa xác định?';
 
-  static const cashDrawerOpenShortageTitle = 'Xác nhận chênh lệch thiếu khi mở quầy';
+  static const cashDrawerOpenShortageTitle =
+      'Xác nhận chênh lệch thiếu khi mở quầy';
   static const cashDrawerOpenShortageReferenceLabel = 'Số dư kế toán 1101';
   static const cashDrawerOpenShortageOpeningLabel = 'Số tiền mở quầy';
   static const cashDrawerOpenShortageQuestion =
@@ -1259,7 +1288,8 @@ class VN {
   static const accountingSourceTypeCashDrawerOpen = 'Mở quầy tiền mặt';
   static const accountingSourceTypeCashDrawerCashIn = 'Cho tiền vào quầy';
   static const accountingSourceTypeCashDrawerCashOut = 'Lấy tiền khỏi quầy';
-  static const accountingSourceTypeCashDrawerCloseAdjust = 'Đóng quầy — điều chỉnh chênh lệch';
+  static const accountingSourceTypeCashDrawerCloseAdjust =
+      'Đóng quầy — điều chỉnh chênh lệch';
 
   // ── Cash-drawer transaction history tab (DG-343 Phase 3) ────────────────
   /// "Chi tiết giao dịch" — the 3rd tab on the cash drawer screen (FR3).
@@ -1293,6 +1323,7 @@ class VN {
   // DG-363 Phase 3 (FR1): two new categories for the 2-group breakdown.
   /// "Hoàn tiền" — customer refund (payment_transaction with amount < 0).
   static const cashDrawerTxnTypeRefund = 'Hoàn tiền';
+
   /// "Phí ship bus" — bus-shipping portion split out of a payment inflow.
   static const cashDrawerTxnTypeBusShipping = 'Phí ship bus';
 
@@ -1301,9 +1332,11 @@ class VN {
   /// "Sửa giao dịch" — title of the edit-transaction dialog shown when the
   /// owner taps an open/close transaction card (AC1/AC2).
   static const cashDrawerEditTxnTitle = 'Sửa giao dịch';
+
   /// "Đã lưu giao dịch" — snackbar shown after a successful edit so the
   /// owner knows the journal entry + drawer balances were updated (AC7).
   static const cashDrawerEditTxnSaved = 'Đã lưu giao dịch';
+
   /// "Quầy đã đối soát — không thể sửa giao dịch" — lock notice shown when
   /// the owner taps a transaction belonging to a reconciled drawer (AC5).
   static const cashDrawerEditLockedReconciled =
@@ -1317,6 +1350,7 @@ class VN {
   // DG-363 Phase 3 (FR1): 2-group structure headers.
   /// "Tiền vào" — header for the inflow group (Bán hàng, Nạp tiền, Mở quầy).
   static const cashDrawerBreakdownInflowGroup = 'Tiền vào';
+
   /// "Tiền ra" — header for the outflow group (Hoàn tiền, Chi phí, Rút tiền,
   /// Phí ship bus, Đóng quầy).
   static const cashDrawerBreakdownOutflowGroup = 'Tiền ra';
@@ -1412,8 +1446,7 @@ class VN {
   static const accountingTypeIncome = 'Doanh thu';
   static const accountingTypeExpense = 'Chi phí';
 
-  static String accountingLockResult(int count) =>
-      'Đã khóa $count bút toán';
+  static String accountingLockResult(int count) => 'Đã khóa $count bút toán';
 
   // Bulk selection
   static const chonAnh = 'Chọn';
@@ -1439,7 +1472,8 @@ class VN {
   static const tagLabelTooLong = 'Nhãn không được vượt quá 40 ký tự';
   static const tagLabelNoColon = 'Nhãn không được chứa dấu hai chấm';
   static const tagCannotDelete = 'Không thể xoá';
-  static String tagInUse(int n) => 'Thẻ này đang được dùng bởi $n ảnh. Hãy gỡ thẻ khỏi các ảnh đó trước.';
+  static String tagInUse(int n) =>
+      'Thẻ này đang được dùng bởi $n ảnh. Hãy gỡ thẻ khỏi các ảnh đó trước.';
   static String tagDeleteConfirm(String label) => 'Xoá thẻ "$label"?';
   static const tagAdded = 'Đã thêm thẻ';
   static const tagUpdated = 'Đã cập nhật thẻ';

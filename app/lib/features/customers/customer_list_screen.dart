@@ -40,19 +40,26 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
     ref.read(customerSearchProvider.notifier).clear();
   }
 
-  Future<void> _openCreateForm() async {
+  void _openCreateForm() async {
     await showCustomerForm(
       context,
       onUseExisting: (c) => context.push('/customers/${c.id}'),
     );
     if (mounted) {
-      await ref.read(customerListProvider.notifier).refresh();
+      // DG-409 Phase 4: refresh the paginated customer list after a create so
+      // the new customer appears. Also invalidate the legacy provider kept
+      // for detail/form invalidation hooks.
+      await ref.read(customerPaginationProvider.notifier).refresh();
+      ref.invalidate(customerListProvider);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final customersAsync = ref.watch(customerListProvider);
+    // DG-409 Phase 4 (FR11, AC4): paginated customer list with server-side
+    // search. The legacy customerListProvider stays for invalidation hooks
+    // (detail/form/duplicate-finder); the screen reads the paginated state.
+    final paginationAsync = ref.watch(customerPaginationProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -81,9 +88,8 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
             ),
           ),
           Expanded(
-            child: customersAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+            child: paginationAsync.when(
+              loading: () => const _CustomerListSkeleton(),
               error: (e, _) => Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -94,17 +100,19 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: () =>
-                          ref.read(customerListProvider.notifier).refresh(),
+                          ref.read(customerPaginationProvider.notifier).refresh(),
                       icon: const Icon(Icons.refresh),
                       label: const Text(VN.retry),
                     ),
                   ],
                 ),
               ),
-              data: (customers) => _CustomerList(
-                customers: customers,
+              data: (state) => _CustomerList(
+                state: state,
                 onRefresh: () =>
-                    ref.read(customerListProvider.notifier).refresh(),
+                    ref.read(customerPaginationProvider.notifier).refresh(),
+                onLoadMore: () =>
+                    ref.read(customerPaginationProvider.notifier).loadMore(),
               ),
             ),
           ),
@@ -120,13 +128,19 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 }
 
 class _CustomerList extends StatelessWidget {
-  const _CustomerList({required this.customers, required this.onRefresh});
+  const _CustomerList({
+    required this.state,
+    required this.onRefresh,
+    required this.onLoadMore,
+  });
 
-  final List<Customer> customers;
+  final CustomerPaginationState state;
   final Future<void> Function() onRefresh;
+  final Future<void> Function() onLoadMore;
 
   @override
   Widget build(BuildContext context) {
+    final customers = state.loaded;
     if (customers.isEmpty) {
       return const Center(
         child: Column(
@@ -140,15 +154,99 @@ class _CustomerList extends StatelessWidget {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.separated(
-        itemCount: customers.length,
-        itemBuilder: (context, index) {
-          final customer = customers[index];
-          return _CustomerTile(customer: customer);
-        },
-        separatorBuilder: (_, _) => const Divider(height: 1),
+    // DG-409 Phase 4: infinite-scroll via a scroll listener that triggers
+    // load-more near the bottom. Combined with the explicit "Tải thêm"
+    // affordance below for discoverability.
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollEndNotification &&
+            notification.metrics.pixels >=
+                notification.metrics.maxScrollExtent - 200 &&
+            state.hasMore &&
+            !state.isLoadingMore) {
+          onLoadMore();
+        }
+        return false;
+      },
+      child: RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView.separated(
+          itemCount: customers.length + 1,
+          itemBuilder: (context, index) {
+            if (index == customers.length) {
+              return _LoadMoreTile(
+                state: state,
+                onLoadMore: onLoadMore,
+              );
+            }
+            return _CustomerTile(customer: customers[index]);
+          },
+          separatorBuilder: (_, _) => const Divider(height: 1),
+        ),
+      ),
+    );
+  }
+}
+
+/// Footer tile rendered at the end of the customer list. Shows a loading
+/// spinner while fetching the next page, a "Tải thêm" button when more pages
+/// remain, or nothing when all customers are loaded (DG-409 Phase 4).
+class _LoadMoreTile extends StatelessWidget {
+  const _LoadMoreTile({required this.state, required this.onLoadMore});
+
+  final CustomerPaginationState state;
+  final Future<void> Function() onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!state.hasMore && !state.isLoadingMore) {
+      return const SizedBox.shrink();
+    }
+    if (state.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: OutlinedButton.icon(
+          onPressed: onLoadMore,
+          icon: const Icon(Icons.expand_more),
+          label: Text(
+            '${VN.loadMore} (${state.total - state.loaded.length})',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Loading skeleton shown while the first customer page loads (DG-409
+/// Phase 4 / loading indicators). Renders placeholder tiles so the screen
+/// doesn't flash empty before data arrives.
+class _CustomerListSkeleton extends StatelessWidget {
+  const _CustomerListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      itemCount: 8,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, _) => const ListTile(
+        leading: CircleAvatar(child: SizedBox.shrink()),
+        title: SizedBox(
+          height: 16,
+          child: LinearProgressIndicator(),
+        ),
+        subtitle: SizedBox(height: 12, child: LinearProgressIndicator()),
       ),
     );
   }

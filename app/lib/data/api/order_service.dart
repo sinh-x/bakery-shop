@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/order.dart';
 import '../models/order_photo.dart';
+import '../models/paginated_response.dart';
 import 'api_client.dart';
 
 class OrderService {
@@ -32,6 +33,30 @@ class OrderService {
     return list
         .map((json) => Order.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Paginated order history fetch (DG-409 Phase 4 / FR12). Opts into the
+  /// backend envelope via ``paginated=true`` (active_only stays false) and
+  /// returns ``{items, total, has_more, limit, offset}`` (FR14). Used by the
+  /// order history screen; the active-orders list is NOT paginated (FR9).
+  Future<PaginatedResponse<Order>> listOrdersPaginated({
+    String? dueDateFrom,
+    String? dueDateTo,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final params = <String, dynamic>{
+      'paginated': true,
+      'limit': limit,
+      'offset': offset,
+    };
+    if (dueDateFrom != null) params['due_date_from'] = dueDateFrom;
+    if (dueDateTo != null) params['due_date_to'] = dueDateTo;
+    final response = await _dio.get('/api/orders', queryParameters: params);
+    return PaginatedResponse.fromJson(
+      response.data as Map<String, dynamic>,
+      Order.fromJson,
+    );
   }
 
   Future<Order> getOrder(String ref) async {
@@ -275,6 +300,22 @@ class OrderService {
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Fetches lightweight order badge counts (urgency, incomplete) for active
+  /// orders from `GET /api/orders/counts` (DG-409 Phase 2 / FR1/NFR2/NFR4).
+  ///
+  /// Returns a record `({urgency, incomplete})`. The backend already degrades
+  /// to `{"urgency": 0, "incomplete": 0}` on error, so callers can rely on
+  /// non-null ints. Used by shell-scaffold badge providers so the bottom nav
+  /// no longer depends on the full order list fetch.
+  Future<({int urgency, int incomplete})> fetchOrderCounts() async {
+    final response = await _dio.get('/api/orders/counts');
+    final data = response.data as Map<String, dynamic>;
+    return (
+      urgency: (data['urgency'] as num?)?.toInt() ?? 0,
+      incomplete: (data['incomplete'] as num?)?.toInt() ?? 0,
+    );
   }
 
   /// Fetches all active (non-terminal) orders for the dashboard view.

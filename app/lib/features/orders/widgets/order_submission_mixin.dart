@@ -7,6 +7,7 @@ import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/order/order_list_providers.dart';
 import '../../../shared/labels/orders.dart';
+import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/api_error.dart';
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/utils/delivery_helpers.dart';
@@ -209,6 +210,12 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     if (config.enableOrderListRefresh) {
       await ref.read(orderListProvider.notifier).refresh();
     }
+    // DG-409 Phase 5 (FR13, AC6): a new order is a mutation on the order
+    // entity type, so invalidate the session-level order-history cache so
+    // the next history-tab visit re-fetches fresh data.
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.orderHistory);
 
     if (!mounted) return false;
 

@@ -8,9 +8,9 @@ import '../../data/models/product.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'widgets/product_card.dart';
 
 class ProductCatalogScreen extends ConsumerStatefulWidget {
@@ -112,7 +112,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     WidgetRef ref,
     List<Category> categories,
   ) {
-    final productsAsync = ref.watch(productsProvider);
+    // DG-409 Phase 4 (FR10, AC3): paginated active products. The legacy
+    // productsProvider stays for non-catalog consumers (POS, order edit,
+    // cake queue, product picker); the catalog screen reads the paginated
+    // state so 200+ products load in pages of 50 with load-more.
+    final productsAsync = ref.watch(productsPaginationProvider);
     final inactiveProductsAsync = ref.watch(inactiveProductsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
@@ -128,6 +132,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                 icon: const Icon(Icons.refresh),
                 tooltip: VN.lamMoi,
                 onPressed: () {
+                  ref.invalidate(productsPaginationProvider);
                   ref.invalidate(productsProvider);
                   ref.invalidate(categoriesProvider);
                 },
@@ -159,7 +164,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
             ),
           ),
           body: productsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const _ProductGridSkeleton(),
             error: (error, _) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -173,6 +178,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: () {
+                      ref.invalidate(productsPaginationProvider);
                       ref.invalidate(productsProvider);
                       ref.invalidate(categoriesProvider);
                     },
@@ -182,8 +188,8 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                 ],
               ),
             ),
-            data: (products) => _ProductTabs(
-              products: products,
+            data: (state) => _ProductTabs(
+              state: state,
               inactiveProductsAsync: inactiveProductsAsync,
               categories: categories,
               baseUrl: baseUrl,
@@ -195,6 +201,8 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
               onRetryInactiveProducts: () {
                 ref.invalidate(inactiveProductsProvider);
               },
+              onLoadMore: () =>
+                  ref.read(productsPaginationProvider.notifier).loadMore(),
             ),
           ),
           floatingActionButton: FloatingActionButton(
@@ -215,7 +223,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
 
 class _ProductTabs extends StatelessWidget {
   const _ProductTabs({
-    required this.products,
+    required this.state,
     required this.inactiveProductsAsync,
     required this.categories,
     required this.baseUrl,
@@ -223,9 +231,10 @@ class _ProductTabs extends StatelessWidget {
     required this.showInactiveProducts,
     required this.onShowInactiveProductsChanged,
     required this.onRetryInactiveProducts,
+    required this.onLoadMore,
   });
 
-  final List<Product> products;
+  final ProductPaginationState state;
   final AsyncValue<List<Product>> inactiveProductsAsync;
   final List<Category> categories;
   final String baseUrl;
@@ -233,9 +242,11 @@ class _ProductTabs extends StatelessWidget {
   final bool showInactiveProducts;
   final ValueChanged<bool> onShowInactiveProductsChanged;
   final VoidCallback onRetryInactiveProducts;
+  final Future<void> Function() onLoadMore;
 
   @override
   Widget build(BuildContext context) {
+    final products = state.loaded;
     final grouped = <String, List<Product>>{};
     for (final cat in categories) {
       grouped[cat.slug] = products
@@ -310,6 +321,8 @@ class _ProductTabs extends StatelessWidget {
                 items: items,
                 baseUrl: baseUrl,
                 cacheBuster: cacheBuster,
+                paginationState: state,
+                onLoadMore: onLoadMore,
               );
             }).toList(),
           ),
@@ -324,34 +337,119 @@ class _ProductGrid extends ConsumerWidget {
     required this.items,
     required this.baseUrl,
     required this.cacheBuster,
+    required this.paginationState,
+    required this.onLoadMore,
   });
 
   final List<Product> items;
   final String baseUrl;
   final String cacheBuster;
+  final ProductPaginationState paginationState;
+  final Future<void> Function() onLoadMore;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // DG-409 Phase 4: infinite-scroll — trigger load-more when near the
+    // bottom of the grid. The global pagination state drives the next-page
+    // fetch (more products across ALL categories), so the active tab fills
+    // up as pages arrive.
     return RefreshIndicator(
       onRefresh: () async {
+        ref.invalidate(productsPaginationProvider);
         ref.invalidate(productsProvider);
         ref.invalidate(categoriesProvider);
         ref.invalidate(inactiveProductsProvider);
       },
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollEndNotification &&
+              notification.metrics.pixels >=
+                  notification.metrics.maxScrollExtent - 300 &&
+              paginationState.hasMore &&
+              !paginationState.isLoadingMore) {
+            onLoadMore();
+          }
+          return false;
+        },
+        child: GridView.builder(
+          padding: const EdgeInsets.all(12),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 1.0,
+          ),
+          itemCount: items.length + (paginationState.hasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == items.length) {
+              // CQ-9 (review-auto): explicit tap-to-load footer. The
+              // perpetual spinner dead-end is replaced by a tappable
+              // "Tải thêm" cell that shows a spinner ONLY while
+              // `isLoadingMore`. Tapping triggers `onLoadMore` (still also
+              // fired by the scroll-end listener above for infinite-scroll
+              // parity).
+              if (paginationState.isLoadingMore) {
+                return const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                );
+              }
+              return InkWell(
+                onTap: onLoadMore,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(12),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.expand_more, size: 28),
+                      SizedBox(height: 4),
+                      Text(SharedLabels.loadMore),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return ProductCard(
+              product: items[index],
+              photoBaseUrl: baseUrl,
+              cacheBuster: cacheBuster,
+              onTap: () => context.push('/products/${items[index].id}/edit'),
+            );
+          },
         ),
-        itemCount: items.length,
-        itemBuilder: (context, index) => ProductCard(
-          product: items[index],
-          photoBaseUrl: baseUrl,
-          cacheBuster: cacheBuster,
-          onTap: () => context.push('/products/${items[index].id}/edit'),
+      ),
+    );
+  }
+}
+
+/// Loading skeleton shown while the first product page loads (DG-409
+/// Phase 4 / loading indicators).
+class _ProductGridSkeleton extends StatelessWidget {
+  const _ProductGridSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: 6,
+      itemBuilder: (context, _) => const Card(
+        child: Center(
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
         ),
       ),
     );
