@@ -302,7 +302,27 @@ jobs:
         # the single `0.0.0.0` HOST default in src/baker/config.py is fronted
         # by Caddy in production. This keeps all bandit plugin classes active
         # for new code instead of globally disabling B608/B104 detection.
-        run: bandit -r src -ll -q
+        #
+        # Phase 5.6-c2 (DG-411/MIN-1) — stderr is filtered to suppress the
+        # cosmetic `nosec encountered (B608/B104), but no failed test` WARNING
+        # lines. These warnings are an unavoidable side effect of bandit
+        # 1.9.4's linerange-based nosec lookup: for multi-segment f-strings
+        # (e.g. f"SELECT ... {placeholder} ORDER BY ...") the nosec comment
+        # on the closing quote line is in the linerange of ALL string
+        # segments, including non-matching segments that don't trigger B608.
+        # Bandit emits a "no failed test" warning for each such segment. The
+        # annotations are already on the only valid line (the closing quote
+        # line is the sole position outside the f-string body where a real
+        # Python COMMENT token can coexist with the JoinedStr's linerange).
+        # Relocating to the B608-flagged line (the f-string opening line) is
+        # impossible because that line is inside the f-string body — a `#`
+        # there is FSTRING_MIDDLE, not a COMMENT token, so bandit would not
+        # recognise it as a nosec and the B608 finding would re-appear.
+        # The `2>/dev/null` preserves the exit code (0 = pass, non-0 = fail)
+        # and stdout (findings report); only the cosmetic stderr noise is
+        # hidden. Real errors (syntax errors, etc.) still surface via the
+        # "Files skipped" section on stdout and the non-zero exit code.
+        run: bandit -r src -ll -q 2>/dev/null
 
       - name: pip-audit dependency vulnerability scan
         # Phase 4.4 (FR-CI-1/FR-CI-2) — audit installed dependencies against
