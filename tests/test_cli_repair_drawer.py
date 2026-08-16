@@ -281,21 +281,15 @@ def test_repair_closing_balance_matches_live_close(use_memory_db):
         ensure_schema(conn)
         _seed_je5975(conn)  # no-op for Step 1; out of all drawer windows
 
-        # Drawer A: live close path. Link an opening 1101 entry for
-        # opening_balance (mirrors the API's cash_drawer_open journal entry)
-        # plus a +500,000 adjustment, then call CashDrawer.close() —
-        # closing_balance = expected_balance = 1,000,000 + 500,000.
+        # Drawer A: live close path. Under the DG-354 dual-balance model,
+        # opening_balance holds the 1101 accounting reference at open time and
+        # the cash_drawer_open entry books only the delta (0 here, so no open
+        # entry). Link a +500,000 adjustment, then call CashDrawer.close() —
+        # closing_balance = expected_balance = opening_balance + 500,000.
         drawer_a = _insert_drawer(
             conn,
             opened_at="2026-07-01T08:00:00Z",
             opening_balance=1_000_000,
-        )
-        _insert_1101_entry(
-            conn,
-            amount=1_000_000,
-            source_type="cash_drawer_open",
-            created_at="2026-07-01T08:00:00Z",
-            drawer_id=drawer_a,
         )
         _insert_1101_entry(
             conn,

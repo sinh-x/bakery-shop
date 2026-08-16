@@ -22,7 +22,7 @@ Map<String, dynamic> _drawerJson({
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
     'closingBalance': closingBalance,
-    if (reconciled != null) 'reconciled': reconciled,
+    'reconciled': ?reconciled,
     'journalEntry': journalEntry,
   };
   return json;

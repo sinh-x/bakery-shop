@@ -56,7 +56,7 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   longitude: (json['longitude'] as num?)?.toDouble(),
   googleMapsUrl: json['googleMapsUrl'] as String?,
   deliveryTimeSlot: json['deliveryTimeSlot'] as String?,
-  assignedStaffId: json['assignedStaffId'] as String? ?? null,
+  assignedStaffId: json['assignedStaffId'] as String?,
   assignedStaffName: json['assignedStaffName'] as String? ?? '',
   createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
   updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),

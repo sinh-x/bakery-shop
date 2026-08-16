@@ -459,8 +459,8 @@ class CashDrawerService {
     final response = await _dio.patch(
       '/api/cash-drawer/$drawerId/transactions/$entryId',
       data: {
-        if (amount != null) 'amount': amount,
-        if (notes != null) 'notes': notes,
+        'amount': ?amount,
+        'notes': ?notes,
       },
     );
     return CashDrawerEditResult.fromJson(
