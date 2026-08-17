@@ -2,7 +2,7 @@
 
 > Date: 2026-05-09
 > Scope: Coding standards covering file sizing, widget composition, provider placement, state management, label organization, testing, and linting
-> Based on: Code Quality Audit (120 files, 30,479 lines)
+> Based on: Code Quality Audit (475 files, 81,256 lines)
 > Flutter SDK: 3.44.0 (repo-standard devshell)
 > Riverpod: ^3.1.0
 > Review cadence: Annual or on major Flutter/Riverpod version bump
@@ -44,10 +44,10 @@
 
 | File Type | Max Lines | Location | Evidence from Audit |
 |-----------|-----------|----------|---------------------|
-| Screen | 300 | `lib/features/<feature>/` | 16 High-severity files >500 lines; `order_detail_screen.dart` at 2,557 lines |
-| Widget | 300 | `lib/features/<feature>/widgets/` | Raised from 200 to 300 per DG-332; aligns widget threshold with Screen/Service (300). Largest widgets: `expandable_item_card.dart` at 616 lines, `order_photo_section.dart` at 592. Audit baseline files ≥300 lines = 38 (16 High >500 + 8 Medium 400-500 + 14 Low 300-400) |
-| Provider | 400 | `lib/data/providers/` or `lib/providers/` | `reconciliation_provider.dart` at 651; `order_providers.dart` at 530 |
-| Service | 300 | `lib/data/api/` | `reconciliation_service.dart` at 519; `printer_service.dart` at 328 |
+| Screen | 300 | `lib/features/<feature>/` | 18 High-severity files >500 lines; `product_form_screen.dart` at 1,774 lines |
+| Widget | 300 | `lib/features/<feature>/widgets/` | Raised from 200 to 300 per DG-332; aligns widget threshold with Screen/Service (300). Largest widgets: `reconciliation_product_card.dart` at 881 lines, `cake_detail_body.dart` at 729 lines. Audit baseline files ≥300 lines = 75 (18 High >500 + 15 Medium 400-500 + 42 Low 300-399) |
+| Provider | 400 | `lib/data/providers/` or `lib/providers/` | `reconciliation_models.dart` at 781 lines; `cash_drawer_service.dart` at 531 lines |
+| Service | 300 | `lib/data/api/` | `reconciliation_models.dart` at 781; `cash_drawer_service.dart` at 531 |
 
 ### Exception Process
 
@@ -62,7 +62,7 @@ When a file must exceed its threshold:
 
 ### Pre-existing Oversized Files (Baseline)
 
-The audit identified 38 files ≥300 lines under the updated widget threshold (16 High-severity >500 lines + 8 Medium 400-500 lines + 14 Low 300-400 lines). The 16 High-severity files (>500 lines) remain the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
+The audit identified 75 files ≥300 lines under the updated widget threshold (18 High-severity >500 lines + 15 Medium 400-500 lines + 42 Low 300-399 lines). The 18 High-severity files (>500 lines) remain the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
 
 ---
 
@@ -91,22 +91,45 @@ Given `lib/features/orders/order_create_screen.dart` containing private classes 
 
 ### Pre-existing Extraction Targets (Audit)
 
-Files currently triggering the ≥3 rule:
+Files currently triggering the ≥3 rule (live audit, 2026-08-17):
 
 | File | Inner Classes | Severity |
 |------|---------------|----------|
-| `order_detail_screen.dart` | 18 | High |
-| `stock_reconciliation_screen.dart` | 8 | High |
-| `order_edit_screen.dart` | 6 | High |
-| `order_list_screen.dart` | 5 | High |
-| `settings_screen.dart` | 5 | High |
-| `dashboard_screen.dart` | 6 | Medium |
-| `checklist_history_screen.dart` | 5 | Medium |
-| `category_management_screen.dart` | 5 | Medium |
-| `checklist_screen.dart` | 4 | Medium |
-| `catalog_browse_screen.dart` | 3 | High |
-| `catalog_photo_viewer.dart` | 3 | Medium |
-| `knowledge_photo_gallery.dart` | 3 | Medium |
+| `features/blanks/blank_detail_screen.dart` | 9 | Medium |
+| `features/stock/widgets/reconciliation_product_card.dart` | 8 | High |
+| `features/cash_drawer/cash_drawer_screen.dart` | 7 | High |
+| `features/today_sales/widgets/cashflow_summary_section.dart` | 6 | Low |
+| `features/today_sales/widgets/expense_summary_section.dart` | 5 | n/a |
+| `features/today_sales/widgets/day_tab_body.dart` | 5 | n/a |
+| `features/products/product_form_screen.dart` | 5 | High |
+| `features/orders/order_list_screen.dart` | 5 | High |
+| `features/customers/customer_list_screen.dart` | 5 | n/a |
+| `features/categories/category_management_screen.dart` | 5 | n/a |
+| `features/today_sales/widgets/product_breakdown_section.dart` | 4 | n/a |
+| `features/settings/widgets/catalog_tags_dialogs.dart` | 4 | Low |
+| `features/settings/address_library_screen.dart` | 4 | Medium |
+| `features/products/widgets/catalog_photo_viewer.dart` | 4 | Medium |
+| `features/products/product_catalog_screen.dart` | 4 | Medium |
+| `features/orders/widgets/order_photo_section.dart` | 4 | High |
+| `features/expenses/debt_list_screen.dart` | 4 | n/a |
+| `features/events/widgets/event_form_photo_section.dart` | 4 | n/a |
+| `features/customers/customer_form.dart` | 4 | High |
+| `features/checklist/checklist_screen.dart` | 4 | Low |
+| `features/checklist/checklist_history_screen.dart` | 4 | Low |
+| `features/cash_drawer/widgets/cash_drawer_history_list.dart` | 4 | n/a |
+| `features/auth/login_screen.dart` | 4 | n/a |
+| `features/audit_log/audit_log_screen.dart` | 4 | n/a |
+| `features/today_sales/widgets/today_order_list.dart` | 3 | n/a |
+| `features/templates/widgets/template_picker_modal.dart` | 3 | Medium |
+| `features/settings/widgets/settings_sections.dart` | 3 | n/a |
+| `features/settings/missing_links_screen.dart` | 3 | n/a |
+| `features/orders/order_history_screen.dart` | 3 | Low |
+| `features/knowledge/widgets/knowledge_photo_gallery.dart` | 3 | Low |
+| `features/events/widgets/quick_log_photo_picker.dart` | 3 | n/a |
+| `features/dashboard/management_dashboard_screen.dart` | 3 | Low |
+| `features/categories/category_form.dart` | 3 | Medium |
+| `features/blanks/bom_mapping_screen.dart` | 3 | n/a |
+| `features/auth/widgets/password_change_form.dart` | 3 | n/a |
 
 ---
 
@@ -135,6 +158,62 @@ Files currently triggering the ≥3 rule:
 - Data-layer providers (`lib/data/providers/`) may be consumed by app-layer providers (`lib/providers/`) — this is expected and correct.
 - App-layer providers must NOT be consumed by data-layer providers — data-layer must remain pure and independent of UI concerns.
 - Both directories share the same Riverpod `ProviderContainer` — no directory creates a separate scope.
+
+### Live Findings (audit 2026-08-17)
+
+**Provider counts by location:**
+| Location | Files |
+|----------|-------|
+| `lib/providers/` | 35 |
+| `lib/data/providers/` | 15 |
+| `lib/features/**/providers/` | 3 |
+
+**Cross-dependency violation (1 file, 2 imports):**
+
+`app/lib/data/providers/reconciliation_notifier.dart` imports two app-layer providers, violating the data-layer↔app-layer boundary above:
+
+| Line | Import |
+|------|--------|
+| 4 | `import '../../providers/events_provider.dart';` |
+| 5 | `import '../../providers/products_provider.dart';` |
+
+This is the sole confirmed data-layer→app-layer cross-dependency in the tree. Reproduce:
+
+```bash
+grep -nE "import.*'../../providers/(events_provider|products_provider)\.dart'" \
+  app/lib/data/providers/reconciliation_notifier.dart
+# → 4:import '../../providers/events_provider.dart';
+# → 5:import '../../providers/products_provider.dart';
+```
+
+**Misplaced providers — reproducible classification rule:**
+
+"21 misplaced" (stated in the prior requirements baseline) was not objectively reproducible: the §3 decision table permits app-layer providers to consume data-layer services, so service-backed providers in `lib/providers/` are not misplaced by that fact alone. The reproducible rule below counts only clear data-layer↔app-layer violations and does not reproduce 21.
+
+**Reproducible rule:** A `lib/providers/` file is *misplaced* iff it is **pure service-backed** (references a `Service` or `Repository` and exposes zero UI-controller signals: no `TabController`/`ScrollController`/`TextEditingController`/`AnimationController`/`FocusNode`/`GlobalKey` and no UI-state fields). Such a file belongs in `lib/data/providers/`.
+
+Applying this rule to the live tree:
+
+| Misplaced file (lib/providers/ → lib/data/providers/) | Service/Repository ref | UI-controller signals |
+|--------------------------------------------------------|-----------------------|------------------------|
+| `printer_provider.dart` | yes | none |
+| `events_provider.dart` | yes | none |
+| `photo_upload_provider.dart` | yes | none |
+| `cash_drawer_provider.dart` | yes | none |
+
+**Reproducible misplaced-provider count: 4.**
+
+Non-provider helper files in `lib/data/providers/` (`reconciliation_math.dart`, `reconciliation_state.dart`) are excluded — they are not providers and therefore not "misplaced". No `lib/data/providers/` file exposes UI-state signals.
+
+Reproduce:
+
+```bash
+find app/lib/providers        -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 35
+find app/lib/data/providers  -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 15
+find app/lib/features        -type f -path '*/providers/*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 3
+```
+
+The misplaced-provider classification is intentionally narrower than the prior "21" figure: it counts only clear, decision-table-supported data-layer↔app-layer violations (see §11 risk note). Downstream relocation is tracked by DG-417.
 
 ---
 
@@ -188,13 +267,50 @@ final counterProvider = NotifierProvider<CounterNotifier, int>(CounterNotifier.n
 
 In all three cases, the `setState` scope must be confined to the single widget's local animation/text state. Business logic state must still use Riverpod.
 
+### Live Status (audit 2026-08-17)
+
+| Metric | Count |
+|--------|-------|
+| Files containing `setState(` | 93 |
+| Total `setState()` call sites | 423 |
+| Files using `setState(` inside `ConsumerState`/`ConsumerStatefulWidget` (prohibited-context subset) | 79 |
+| Of those 79, files whose `setState` body contains business-logic signals (counter / list / bool / selected / expanded / filter / isLoading) — the **prohibited** subset | 66 |
+
+**Prohibited vs acceptable distinction (live):**
+
+- **Prohibited (66 files):** `setState` inside `ConsumerState`/`ConsumerStatefulWidget` that mutates business-logic state (counters, lists, booleans, selection, expansion, filter, loading flags). These must migrate to Riverpod `Notifier`/`AsyncNotifier`. Tracked by DG-404.
+- **Acceptable (13 of the 79 prohibited-context files):** `setState` confined to `AnimationController` lifecycle, `TextEditingController` listener callbacks, or third-party widget integration (`GoogleMap`, `WebView`, etc.) per the rule above.
+- **Outside `ConsumerState`/`ConsumerStatefulWidget` (14 files of the 93):** `setState` in plain `StatefulWidget`s not consumed via Riverpod — acceptable by the rule above, scoped to local widget state.
+
+Reproduce:
+
+```bash
+# Files using setState
+grep -rlE "setState\(" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 93
+
+# Total setState call sites
+grep -rE "setState\(" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 423
+
+# Files using setState inside ConsumerState/ConsumerStatefulWidget
+grep -rlE "ConsumerState|ConsumerStatefulWidget" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' \
+  | xargs grep -lE "setState\(" 2>/dev/null | wc -l
+# → 79
+```
+
+The 66-file prohibited subset is a heuristic lower bound: a `setState` body was flagged when it references any of the business-logic signals above. Final per-file classification still requires manual review against the acceptable-use rule (animation/text/third-party), tracked by DG-404.
+
 ---
 
 ## §5 Label Organization
 
 ### Domain Split
 
-The monolithic `lib/shared/widgets/vietnamese_labels.dart` (790 lines, 511 entries, 30+ domain sections) must be split into domain files under `lib/shared/labels/`.
+The monolithic `lib/shared/widgets/vietnamese_labels.dart` (1,686 lines, 30+ domain sections) is being split into domain files under `lib/shared/labels/`. Migration is **incomplete**.
 
 | File | Sections Migrated | Example Labels |
 |------|-------------------|----------------|
@@ -223,6 +339,27 @@ import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 // Usage: OrdersLabels.createOrder, SharedLabels.cancel
 ```
+
+### Migration Status (audit 2026-08-17)
+
+- **Remaining `vietnamese_labels` import statements: 60** (incomplete migration).
+- Files referencing `vietnamese_labels` anywhere: 67 (includes the 7 `lib/shared/labels/*.dart` re-export files that reference it internally).
+
+Reproduce:
+
+```bash
+# Strict import-line count (canonical metric)
+grep -rE "import.*vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 60
+
+# Files referencing vietnamese_labels anywhere (broader)
+grep -rlE "vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 67
+```
+
+The strict import-line count (60) is the canonical "remaining imports" metric per FR7. New labels must continue to go in domain files — never add to the monolithic `VN` class. Downstream migration is tracked by DG-418.
 
 ---
 
