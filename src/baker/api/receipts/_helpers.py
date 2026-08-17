@@ -251,17 +251,21 @@ def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[
     The query is ordered by ``position`` ascending with ``id`` as a stable
     tiebreaker (AC4, AC5).
 
-    OPS-1 (DG-412 review cycle 1): rows are fetched without a hard SQL ``LIMIT``
-    and the existence check is applied while iterating; collection stops after
-    ``limit`` existing files have been gathered. This prevents a missing leading
-    file from suppressing later valid photos.
+    OPS-1 (DG-412 review cycle 1): rows are fetched with a bounded SQL
+    ``LIMIT`` (``limit * 4``) and the existence check is applied while
+    iterating; collection stops after ``limit`` existing files have been
+    gathered. This prevents a missing leading file from suppressing later
+    valid photos. CQ-2 (DG-412 review cycle 3): the SQL ``LIMIT`` caps row
+    retrieval so the work-ticket path (``_get_photo`` delegates with
+    ``limit=1``) does not regress to a full fetch.
     """
     rows = conn.execute(
         "SELECT p.hash FROM photos p "
         "JOIN order_photos op ON p.id = op.photo_id "
         "WHERE op.order_id = ? AND op.work_item_id = ? "
-        "ORDER BY op.position, op.id",
-        (order_id, work_item_id),
+        "ORDER BY op.position, op.id "
+        "LIMIT ?",
+        (order_id, work_item_id, limit * 4),
     ).fetchall()
     out: List[bytes] = []
     for r in rows:

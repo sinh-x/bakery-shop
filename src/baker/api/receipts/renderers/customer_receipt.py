@@ -169,10 +169,12 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
                     photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
                     photos.append(photo)
-                except (UnidentifiedImageError, OSError):
-                    # CQ-1 (DG-412 review cycle 2): widen to also catch
-                    # truncated/corrupt JPEGs that raise OSError during
-                    # .convert("RGB")/.thumbnail() (matching order_photos.py).
+                except (UnidentifiedImageError, OSError, ValueError):
+                    # CQ-1 (DG-412 review cycle 3): widen to also catch ValueError
+                    # (truncated/corrupt JPEGs), matching every other photo-decode
+                    # site in the codebase (order_photos.py:78, photos.py:80,
+                    # knowledge.py:290, events.py:621, products.py:492,
+                    # catalog.py:174, payment_transactions.py:500).
                     # CQ-3 (DG-412 review cycle 1): keep the photo observable
                     # via a warning rather than silently swallowing errors.
                     logging.getLogger(__name__).warning(
