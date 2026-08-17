@@ -75,20 +75,10 @@ String _modalHeaderDiscriminatorSuffix(
   ReconciliationDraftOption option,
   ReconciliationDraftProduct product,
 ) {
-  if (option.keyDiscriminator == 'base') {
+  if (option.isBasePriceOption) {
     return VN.giaGoc;
   }
-  if (option.expectedQty == 0) {
-    return '';
-  }
-  final chipLabels = option.sourceChipIds.isNotEmpty
-      ? product.priceChips
-            .where(
-              (chip) => option.sourceChipIds.toSet().contains(chip.id),
-            )
-            .map((chip) => chip.label)
-            .join(', ')
-      : option.sourceChipLabels.join(', ');
+  final chipLabels = visibleChipLabelsForOption(product, option);
   return chipLabels.isEmpty ? '' : '${VN.nhanChip}: $chipLabels';
 }
 

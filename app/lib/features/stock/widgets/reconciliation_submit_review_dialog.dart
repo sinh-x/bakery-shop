@@ -116,7 +116,7 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
       // render identical labels in the submit-review issue list (UI-2).
       final discriminatorSuffix = _discriminatorSuffixForOption(option, product);
       optionNameByKey[key] =
-          '${product.name} - Gia ${option.normalizedPrice}$discriminatorSuffix';
+          '${product.name} - Giá ${option.normalizedPrice}$discriminatorSuffix';
     }
   }
 
@@ -151,32 +151,12 @@ String _discriminatorSuffixForOption(
   ReconciliationDraftOption option,
   ReconciliationDraftProduct product,
 ) {
-  if (option.keyDiscriminator == 'base') {
+  if (option.isBasePriceOption) {
     return ' (${VN.giaGoc})';
   }
-  final chipLabels = _visibleChipLabelsForOption(option, product);
+  final chipLabels = visibleChipLabelsForOption(product, option);
   if (chipLabels.isEmpty) {
     return '';
   }
   return ' ($chipLabels)';
-}
-
-/// Returns the visible chip labels for an option, mirroring
-/// `_ReconciliationProductCardState._visibleChipLabelsForOption` so the
-/// submit-review dialog and the product card stay consistent.
-String _visibleChipLabelsForOption(
-  ReconciliationDraftOption option,
-  ReconciliationDraftProduct product,
-) {
-  if (option.expectedQty == 0) {
-    return '';
-  }
-  if (option.sourceChipIds.isNotEmpty) {
-    final sourceChipIds = option.sourceChipIds.toSet();
-    return product.priceChips
-        .where((chip) => sourceChipIds.contains(chip.id))
-        .map((chip) => chip.label)
-        .join(', ');
-  }
-  return option.sourceChipLabels.join(', ');
 }

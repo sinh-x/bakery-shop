@@ -1605,4 +1605,121 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // DG-413 UI-5 (cycle-3 review) — widget tests for the discriminator
+  // rendering added by UI-1..UI-4. The badge in `_OptionHeader` must show
+  // `VN.giaGoc` for the base-price bucket of a collision group and stay
+  // absent for chip buckets; the collapsed card summary must report "2
+  // options" for a colliding product (one base + one chip at the same
+  // normalized price).
+  group('DG-413 UI-5 discriminator rendering', () {
+    ReconciliationDraftProduct collidingProduct() {
+      // Mirror the backend payload for a trưng bày product whose base price
+      // (130.000đ) equals a price chip. `ReconciliationDraftProduct.fromJson`
+      // runs `mergeOptionsByNormalizedPrice`, which stamps `#base` on the
+      // base bucket and `#c<chipId>` on the chip bucket.
+      return ReconciliationDraftProduct.fromJson({
+        'product_id': 83,
+        'name': 'Bánh kem trưng bày',
+        'category': 'banh_kem',
+        'expected_qty': 8,
+        'base_price': 130000,
+        'price_chips': [
+          {'id': 15, 'label': '130', 'price': 130000, 'position': 1},
+        ],
+        'options': [
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'price_chip_id': null,
+            'chip_label': 'Gia goc',
+            'source_chip_ids': const <int>[],
+            'source_chip_labels': const <String>[],
+            'expected_qty': 5,
+          },
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'price_chip_id': 15,
+            'chip_label': '130',
+            'source_chip_ids': const <int>[15],
+            'source_chip_labels': const <String>['130'],
+            'expected_qty': 3,
+          },
+        ],
+      });
+    }
+
+    testWidgets(
+      'collapsed card summary reports "2 options" for a colliding product '
+      '(DG-413 UI-4/UI-5)',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'auth_token': kTestAdminToken,
+          'auth_username': 'An',
+          'auth_role': 'staff',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final service = _FakeService(
+          ReconciliationDraft(date: '2026-05-04', products: [collidingProduct()]),
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
+              reconciliationServiceProvider.overrideWithValue(service),
+            ],
+            child: MaterialApp.router(routerConfig: buildRouter()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await expandFirstCategory(tester);
+        // Card is collapsed by default; the summary line must report the
+        // count of distinct option keys (2: base + chip) rather than the
+        // count of distinct normalized prices (1).
+        expect(find.text('2 options: 130000đ'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '_OptionHeader shows the "Giá gốc" badge for the base bucket and '
+      'hides it for the chip bucket (DG-413 UI-1/UI-5)',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'auth_token': kTestAdminToken,
+          'auth_username': 'An',
+          'auth_role': 'staff',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final service = _FakeService(
+          ReconciliationDraft(date: '2026-05-04', products: [collidingProduct()]),
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
+              reconciliationServiceProvider.overrideWithValue(service),
+            ],
+            child: MaterialApp.router(routerConfig: buildRouter()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await expandFirstCategory(tester);
+        await tester.tap(find.text('Bánh kem trưng bày'));
+        await tester.pumpAndSettle();
+
+        // Both buckets render the same price line, so the "Giá gốc" badge
+        // is the discriminator. It must appear exactly once (the base
+        // bucket) and not for the chip bucket.
+        expect(find.text(VN.giaGoc), findsOneWidget);
+        // The chip bucket surfaces its chip label via the "Nhãn chip" line
+        // instead of the "Giá gốc" badge.
+        expect(find.text('${VN.nhanChip}: 130'), findsOneWidget);
+      },
+    );
+  });
 }

@@ -389,28 +389,6 @@ void main() {
     },
   );
 
-  test(
-    'normalizeReconciliationOptionKey returns the option key string as-is '
-    '(DG-413 CQ-4: int branch removed)',
-    () {
-      final state = ReconciliationState(
-        countedQtyByOption: const <String, int>{'1:12000': 2, '2:15000': 1},
-        wasteQtyByOption: const <String, int>{},
-        wasteReasonByOption: const <String, String>{},
-        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
-      );
-
-      expect(normalizeReconciliationOptionKey('1:12000', state), '1:12000');
-      expect(normalizeReconciliationOptionKey('2:15000', state), '2:15000');
-      // Discriminator-stamped keys from a colliding product pass through
-      // unchanged as well — normalization is identity for full option keys.
-      expect(
-        normalizeReconciliationOptionKey('83:130000#base', state),
-        '83:130000#base',
-      );
-    },
-  );
-
   test('buildSubmitLines groups active sale rows by option key', () {
     final state = ReconciliationState(
       draft: ReconciliationDraft(
@@ -570,6 +548,11 @@ void main() {
   // function was narrowed to `String` and the int path deleted. The
   // compile-time type guard now enforces the same safety the runtime
   // `StateError` previously provided.
+  //
+  // `normalizeReconciliationOptionKey` itself was deleted in DG-413 CQ-7
+  // (cycle-3): after the CQ-4 narrowing it was an identity function whose
+  // only remaining caller was its own unit test. Key construction is fully
+  // owned by `reconciliationOptionKey`.
 
   test(
     'buildSubmitLines includes stocked chip id and skips zero-stock options',

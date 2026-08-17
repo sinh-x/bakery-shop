@@ -183,18 +183,3 @@ String reconciliationOptionKey(
   }
   return '$productId:$normalizedPrice#$discriminator';
 }
-
-/// Normalizes an option key to its canonical string form.
-///
-/// The `Object`-typed parameter and the `int` (product id) resolution branch
-/// were removed in DG-413 CQ-4: every production caller already passes a full
-/// `String` option key (built via [reconciliationOptionKey] with the
-/// discriminator), so the `int` path was dead code whose ambiguity guard could
-/// never fire in production. Keeping it would invite silent state corruption
-/// the next time a caller mistakenly passed a bare product id.
-String normalizeReconciliationOptionKey(
-  String optionKey,
-  ReconciliationState currentState,
-) {
-  return optionKey;
-}

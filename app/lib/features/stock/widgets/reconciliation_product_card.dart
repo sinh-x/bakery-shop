@@ -301,19 +301,7 @@ class _ReconciliationProductCardState
   }
 
   String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
-    if (option.expectedQty == 0) {
-      return '';
-    }
-
-    if (option.sourceChipIds.isNotEmpty) {
-      final sourceChipIds = option.sourceChipIds.toSet();
-      return widget.product.priceChips
-          .where((chip) => sourceChipIds.contains(chip.id))
-          .map((chip) => chip.label)
-          .join(', ');
-    }
-
-    return option.sourceChipLabels.join(', ');
+    return visibleChipLabelsForOption(widget.product, option);
   }
 }
 
@@ -500,7 +488,7 @@ class _OptionHeader extends StatelessWidget {
     // normalized price, both headers render the same `Giá <price> - Tồn dự
     // kiến: N` line. Surface a "Giá gốc" badge when this is the base option
     // so the two lines stay visually unambiguous (DG-413 UI-1).
-    final isBaseCollisionOption = option.keyDiscriminator == 'base';
+    final isBaseCollisionOption = option.isBasePriceOption;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),

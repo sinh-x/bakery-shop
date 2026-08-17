@@ -21,6 +21,52 @@ class ReconciliationPriceChip {
   }
 }
 
+/// Discriminator value stamped on the base-price bucket of a collision group
+/// by [mergeOptionsByNormalizedPrice]. Consumed via
+/// [ReconciliationDraftOption.isBasePriceOption] instead of the raw literal
+/// (DG-413 CQ-6).
+const String kBasePriceDiscriminator = 'base';
+
+/// Prefix used by [mergeOptionsByNormalizedPrice] for a resolved chip bucket
+/// discriminator (`c<chipId>`). Consumed via
+/// [ReconciliationDraftOption.isChipPriceOption] instead of the raw literal
+/// (DG-413 CQ-6).
+const String kChipPriceDiscriminatorPrefix = 'c';
+
+/// Discriminator value stamped on the defensive "unknown chip" bucket when a
+/// chip option's id cannot be resolved (see `_splitChipOptionsByChipId`).
+/// Consumed via [ReconciliationDraftOption.isChipPriceOption]
+/// (DG-413 CQ-6 / CQ-8).
+const String kUnresolvedChipDiscriminator = 'chip';
+
+/// Resolves the visible chip labels for [option] in the context of [product].
+///
+/// Returns the empty string when the option carries no stock (`expectedQty == 0`)
+/// or has no resolvable chip labels. When [ReconciliationDraftOption.sourceChipIds]
+/// is non-empty, labels are resolved by mapping those ids through
+/// [ReconciliationDraftProduct.priceChips]; otherwise the option's
+/// [ReconciliationDraftOption.sourceChipLabels] are joined verbatim.
+///
+/// This is the single shared resolver for the chip-label rendering used by the
+/// product card, the sale/waste modal header, and the submit-review dialog
+/// (DG-413 CQ-5). Callers must not duplicate this logic inline.
+String visibleChipLabelsForOption(
+  ReconciliationDraftProduct product,
+  ReconciliationDraftOption option,
+) {
+  if (option.expectedQty == 0) {
+    return '';
+  }
+  if (option.sourceChipIds.isNotEmpty) {
+    final sourceChipIds = option.sourceChipIds.toSet();
+    return product.priceChips
+        .where((chip) => sourceChipIds.contains(chip.id))
+        .map((chip) => chip.label)
+        .join(', ');
+  }
+  return option.sourceChipLabels.join(', ');
+}
+
 class ReconciliationDraftOption {
   ReconciliationDraftOption({
     required this.productId,
@@ -47,7 +93,34 @@ class ReconciliationDraftOption {
   /// base-price option (chip_id=null) of the same product. Null for the
   /// non-collision case so the option key stays backward-compatible
   /// (`productId:price`). Set by `mergeOptionsByNormalizedPrice` (DG-413).
+  ///
+  /// Consumers should treat the discriminator as an opaque token and use
+  /// [isBasePriceOption] / [isChipPriceOption] rather than comparing the raw
+  /// string literal `'base'` (DG-413 CQ-6).
   final String? keyDiscriminator;
+
+  /// True when this option is the base-price bucket of a collision group
+  /// (discriminator == `kBasePriceDiscriminator`). Use this accessor instead
+  /// of raw `keyDiscriminator == 'base'` comparisons so the discriminator
+  /// scheme stays centralized in this model (DG-413 CQ-6).
+  bool get isBasePriceOption =>
+      keyDiscriminator == kBasePriceDiscriminator;
+
+  /// True when this option is a chip-price bucket of a collision group
+  /// (discriminator starts with `kChipPriceDiscriminatorPrefix`). Use this
+  /// accessor instead of inspecting the raw discriminator string
+  /// (DG-413 CQ-6).
+  bool get isChipPriceOption {
+    final discriminator = keyDiscriminator;
+    if (discriminator == null || discriminator.isEmpty) {
+      return false;
+    }
+    if (discriminator == kBasePriceDiscriminator) {
+      return false;
+    }
+    return discriminator.startsWith(kChipPriceDiscriminatorPrefix) ||
+        discriminator == kUnresolvedChipDiscriminator;
+  }
 
   /// Gross available quantity (available items before subtracting
   /// negative_balance). Used by the surplus indicator so it matches the
@@ -211,8 +284,9 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
     // contains more than one distinct chip id, split per chip so each
     // submit line carries its own price_chip_id — collapsing them would
     // null out priceChipId and collide with the base bucket (DG-413 CQ-1).
-    const baseDiscriminator = 'base';
-    result.add(_withDiscriminator(_mergeGroup(baseOptions), baseDiscriminator));
+    result.add(
+      _withDiscriminator(_mergeGroup(baseOptions), kBasePriceDiscriminator),
+    );
     for (final chipOption in _splitChipOptionsByChipId(chipOptions)) {
       result.add(chipOption);
     }
@@ -232,20 +306,36 @@ bool _isBasePriceOption(ReconciliationDraftOption option) {
 ///
 /// When all chip options resolve to a single chip id, this is equivalent to
 /// the previous single-group behavior.
+///
+/// Options whose chip id cannot be resolved (`priceChipId == null` and
+/// `sourceChipIds.length != 1`) are rejected loudly via [StateError] rather
+/// than silently merging into a `price_chip_id: null` line that would
+/// re-collide with the base bucket (DG-413 CQ-8). The current backend always
+/// emits `price_chip_id` for chip options, so this branch is unreachable in
+/// production; failing loudly surfaces payload drift early instead of
+/// silently corrupting the submit request.
 List<ReconciliationDraftOption> _splitChipOptionsByChipId(
   List<ReconciliationDraftOption> chipOptions,
 ) {
   // Group by the resolved chip id. Options whose chip id cannot be resolved
-  // land in a single 'unknown' bucket merged together (defensive — the
-  // backend payload always sets price_chip_id for chip options).
+  // are rejected loudly (DG-413 CQ-8): a null-chip merged option would
+  // re-collide with the base bucket in buildSubmitLines. The backend payload
+  // always sets price_chip_id for chip options, so this guard fires only on
+  // payload drift.
   final byChipId = <int, List<ReconciliationDraftOption>>{};
   final order = <int>[];
-  final unknown = <ReconciliationDraftOption>[];
   for (final option in chipOptions) {
     final chipId = _singleChipId(option);
     if (chipId == null) {
-      unknown.add(option);
-      continue;
+      throw StateError(
+        'DG-413 CQ-8: cannot resolve a single price_chip_id for a chip '
+        'option colliding at the same normalized price as a base-price '
+        'option (product_id=${option.productId}, '
+        'normalized_price=${option.normalizedPrice}, '
+        'price_chip_id=${option.priceChipId}, '
+        'source_chip_ids=${option.sourceChipIds}). Merging it would emit a '
+        'null-chip submit line that re-collides with the base bucket.',
+      );
     }
     byChipId.putIfAbsent(chipId, () {
       order.add(chipId);
@@ -258,14 +348,8 @@ List<ReconciliationDraftOption> _splitChipOptionsByChipId(
     final group = byChipId[chipId]!;
     final merged = _mergeGroup(group);
     result.add(
-      _withDiscriminator(merged, 'c$chipId'),
+      _withDiscriminator(merged, '$kChipPriceDiscriminatorPrefix$chipId'),
     );
-  }
-  if (unknown.isNotEmpty) {
-    final merged = _mergeGroup(unknown);
-    final singleId = _singleChipId(merged);
-    final discriminator = singleId == null ? 'chip' : 'c$singleId';
-    result.add(_withDiscriminator(merged, discriminator));
   }
   return result;
 }
