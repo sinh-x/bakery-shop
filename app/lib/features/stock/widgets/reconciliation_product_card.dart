@@ -275,14 +275,29 @@ class _ReconciliationProductCardState
   }
 
   String _collapsedOptionPriceSummary() {
+    // Count distinct options by their full option key (incl. discriminator)
+    // rather than by `normalizedPrice` (DG-413 UI-4): a colliding product
+    // with a base option and a chip option at the same price renders two
+    // option lines, so the summary must report "2 options" even though both
+    // share one normalized price.
+    final optionKeys = widget.product.options
+        .map(
+          (option) => reconciliationOptionKey(
+            widget.product.productId,
+            option.normalizedPrice,
+            discriminator: option.keyDiscriminator,
+          ),
+        )
+        .toSet()
+        .toList();
+    if (optionKeys.isEmpty) {
+      return '';
+    }
     final prices = widget.product.options
         .map((option) => option.normalizedPrice.toStringAsFixed(0))
         .toSet()
         .toList();
-    if (prices.isEmpty) {
-      return '';
-    }
-    return '${prices.length} options: ${prices.join(', ')}đ';
+    return '${optionKeys.length} options: ${prices.join(', ')}đ';
   }
 
   String _visibleChipLabelsForOption(ReconciliationDraftOption option) {

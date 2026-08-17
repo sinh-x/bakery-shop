@@ -73,8 +73,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
   }
 
-  void setCountedQty(Object optionKeyOrProductId, int value) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void setCountedQty(String optionKey, int value) {
     final next = Map<String, int>.from(state.countedQtyByOption);
     next[optionKey] = value;
 
@@ -87,8 +86,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setWasteQty(Object optionKeyOrProductId, int value) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void setWasteQty(String optionKey, int value) {
     final next = Map<String, int>.from(state.wasteQtyByOption);
     next[optionKey] = value;
     state = state.copyWith(
@@ -100,8 +98,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void addSaleRow(Object optionKeyOrProductId, {int? defaultUnitPrice}) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void addSaleRow(String optionKey, {int? defaultUnitPrice}) {
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
@@ -117,8 +114,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void removeSaleRow(Object optionKeyOrProductId, int rowIndex) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void removeSaleRow(String optionKey, int rowIndex) {
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
@@ -137,17 +133,15 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setSaleRowQty(Object optionKeyOrProductId, int rowIndex, int value) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void setSaleRowQty(String optionKey, int rowIndex, int value) {
     _updateSaleRow(optionKey, rowIndex, (row) => row.copyWith(quantity: value));
   }
 
   void setSaleRowUnitPrice(
-    Object optionKeyOrProductId,
+    String optionKey,
     int rowIndex,
     double? value,
   ) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(
       optionKey,
       rowIndex,
@@ -156,11 +150,10 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void setSaleRowPaymentMethod(
-    Object optionKeyOrProductId,
+    String optionKey,
     int rowIndex,
     String? method,
   ) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(
       optionKey,
       rowIndex,
@@ -172,11 +165,10 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void fillSaleRowPriceFromChip(
-    Object optionKeyOrProductId,
+    String optionKey,
     int rowIndex,
     double unitPrice,
   ) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
     setSaleRowUnitPrice(optionKey, rowIndex, unitPrice);
   }
 
@@ -203,8 +195,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setWasteReasonForOption(Object optionKeyOrProductId, String reason) {
-    final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
+  void setWasteReasonForOption(String optionKey, String reason) {
     final next = Map<String, String>.from(state.wasteReasonByOption);
     next[optionKey] = reason;
     state = state.copyWith(

@@ -184,41 +184,17 @@ String reconciliationOptionKey(
   return '$productId:$normalizedPrice#$discriminator';
 }
 
+/// Normalizes an option key to its canonical string form.
+///
+/// The `Object`-typed parameter and the `int` (product id) resolution branch
+/// were removed in DG-413 CQ-4: every production caller already passes a full
+/// `String` option key (built via [reconciliationOptionKey] with the
+/// discriminator), so the `int` path was dead code whose ambiguity guard could
+/// never fire in production. Keeping it would invite silent state corruption
+/// the next time a caller mistakenly passed a bare product id.
 String normalizeReconciliationOptionKey(
-  Object optionKeyOrProductId,
+  String optionKey,
   ReconciliationState currentState,
 ) {
-  if (optionKeyOrProductId is String) {
-    return optionKeyOrProductId;
-  }
-  if (optionKeyOrProductId is int) {
-    final prefix = '$optionKeyOrProductId:';
-    final allKeys = <String>{
-      ...currentState.countedQtyByOption.keys,
-      ...currentState.wasteQtyByOption.keys,
-      ...currentState.wasteReasonByOption.keys,
-      ...currentState.saleRowsByOption.keys,
-    };
-    final matched = allKeys.where((key) => key.startsWith(prefix)).toList();
-    if (matched.length == 1) {
-      return matched.first;
-    }
-    // Ambiguous int input: more than one option key shares the product id
-    // prefix (e.g. a colliding product with base + chip discriminators).
-    // Fabricating a `productId:0` key would silently write to a dangling
-    // bucket and corrupt state. Fail loudly instead (DG-413 CQ-2).
-    if (matched.isEmpty) {
-      throw StateError(
-        'normalizeReconciliationOptionKey: no option key found for product id '
-        '$optionKeyOrProductId. Expected at least one key with prefix '
-        '"$prefix".',
-      );
-    }
-    throw StateError(
-      'normalizeReconciliationOptionKey: ambiguous product id '
-      '$optionKeyOrProductId matched ${matched.length} option keys '
-      '(${matched.join(', ')}). Pass a full option key string instead.',
-    );
-  }
-  throw ArgumentError('Invalid option key: $optionKeyOrProductId');
+  return optionKey;
 }

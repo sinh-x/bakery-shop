@@ -78,15 +78,15 @@ void main() {
       addTearDown(container.dispose);
 
       await container.read(reconciliationProvider.notifier).loadDraft();
-      container.read(reconciliationProvider.notifier).setCountedQty(1, 2);
-      container.read(reconciliationProvider.notifier).setWasteQty(1, 1);
-      container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+      container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 2);
+      container.read(reconciliationProvider.notifier).setWasteQty('1:100000', 1);
+      container.read(reconciliationProvider.notifier).setSaleRowQty('1:100000', 0, 1);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowUnitPrice(1, 0, 12000);
+          .setSaleRowUnitPrice('1:100000', 0, 12000);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowPaymentMethod(1, 0, 'cash');
+          .setSaleRowPaymentMethod('1:100000', 0, 'cash');
 
       final ok = await container.read(reconciliationProvider.notifier).submit();
       final state = container.read(reconciliationProvider);
@@ -116,9 +116,9 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(reconciliationProvider.notifier).loadDraft();
-    container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
-    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+    container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 4);
+    container.read(reconciliationProvider.notifier).addSaleRow('1:100000');
+    container.read(reconciliationProvider.notifier).setSaleRowQty('1:100000', 0, 1);
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
     final state = container.read(reconciliationProvider);
@@ -149,23 +149,23 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(reconciliationProvider.notifier).loadDraft();
-    container.read(reconciliationProvider.notifier).setCountedQty(1, 3);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
-    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+    container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 3);
+    container.read(reconciliationProvider.notifier).addSaleRow('1:100000');
+    container.read(reconciliationProvider.notifier).setSaleRowQty('1:100000', 0, 1);
     container
         .read(reconciliationProvider.notifier)
-        .setSaleRowUnitPrice(1, 0, 10000);
+        .setSaleRowUnitPrice('1:100000', 0, 10000);
     container
         .read(reconciliationProvider.notifier)
-        .setSaleRowPaymentMethod(1, 0, 'cash');
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
-    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 1, 2);
+        .setSaleRowPaymentMethod('1:100000', 0, 'cash');
+    container.read(reconciliationProvider.notifier).addSaleRow('1:100000');
+    container.read(reconciliationProvider.notifier).setSaleRowQty('1:100000', 1, 2);
     container
         .read(reconciliationProvider.notifier)
-        .setSaleRowUnitPrice(1, 1, 15000);
+        .setSaleRowUnitPrice('1:100000', 1, 15000);
     container
         .read(reconciliationProvider.notifier)
-        .setSaleRowPaymentMethod(1, 1, 'transfer');
+        .setSaleRowPaymentMethod('1:100000', 1, 'transfer');
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
     expect(ok, isTrue);
@@ -198,18 +198,18 @@ void main() {
       addTearDown(container.dispose);
 
       await container.read(reconciliationProvider.notifier).loadDraft();
-      container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
-    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+      container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 4);
+    container.read(reconciliationProvider.notifier).addSaleRow('1:100000');
+    container.read(reconciliationProvider.notifier).setSaleRowQty('1:100000', 0, 1);
     container
         .read(reconciliationProvider.notifier)
-        .setSaleRowUnitPrice(1, 0, 13000);
+        .setSaleRowUnitPrice('1:100000', 0, 13000);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowUnitPrice(1, 0, 15000);
+          .setSaleRowUnitPrice('1:100000', 0, 15000);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowPaymentMethod(1, 0, 'cash');
+          .setSaleRowPaymentMethod('1:100000', 0, 'cash');
 
       final ok = await container.read(reconciliationProvider.notifier).submit();
       expect(ok, isTrue);
@@ -240,16 +240,17 @@ void main() {
 
     await container.read(reconciliationProvider.notifier).loadDraft();
     for (var i = 1; i <= 100; i++) {
-      container.read(reconciliationProvider.notifier).setCountedQty(i, 1);
-      container.read(reconciliationProvider.notifier).setSaleRowQty(i, 0, 1);
+      final optionKey = '$i:10000';
+      container.read(reconciliationProvider.notifier).setCountedQty(optionKey, 1);
+      container.read(reconciliationProvider.notifier).setSaleRowQty(optionKey, 0, 1);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowUnitPrice(i, 0, 10000);
+          .setSaleRowUnitPrice(optionKey, 0, 10000);
       container
           .read(reconciliationProvider.notifier)
-          .setSaleRowPaymentMethod(i, 0, 'cash');
-      container.read(reconciliationProvider.notifier).addSaleRow(i);
-      container.read(reconciliationProvider.notifier).setSaleRowQty(i, 1, 1);
+          .setSaleRowPaymentMethod(optionKey, 0, 'cash');
+      container.read(reconciliationProvider.notifier).addSaleRow(optionKey);
+      container.read(reconciliationProvider.notifier).setSaleRowQty(optionKey, 1, 1);
     }
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
@@ -379,8 +380,8 @@ void main() {
       addTearDown(container.dispose);
 
       await container.read(reconciliationProvider.notifier).loadDraft();
-      container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
-      container.read(reconciliationProvider.notifier).setCountedQty(1, 5);
+      container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 4);
+      container.read(reconciliationProvider.notifier).setCountedQty('1:100000', 5);
 
       final state = container.read(reconciliationProvider);
       final rows = state.saleRowsByOption['1:100000']!;
@@ -389,7 +390,8 @@ void main() {
   );
 
   test(
-    'normalizeReconciliationOptionKey resolves unique key from product id',
+    'normalizeReconciliationOptionKey returns the option key string as-is '
+    '(DG-413 CQ-4: int branch removed)',
     () {
       final state = ReconciliationState(
         countedQtyByOption: const <String, int>{'1:12000': 2, '2:15000': 1},
@@ -398,8 +400,14 @@ void main() {
         saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
       );
 
-      expect(normalizeReconciliationOptionKey(1, state), '1:12000');
+      expect(normalizeReconciliationOptionKey('1:12000', state), '1:12000');
       expect(normalizeReconciliationOptionKey('2:15000', state), '2:15000');
+      // Discriminator-stamped keys from a colliding product pass through
+      // unchanged as well — normalization is identity for full option keys.
+      expect(
+        normalizeReconciliationOptionKey('83:130000#base', state),
+        '83:130000#base',
+      );
     },
   );
 
@@ -555,49 +563,13 @@ void main() {
     },
   );
 
-  test(
-    'normalizeReconciliationOptionKey throws on ambiguous product id '
-    '(DG-413 CQ-2 regression)',
-    () {
-      final state = ReconciliationState(
-        countedQtyByOption: const <String, int>{
-          '83:130000#base': 4,
-          '83:130000#c11': 2,
-          '83:130000#c12': 3,
-        },
-        wasteQtyByOption: const <String, int>{},
-        wasteReasonByOption: const <String, String>{},
-        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
-      );
-
-      // Two keys share the '83:' prefix — int input is ambiguous and must
-      // fail loudly instead of fabricating '83:0'.
-      expect(
-        () => normalizeReconciliationOptionKey(83, state),
-        throwsA(isA<StateError>()),
-      );
-    },
-  );
-
-  test(
-    'normalizeReconciliationOptionKey throws on unknown product id '
-    '(DG-413 CQ-2 regression)',
-    () {
-      final state = ReconciliationState(
-        countedQtyByOption: const <String, int>{'1:12000': 2},
-        wasteQtyByOption: const <String, int>{},
-        wasteReasonByOption: const <String, String>{},
-        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
-      );
-
-      // No key matches the '99:' prefix — must throw instead of returning
-      // the fabricated '99:0' dangling key.
-      expect(
-        () => normalizeReconciliationOptionKey(99, state),
-        throwsA(isA<StateError>()),
-      );
-    },
-  );
+  // The two CQ-2 regression tests that previously asserted
+  // `normalizeReconciliationOptionKey` throws on ambiguous/unknown `int`
+  // product ids were removed in DG-413 CQ-4: the `int` branch was dead code
+  // (every production caller passes a full String option key), so the
+  // function was narrowed to `String` and the int path deleted. The
+  // compile-time type guard now enforces the same safety the runtime
+  // `StateError` previously provided.
 
   test(
     'buildSubmitLines includes stocked chip id and skips zero-stock options',
