@@ -82,6 +82,7 @@ from ._helpers import (  # noqa: F401
     _draw_compact_reference_box,
     _header,
     _get_photo,
+    _get_photos,
 )
 from .renderers import (  # noqa: F401
     _render_work_ticket,
@@ -173,5 +174,6 @@ __all__ = [
     'router',
     '_order_detail',
     '_get_photo',
+    '_get_photos',
     'get_receipt',
 ]

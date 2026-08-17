@@ -153,24 +153,52 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
             y = _left(draw, y, line, fb, x=MARGIN)
 
-        # Photo — first attached photo for any item, larger + centered, display only
+        # Photo — up to 2 attached photos for any item, rendered side by side
+        # (equal pair, 192px each, centered as a pair). Single-photo fallback
+        # renders centered (unchanged). Zero photos renders nothing.
+        # DG-412 Phase 1 / FR1, FR2, FR3, FR4, NFR1, NFR2, AC1-AC5.
         item_id = item.get("id")
         photo_size = 192  # larger than default 128
+        photo_gap = 8  # gap between the two photos in the pair
         if show_photos and order_id and item_id:
-            photo_bytes = _get_photo(conn, order_id, item_id)
-            if photo_bytes:
+            photo_bytes_list = _get_photos(conn, order_id, item_id, limit=2)
+            photos = []
+            for photo_bytes in photo_bytes_list:
                 try:
                     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
                     photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
-                    x_photo = (RECEIPT_WIDTH - photo.width) // 2
-                    img.paste(photo, (x_photo, y))
-                    draw.rectangle(
-                        [x_photo, y, x_photo + photo.width, y + photo.height],
-                        outline=(200, 200, 200),
-                    )
-                    y += photo.height + LINE_GAP
+                    photos.append(photo)
                 except Exception:
                     pass
+            if len(photos) == 1:
+                # Single photo — centered (unchanged fallback, FR3).
+                photo = photos[0]
+                x_photo = (RECEIPT_WIDTH - photo.width) // 2
+                img.paste(photo, (x_photo, y))
+                draw.rectangle(
+                    [x_photo, y, x_photo + photo.width, y + photo.height],
+                    outline=(200, 200, 200),
+                )
+                y += photo.height + LINE_GAP
+            elif len(photos) >= 2:
+                # Two photos — equal pair, centered as a group (FR2, NFR1).
+                p1, p2 = photos[0], photos[1]
+                pair_w = p1.width + photo_gap + p2.width
+                x_pair = (RECEIPT_WIDTH - pair_w) // 2
+                x1 = x_pair
+                x2 = x_pair + p1.width + photo_gap
+                img.paste(p1, (x1, y))
+                img.paste(p2, (x2, y))
+                draw.rectangle(
+                    [x1, y, x1 + p1.width, y + p1.height],
+                    outline=(200, 200, 200),
+                )
+                draw.rectangle(
+                    [x2, y, x2 + p2.width, y + p2.height],
+                    outline=(200, 200, 200),
+                )
+                y += max(p1.height, p2.height) + LINE_GAP
+            # len(photos) == 0 → render nothing (FR4, unchanged).
 
         # Notes/remarks (sub-row, indented, bold label + body font, mixed emoji)
         notes = item.get("notes", "") or ""
