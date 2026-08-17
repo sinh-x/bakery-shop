@@ -27,6 +27,7 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final rows =
           state.saleRowsByOption[optionKey] ??
@@ -128,6 +129,7 @@ ReconciliationValidationResult? validateReconciliationState(
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = currentState.countedQtyByOption[optionKey] ?? 0;
       final rows =

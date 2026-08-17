@@ -173,8 +173,15 @@ class ReconciliationState {
   }
 }
 
-String reconciliationOptionKey(int productId, int normalizedPrice) {
-  return '$productId:$normalizedPrice';
+String reconciliationOptionKey(
+  int productId,
+  int normalizedPrice, {
+  String? discriminator,
+}) {
+  if (discriminator == null || discriminator.isEmpty) {
+    return '$productId:$normalizedPrice';
+  }
+  return '$productId:$normalizedPrice#$discriminator';
 }
 
 String normalizeReconciliationOptionKey(

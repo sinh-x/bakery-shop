@@ -21,6 +21,7 @@ Future<bool> showSubmitReviewDialog({
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final rows =
           state.saleRowsByOption[optionKey] ??
@@ -104,7 +105,11 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
   final optionNameByKey = <String, String>{};
   for (final product in draft.products) {
     for (final option in product.options) {
-      final key = reconciliationOptionKey(product.productId, option.normalizedPrice);
+      final key = reconciliationOptionKey(
+        product.productId,
+        option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
+      );
       optionNameByKey[key] = '${product.name} - Gia ${option.normalizedPrice}';
     }
   }

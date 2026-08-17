@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ReconciliationDraftProduct.fromJson', () {
-    test('merges duplicate normalized price options into one bucket', () {
+    test('keeps base-price and chip options separate when prices collide', () {
       final product = ReconciliationDraftProduct.fromJson({
         'product_id': 10,
         'name': 'Banh su kem',
@@ -34,14 +34,69 @@ void main() {
         ],
       });
 
+      // Base-price (chip_id=null) and chip-price options at the same
+      // normalized price must NOT be merged: the backend compares
+      // expected_qty per price_chip_id, so collapsing them produces a single
+      // expected_qty that cannot match both backend keys (DG-413).
+      expect(product.options.length, 2);
+      final base = product.options.first;
+      final chip = product.options.last;
+      expect(base.normalizedPrice, 130000);
+      expect(base.expectedQty, 5);
+      expect(base.priceChipId, isNull);
+      expect(base.sourceChipIds, isEmpty);
+      expect(base.keyDiscriminator, 'base');
+      expect(chip.normalizedPrice, 130000);
+      expect(chip.expectedQty, 3);
+      expect(chip.priceChipId, isNull);
+      expect(chip.sourceChipIds, [11]);
+      expect(chip.keyDiscriminator, 'c11');
+    });
+
+    test('merges duplicate chip options at the same normalized price', () {
+      final product = ReconciliationDraftProduct.fromJson({
+        'product_id': 10,
+        'name': 'Banh su kem',
+        'category': 'banh_ngot',
+        'expected_qty': 8,
+        'base_price': 100000,
+        'price_chips': [
+          {'id': 11, 'label': 'chip 130', 'price': 130000, 'position': 1},
+          {'id': 12, 'label': 'chip 130b', 'price': 130000, 'position': 2},
+        ],
+        'options': [
+          {
+            'product_id': 10,
+            'normalized_price': 130000,
+            'price_chip_id': 11,
+            'chip_label': 'chip 130',
+            'source_chip_ids': [11],
+            'source_chip_labels': ['chip 130'],
+            'expected_qty': 5,
+          },
+          {
+            'product_id': 10,
+            'normalized_price': 130000,
+            'price_chip_id': 12,
+            'chip_label': 'chip 130b',
+            'source_chip_ids': [12],
+            'source_chip_labels': ['chip 130b'],
+            'expected_qty': 3,
+          },
+        ],
+      });
+
+      // Two chip options at the same price (no base option involved) still
+      // merge as before — existing distinct-chip-at-same-price behavior is
+      // preserved (FR3 / AC3, DG-413).
       expect(product.options.length, 1);
-      final option = product.options.first;
+      final option = product.options.single;
       expect(option.normalizedPrice, 130000);
       expect(option.expectedQty, 8);
       expect(option.priceChipId, isNull);
-      expect(option.sourceChipIds, [11]);
-      expect(option.sourceChipLabels, ['Gia goc', 'chip 130']);
-      expect(option.chipLabelMetadata, 'Gia goc, chip 130');
+      expect(option.sourceChipIds, [11, 12]);
+      expect(option.sourceChipLabels, ['chip 130', 'chip 130b']);
+      expect(option.keyDiscriminator, isNull);
     });
 
     test('preserves single chip id for submit disambiguation', () {

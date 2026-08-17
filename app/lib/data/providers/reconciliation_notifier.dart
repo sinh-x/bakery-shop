@@ -33,7 +33,11 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       final saleRows = <String, List<ReconciliationSaleRowInput>>{};
       for (final product in draft.products) {
         for (final option in product.options) {
-          final key = reconciliationOptionKey(option.productId, option.normalizedPrice);
+          final key = reconciliationOptionKey(
+            option.productId,
+            option.normalizedPrice,
+            discriminator: option.keyDiscriminator,
+          );
           _draftOptionsByKey[key] = option;
           counted[key] = option.expectedQty < 0 ? 0 : option.expectedQty;
           waste[key] = 0;

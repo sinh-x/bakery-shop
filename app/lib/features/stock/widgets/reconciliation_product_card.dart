@@ -35,6 +35,7 @@ class _ReconciliationProductCardState
       final optionKey = reconciliationOptionKey(
         widget.product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
@@ -70,6 +71,7 @@ class _ReconciliationProductCardState
       final optionKey = reconciliationOptionKey(
         widget.product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       final rows =
@@ -189,6 +191,7 @@ class _ReconciliationProductCardState
     return reconciliationOptionKey(
       widget.product.productId,
       option.normalizedPrice,
+      discriminator: option.keyDiscriminator,
     );
   }
 
@@ -321,6 +324,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final optionKey = reconciliationOptionKey(
       product.productId,
       option.normalizedPrice,
+      discriminator: option.keyDiscriminator,
     );
     final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
     final saleRows =
