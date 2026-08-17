@@ -488,7 +488,7 @@ class _OptionHeader extends StatelessWidget {
     // normalized price, both headers render the same `Giá <price> - Tồn dự
     // kiến: N` line. Surface a "Giá gốc" badge when this is the base option
     // so the two lines stay visually unambiguous (DG-413 UI-1).
-    final isBaseCollisionOption = option.isBasePriceOption;
+    final isBaseCollisionOption = option.isCollidingBaseBucket;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),

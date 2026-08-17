@@ -75,7 +75,7 @@ String _modalHeaderDiscriminatorSuffix(
   ReconciliationDraftOption option,
   ReconciliationDraftProduct product,
 ) {
-  if (option.isBasePriceOption) {
+  if (option.isCollidingBaseBucket) {
     return VN.giaGoc;
   }
   final chipLabels = visibleChipLabelsForOption(product, option);
