@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../features/auth/auth_provider.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';

@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/reconciliation_service.dart';
+import '../data/api/reconciliation_service.dart';
+import '../data/providers/reconciliation_state.dart';
 import 'reconciliation_notifier.dart';
-import 'reconciliation_state.dart';
 
-export 'reconciliation_math.dart';
 export 'reconciliation_notifier.dart';
-export 'reconciliation_state.dart';
+export '../data/providers/reconciliation_math.dart';
+export '../data/providers/reconciliation_state.dart';
 
 final reconciliationProvider =
     NotifierProvider<ReconciliationNotifier, ReconciliationState>(

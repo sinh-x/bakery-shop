@@ -8,7 +8,7 @@ import 'package:bakery_app/features/orders/widgets/stage1_empty_state.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
 import 'package:bakery_app/features/orders/widgets/stage_summary_card.dart';
 import 'package:bakery_app/providers/config_provider.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';

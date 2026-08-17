@@ -25,7 +25,7 @@ import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_scree
 import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/config_provider.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';

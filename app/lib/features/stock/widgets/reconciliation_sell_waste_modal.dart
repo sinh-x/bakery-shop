@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_models.dart';
-import '../../../data/providers/reconciliation_provider.dart';
+import '../../../providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
 import 'reconciliation_shared_widgets.dart';
 

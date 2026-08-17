@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
-import '../../../../providers/events_provider.dart';
+import '../../../../shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Print checklist dialog shown after the new → confirmed transition

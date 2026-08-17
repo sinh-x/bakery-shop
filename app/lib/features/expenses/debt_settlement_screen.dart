@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

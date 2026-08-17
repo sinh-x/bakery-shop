@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';

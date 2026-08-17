@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/reconciliation_service.dart';
-import 'package:bakery_app/data/providers/reconciliation_provider.dart';
+import 'package:bakery_app/providers/reconciliation_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

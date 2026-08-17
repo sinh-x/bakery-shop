@@ -8,7 +8,7 @@ import '../../data/api/customer_service.dart';
 import '../../data/models/address.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/labels/templates.dart';
 import '../../shared/utils/date_formatting.dart';

@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

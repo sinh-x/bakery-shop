@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
-import '../../data/providers/reconciliation_provider.dart';
 import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
-import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../providers/reconciliation_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/models/category.dart';
-import '../../data/providers/reconciliation_provider.dart';
+import '../../providers/reconciliation_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
