@@ -169,9 +169,12 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
                     photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
                     photos.append(photo)
-                except UnidentifiedImageError:
-                    # CQ-3 (DG-412 review cycle 1): narrow the catch so corrupt
-                    # photos are observable rather than silently swallowed.
+                except (UnidentifiedImageError, OSError):
+                    # CQ-1 (DG-412 review cycle 2): widen to also catch
+                    # truncated/corrupt JPEGs that raise OSError during
+                    # .convert("RGB")/.thumbnail() (matching order_photos.py).
+                    # CQ-3 (DG-412 review cycle 1): keep the photo observable
+                    # via a warning rather than silently swallowing errors.
                     logging.getLogger(__name__).warning(
                         "Skipping unreadable photo for order_id=%s item_id=%s",
                         order_id, item_id,
@@ -188,22 +191,28 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                 y += photo.height + LINE_GAP
             elif len(photos) >= 2:
                 # Two photos — equal pair, centered as a group (FR2, NFR1).
+                # CQ-3 (DG-412 review cycle 2): vertically center the shorter
+                # photo via a per-photo y offset so a shorter photo is not
+                # top-aligned within the pair row.
                 p1, p2 = photos[0], photos[1]
                 pair_w = p1.width + photo_gap + p2.width
                 x_pair = (RECEIPT_WIDTH - pair_w) // 2
                 x1 = x_pair
                 x2 = x_pair + p1.width + photo_gap
-                img.paste(p1, (x1, y))
-                img.paste(p2, (x2, y))
+                row_h = max(p1.height, p2.height)
+                y1 = y + (row_h - p1.height) // 2
+                y2 = y + (row_h - p2.height) // 2
+                img.paste(p1, (x1, y1))
+                img.paste(p2, (x2, y2))
                 draw.rectangle(
-                    [x1, y, x1 + p1.width, y + p1.height],
+                    [x1, y1, x1 + p1.width, y1 + p1.height],
                     outline=(200, 200, 200),
                 )
                 draw.rectangle(
-                    [x2, y, x2 + p2.width, y + p2.height],
+                    [x2, y2, x2 + p2.width, y2 + p2.height],
                     outline=(200, 200, 200),
                 )
-                y += max(p1.height, p2.height) + LINE_GAP
+                y += row_h + LINE_GAP
             # len(photos) == 0 → render nothing (FR4, unchanged).
 
         # Notes/remarks (sub-row, indented, bold label + body font, mixed emoji)

@@ -2326,8 +2326,6 @@ class TestCustomerReceiptPhotosRender:
 
         # NFR1: the pair must fit within the 520px content width and be
         # centered horizontally.
-        first_start, first_end = pair_rows[0]
-        last_start, last_end = pair_rows[-1]
         pair_start = min(r[0] for r in pair_rows)
         pair_end = max(r[1] for r in pair_rows)
         pair_w = pair_end - pair_start + 1
@@ -2337,12 +2335,11 @@ class TestCustomerReceiptPhotosRender:
         assert abs(pair_center - receipt_center) <= 20, (
             f"Pair center x={pair_center} should be near receipt center={receipt_center}"
         )
-        _ = first_start, first_end, last_start, last_end
 
-    def test_two_photos_taller_than_one(self, api_client):
-        """NFR2 sanity: the 2-photo receipt is at least as tall as the 1-photo
-        receipt (both render a ~192px photo block; the pair uses the same
-        row so heights are comparable, but the pair must not be shorter).
+    def test_two_photos_same_height_as_one(self, api_client):
+        """NFR2 sanity: the 2-photo pair renders on the same row as a single
+        ~192px-tall photo block, so the 2-photo receipt height matches the
+        1-photo receipt height (the pair does not stack vertically).
         """
         _seed_shop_config(api_client)
         ref1, data1 = _create_order(api_client, [("Bánh kem", 1, 300000)])
