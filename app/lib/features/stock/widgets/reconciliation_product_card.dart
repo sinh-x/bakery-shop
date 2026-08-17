@@ -35,6 +35,7 @@ class _ReconciliationProductCardState
       final optionKey = reconciliationOptionKey(
         widget.product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
@@ -70,6 +71,7 @@ class _ReconciliationProductCardState
       final optionKey = reconciliationOptionKey(
         widget.product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       final rows =
@@ -189,6 +191,7 @@ class _ReconciliationProductCardState
     return reconciliationOptionKey(
       widget.product.productId,
       option.normalizedPrice,
+      discriminator: option.keyDiscriminator,
     );
   }
 
@@ -272,30 +275,33 @@ class _ReconciliationProductCardState
   }
 
   String _collapsedOptionPriceSummary() {
+    // Count distinct options by their full option key (incl. discriminator)
+    // rather than by `normalizedPrice` (DG-413 UI-4): a colliding product
+    // with a base option and a chip option at the same price renders two
+    // option lines, so the summary must report "2 options" even though both
+    // share one normalized price.
+    final optionKeys = widget.product.options
+        .map(
+          (option) => reconciliationOptionKey(
+            widget.product.productId,
+            option.normalizedPrice,
+            discriminator: option.keyDiscriminator,
+          ),
+        )
+        .toSet()
+        .toList();
+    if (optionKeys.isEmpty) {
+      return '';
+    }
     final prices = widget.product.options
         .map((option) => option.normalizedPrice.toStringAsFixed(0))
         .toSet()
         .toList();
-    if (prices.isEmpty) {
-      return '';
-    }
-    return '${prices.length} options: ${prices.join(', ')}đ';
+    return '${optionKeys.length} options: ${prices.join(', ')}đ';
   }
 
   String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
-    if (option.expectedQty == 0) {
-      return '';
-    }
-
-    if (option.sourceChipIds.isNotEmpty) {
-      final sourceChipIds = option.sourceChipIds.toSet();
-      return widget.product.priceChips
-          .where((chip) => sourceChipIds.contains(chip.id))
-          .map((chip) => chip.label)
-          .join(', ');
-    }
-
-    return option.sourceChipLabels.join(', ');
+    return visibleChipLabelsForOption(widget.product, option);
   }
 }
 
@@ -321,6 +327,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final optionKey = reconciliationOptionKey(
       product.productId,
       option.normalizedPrice,
+      discriminator: option.keyDiscriminator,
     );
     final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
     final saleRows =
@@ -477,6 +484,11 @@ class _OptionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final priceLineStyle = Theme.of(context).textTheme.titleSmall;
+    // When a base-price option collides with a chip option at the same
+    // normalized price, both headers render the same `Giá <price> - Tồn dự
+    // kiến: N` line. Surface a "Giá gốc" badge when this is the base option
+    // so the two lines stay visually unambiguous (DG-413 UI-1).
+    final isBaseCollisionOption = option.isCollidingBaseBucket;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -490,6 +502,13 @@ class _OptionHeader extends StatelessWidget {
               fontSize: (priceLineStyle.fontSize ?? 14) + 1,
             ),
           ),
+          if (isBaseCollisionOption)
+            Text(
+              VN.giaGoc,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           if (visibleChipLabels.isNotEmpty)
             Text(
               '${VN.nhanChip}: $visibleChipLabels',

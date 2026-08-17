@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../data/api/reconciliation_models.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
 
@@ -21,6 +22,7 @@ Future<bool> showSubmitReviewDialog({
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final rows =
           state.saleRowsByOption[optionKey] ??
@@ -104,8 +106,17 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
   final optionNameByKey = <String, String>{};
   for (final product in draft.products) {
     for (final option in product.options) {
-      final key = reconciliationOptionKey(product.productId, option.normalizedPrice);
-      optionNameByKey[key] = '${product.name} - Gia ${option.normalizedPrice}';
+      final key = reconciliationOptionKey(
+        product.productId,
+        option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
+      );
+      // Mirror the "Giá gốc" badge already added to `_OptionHeader`
+      // (DG-413 UI-1) so a colliding product's base and chip options do not
+      // render identical labels in the submit-review issue list (UI-2).
+      final discriminatorSuffix = _discriminatorSuffixForOption(option, product);
+      optionNameByKey[key] =
+          '${product.name} - Giá ${option.normalizedPrice}$discriminatorSuffix';
     }
   }
 
@@ -130,4 +141,22 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
     }
   }
   return issues;
+}
+
+/// Builds the per-option discriminator suffix appended to the submit-review
+/// issue label so colliding base and chip options stay distinguishable
+/// (DG-413 UI-2). Mirrors the "Giá gốc" badge / chip label lines already
+/// rendered by `_OptionHeader` (UI-1).
+String _discriminatorSuffixForOption(
+  ReconciliationDraftOption option,
+  ReconciliationDraftProduct product,
+) {
+  if (option.isCollidingBaseBucket) {
+    return ' (${VN.giaGoc})';
+  }
+  final chipLabels = visibleChipLabelsForOption(product, option);
+  if (chipLabels.isEmpty) {
+    return '';
+  }
+  return ' ($chipLabels)';
 }

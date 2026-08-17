@@ -173,30 +173,13 @@ class ReconciliationState {
   }
 }
 
-String reconciliationOptionKey(int productId, int normalizedPrice) {
-  return '$productId:$normalizedPrice';
-}
-
-String normalizeReconciliationOptionKey(
-  Object optionKeyOrProductId,
-  ReconciliationState currentState,
-) {
-  if (optionKeyOrProductId is String) {
-    return optionKeyOrProductId;
+String reconciliationOptionKey(
+  int productId,
+  int normalizedPrice, {
+  String? discriminator,
+}) {
+  if (discriminator == null || discriminator.isEmpty) {
+    return '$productId:$normalizedPrice';
   }
-  if (optionKeyOrProductId is int) {
-    final prefix = '$optionKeyOrProductId:';
-    final allKeys = <String>{
-      ...currentState.countedQtyByOption.keys,
-      ...currentState.wasteQtyByOption.keys,
-      ...currentState.wasteReasonByOption.keys,
-      ...currentState.saleRowsByOption.keys,
-    };
-    final matched = allKeys.where((key) => key.startsWith(prefix)).toList();
-    if (matched.length == 1) {
-      return matched.first;
-    }
-    return reconciliationOptionKey(optionKeyOrProductId, 0);
-  }
-  throw ArgumentError('Invalid option key: $optionKeyOrProductId');
+  return '$productId:$normalizedPrice#$discriminator';
 }

@@ -38,17 +38,48 @@ Widget buildReconciliationModalHandle(BuildContext context) {
 }
 
 /// Renders the product name + option price header used by both reconciliation
-/// modals (CQ-1).
+/// modals (CQ-1). The header now also surfaces the option discriminator so a
+/// colliding product's base and chip options do not render identical titles
+/// in the sale/waste modal (DG-413 UI-3), mirroring the "Giá gốc" badge and
+/// chip label lines already shown by `_OptionHeader` (UI-1).
 Widget buildReconciliationProductHeader(
   BuildContext context, {
   required ReconciliationDraftProduct product,
   required ReconciliationDraftOption option,
 }) {
-  return Text(
-    '${product.name} - ${formatVND(option.normalizedPrice.toDouble())}',
-    style: Theme.of(context).textTheme.titleMedium,
-    textAlign: TextAlign.center,
+  final discriminatorSuffix = _modalHeaderDiscriminatorSuffix(option, product);
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        '${product.name} - ${formatVND(option.normalizedPrice.toDouble())}',
+        style: Theme.of(context).textTheme.titleMedium,
+        textAlign: TextAlign.center,
+      ),
+      if (discriminatorSuffix.isNotEmpty)
+        Text(
+          discriminatorSuffix,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: TextAlign.center,
+        ),
+    ],
   );
+}
+
+/// Builds the discriminator subtitle line for the modal header so base and
+/// chip options are distinguishable (DG-413 UI-3). Mirrors the badge/label
+/// logic in `_OptionHeader` (UI-1) and the submit-review dialog (UI-2).
+String _modalHeaderDiscriminatorSuffix(
+  ReconciliationDraftOption option,
+  ReconciliationDraftProduct product,
+) {
+  if (option.isCollidingBaseBucket) {
+    return VN.giaGoc;
+  }
+  final chipLabels = visibleChipLabelsForOption(product, option);
+  return chipLabels.isEmpty ? '' : '${VN.nhanChip}: $chipLabels';
 }
 
 /// Renders the modal action row (close + confirm) reused by both reconciliation
