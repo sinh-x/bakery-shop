@@ -1,3 +1,5 @@
+// EXEMPT: 300-line threshold exceeded because merge logic (mergeOptionsByNormalizedPrice and its private helpers) is co-located here as it runs during ReconciliationDraftProduct.fromJson JSON decoding and moving it to reconciliation_math.dart would create a circular import (math already imports models). Reviewed 2026-08-17.
+
 class ReconciliationPriceChip {
   ReconciliationPriceChip({
     required this.id,
