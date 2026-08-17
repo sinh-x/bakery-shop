@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/api/address_service.dart';
 import 'package:bakery_app/data/models/address.dart';
-import 'package:bakery_app/providers/address/missing_links_provider.dart';
+import 'package:bakery_app/data/providers/missing_links_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

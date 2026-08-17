@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/report_service.dart';
-import '../../data/models/cashflow_summary.dart';
-import '../../data/models/expense_summary.dart';
-import '../../data/models/order_breakdown.dart';
-import '../../data/models/period_summary.dart';
-import '../../data/models/product_breakdown.dart';
+import '../api/report_service.dart';
+import '../models/cashflow_summary.dart';
+import '../models/expense_summary.dart';
+import '../models/order_breakdown.dart';
+import '../models/period_summary.dart';
+import '../models/product_breakdown.dart';
 import '../../shared/utils/date_formatting.dart';
 
 /// Identifies a week-or-month period query for the summary screen family

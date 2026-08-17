@@ -8,7 +8,7 @@ import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/section_title.dart';
-import '../../providers/dashboard/dashboard_metrics_provider.dart';
+import '../../data/providers/dashboard_metrics_provider.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import '../../providers/order/due_date_order_list_providers.dart';
 import '../../providers/order/order_list_providers.dart';

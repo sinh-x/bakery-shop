@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../providers/dashboard/dashboard_metrics_provider.dart';
-import '../../providers/dashboard/period_summary_providers.dart';
+import '../../data/providers/dashboard_metrics_provider.dart';
+import '../../data/providers/period_summary_providers.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';

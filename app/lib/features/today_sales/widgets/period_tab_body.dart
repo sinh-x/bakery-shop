@@ -6,7 +6,7 @@ import '../../../data/models/expense_summary.dart';
 import '../../../data/models/order_breakdown.dart';
 import '../../../data/models/period_summary.dart';
 import '../../../data/models/product_breakdown.dart';
-import '../../../providers/dashboard/period_summary_providers.dart';
+import '../../../data/providers/period_summary_providers.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'cashflow_summary_section.dart';
