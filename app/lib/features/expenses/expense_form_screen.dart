@@ -9,7 +9,7 @@ import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:bakery_app/providers/photo_upload_provider.dart';
-import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';

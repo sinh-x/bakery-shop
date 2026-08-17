@@ -8,7 +8,7 @@ import '../../data/api/api_client.dart';
 import '../../data/models/cake_queue_item.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/products_provider.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';

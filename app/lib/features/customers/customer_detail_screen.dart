@@ -7,7 +7,7 @@ import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
 import '../../features/auth/auth_provider.dart';
-import '../../providers/customers_provider.dart';
+import '../../data/providers/customers_provider.dart';
 import '../../shared/services/session_cache.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';

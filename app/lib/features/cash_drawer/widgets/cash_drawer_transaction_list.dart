@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/api/cash_drawer_service.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
-import '../../../providers/cash_drawer_provider.dart';
+import '../../../data/providers/cash_drawer_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'cash_drawer_edit_dialog.dart';

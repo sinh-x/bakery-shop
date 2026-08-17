@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
-import '../../../providers/categories_provider.dart';
+import '../../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 
 /// Show the add/edit blank bottom sheet.

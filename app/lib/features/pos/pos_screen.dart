@@ -4,10 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
-import '../../../providers/categories_provider.dart';
+import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../providers/products_provider.dart';
+import '../../../data/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../shared/mixins/auto_refresh_mixin.dart';
 import '../../../shared/utils/category_grouping.dart';

@@ -5,8 +5,8 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:bakery_app/shared/services/image_cache_service.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 
-import '../data/api/product_service.dart';
-import '../data/models/product.dart';
+import '../api/product_service.dart';
+import '../models/product.dart';
 import 'catalog_provider.dart';
 
 class ProductPhotoRefreshTickNotifier extends Notifier<int> {

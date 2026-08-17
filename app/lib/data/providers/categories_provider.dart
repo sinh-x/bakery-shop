@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/category_service.dart';
-import '../data/models/category.dart';
+import '../api/category_service.dart';
+import '../models/category.dart';
 
 class CategoriesNotifier extends AsyncNotifier<List<Category>> {
   @override

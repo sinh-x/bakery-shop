@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/staff_service.dart';
 import '../../../../providers/order/delivery_staff_provider.dart';
-import '../../../../providers/staff_provider.dart';
+import '../../../../data/providers/staff_provider.dart';
 import '../../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 

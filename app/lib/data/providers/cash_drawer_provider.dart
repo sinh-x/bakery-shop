@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/cash_drawer_service.dart';
-import '../data/models/cash_drawer.dart';
-import '../data/models/cash_drawer_transaction.dart';
+import '../api/cash_drawer_service.dart';
+import '../models/cash_drawer.dart';
+import '../models/cash_drawer_transaction.dart';
 
 /// Filter parameters for the cash-drawer history query (FR10).
 class CashDrawerHistoryFilter {

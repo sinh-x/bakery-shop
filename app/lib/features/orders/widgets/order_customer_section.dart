@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/customer.dart';
-import '../../../providers/customers_provider.dart';
+import '../../../data/providers/customers_provider.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import 'customer_search_button.dart';

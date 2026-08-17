@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/providers/pos_provider.dart';
-import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart' show XFile;

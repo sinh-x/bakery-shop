@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../providers/products_provider.dart';
+import '../../../data/providers/products_provider.dart';
 import '../../orders/utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';

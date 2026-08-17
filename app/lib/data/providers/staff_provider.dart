@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/staff_service.dart';
+import '../api/staff_service.dart';
 
 class StaffListNotifier extends AsyncNotifier<List<StaffMember>> {
   @override

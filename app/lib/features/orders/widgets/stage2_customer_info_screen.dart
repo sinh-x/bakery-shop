@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/customer.dart';
-import '../../../providers/config_provider.dart';
+import '../../../data/providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import 'order_customer_section.dart';

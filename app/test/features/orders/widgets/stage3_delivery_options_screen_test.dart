@@ -12,7 +12,7 @@ import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dar
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
 import 'package:bakery_app/providers/address/address_autocomplete_provider.dart';
-import 'package:bakery_app/providers/config_provider.dart';
+import 'package:bakery_app/data/providers/config_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';

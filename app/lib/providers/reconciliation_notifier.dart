@@ -6,7 +6,7 @@ import '../data/providers/reconciliation_math.dart';
 import '../data/providers/reconciliation_state.dart';
 import '../shared/providers/logged_by_provider.dart';
 import '../shared/utils/api_error.dart' as api_error;
-import 'products_provider.dart';
+import '../data/providers/products_provider.dart';
 
 class ReconciliationNotifier extends Notifier<ReconciliationState> {
   final Map<String, ReconciliationDraftOption> _draftOptionsByKey =

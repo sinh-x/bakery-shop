@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/cash_drawer_service.dart';
-import 'package:bakery_app/providers/cash_drawer_provider.dart';
+import 'package:bakery_app/data/providers/cash_drawer_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

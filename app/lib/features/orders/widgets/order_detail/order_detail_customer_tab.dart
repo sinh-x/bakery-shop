@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
-import '../../../../providers/customers_provider.dart';
+import '../../../../data/providers/customers_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import '../order_card.dart';

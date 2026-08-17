@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/labels/shared.dart';
-import '../../providers/catalog_provider.dart';
+import '../../data/providers/catalog_provider.dart';
 import 'widgets/catalog_tags_dialogs.dart';
 import 'widgets/tag_list.dart';
 

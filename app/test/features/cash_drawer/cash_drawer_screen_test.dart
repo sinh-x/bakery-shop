@@ -4,7 +4,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/features/cash_drawer/cash_drawer_screen.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_transaction_list.dart';
-import 'package:bakery_app/providers/cash_drawer_provider.dart';
+import 'package:bakery_app/data/providers/cash_drawer_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

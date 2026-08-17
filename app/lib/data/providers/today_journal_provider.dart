@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/accounting_service.dart';
-import '../data/models/journal_entry.dart';
-import '../shared/constants/journal.dart';
-import '../shared/utils/date_formatting.dart';
+import '../api/accounting_service.dart';
+import '../models/journal_entry.dart';
+import '../../shared/constants/journal.dart';
+import '../../shared/utils/date_formatting.dart';
 
 /// Fetches all of today's journal entries once and shares them across the
 /// dashboard and Today Sales providers (DG-374 cycle-3 C3-2).

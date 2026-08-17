@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';

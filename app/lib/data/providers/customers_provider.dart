@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/customer_service.dart';
-import '../data/models/customer.dart';
-import '../shared/services/session_cache.dart';
+import '../api/customer_service.dart';
+import '../models/customer.dart';
+import '../../shared/services/session_cache.dart';
 
 /// Current search query for the customer list. Empty string = no filter.
 /// Setting this re-triggers [CustomerListNotifier] via `ref.watch`.

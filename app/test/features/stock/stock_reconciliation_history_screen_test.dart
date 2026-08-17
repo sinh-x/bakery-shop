@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/reconciliation_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/features/stock/stock_reconciliation_history_screen.dart';
-import 'package:bakery_app/providers/categories_provider.dart';
+import 'package:bakery_app/data/providers/categories_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

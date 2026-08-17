@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/staff_service.dart';
-import '../staff_provider.dart';
+import '../../data/providers/staff_provider.dart';
 
 /// All active staff for populating assignment dropdowns in the order edit
 /// and detail screens (DG-329 Phase 1 / FR1 / AC1). Filters the cached

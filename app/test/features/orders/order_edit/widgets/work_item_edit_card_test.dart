@@ -5,7 +5,7 @@ import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/data/models/work_item.dart';
 import 'package:bakery_app/features/orders/order_edit/widgets/work_item_edit_card.dart';
-import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

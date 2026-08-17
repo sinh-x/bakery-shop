@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
-import '../../../providers/catalog_provider.dart';
+import '../../../data/providers/catalog_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared bottom sheet for editing a catalog photo's caption and tags.

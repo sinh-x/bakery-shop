@@ -13,7 +13,7 @@ import '../../../data/api/payment_transaction_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../providers/products_provider.dart';
+import '../../../data/providers/products_provider.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../features/stock/stock_screen.dart';
 import 'pos_checkout_dialogs.dart';

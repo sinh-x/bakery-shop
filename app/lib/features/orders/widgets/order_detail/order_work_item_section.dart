@@ -10,7 +10,7 @@ import '../../../../data/api/api_client.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import '../../../../providers/products_provider.dart';
+import '../../../../data/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';

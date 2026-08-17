@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/models/category.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
 import '../../providers/reconciliation_provider.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/utils/category_grouping.dart';

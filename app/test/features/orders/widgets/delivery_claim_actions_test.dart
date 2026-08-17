@@ -12,7 +12,7 @@ import 'package:bakery_app/features/orders/providers/delivery_claim_providers.da
 import 'package:bakery_app/features/orders/widgets/delivery_claim_actions.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_order_card.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 

@@ -4,7 +4,7 @@ import 'package:bakery_app/features/orders/widgets/extras_section.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_product_selection_screen.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
-import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/shared/gift_config.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';

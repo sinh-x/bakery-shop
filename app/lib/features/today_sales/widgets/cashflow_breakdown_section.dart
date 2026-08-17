@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/cash_drawer.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
-import '../../../providers/cash_drawer_provider.dart';
+import '../../../data/providers/cash_drawer_provider.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../cash_drawer/widgets/cash_drawer_breakdown_card.dart';

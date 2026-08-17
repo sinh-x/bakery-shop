@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/customer_service.dart';
-import '../../providers/customers_provider.dart';
+import '../../data/providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/diacritics.dart';

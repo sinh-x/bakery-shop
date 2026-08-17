@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order_draft.dart';
-import '../../../../providers/config_provider.dart';
+import '../../../../data/providers/config_provider.dart';
 import '../order_customer_section.dart';
 import '../order_wizard.dart';
 import '../section_header.dart';

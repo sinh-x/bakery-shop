@@ -6,8 +6,8 @@ import '../../../data/models/order.dart';
 import '../../../features/auth/auth_provider.dart';
 import '../../../providers/order/order_detail_notifier.dart';
 import '../../../providers/order/order_list_providers.dart';
-import '../../../providers/staff_provider.dart';
-import '../../../providers/user_binding_provider.dart';
+import '../../../data/providers/staff_provider.dart';
+import '../../../data/providers/user_binding_provider.dart';
 import '../../../shared/services/session_cache.dart';
 
 /// Snapshot of the currently logged-in staff member relevant to delivery

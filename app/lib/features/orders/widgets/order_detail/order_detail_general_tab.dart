@@ -5,7 +5,7 @@ import '../../../../data/api/api_client.dart';
 import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/product.dart';
-import '../../../../providers/products_provider.dart';
+import '../../../../data/providers/products_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import '../order_photo_section.dart';
 import 'order_info_block.dart';
