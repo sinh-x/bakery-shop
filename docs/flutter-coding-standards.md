@@ -34,7 +34,7 @@
 - [ ] §4 State Management — AsyncNotifier/Notifier used, no setState in ConsumerWidget
 - [ ] §5 Label Organization — labels split by domain, no monolithic VN class additions
 - [ ] §6 Testing — tests follow naming, pattern, and coverage rules
-- [ ] §7 Linting — 12 rules enabled, no new analyzer errors
+- [x] §7 Linting — 12 rules enabled, no new analyzer errors
 
 ---
 
@@ -296,9 +296,9 @@ Coverage is per-feature, not per-file. A feature with 3 screens and 2 providers 
 
 ## §7 Linting
 
-### Rules to Enable
+### Enabled Rules
 
-These rules are documented for Phase 2. Phase 3 will apply them to `analysis_options.yaml` with `// ignore_for_file:` suppression for pre-existing violations.
+All 12 rules below are already enabled in `app/analysis_options.yaml` (Phase 3 complete). No further enablement work is required.
 
 | # | Rule | Category | Rationale |
 |---|------|----------|-----------|
@@ -315,13 +315,11 @@ These rules are documented for Phase 2. Phase 3 will apply them to `analysis_opt
 | 11 | `always_declare_return_types` | Correctness | Explicit return types on methods/functions. Prevents accidental `dynamic` inference. |
 | 12 | `avoid_types_on_closure_parameters` | Style | Leverages type inference in closures. Reduces noise in callback parameters. |
 
-### Application Strategy (Phase 3)
+### Application Status (Complete)
 
-1. Enable all 12 rules in `analysis_options.yaml`.
-2. Run `dart analyze` to catalog violations.
-3. For pre-existing violations (not related to current in-progress work), add `// ignore_for_file:` at the top of each violating file.
-4. New code must comply with all enabled rules — no new `// ignore:` comments for new code.
-5. Verify: `dart analyze` returns zero errors.
+1. All 12 rules are enabled in `app/analysis_options.yaml` (Phase 3 complete).
+2. New code must comply with all enabled rules — no new `// ignore:` comments for new code.
+3. Verify: `dart analyze` returns zero errors.
 
 ---
 
