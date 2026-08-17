@@ -2,9 +2,10 @@
 
 from .._drawing import *  # noqa: F401,F403
 from .._helpers import *  # noqa: F401,F403
-
 import io
-from PIL import Image, ImageDraw, ImageFont
+import logging
+
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from baker.formatters import format_phone
 from baker.models.payment_transaction import PaymentTransaction
 
@@ -168,8 +169,13 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
                     photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
                     photos.append(photo)
-                except Exception:
-                    pass
+                except UnidentifiedImageError:
+                    # CQ-3 (DG-412 review cycle 1): narrow the catch so corrupt
+                    # photos are observable rather than silently swallowed.
+                    logging.getLogger(__name__).warning(
+                        "Skipping unreadable photo for order_id=%s item_id=%s",
+                        order_id, item_id,
+                    )
             if len(photos) == 1:
                 # Single photo — centered (unchanged fallback, FR3).
                 photo = photos[0]

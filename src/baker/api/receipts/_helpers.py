@@ -242,21 +242,6 @@ def _header(draw, y, cfg):
     return y
 
 
-def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
-    """Get first photo bytes attached to a specific work item only."""
-    row = conn.execute(
-        "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id "
-        "WHERE op.order_id = ? AND op.work_item_id = ? "
-        "ORDER BY op.position, op.id LIMIT 1",
-        (order_id, work_item_id),
-    ).fetchone()
-    if row:
-        photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
-        if photo_path.exists():
-            return photo_path.read_bytes()
-    return None
-
-
 def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[bytes]:
     """Get up to ``limit`` photo bytes attached to a specific work item, ordered by ``position``.
 
@@ -265,20 +250,37 @@ def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[
     files on disk are skipped silently (same convention as ``_get_photo``).
     The query is ordered by ``position`` ascending with ``id`` as a stable
     tiebreaker (AC4, AC5).
+
+    OPS-1 (DG-412 review cycle 1): rows are fetched without a hard SQL ``LIMIT``
+    and the existence check is applied while iterating; collection stops after
+    ``limit`` existing files have been gathered. This prevents a missing leading
+    file from suppressing later valid photos.
     """
     rows = conn.execute(
         "SELECT p.hash FROM photos p "
         "JOIN order_photos op ON p.id = op.photo_id "
         "WHERE op.order_id = ? AND op.work_item_id = ? "
-        "ORDER BY op.position, op.id LIMIT ?",
-        (order_id, work_item_id, limit),
+        "ORDER BY op.position, op.id",
+        (order_id, work_item_id),
     ).fetchall()
     out: List[bytes] = []
     for r in rows:
         photo_path = baker.config.PHOTOS_DIR / f"{r['hash']}.jpg"
         if photo_path.exists():
             out.append(photo_path.read_bytes())
+            if len(out) >= limit:
+                break
     return out
+
+
+def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
+    """Get first photo bytes attached to a specific work item only.
+
+    CQ-1 (DG-412 review cycle 1): implemented in terms of ``_get_photos`` to
+    remove duplicated query/file-read logic and keep ordering consistent.
+    """
+    photos = _get_photos(conn, order_id, work_item_id, limit=1)
+    return photos[0] if photos else None
 
 
 __all__ = [

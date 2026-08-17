@@ -19,6 +19,7 @@ from baker.api.receipts import (
     _find_content_bottom,
     _find_split_boundaries,
     _format_vnd,
+    _get_photo,
     _get_photos,
     _main_item_index_total,
     _order_visual_ref,
@@ -2362,3 +2363,94 @@ class TestCustomerReceiptPhotosRender:
         assert abs(img1.size[1] - img2.size[1]) <= 5, (
             f"1-photo h={img1.size[1]} vs 2-photo h={img2.size[1]} should be ~equal"
         )
+
+
+# --- DG-412 review cycle 1: CQ-2 and OPS-1 regression tests ---
+
+
+class TestGetPhotoWorkTicketOrdering:
+    """CQ-2 (DG-412 review cycle 1): the work-ticket renderer's photo
+    selection (via ``_get_photo``) follows ``position`` ascending. This
+    locks in the deterministic ordering that ``_get_photo`` gained when
+    ``ORDER BY op.position, op.id`` was added (also used by
+    ``_get_photos``). Although the work-ticket renderer lives outside the
+    DG-412 scope, the ordering is an improvement and must not regress.
+    """
+
+    def test_get_photo_returns_lowest_position(self, api_client):
+        """``_get_photo`` returns the photo at the lowest ``position``."""
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        # Upload three distinct photos.
+        a = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        b = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        c = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("green"))
+        # Force positions: c=0, a=1, b=2 → expected single photo is c.
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{c['id']}", json={"position": 0}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{a['id']}", json={"position": 1}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{b['id']}", json={"position": 2}
+        )
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photo = _get_photo(conn, data["id"], item_id)
+        assert photo is not None
+        assert photo == _disk_photo_bytes(c["photo_hash"])
+
+    def test_get_photo_work_ticket_endpoint_uses_position(self, api_client):
+        """End-to-end: the work-ticket endpoint serves a PNG whose embedded
+        photo corresponds to the lowest-position attachment. We verify by
+        confirming the endpoint succeeds after reordering (the renderer
+        itself is exercised by ``test_work_ticket_endpoint_with_item_id``);
+        the helper-level ordering is asserted in
+        ``test_get_photo_returns_lowest_position``. This test guards the
+        integration path used by the work-ticket renderer at
+        ``src/baker/api/receipts/endpoint.py:99``.
+        """
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        a = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        b = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        # Reorder so b is position 0 (lowest) — selected by _get_photo.
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{b['id']}", json={"position": 0}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{a['id']}", json={"position": 1}
+        )
+        resp = api_client.get(
+            f"/api/orders/{ref}/receipt?type=work_ticket&item_id={item_id}"
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+
+
+class TestGetPhotosMissingLeadingFile:
+    """OPS-1 (DG-412 review cycle 1): a missing leading file must not
+    suppress later valid photos. ``_get_photos`` iterates rows without a
+    hard SQL ``LIMIT`` and breaks only after collecting ``limit`` existing
+    files, so a missing first file still allows the second to be returned.
+    """
+
+    def test_missing_leading_file_returns_next_existing(self, api_client, tmp_path, monkeypatch):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        p0 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        p1 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        # Delete the leading file on disk (position 0 by upload order).
+        import baker.config
+        leading_path = baker.config.PHOTOS_DIR / f"{p0['photo_hash']}.jpg"
+        leading_path.unlink()
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id, limit=2)
+        # The missing leading file is skipped; the second photo is returned.
+        assert len(photos) == 1
+        assert photos[0] == _disk_photo_bytes(p1["photo_hash"])
