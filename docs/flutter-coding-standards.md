@@ -2,7 +2,7 @@
 
 > Date: 2026-05-09
 > Scope: Coding standards covering file sizing, widget composition, provider placement, state management, label organization, testing, and linting
-> Based on: Code Quality Audit (120 files, 30,479 lines)
+> Based on: Code Quality Audit (475 files, 81,256 lines)
 > Flutter SDK: 3.44.0 (repo-standard devshell)
 > Riverpod: ^3.1.0
 > Review cadence: Annual or on major Flutter/Riverpod version bump
@@ -44,10 +44,10 @@
 
 | File Type | Max Lines | Location | Evidence from Audit |
 |-----------|-----------|----------|---------------------|
-| Screen | 300 | `lib/features/<feature>/` | 16 High-severity files >500 lines; `order_detail_screen.dart` at 2,557 lines |
-| Widget | 300 | `lib/features/<feature>/widgets/` | Raised from 200 to 300 per DG-332; aligns widget threshold with Screen/Service (300). Largest widgets: `expandable_item_card.dart` at 616 lines, `order_photo_section.dart` at 592. Audit baseline files ≥300 lines = 38 (16 High >500 + 8 Medium 400-500 + 14 Low 300-400) |
-| Provider | 400 | `lib/data/providers/` or `lib/providers/` | `reconciliation_provider.dart` at 651; `order_providers.dart` at 530 |
-| Service | 300 | `lib/data/api/` | `reconciliation_service.dart` at 519; `printer_service.dart` at 328 |
+| Screen | 300 | `lib/features/<feature>/` | 18 High-severity files >500 lines; `product_form_screen.dart` at 1,774 lines |
+| Widget | 300 | `lib/features/<feature>/widgets/` | Raised from 200 to 300 per DG-332; aligns widget threshold with Screen/Service (300). Largest widgets: `reconciliation_product_card.dart` at 881 lines, `cake_detail_body.dart` at 729 lines. Audit baseline files ≥300 lines = 75 (18 High >500 + 15 Medium 400-500 + 42 Low 300-399) |
+| Provider | 400 | `lib/data/providers/` or `lib/providers/` | `reconciliation_models.dart` at 781 lines; `cash_drawer_service.dart` at 531 lines |
+| Service | 300 | `lib/data/api/` | `reconciliation_models.dart` at 781; `cash_drawer_service.dart` at 531 |
 
 ### Exception Process
 
@@ -62,7 +62,7 @@ When a file must exceed its threshold:
 
 ### Pre-existing Oversized Files (Baseline)
 
-The audit identified 38 files ≥300 lines under the updated widget threshold (16 High-severity >500 lines + 8 Medium 400-500 lines + 14 Low 300-400 lines). The 16 High-severity files (>500 lines) remain the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
+The audit identified 75 files ≥300 lines under the updated widget threshold (18 High-severity >500 lines + 15 Medium 400-500 lines + 42 Low 300-399 lines). The 18 High-severity files (>500 lines) remain the priority refactoring targets. Individual refactoring will be tracked as separate DG tickets. New files must comply from creation — the baseline does not grandfather future additions.
 
 ---
 
@@ -91,22 +91,45 @@ Given `lib/features/orders/order_create_screen.dart` containing private classes 
 
 ### Pre-existing Extraction Targets (Audit)
 
-Files currently triggering the ≥3 rule:
+Files currently triggering the ≥3 rule (live audit, 2026-08-17):
 
 | File | Inner Classes | Severity |
 |------|---------------|----------|
-| `order_detail_screen.dart` | 18 | High |
-| `stock_reconciliation_screen.dart` | 8 | High |
-| `order_edit_screen.dart` | 6 | High |
-| `order_list_screen.dart` | 5 | High |
-| `settings_screen.dart` | 5 | High |
-| `dashboard_screen.dart` | 6 | Medium |
-| `checklist_history_screen.dart` | 5 | Medium |
-| `category_management_screen.dart` | 5 | Medium |
-| `checklist_screen.dart` | 4 | Medium |
-| `catalog_browse_screen.dart` | 3 | High |
-| `catalog_photo_viewer.dart` | 3 | Medium |
-| `knowledge_photo_gallery.dart` | 3 | Medium |
+| `features/blanks/blank_detail_screen.dart` | 9 | Medium |
+| `features/stock/widgets/reconciliation_product_card.dart` | 8 | High |
+| `features/cash_drawer/cash_drawer_screen.dart` | 7 | High |
+| `features/today_sales/widgets/cashflow_summary_section.dart` | 6 | Low |
+| `features/today_sales/widgets/expense_summary_section.dart` | 5 | n/a |
+| `features/today_sales/widgets/day_tab_body.dart` | 5 | n/a |
+| `features/products/product_form_screen.dart` | 5 | High |
+| `features/orders/order_list_screen.dart` | 5 | High |
+| `features/customers/customer_list_screen.dart` | 5 | n/a |
+| `features/categories/category_management_screen.dart` | 5 | n/a |
+| `features/today_sales/widgets/product_breakdown_section.dart` | 4 | n/a |
+| `features/settings/widgets/catalog_tags_dialogs.dart` | 4 | Low |
+| `features/settings/address_library_screen.dart` | 4 | Medium |
+| `features/products/widgets/catalog_photo_viewer.dart` | 4 | Medium |
+| `features/products/product_catalog_screen.dart` | 4 | Medium |
+| `features/orders/widgets/order_photo_section.dart` | 4 | High |
+| `features/expenses/debt_list_screen.dart` | 4 | n/a |
+| `features/events/widgets/event_form_photo_section.dart` | 4 | n/a |
+| `features/customers/customer_form.dart` | 4 | High |
+| `features/checklist/checklist_screen.dart` | 4 | Low |
+| `features/checklist/checklist_history_screen.dart` | 4 | Low |
+| `features/cash_drawer/widgets/cash_drawer_history_list.dart` | 4 | n/a |
+| `features/auth/login_screen.dart` | 4 | n/a |
+| `features/audit_log/audit_log_screen.dart` | 4 | n/a |
+| `features/today_sales/widgets/today_order_list.dart` | 3 | n/a |
+| `features/templates/widgets/template_picker_modal.dart` | 3 | Medium |
+| `features/settings/widgets/settings_sections.dart` | 3 | n/a |
+| `features/settings/missing_links_screen.dart` | 3 | n/a |
+| `features/orders/order_history_screen.dart` | 3 | Low |
+| `features/knowledge/widgets/knowledge_photo_gallery.dart` | 3 | Low |
+| `features/events/widgets/quick_log_photo_picker.dart` | 3 | n/a |
+| `features/dashboard/management_dashboard_screen.dart` | 3 | Low |
+| `features/categories/category_form.dart` | 3 | Medium |
+| `features/blanks/bom_mapping_screen.dart` | 3 | n/a |
+| `features/auth/widgets/password_change_form.dart` | 3 | n/a |
 
 ---
 
