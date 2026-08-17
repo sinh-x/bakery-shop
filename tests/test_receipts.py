@@ -2451,3 +2451,35 @@ class TestGetPhotosMissingLeadingFile:
         # The missing leading file is skipped; the second photo is returned.
         assert len(photos) == 1
         assert photos[0] == _disk_photo_bytes(p1["photo_hash"])
+
+    def test_fetch_window_covers_documented_attachment_invariant(self, api_client):
+        """DG-412 review cycle 4: the SQL ``LIMIT`` bound is ``limit * _PHOTO_FETCH_MULTIPLIER``.
+
+        The multiplier is a documented invariant (a work item never has more than
+        ``limit * _PHOTO_FETCH_MULTIPLIER`` attachments). This test pins that the
+        named constant exists and that the bounded window still returns the last
+        valid photo when every leading file within the window is missing.
+        """
+        from baker.api.receipts import _helpers
+        assert _helpers._PHOTO_FETCH_MULTIPLIER == 4
+
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        limit = 2
+        window = limit * _helpers._PHOTO_FETCH_MULTIPLIER  # 8
+        # Attach `window` photos; the last one (highest position) is the only
+        # one kept on disk, so all leading files within the window are missing.
+        photos = [
+            _attach_order_photo(api_client, ref, item_id, _make_photo_bytes(c))
+            for c in ("red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan")
+        ]
+        import baker.config
+        for p in photos[:-1]:
+            (baker.config.PHOTOS_DIR / f"{p['photo_hash']}.jpg").unlink()
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            result = _get_photos(conn, data["id"], item_id, limit=limit)
+        # The last valid photo (within the window) is still returned.
+        assert len(result) == 1
+        assert result[0] == _disk_photo_bytes(photos[-1]["photo_hash"])

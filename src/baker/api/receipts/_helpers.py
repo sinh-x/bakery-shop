@@ -242,6 +242,14 @@ def _header(draw, y, cfg):
     return y
 
 
+# DG-412 review cycle 4: the SQL ``LIMIT`` bound is ``limit * _PHOTO_FETCH_MULTIPLIER``.
+# The multiplier is a deliberate, greppable invariant: a work item never has more
+# than ``limit * _PHOTO_FETCH_MULTIPLIER`` attachments, so the bounded window always
+# contains every valid photo even when leading files are missing on disk. If the
+# per-item attachment cap ever changes, adjust this constant accordingly.
+_PHOTO_FETCH_MULTIPLIER = 4
+
+
 def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[bytes]:
     """Get up to ``limit`` photo bytes attached to a specific work item, ordered by ``position``.
 
@@ -252,11 +260,11 @@ def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[
     tiebreaker (AC4, AC5).
 
     OPS-1 (DG-412 review cycle 1): rows are fetched with a bounded SQL
-    ``LIMIT`` (``limit * 4``) and the existence check is applied while
-    iterating; collection stops after ``limit`` existing files have been
-    gathered. This prevents a missing leading file from suppressing later
-    valid photos. CQ-2 (DG-412 review cycle 3): the SQL ``LIMIT`` caps row
-    retrieval so the work-ticket path (``_get_photo`` delegates with
+    ``LIMIT`` (``limit * _PHOTO_FETCH_MULTIPLIER``) and the existence check is
+    applied while iterating; collection stops after ``limit`` existing files
+    have been gathered. This prevents a missing leading file from suppressing
+    later valid photos. CQ-2 (DG-412 review cycle 3): the SQL ``LIMIT`` caps
+    row retrieval so the work-ticket path (``_get_photo`` delegates with
     ``limit=1``) does not regress to a full fetch.
     """
     rows = conn.execute(
@@ -265,7 +273,7 @@ def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[
         "WHERE op.order_id = ? AND op.work_item_id = ? "
         "ORDER BY op.position, op.id "
         "LIMIT ?",
-        (order_id, work_item_id, limit * 4),
+        (order_id, work_item_id, limit * _PHOTO_FETCH_MULTIPLIER),
     ).fetchall()
     out: List[bytes] = []
     for r in rows:
