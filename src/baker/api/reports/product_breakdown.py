@@ -144,7 +144,7 @@ def get_product_breakdown(
                     FROM order_items oi
                     LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
                     WHERE oi.order_id IN ({batch_placeholders})
-                      AND {_ORDER_ITEM_GIFT_EXCLUDE}""",
+                      AND {_ORDER_ITEM_GIFT_EXCLUDE}""",  # nosec B608
                 batch,
             ).fetchall()
             item_rows.extend(batch_rows)

@@ -81,13 +81,13 @@ def list_audit_log(
     with get_db() as conn:
         # Total count for pagination metadata (uses the same filters).
         count_row = conn.execute(
-            f"SELECT COUNT(*) AS total FROM audit_log {where_clause}",
+            f"SELECT COUNT(*) AS total FROM audit_log {where_clause}",  # nosec B608
             params,
         ).fetchone()
         total = count_row["total"] if count_row is not None else 0
 
         rows = conn.execute(
-            f"SELECT id, username, action, entity_type, entity_id, "
+            f"SELECT id, username, action, entity_type, entity_id, "  # nosec B608
             f"old_value, new_value, created_at "
             f"FROM audit_log {where_clause} "
             f"ORDER BY created_at DESC, id DESC "

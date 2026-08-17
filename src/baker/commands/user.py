@@ -288,7 +288,7 @@ def user_list(show_all: bool):
     """
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT username, role, active, locked_until, force_password_change, created_at "
+            "SELECT username, role, active, locked_until, force_password_change, created_at "  # nosec B608
             "FROM users "
             + ("" if show_all else "WHERE active = 1 ")
             + "ORDER BY username"

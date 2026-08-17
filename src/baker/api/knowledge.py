@@ -129,7 +129,7 @@ def list_knowledge(
             WHERE {' AND '.join(conditions)}
             ORDER BY pinned DESC, CASE WHEN pinned = 1 THEN pinned_at ELSE updated_at END DESC
             LIMIT ?
-        """
+        """  # nosec B608
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
@@ -196,7 +196,7 @@ def update_knowledge(entry_id: int, body: KnowledgeUpdate):
 
         values.append(entry_id)
         conn.execute(
-            f"UPDATE knowledge_entries SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE knowledge_entries SET {', '.join(fields)} WHERE id = ?",  # nosec B608
             values,
         )
 

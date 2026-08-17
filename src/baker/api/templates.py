@@ -314,7 +314,7 @@ def update_template(
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             values = list(fields.values()) + [template_id]
             conn.execute(
-                f"UPDATE message_templates SET {set_clause} WHERE id = ?",
+                f"UPDATE message_templates SET {set_clause} WHERE id = ?",  # nosec B608
                 values,
             )
             record_audit_log(

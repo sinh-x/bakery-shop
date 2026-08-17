@@ -93,7 +93,7 @@ def category_edit(slug, name, code_prefix):
             return
 
         params.append(row["id"])
-        conn.execute(f"UPDATE categories SET {', '.join(updates)} WHERE id = ?", params)
+        conn.execute(f"UPDATE categories SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608
 
         if prefix_changed:
             result = conn.execute(

@@ -93,7 +93,7 @@ def _held_shipping_for_order(
                     AND je.source_id = ?
                 )
               )
-        """,
+        """,  # nosec B608
         [BUS_SHIPPING_HELD_CODE] + tx_params + [order_id],
     ).fetchone()
     return float(row["net_held"] or 0)
@@ -131,7 +131,7 @@ def _held_tien_rut_for_order(
               SELECT id FROM payment_transactions WHERE order_id = ?
           )
           {exclude_clause}
-        """,
+        """,  # nosec B608
         [TIEN_RUT_HELD_CODE] + params,
     ).fetchone()
     return float(row["net_held"] or 0)

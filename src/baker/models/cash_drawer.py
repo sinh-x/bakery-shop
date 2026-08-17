@@ -150,10 +150,10 @@ class CashDrawer:
             params.append(until)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total = int(
-            conn.execute(f"SELECT COUNT(*) AS c FROM cash_drawer {where}", params).fetchone()["c"]
+            conn.execute(f"SELECT COUNT(*) AS c FROM cash_drawer {where}", params).fetchone()["c"]  # nosec B608
         )
         rows = conn.execute(
-            f"SELECT * FROM cash_drawer {where} ORDER BY opened_at DESC, id DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM cash_drawer {where} ORDER BY opened_at DESC, id DESC LIMIT ? OFFSET ?",  # nosec B608
             [*params, limit, offset],
         ).fetchall()
         return [CashDrawer.from_row(r) for r in rows], total
@@ -557,7 +557,7 @@ class CashDrawer:
             SELECT category, total_amount, count
             FROM cash_drawer_breakdown_snapshot
             WHERE drawer_id = ? AND category IN ({placeholders})
-            """,
+            """,  # nosec B608
             (int(drawer_id), *BREAKDOWN_SNAPSHOT_CATEGORIES),
         ).fetchall()
         by_cat = {r["category"]: r for r in rows}

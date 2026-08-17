@@ -157,7 +157,7 @@ def test_bus_order_full_lifecycle_journal_entries():
     shipping_fee=25000, total_price=125000, deposit=125000.
     Payment entry:   debit 1100 125000, credit 2100 100000, credit 2200 25000
     Revenue entry:   debit 2100 100000, credit 4100 100000  (shipping excluded)
-    Release entry:   debit 2200 25000,  credit 1100 25000
+    Release entry:   debit 2200 25000,  credit 1102 25000
     Re-sync:          no duplicate entries created.
     """
     with get_db() as conn:
@@ -206,11 +206,13 @@ def test_bus_order_full_lifecycle_journal_entries():
         assert agg[ORDER_REVENUE_CODE]["credit"] == 100000.0
         _assert_balanced(agg)
 
-        # 4. Shipping release entry: debit 2200 25000, credit 1100 25000.
+        # 4. Shipping release entry: debit 2200 25000, credit 1102 25000.
+        # DG-356: with no open drawer, the release credits 1102 (Owner's Cash)
+        # rather than 1101 (Cash in Drawer).
         assert _entry_count(conn, "order_shipping_release", oid) == 1
         release_lines = _entry_lines(conn, "order_shipping_release", oid)
         assert release_lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
-        assert release_lines["1101"]["credit"] == 25000.0
+        assert release_lines["1102"]["credit"] == 25000.0
         _assert_balanced(release_lines)
 
         # 5. Re-sync must not duplicate any entries.

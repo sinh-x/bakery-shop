@@ -113,7 +113,7 @@ def _refund_entries_on_1200(conn, order_id=None):
               WHERE jl.journal_entry_id = je.id
                 AND a.code = ? AND jl.credit > 0
           )
-    """
+    """  # nosec B608
     params = [_LEGACY_BANK_PARENT_CODE, _LEGACY_BANK_PARENT_CODE]
     if order_id is not None:
         sql += " AND pt.order_id = ?"

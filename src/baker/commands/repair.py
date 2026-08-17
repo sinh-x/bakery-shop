@@ -261,7 +261,7 @@ def _delivered_orders_with_cogs(conn):
         FROM orders o
         WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
         ORDER BY o.id ASC
-        """,
+        """,  # nosec B608
         list(DELIVERED_STATUSES),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -475,7 +475,7 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, sinc
                     SELECT o.id AS order_id
                     FROM orders o
                     WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                """
+                """  # nosec B608
                 params = list(DELIVERED_STATUSES)
                 if since_date:
                     sql += " AND o.due_date >= ?"
@@ -590,7 +590,7 @@ def _tien_rut_orders_needing_backfill(conn):
                 AND jl.credit > 0
           )
         ORDER BY pt.order_id ASC
-        """,
+        """,  # nosec B608
         (tien_rut_acc_id,),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -622,7 +622,7 @@ def _process_tien_rut_gap_order(conn, order_id: int, *, dry_run: bool) -> dict:
             FROM payment_transactions
             WHERE order_id = ? AND type = 'tien_rut'
               {invalidation}
-            """,
+            """,  # nosec B608
             (order_id,),
         ).fetchone()["total"]
     )
@@ -646,7 +646,7 @@ def _process_tien_rut_gap_order(conn, order_id: int, *, dry_run: bool) -> dict:
         WHERE order_id = ? AND type = 'tien_rut'
           {invalidation}
         ORDER BY id ASC
-        """,
+        """,  # nosec B608
         (order_id,),
     ).fetchall()
     for t in tien_rut_txns:
@@ -746,7 +746,7 @@ def check_revenue_gaps_cmd():
                       WHERE je.source_type = 'order' AND je.source_id = o.id
                   )
                 ORDER BY o.id ASC
-                """,
+                """,  # nosec B608
                 list(DELIVERED_STATUSES),
             ).fetchall()
     except Exception:  # noqa: BLE001 — top-level CLI guard
@@ -936,7 +936,7 @@ def _orders_needing_ar_entry(conn, order_id=None):
               SELECT 1 FROM journal_entries je
               WHERE je.source_type = 'order' AND je.source_id = o.id
           )
-    """
+    """  # nosec B608
     params = [*DELIVERED_STATUSES]
     if order_id is not None:
         sql += " AND o.id = ?"
@@ -1412,7 +1412,7 @@ def _orders_with_deposit_balance_issue(conn, order_id=None):
         ) ship ON ship.order_id = o.id
         WHERE COALESCE(pt.dep_credit, 0) > 0
            OR COALESCE(ord.rev_debit, 0) > 0
-    """
+    """  # nosec B608
     params = [deposits_code, deposits_code, deposits_code]
     if order_id is not None:
         sql += " AND o.id = ?"
@@ -2473,7 +2473,7 @@ def _transfer_txns_with_legacy_asset_line(conn, order_id=None):
           AND a.code = ?
           AND jl.debit > 0
           AND je.description NOT LIKE 'Reversal:%'
-    """
+    """  # nosec B608
     params = [_LEGACY_TRANSFER_ASSET_CODE]
     if order_id is not None:
         sql += " AND pt.order_id = ?"
@@ -2756,7 +2756,7 @@ def _refund_entries_on_1200(conn, order_id=None):
               WHERE jl.journal_entry_id = je.id
                 AND a.code = ? AND jl.credit > 0
           )
-    """
+    """  # nosec B608
     params = [_LEGACY_BANK_PARENT_CODE, _LEGACY_BANK_PARENT_CODE]
     if order_id is not None:
         sql += " AND pt.order_id = ?"

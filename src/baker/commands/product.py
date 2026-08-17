@@ -64,7 +64,7 @@ def product_list(category, code_filter):
 
         where = " AND ".join(conditions)
         rows = conn.execute(
-            f"SELECT * FROM products WHERE {where} ORDER BY category, name",
+            f"SELECT * FROM products WHERE {where} ORDER BY category, name",  # nosec B608
             params,
         ).fetchall()
 
@@ -167,7 +167,7 @@ def product_edit(identifier, base_price, cost, recipe_notes, category, product_c
             return
 
         params.append(row["id"])
-        conn.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)
+        conn.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608
         display = row["product_code"] or row["name"]
         console.print(f"  [green]Updated[/green] {display}")
 

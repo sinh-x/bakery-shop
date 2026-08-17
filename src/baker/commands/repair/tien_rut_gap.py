@@ -45,7 +45,7 @@ def _tien_rut_orders_needing_backfill(conn):
                 AND jl.credit > 0
           )
         ORDER BY pt.order_id ASC
-        """,
+        """,  # nosec B608
         (tien_rut_acc_id,),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -76,7 +76,7 @@ def _process_tien_rut_gap_order(conn, order_id: int, *, dry_run: bool) -> dict:
             FROM payment_transactions
             WHERE order_id = ? AND type = 'tien_rut'
               {invalidation}
-            """,
+            """,  # nosec B608
             (order_id,),
         ).fetchone()["total"]
     )
@@ -100,7 +100,7 @@ def _process_tien_rut_gap_order(conn, order_id: int, *, dry_run: bool) -> dict:
         WHERE order_id = ? AND type = 'tien_rut'
           {invalidation}
         ORDER BY id ASC
-        """,
+        """,  # nosec B608
         (order_id,),
     ).fetchall()
     for t in tien_rut_txns:

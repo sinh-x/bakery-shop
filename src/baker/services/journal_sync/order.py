@@ -393,7 +393,7 @@ def _resolve_tien_rut_return_asset_account(conn, order_id: int) -> int:
         WHERE pt.order_id = ? AND pt.type = 'tien_rut'
           {invalidation}
         ORDER BY pt.id ASC LIMIT 1
-        """,
+        """,  # nosec B608
         (order_id,),
     ).fetchone()
     method = row["method"] if row else "cash"

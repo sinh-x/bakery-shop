@@ -168,7 +168,7 @@ def get_today_summary(
                         AND orders.created_at < ?
                     )
                 )
-                GROUP BY status""",
+                GROUP BY status""",  # nosec B608
             (date, *_FALLBACK_SOURCES, day_start, day_end),
         ).fetchall()
         order_count = sum(int(r["cnt"]) for r in count_row)

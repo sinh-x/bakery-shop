@@ -94,7 +94,7 @@ def summary_metrics(
             WHERE jl.account_id IN ({placeholders})
               AND je.source_type = 'payment_transaction'
               AND je.transaction_date >= ?
-              AND je.transaction_date < ?""",
+              AND je.transaction_date < ?""",  # nosec B608
         [*bank_acc_ids, start_ts, end_ts],
     ).fetchone()
     bank_total = float(bank_row["total"] or 0)

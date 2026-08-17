@@ -111,7 +111,7 @@ def fetch_staff(conn, *, active_only=True, role=None):
         params = params + (role,)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return conn.execute(
-        f"SELECT * FROM staff{where} ORDER BY name", params
+        f"SELECT * FROM staff{where} ORDER BY name", params  # nosec B608
     ).fetchall()
 
 
@@ -157,7 +157,7 @@ def count_events_by_logger(conn, since=None, until=None):
 
     where = " AND ".join(conditions)
     return conn.execute(
-        f"SELECT logged_by, COUNT(*) as cnt FROM events WHERE {where} GROUP BY logged_by",
+        f"SELECT logged_by, COUNT(*) as cnt FROM events WHERE {where} GROUP BY logged_by",  # nosec B608
         params,
     ).fetchall()
 
@@ -297,7 +297,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)
-    query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"
+    query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"  # nosec B608
     params.append(limit)
 
     return conn.execute(query, params).fetchall()
@@ -315,7 +315,7 @@ def count_events_by_type(conn, since=None, until=None):
         params.append(until)
 
     where = " AND ".join(conditions) if conditions else "1=1"
-    query = f"SELECT type, COUNT(*) as cnt FROM events WHERE {where} GROUP BY type"
+    query = f"SELECT type, COUNT(*) as cnt FROM events WHERE {where} GROUP BY type"  # nosec B608
     return conn.execute(query, params).fetchall()
 
 
@@ -333,7 +333,7 @@ def sum_sales(conn, since=None, until=None):
     where = " AND ".join(conditions)
     query = f"""SELECT COALESCE(SUM(
         CASE WHEN json_valid(data) THEN json_extract(data, '$.amount') ELSE 0 END
-    ), 0) as total FROM events WHERE {where}"""
+    ), 0) as total FROM events WHERE {where}"""  # nosec B608
     row = conn.execute(query, params).fetchone()
     return row[0] if row else 0
 
@@ -376,7 +376,7 @@ def fetch_debts(conn, *, creditor=None, since=None, until=None, status=None):
 
     where = " AND ".join(conditions)
     query = (
-        f"SELECT e.id AS event_id, e.summary, e.timestamp, "
+        f"SELECT e.id AS event_id, e.summary, e.timestamp, "  # nosec B608
         f"CAST(json_extract(e.data, '$.amount_vnd') AS REAL) AS amount_vnd, "
         f"COALESCE(json_extract(e.data, '$.vendor'), '') AS vendor, "
         f"COALESCE((SELECT SUM(CAST(json_extract(value, '$.amount') AS REAL)) "

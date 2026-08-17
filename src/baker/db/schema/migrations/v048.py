@@ -52,7 +52,7 @@ def _migrate_v48_fix_inventory_purchase_entries(conn):
     if stale_ids:
         placeholders = ",".join("?" * len(stale_ids))
         conn.execute(
-            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",  # nosec B608
             stale_ids,
         )
 

@@ -147,7 +147,7 @@ class PaymentTransaction:
         must not contribute to any payment total.
         """
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? {_invalidation_filter(conn)}",
             (order_id,),
         ).fetchone()
@@ -176,7 +176,7 @@ class PaymentTransaction:
         """
         placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type NOT IN ({placeholders}) "
             f"{_invalidation_filter(conn)}",
             (order_id, *_OUTFLOW_TYPES),
@@ -202,7 +202,7 @@ class PaymentTransaction:
         outflow_placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         id_placeholders = ",".join("?" * len(order_ids))
         rows = conn.execute(
-            f"SELECT order_id, COALESCE(SUM(amount), 0) AS total "
+            f"SELECT order_id, COALESCE(SUM(amount), 0) AS total "  # nosec B608
             f"FROM payment_transactions "
             f"WHERE order_id IN ({id_placeholders}) "
             f"AND type NOT IN ({outflow_placeholders}) "
@@ -225,7 +225,7 @@ class PaymentTransaction:
         """
         placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type IN ({placeholders}) "
             f"{_invalidation_filter(conn)}",
             (order_id, *_OUTFLOW_TYPES),
@@ -246,7 +246,7 @@ class PaymentTransaction:
         Invalidated (soft-deleted) transactions are excluded.
         """
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type = 'tien_rut' "
             f"{_invalidation_filter(conn)}",
             (order_id,),

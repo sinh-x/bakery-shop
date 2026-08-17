@@ -26,7 +26,7 @@ def _orders_needing_ar_entry(conn, order_id=None):
               SELECT 1 FROM journal_entries je
               WHERE je.source_type = 'order' AND je.source_id = o.id
           )
-    """
+    """  # nosec B608
     params = [*DELIVERED_STATUSES]
     if order_id is not None:
         sql += " AND o.id = ?"

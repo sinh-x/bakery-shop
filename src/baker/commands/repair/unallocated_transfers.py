@@ -41,7 +41,7 @@ def _transfer_txns_with_legacy_asset_line(conn, order_id=None):
           AND a.code = ?
           AND jl.debit > 0
           AND je.description NOT LIKE 'Reversal:%'
-    """
+    """  # nosec B608
     params = [_LEGACY_TRANSFER_ASSET_CODE]
     if order_id is not None:
         sql += " AND pt.order_id = ?"

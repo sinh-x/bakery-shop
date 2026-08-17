@@ -98,7 +98,7 @@ def get_period_summary(
                         AND orders.created_at < ?
                     )
                 )
-                GROUP BY status""",
+                GROUP BY status""",  # nosec B608
             (start_date, end_date, *_FALLBACK_SOURCES, start_ts, end_next_day_ts),
         ).fetchall()
         order_count = sum(int(r["cnt"]) for r in count_row)

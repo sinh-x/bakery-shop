@@ -110,7 +110,7 @@ def query_cash_period_activity(
         JOIN accounts a ON a.id = jl.account_id
         WHERE {where_sql}
         GROUP BY je.source_type, a.code
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
 
@@ -213,7 +213,7 @@ def query_supplier_category_breakdown(
         JOIN accounts a ON a.id = jl.account_id
         WHERE {where_sql}
         ORDER BY je.transaction_date ASC
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
 

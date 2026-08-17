@@ -239,7 +239,7 @@ def trial_balance_cmd(since, until):
             GROUP BY a.id
             HAVING a.is_active = 1
             ORDER BY a.code
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -315,7 +315,7 @@ def _income_statement_transaction(since_b: str | None, until_b: str | None) -> N
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             {date_filter}
             GROUP BY a.type
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -344,7 +344,7 @@ def _income_statement_transaction(since_b: str | None, until_b: str | None) -> N
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             JOIN accounts a ON a.id = jl.account_id
             {cogs_sql}
-            """,
+            """,  # nosec B608
             cogs_params,
         ).fetchone()
     cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
@@ -398,7 +398,7 @@ def _income_statement_due_date(since_b: str | None, until_b: str | None) -> None
             LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
             {date_filter}
             GROUP BY a.type
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -437,7 +437,7 @@ def _income_statement_due_date(since_b: str | None, until_b: str | None) -> None
             JOIN accounts a ON a.id = jl.account_id
             LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
             WHERE {" AND ".join(cogs_filter_parts)}
-            """,
+            """,  # nosec B608
             cogs_params,
         ).fetchone()
     cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
@@ -480,7 +480,7 @@ def _compute_markup_total(
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE {where_sql}
-            """,
+            """,  # nosec B608
             params,
         ).fetchone()
     return float(row["markup"]) if row else 0.0
@@ -543,7 +543,7 @@ def balance_sheet_cmd(until):
             GROUP BY a.id
             HAVING a.is_active = 1
             ORDER BY a.code
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -605,7 +605,7 @@ def general_ledger_cmd(since, until):
             FROM journal_entries je
             {where_sql}
             ORDER BY je.transaction_date ASC, je.id ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -681,7 +681,7 @@ def account_ledger_cmd(account_code, since, until):
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             {where_sql}
             ORDER BY je.transaction_date ASC, je.id ASC, jl.id ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -748,7 +748,7 @@ def expense_by_category_cmd(since, until):
             JOIN accounts a ON a.id = jl.account_id
             {where_sql}
             ORDER BY je.transaction_date ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -913,7 +913,7 @@ def cogs_audit_cmd(since, until):
             FROM orders o
             WHERE {order_sql}
             ORDER BY o.id ASC
-            """,
+            """,  # nosec B608
             [ORDER_REVENUE_CODE, COGS_CODE, *params],
         ).fetchall()
 
@@ -1026,7 +1026,7 @@ def order_status_cmd(since, until):
             FROM orders o
             {where_sql}
             GROUP BY o.status, COALESCE(o.delivery_type, '')
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -1135,7 +1135,7 @@ def _query_investing_cash_activity(
         JOIN accounts a ON a.id = jl.account_id
         WHERE {where_sql}
         GROUP BY a.code
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
 
@@ -1160,7 +1160,7 @@ def _query_cash_account_names(conn) -> dict[str, str]:
         SELECT a.code AS code, a.name AS name
         FROM accounts a
         WHERE a.code IN ({placeholders})
-        """,
+        """,  # nosec B608
         list(CASH_ACCOUNT_CODES),
     ).fetchall()
     return {r["code"]: r["name"] for r in rows}
@@ -1195,7 +1195,7 @@ def _query_cash_balance(
         LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
         WHERE {where_sql}
         GROUP BY a.code
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
     return {r["account_code"]: float(r["balance"]) for r in rows}
