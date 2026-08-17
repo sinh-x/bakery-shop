@@ -159,6 +159,62 @@ Files currently triggering the ≥3 rule (live audit, 2026-08-17):
 - App-layer providers must NOT be consumed by data-layer providers — data-layer must remain pure and independent of UI concerns.
 - Both directories share the same Riverpod `ProviderContainer` — no directory creates a separate scope.
 
+### Live Findings (audit 2026-08-17)
+
+**Provider counts by location:**
+| Location | Files |
+|----------|-------|
+| `lib/providers/` | 35 |
+| `lib/data/providers/` | 15 |
+| `lib/features/**/providers/` | 3 |
+
+**Cross-dependency violation (1 file, 2 imports):**
+
+`app/lib/data/providers/reconciliation_notifier.dart` imports two app-layer providers, violating the data-layer↔app-layer boundary above:
+
+| Line | Import |
+|------|--------|
+| 4 | `import '../../providers/events_provider.dart';` |
+| 5 | `import '../../providers/products_provider.dart';` |
+
+This is the sole confirmed data-layer→app-layer cross-dependency in the tree. Reproduce:
+
+```bash
+grep -nE "import.*'../../providers/(events_provider|products_provider)\.dart'" \
+  app/lib/data/providers/reconciliation_notifier.dart
+# → 4:import '../../providers/events_provider.dart';
+# → 5:import '../../providers/products_provider.dart';
+```
+
+**Misplaced providers — reproducible classification rule:**
+
+"21 misplaced" (stated in the prior requirements baseline) was not objectively reproducible: the §3 decision table permits app-layer providers to consume data-layer services, so service-backed providers in `lib/providers/` are not misplaced by that fact alone. The reproducible rule below counts only clear data-layer↔app-layer violations and does not reproduce 21.
+
+**Reproducible rule:** A `lib/providers/` file is *misplaced* iff it is **pure service-backed** (references a `Service` or `Repository` and exposes zero UI-controller signals: no `TabController`/`ScrollController`/`TextEditingController`/`AnimationController`/`FocusNode`/`GlobalKey` and no UI-state fields). Such a file belongs in `lib/data/providers/`.
+
+Applying this rule to the live tree:
+
+| Misplaced file (lib/providers/ → lib/data/providers/) | Service/Repository ref | UI-controller signals |
+|--------------------------------------------------------|-----------------------|------------------------|
+| `printer_provider.dart` | yes | none |
+| `events_provider.dart` | yes | none |
+| `photo_upload_provider.dart` | yes | none |
+| `cash_drawer_provider.dart` | yes | none |
+
+**Reproducible misplaced-provider count: 4.**
+
+Non-provider helper files in `lib/data/providers/` (`reconciliation_math.dart`, `reconciliation_state.dart`) are excluded — they are not providers and therefore not "misplaced". No `lib/data/providers/` file exposes UI-state signals.
+
+Reproduce:
+
+```bash
+find app/lib/providers        -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 35
+find app/lib/data/providers  -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 15
+find app/lib/features        -type f -path '*/providers/*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l  # → 3
+```
+
+The misplaced-provider classification is intentionally narrower than the prior "21" figure: it counts only clear, decision-table-supported data-layer↔app-layer violations (see §11 risk note). Downstream relocation is tracked by DG-417.
+
 ---
 
 ## §4 State Management
@@ -211,13 +267,50 @@ final counterProvider = NotifierProvider<CounterNotifier, int>(CounterNotifier.n
 
 In all three cases, the `setState` scope must be confined to the single widget's local animation/text state. Business logic state must still use Riverpod.
 
+### Live Status (audit 2026-08-17)
+
+| Metric | Count |
+|--------|-------|
+| Files containing `setState(` | 93 |
+| Total `setState()` call sites | 423 |
+| Files using `setState(` inside `ConsumerState`/`ConsumerStatefulWidget` (prohibited-context subset) | 79 |
+| Of those 79, files whose `setState` body contains business-logic signals (counter / list / bool / selected / expanded / filter / isLoading) — the **prohibited** subset | 66 |
+
+**Prohibited vs acceptable distinction (live):**
+
+- **Prohibited (66 files):** `setState` inside `ConsumerState`/`ConsumerStatefulWidget` that mutates business-logic state (counters, lists, booleans, selection, expansion, filter, loading flags). These must migrate to Riverpod `Notifier`/`AsyncNotifier`. Tracked by DG-404.
+- **Acceptable (13 of the 79 prohibited-context files):** `setState` confined to `AnimationController` lifecycle, `TextEditingController` listener callbacks, or third-party widget integration (`GoogleMap`, `WebView`, etc.) per the rule above.
+- **Outside `ConsumerState`/`ConsumerStatefulWidget` (14 files of the 93):** `setState` in plain `StatefulWidget`s not consumed via Riverpod — acceptable by the rule above, scoped to local widget state.
+
+Reproduce:
+
+```bash
+# Files using setState
+grep -rlE "setState\(" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 93
+
+# Total setState call sites
+grep -rE "setState\(" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 423
+
+# Files using setState inside ConsumerState/ConsumerStatefulWidget
+grep -rlE "ConsumerState|ConsumerStatefulWidget" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' \
+  | xargs grep -lE "setState\(" 2>/dev/null | wc -l
+# → 79
+```
+
+The 66-file prohibited subset is a heuristic lower bound: a `setState` body was flagged when it references any of the business-logic signals above. Final per-file classification still requires manual review against the acceptable-use rule (animation/text/third-party), tracked by DG-404.
+
 ---
 
 ## §5 Label Organization
 
 ### Domain Split
 
-The monolithic `lib/shared/widgets/vietnamese_labels.dart` (790 lines, 511 entries, 30+ domain sections) must be split into domain files under `lib/shared/labels/`.
+The monolithic `lib/shared/widgets/vietnamese_labels.dart` (1,686 lines, 30+ domain sections) is being split into domain files under `lib/shared/labels/`. Migration is **incomplete**.
 
 | File | Sections Migrated | Example Labels |
 |------|-------------------|----------------|
@@ -246,6 +339,27 @@ import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 // Usage: OrdersLabels.createOrder, SharedLabels.cancel
 ```
+
+### Migration Status (audit 2026-08-17)
+
+- **Remaining `vietnamese_labels` import statements: 60** (incomplete migration).
+- Files referencing `vietnamese_labels` anywhere: 67 (includes the 7 `lib/shared/labels/*.dart` re-export files that reference it internally).
+
+Reproduce:
+
+```bash
+# Strict import-line count (canonical metric)
+grep -rE "import.*vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 60
+
+# Files referencing vietnamese_labels anywhere (broader)
+grep -rlE "vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
+  | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
+# → 67
+```
+
+The strict import-line count (60) is the canonical "remaining imports" metric per FR7. New labels must continue to go in domain files — never add to the monolithic `VN` class. Downstream migration is tracked by DG-418.
 
 ---
 
