@@ -464,6 +464,142 @@ void main() {
   });
 
   test(
+    'buildSubmitLines emits one line per chip when base price + two chips '
+    'collide at the same price (DG-413 CQ-1 regression)',
+    () {
+      // Backend payload: a base-price option (price_chip_id=null) plus two
+      // distinct chip options (price_chip_id=11 and 12) all at the same
+      // normalized price 130000. The merge layer must NOT collapse the two
+      // chips into one (which would null out priceChipId and collide with
+      // the base bucket on submit).
+      final product = ReconciliationDraftProduct.fromJson({
+        'product_id': 83,
+        'name': 'Bánh kem',
+        'category': 'banh_kem',
+        'expected_qty': 10,
+        'base_price': 130000,
+        'price_chips': [
+          {'id': 11, 'label': 'chip 130a', 'price': 130000, 'position': 1},
+          {'id': 12, 'label': 'chip 130b', 'price': 130000, 'position': 2},
+        ],
+        'options': [
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'chip_label': 'Gia goc',
+            'source_chip_ids': <int>[],
+            'source_chip_labels': <String>['Gia goc'],
+            'expected_qty': 4,
+          },
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'price_chip_id': 11,
+            'chip_label': 'chip 130a',
+            'source_chip_ids': [11],
+            'source_chip_labels': ['chip 130a'],
+            'expected_qty': 3,
+          },
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'price_chip_id': 12,
+            'chip_label': 'chip 130b',
+            'source_chip_ids': [12],
+            'source_chip_labels': ['chip 130b'],
+            'expected_qty': 3,
+          },
+        ],
+      });
+
+      // Three distinct options must survive the merge: base + chipA + chipB.
+      expect(product.options.length, 3);
+      final base = product.options.firstWhere(
+        (o) => o.keyDiscriminator == 'base',
+      );
+      final chipA = product.options.firstWhere(
+        (o) => o.keyDiscriminator == 'c11',
+      );
+      final chipB = product.options.firstWhere(
+        (o) => o.keyDiscriminator == 'c12',
+      );
+      expect(base.priceChipId, isNull);
+      expect(chipA.priceChipId, 11);
+      expect(chipB.priceChipId, 12);
+
+      // buildSubmitLines must emit three lines with distinct price_chip_id
+      // values (null for base, 11 for chipA, 12 for chipB) — not a single
+      // null-chip line that would collide with the base bucket.
+      final state = ReconciliationState(
+        draft: ReconciliationDraft(
+          date: '2026-05-04',
+          products: [product],
+        ),
+        countedQtyByOption: const <String, int>{
+          '83:130000#base': 4,
+          '83:130000#c11': 2,
+          '83:130000#c12': 3,
+        },
+        wasteQtyByOption: const <String, int>{},
+        wasteReasonByOption: const <String, String>{},
+        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+      );
+
+      final lines = buildSubmitLines(state);
+      expect(lines.length, 3);
+      final chipIds = lines.map((line) => line.priceChipId).toSet();
+      expect(chipIds, <int?>{null, 11, 12});
+      expect(lines.where((l) => l.priceChipId == null).length, 1);
+      expect(lines.where((l) => l.priceChipId == 11).length, 1);
+      expect(lines.where((l) => l.priceChipId == 12).length, 1);
+    },
+  );
+
+  test(
+    'normalizeReconciliationOptionKey throws on ambiguous product id '
+    '(DG-413 CQ-2 regression)',
+    () {
+      final state = ReconciliationState(
+        countedQtyByOption: const <String, int>{
+          '83:130000#base': 4,
+          '83:130000#c11': 2,
+          '83:130000#c12': 3,
+        },
+        wasteQtyByOption: const <String, int>{},
+        wasteReasonByOption: const <String, String>{},
+        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+      );
+
+      // Two keys share the '83:' prefix — int input is ambiguous and must
+      // fail loudly instead of fabricating '83:0'.
+      expect(
+        () => normalizeReconciliationOptionKey(83, state),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+
+  test(
+    'normalizeReconciliationOptionKey throws on unknown product id '
+    '(DG-413 CQ-2 regression)',
+    () {
+      final state = ReconciliationState(
+        countedQtyByOption: const <String, int>{'1:12000': 2},
+        wasteQtyByOption: const <String, int>{},
+        wasteReasonByOption: const <String, String>{},
+        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+      );
+
+      // No key matches the '99:' prefix — must throw instead of returning
+      // the fabricated '99:0' dangling key.
+      expect(
+        () => normalizeReconciliationOptionKey(99, state),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+
+  test(
     'buildSubmitLines includes stocked chip id and skips zero-stock options',
     () {
       final state = ReconciliationState(

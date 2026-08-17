@@ -203,7 +203,22 @@ String normalizeReconciliationOptionKey(
     if (matched.length == 1) {
       return matched.first;
     }
-    return reconciliationOptionKey(optionKeyOrProductId, 0);
+    // Ambiguous int input: more than one option key shares the product id
+    // prefix (e.g. a colliding product with base + chip discriminators).
+    // Fabricating a `productId:0` key would silently write to a dangling
+    // bucket and corrupt state. Fail loudly instead (DG-413 CQ-2).
+    if (matched.isEmpty) {
+      throw StateError(
+        'normalizeReconciliationOptionKey: no option key found for product id '
+        '$optionKeyOrProductId. Expected at least one key with prefix '
+        '"$prefix".',
+      );
+    }
+    throw StateError(
+      'normalizeReconciliationOptionKey: ambiguous product id '
+      '$optionKeyOrProductId matched ${matched.length} option keys '
+      '(${matched.join(', ')}). Pass a full option key string instead.',
+    );
   }
   throw ArgumentError('Invalid option key: $optionKeyOrProductId');
 }

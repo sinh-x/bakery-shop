@@ -481,6 +481,11 @@ class _OptionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final priceLineStyle = Theme.of(context).textTheme.titleSmall;
+    // When a base-price option collides with a chip option at the same
+    // normalized price, both headers render the same `Giá <price> - Tồn dự
+    // kiến: N` line. Surface a "Giá gốc" badge when this is the base option
+    // so the two lines stay visually unambiguous (DG-413 UI-1).
+    final isBaseCollisionOption = option.keyDiscriminator == 'base';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -494,6 +499,13 @@ class _OptionHeader extends StatelessWidget {
               fontSize: (priceLineStyle.fontSize ?? 14) + 1,
             ),
           ),
+          if (isBaseCollisionOption)
+            Text(
+              VN.giaGoc,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           if (visibleChipLabels.isNotEmpty)
             Text(
               '${VN.nhanChip}: $visibleChipLabels',

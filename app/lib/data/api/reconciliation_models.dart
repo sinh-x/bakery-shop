@@ -207,11 +207,15 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
     }
 
     // Collision case: base + chip at the same price. Keep them separate with
-    // discriminators so option keys distinguish them.
+    // discriminators so option keys distinguish them. When the chip group
+    // contains more than one distinct chip id, split per chip so each
+    // submit line carries its own price_chip_id — collapsing them would
+    // null out priceChipId and collide with the base bucket (DG-413 CQ-1).
     const baseDiscriminator = 'base';
-    final chipDiscriminator = _chipGroupDiscriminator(chipOptions);
     result.add(_withDiscriminator(_mergeGroup(baseOptions), baseDiscriminator));
-    result.add(_withDiscriminator(_mergeGroup(chipOptions), chipDiscriminator));
+    for (final chipOption in _splitChipOptionsByChipId(chipOptions)) {
+      result.add(chipOption);
+    }
   }
   return result;
 }
@@ -220,13 +224,50 @@ bool _isBasePriceOption(ReconciliationDraftOption option) {
   return option.priceChipId == null && option.sourceChipIds.isEmpty;
 }
 
-String _chipGroupDiscriminator(List<ReconciliationDraftOption> chipOptions) {
-  // Use a single chip id when the group resolves to exactly one chip id, so
-  // the discriminator is stable and meaningful. Fall back to 'chip' for
-  // multi-chip merges where no single id applies.
-  final merged = _mergeGroup(chipOptions);
-  final singleId = _singleChipId(merged);
-  return singleId == null ? 'chip' : 'c$singleId';
+/// Splits chip options colliding with a base-price option into one merged
+/// option per distinct chip id. Each emitted option preserves its
+/// `priceChipId` and gets a `c<chipId>` discriminator so the submit line
+/// targets the backend's `(product_id, chip_id)` bucket instead of falling
+/// back to the base bucket (DG-413 CQ-1).
+///
+/// When all chip options resolve to a single chip id, this is equivalent to
+/// the previous single-group behavior.
+List<ReconciliationDraftOption> _splitChipOptionsByChipId(
+  List<ReconciliationDraftOption> chipOptions,
+) {
+  // Group by the resolved chip id. Options whose chip id cannot be resolved
+  // land in a single 'unknown' bucket merged together (defensive — the
+  // backend payload always sets price_chip_id for chip options).
+  final byChipId = <int, List<ReconciliationDraftOption>>{};
+  final order = <int>[];
+  final unknown = <ReconciliationDraftOption>[];
+  for (final option in chipOptions) {
+    final chipId = _singleChipId(option);
+    if (chipId == null) {
+      unknown.add(option);
+      continue;
+    }
+    byChipId.putIfAbsent(chipId, () {
+      order.add(chipId);
+      return <ReconciliationDraftOption>[];
+    }).add(option);
+  }
+
+  final result = <ReconciliationDraftOption>[];
+  for (final chipId in order) {
+    final group = byChipId[chipId]!;
+    final merged = _mergeGroup(group);
+    result.add(
+      _withDiscriminator(merged, 'c$chipId'),
+    );
+  }
+  if (unknown.isNotEmpty) {
+    final merged = _mergeGroup(unknown);
+    final singleId = _singleChipId(merged);
+    final discriminator = singleId == null ? 'chip' : 'c$singleId';
+    result.add(_withDiscriminator(merged, discriminator));
+  }
+  return result;
 }
 
 ReconciliationDraftOption _withDiscriminator(

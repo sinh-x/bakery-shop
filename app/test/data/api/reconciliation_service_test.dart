@@ -26,6 +26,7 @@ void main() {
           {
             'product_id': 10,
             'normalized_price': 130000,
+            'price_chip_id': 11,
             'chip_label': 'chip 130',
             'source_chip_ids': [11],
             'source_chip_labels': ['chip 130'],
@@ -48,7 +49,7 @@ void main() {
       expect(base.keyDiscriminator, 'base');
       expect(chip.normalizedPrice, 130000);
       expect(chip.expectedQty, 3);
-      expect(chip.priceChipId, isNull);
+      expect(chip.priceChipId, 11);
       expect(chip.sourceChipIds, [11]);
       expect(chip.keyDiscriminator, 'c11');
     });
