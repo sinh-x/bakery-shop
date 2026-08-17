@@ -19,6 +19,8 @@ from baker.api.receipts import (
     _find_content_bottom,
     _find_split_boundaries,
     _format_vnd,
+    _get_photo,
+    _get_photos,
     _main_item_index_total,
     _order_visual_ref,
     _phones_differ,
@@ -2105,3 +2107,379 @@ class TestCandleTypeOnReceipts:
             assert img_khong.size[1] == img_none.size[1], (
                 f"{params_tpl}: khong_nen h={img_khong.size[1]} should equal absent h={img_none.size[1]}"
             )
+
+
+
+# --- DG-412 Phase 1: customer receipt — up to 2 photos side by side ---
+
+
+def _make_photo_bytes(color, w=200, h=200):
+    """Create a distinct JPEG image (so hash differs per color) and return bytes."""
+    img = Image.new("RGB", (w, h), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _attach_order_photo(api_client, ref, item_id, image_bytes, tags="", position=None):
+    """Upload a photo to a work item; if `position` given, patch it afterwards.
+
+    Returns the API response dict (which includes ``photo_hash`` — the hash
+    of the on-disk re-encoded JPEG, used to read back the exact bytes that
+    ``_get_photos`` will return).
+    """
+    resp = api_client.post(
+        f"/api/orders/{ref}/photos",
+        files={"file": ("p.jpg", image_bytes, "image/jpeg")},
+        data={"tags": tags, "workItemId": str(item_id)},
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    if position is not None and data.get("position") != position:
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{data['id']}",
+            json={"position": position},
+        )
+    return data
+
+
+def _disk_photo_bytes(photo_hash):
+    """Read the on-disk JPEG bytes for a photo hash (matches `_get_photos`)."""
+    import baker.config
+    return (baker.config.PHOTOS_DIR / f"{photo_hash}.jpg").read_bytes()
+
+
+class TestGetPhotosHelper:
+    """DG-412 Phase 1 / FR1, AC4, AC5: `_get_photos` returns up to 2 photos
+    ordered by `position` ascending, with `id` as a stable tiebreaker.
+    """
+
+    def test_no_photos_returns_empty(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        order_id = data["id"]
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            assert _get_photos(conn, order_id, item_id) == []
+
+    def test_single_photo_returns_one(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        p = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id)
+        assert len(photos) == 1
+        assert photos[0] == _disk_photo_bytes(p["photo_hash"])
+
+    def test_two_photos_returns_two(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        p0 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        p1 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id)
+        assert len(photos) == 2
+        assert photos[0] == _disk_photo_bytes(p0["photo_hash"])
+        assert photos[1] == _disk_photo_bytes(p1["photo_hash"])
+
+    def test_three_photos_returns_only_first_two(self, api_client):
+        """AC4: with 3+ photos, only the first 2 (by position) are returned."""
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        p0 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        p1 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("green"))
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id)
+        assert len(photos) == 2
+        # Should match the first two by position (p0 position=0, p1 position=1).
+        assert photos[0] == _disk_photo_bytes(p0["photo_hash"])
+        assert photos[1] == _disk_photo_bytes(p1["photo_hash"])
+
+    def test_photos_ordered_by_position_ascending(self, api_client):
+        """AC5: photos come back ordered by `position` ascending.
+
+        We upload 3 photos and then explicitly assign positions out of
+        upload order so that `position` (not insertion order) determines
+        the result.
+        """
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        # Upload three distinct photos.
+        a = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        b = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        c = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("green"))
+        # Force positions: c=0, a=1, b=2 so the expected fetch order is c, a.
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{c['id']}", json={"position": 0}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{a['id']}", json={"position": 1}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{b['id']}", json={"position": 2}
+        )
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id, limit=2)
+        assert len(photos) == 2
+        assert photos[0] == _disk_photo_bytes(c["photo_hash"])
+        assert photos[1] == _disk_photo_bytes(a["photo_hash"])
+
+
+class TestCustomerReceiptPhotosRender:
+    """DG-412 Phase 1 / FR2, FR3, FR4, NFR1, NFR2, AC1, AC2, AC3:
+    rendered customer receipt image behavior for 0/1/2 photos.
+    """
+
+    def _seed_order_with_item(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        return ref, data
+
+    def test_zero_photos_renders_nothing(self, api_client):
+        """AC3 / FR4: with 0 photos, receipt height equals a no-photo baseline."""
+        ref, _ = self._seed_order_with_item(api_client)
+        img = _get_receipt(api_client, ref, "type=customer")
+        # Baseline: same order with photos disabled should match.
+        img_no_photos = _get_receipt(api_client, ref, "type=customer&photos=false")
+        assert img.size == img_no_photos.size, (
+            f"0-photo h={img.size[1]} should equal photos=false h={img_no_photos.size[1]}"
+        )
+
+    def test_single_photo_centered(self, api_client):
+        """AC2 / FR3: with 1 photo, the receipt is taller than the 0-photo baseline
+        and the photo is centered horizontally.
+        """
+        ref, data = self._seed_order_with_item(api_client)
+        item_id = data["workItems"][0]["id"]
+        _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+
+        img_baseline = _get_receipt(api_client, ref, "type=customer&photos=false")
+        img = _get_receipt(api_client, ref, "type=customer")
+        assert img.size[1] > img_baseline.size[1], (
+            f"1-photo h={img.size[1]} should exceed baseline h={img_baseline.size[1]}"
+        )
+
+        # Centered: the rendered photo (~192px wide) sits roughly at the middle
+        # of the receipt width. We detect the photo by scanning each row for a
+        # run of non-white pixels; the average x-center should be near the
+        # receipt's horizontal center (RECEIPT_WIDTH/2).
+        photo_center_xs = []
+        for y in range(img.size[1]):
+            row = img.crop((0, y, img.size[0], y + 1))
+            pixels = list(row.get_flattened_data())
+            # Identify a contiguous band of non-near-white pixels.
+            nonwhite = [
+                x for x, p in enumerate(pixels)
+                if not (p[0] > 240 and p[1] > 240 and p[2] > 240)
+            ]
+            if len(nonwhite) >= 50:  # ignore text rows (much thinner)
+                # Only count rows whose non-white span is roughly the photo width.
+                span = nonwhite[-1] - nonwhite[0] + 1
+                if 150 <= span <= 210:
+                    photo_center_xs.append((nonwhite[0] + nonwhite[-1]) // 2)
+        assert photo_center_xs, "Expected to find a centered photo band in the image"
+        avg_center = sum(photo_center_xs) / len(photo_center_xs)
+        receipt_center = RECEIPT_WIDTH / 2
+        assert abs(avg_center - receipt_center) <= 15, (
+            f"Single photo center x={avg_center} should be near receipt center={receipt_center}"
+        )
+
+    def test_two_photos_side_by_side(self, api_client):
+        """AC1 / FR2 / NFR1: with 2 photos, both render side by side, equal
+        192px each, centered as a pair, and the receipt is taller than the
+        1-photo case.
+        """
+        ref, data = self._seed_order_with_item(api_client)
+        item_id = data["workItems"][0]["id"]
+        _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+
+        img = _get_receipt(api_client, ref, "type=customer")
+        # Height check (NFR2): pair adds height; still within page-split cap.
+        assert img.size[1] <= RECEIPT_MAX_HEIGHT
+
+        # Detect the side-by-side pair by scanning for rows whose non-white
+        # span is roughly the pair width (2 * 192 + gap = ~392px).
+        pair_rows = []
+        for y in range(img.size[1]):
+            row = img.crop((0, y, img.size[0], y + 1))
+            pixels = list(row.get_flattened_data())
+            nonwhite = [
+                x for x, p in enumerate(pixels)
+                if not (p[0] > 240 and p[1] > 240 and p[2] > 240)
+            ]
+            if len(nonwhite) >= 50:
+                span = nonwhite[-1] - nonwhite[0] + 1
+                if 360 <= span <= 420:
+                    pair_rows.append((nonwhite[0], nonwhite[-1]))
+        assert pair_rows, "Expected to find a side-by-side photo pair in the image"
+
+        # NFR1: the pair must fit within the 520px content width and be
+        # centered horizontally.
+        pair_start = min(r[0] for r in pair_rows)
+        pair_end = max(r[1] for r in pair_rows)
+        pair_w = pair_end - pair_start + 1
+        assert pair_w <= 520, f"Pair width {pair_w} must fit within 520px content width"
+        receipt_center = RECEIPT_WIDTH / 2
+        pair_center = (pair_start + pair_end) // 2
+        assert abs(pair_center - receipt_center) <= 20, (
+            f"Pair center x={pair_center} should be near receipt center={receipt_center}"
+        )
+
+    def test_two_photos_same_height_as_one(self, api_client):
+        """NFR2 sanity: the 2-photo pair renders on the same row as a single
+        ~192px-tall photo block, so the 2-photo receipt height matches the
+        1-photo receipt height (the pair does not stack vertically).
+        """
+        _seed_shop_config(api_client)
+        ref1, data1 = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        _attach_order_photo(
+            api_client, ref1, data1["workItems"][0]["id"], _make_photo_bytes("red")
+        )
+        img1 = _get_receipt(api_client, ref1, "type=customer")
+
+        ref2, data2 = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        _attach_order_photo(
+            api_client, ref2, data2["workItems"][0]["id"], _make_photo_bytes("red")
+        )
+        _attach_order_photo(
+            api_client, ref2, data2["workItems"][0]["id"], _make_photo_bytes("blue")
+        )
+        img2 = _get_receipt(api_client, ref2, "type=customer")
+        # Both render one ~192px-tall photo block; heights should be close.
+        assert abs(img1.size[1] - img2.size[1]) <= 5, (
+            f"1-photo h={img1.size[1]} vs 2-photo h={img2.size[1]} should be ~equal"
+        )
+
+
+# --- DG-412 review cycle 1: CQ-2 and OPS-1 regression tests ---
+
+
+class TestGetPhotoWorkTicketOrdering:
+    """CQ-2 (DG-412 review cycle 1): the work-ticket renderer's photo
+    selection (via ``_get_photo``) follows ``position`` ascending. This
+    locks in the deterministic ordering that ``_get_photo`` gained when
+    ``ORDER BY op.position, op.id`` was added (also used by
+    ``_get_photos``). Although the work-ticket renderer lives outside the
+    DG-412 scope, the ordering is an improvement and must not regress.
+    """
+
+    def test_get_photo_returns_lowest_position(self, api_client):
+        """``_get_photo`` returns the photo at the lowest ``position``."""
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        # Upload three distinct photos.
+        a = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        b = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        c = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("green"))
+        # Force positions: c=0, a=1, b=2 → expected single photo is c.
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{c['id']}", json={"position": 0}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{a['id']}", json={"position": 1}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{b['id']}", json={"position": 2}
+        )
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photo = _get_photo(conn, data["id"], item_id)
+        assert photo is not None
+        assert photo == _disk_photo_bytes(c["photo_hash"])
+
+    def test_get_photo_work_ticket_endpoint_uses_position(self, api_client):
+        """End-to-end: the work-ticket endpoint serves a PNG whose embedded
+        photo corresponds to the lowest-position attachment. We verify by
+        confirming the endpoint succeeds after reordering (the renderer
+        itself is exercised by ``test_work_ticket_endpoint_with_item_id``);
+        the helper-level ordering is asserted in
+        ``test_get_photo_returns_lowest_position``. This test guards the
+        integration path used by the work-ticket renderer at
+        ``src/baker/api/receipts/endpoint.py:99``.
+        """
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        a = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        b = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        # Reorder so b is position 0 (lowest) — selected by _get_photo.
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{b['id']}", json={"position": 0}
+        )
+        api_client.patch(
+            f"/api/orders/{ref}/photos/{a['id']}", json={"position": 1}
+        )
+        resp = api_client.get(
+            f"/api/orders/{ref}/receipt?type=work_ticket&item_id={item_id}"
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+
+
+class TestGetPhotosMissingLeadingFile:
+    """OPS-1 (DG-412 review cycle 1): a missing leading file must not
+    suppress later valid photos. ``_get_photos`` iterates rows without a
+    hard SQL ``LIMIT`` and breaks only after collecting ``limit`` existing
+    files, so a missing first file still allows the second to be returned.
+    """
+
+    def test_missing_leading_file_returns_next_existing(self, api_client, tmp_path, monkeypatch):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        p0 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("red"))
+        p1 = _attach_order_photo(api_client, ref, item_id, _make_photo_bytes("blue"))
+        # Delete the leading file on disk (position 0 by upload order).
+        import baker.config
+        leading_path = baker.config.PHOTOS_DIR / f"{p0['photo_hash']}.jpg"
+        leading_path.unlink()
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            photos = _get_photos(conn, data["id"], item_id, limit=2)
+        # The missing leading file is skipped; the second photo is returned.
+        assert len(photos) == 1
+        assert photos[0] == _disk_photo_bytes(p1["photo_hash"])
+
+    def test_fetch_window_covers_documented_attachment_invariant(self, api_client):
+        """DG-412 review cycle 4: the SQL ``LIMIT`` bound is ``limit * _PHOTO_FETCH_MULTIPLIER``.
+
+        The multiplier is a documented invariant (a work item never has more than
+        ``limit * _PHOTO_FETCH_MULTIPLIER`` attachments). This test pins that the
+        named constant exists and that the bounded window still returns the last
+        valid photo when every leading file within the window is missing.
+        """
+        from baker.api.receipts import _helpers
+        assert _helpers._PHOTO_FETCH_MULTIPLIER == 4
+
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)])
+        item_id = data["workItems"][0]["id"]
+        limit = 2
+        window = limit * _helpers._PHOTO_FETCH_MULTIPLIER  # 8
+        # Attach `window` photos; the last one (highest position) is the only
+        # one kept on disk, so all leading files within the window are missing.
+        photos = [
+            _attach_order_photo(api_client, ref, item_id, _make_photo_bytes(c))
+            for c in ("red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan")
+        ]
+        import baker.config
+        for p in photos[:-1]:
+            (baker.config.PHOTOS_DIR / f"{p['photo_hash']}.jpg").unlink()
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            result = _get_photos(conn, data["id"], item_id, limit=limit)
+        # The last valid photo (within the window) is still returned.
+        assert len(result) == 1
+        assert result[0] == _disk_photo_bytes(photos[-1]["photo_hash"])

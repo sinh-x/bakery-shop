@@ -2,9 +2,10 @@
 
 from .._drawing import *  # noqa: F401,F403
 from .._helpers import *  # noqa: F401,F403
-
 import io
-from PIL import Image, ImageDraw, ImageFont
+import logging
+
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from baker.formatters import format_phone
 from baker.models.payment_transaction import PaymentTransaction
 
@@ -153,24 +154,68 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
             y = _left(draw, y, line, fb, x=MARGIN)
 
-        # Photo — first attached photo for any item, larger + centered, display only
+        # Photo — up to 2 attached photos for any item, rendered side by side
+        # (equal pair, 192px each, centered as a pair). Single-photo fallback
+        # renders centered (unchanged). Zero photos renders nothing.
+        # DG-412 Phase 1 / FR1, FR2, FR3, FR4, NFR1, NFR2, AC1-AC5.
         item_id = item.get("id")
         photo_size = 192  # larger than default 128
+        photo_gap = 8  # gap between the two photos in the pair
         if show_photos and order_id and item_id:
-            photo_bytes = _get_photo(conn, order_id, item_id)
-            if photo_bytes:
+            photo_bytes_list = _get_photos(conn, order_id, item_id, limit=2)
+            photos = []
+            for photo_bytes in photo_bytes_list:
                 try:
                     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
                     photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
-                    x_photo = (RECEIPT_WIDTH - photo.width) // 2
-                    img.paste(photo, (x_photo, y))
-                    draw.rectangle(
-                        [x_photo, y, x_photo + photo.width, y + photo.height],
-                        outline=(200, 200, 200),
+                    photos.append(photo)
+                except (UnidentifiedImageError, OSError, ValueError):
+                    # CQ-1 (DG-412 review cycle 3): widen to also catch ValueError
+                    # (truncated/corrupt JPEGs), matching every other photo-decode
+                    # site in the codebase (order_photos.py:78, photos.py:80,
+                    # knowledge.py:290, events.py:621, products.py:492,
+                    # catalog.py:174, payment_transactions.py:500).
+                    # CQ-3 (DG-412 review cycle 1): keep the photo observable
+                    # via a warning rather than silently swallowing errors.
+                    logging.getLogger(__name__).warning(
+                        "Skipping unreadable photo for order_id=%s item_id=%s",
+                        order_id, item_id,
                     )
-                    y += photo.height + LINE_GAP
-                except Exception:
-                    pass
+            if len(photos) == 1:
+                # Single photo — centered (unchanged fallback, FR3).
+                photo = photos[0]
+                x_photo = (RECEIPT_WIDTH - photo.width) // 2
+                img.paste(photo, (x_photo, y))
+                draw.rectangle(
+                    [x_photo, y, x_photo + photo.width, y + photo.height],
+                    outline=(200, 200, 200),
+                )
+                y += photo.height + LINE_GAP
+            elif len(photos) >= 2:
+                # Two photos — equal pair, centered as a group (FR2, NFR1).
+                # CQ-3 (DG-412 review cycle 2): vertically center the shorter
+                # photo via a per-photo y offset so a shorter photo is not
+                # top-aligned within the pair row.
+                p1, p2 = photos[0], photos[1]
+                pair_w = p1.width + photo_gap + p2.width
+                x_pair = (RECEIPT_WIDTH - pair_w) // 2
+                x1 = x_pair
+                x2 = x_pair + p1.width + photo_gap
+                row_h = max(p1.height, p2.height)
+                y1 = y + (row_h - p1.height) // 2
+                y2 = y + (row_h - p2.height) // 2
+                img.paste(p1, (x1, y1))
+                img.paste(p2, (x2, y2))
+                draw.rectangle(
+                    [x1, y1, x1 + p1.width, y1 + p1.height],
+                    outline=(200, 200, 200),
+                )
+                draw.rectangle(
+                    [x2, y2, x2 + p2.width, y2 + p2.height],
+                    outline=(200, 200, 200),
+                )
+                y += row_h + LINE_GAP
+            # len(photos) == 0 → render nothing (FR4, unchanged).
 
         # Notes/remarks (sub-row, indented, bold label + body font, mixed emoji)
         notes = item.get("notes", "") or ""

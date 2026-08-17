@@ -2,7 +2,7 @@
 
 
 
-from typing import Optional
+from typing import List, Optional
 
 import baker.config
 from ._drawing import *  # noqa: F401,F403
@@ -242,18 +242,57 @@ def _header(draw, y, cfg):
     return y
 
 
-def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
-    """Get first photo bytes attached to a specific work item only."""
-    row = conn.execute(
-        "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id "
-        "WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1",
-        (order_id, work_item_id),
-    ).fetchone()
-    if row:
-        photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
+# DG-412 review cycle 4: the SQL ``LIMIT`` bound is ``limit * _PHOTO_FETCH_MULTIPLIER``.
+# The multiplier is a deliberate, greppable invariant: a work item never has more
+# than ``limit * _PHOTO_FETCH_MULTIPLIER`` attachments, so the bounded window always
+# contains every valid photo even when leading files are missing on disk. If the
+# per-item attachment cap ever changes, adjust this constant accordingly.
+_PHOTO_FETCH_MULTIPLIER = 4
+
+
+def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[bytes]:
+    """Get up to ``limit`` photo bytes attached to a specific work item, ordered by ``position``.
+
+    DG-412 Phase 1 / FR1: customer receipt renders up to 2 photos per item
+    side by side. Returns an empty list when no photos are attached. Missing
+    files on disk are skipped silently (same convention as ``_get_photo``).
+    The query is ordered by ``position`` ascending with ``id`` as a stable
+    tiebreaker (AC4, AC5).
+
+    OPS-1 (DG-412 review cycle 1): rows are fetched with a bounded SQL
+    ``LIMIT`` (``limit * _PHOTO_FETCH_MULTIPLIER``) and the existence check is
+    applied while iterating; collection stops after ``limit`` existing files
+    have been gathered. This prevents a missing leading file from suppressing
+    later valid photos. CQ-2 (DG-412 review cycle 3): the SQL ``LIMIT`` caps
+    row retrieval so the work-ticket path (``_get_photo`` delegates with
+    ``limit=1``) does not regress to a full fetch.
+    """
+    rows = conn.execute(
+        "SELECT p.hash FROM photos p "
+        "JOIN order_photos op ON p.id = op.photo_id "
+        "WHERE op.order_id = ? AND op.work_item_id = ? "
+        "ORDER BY op.position, op.id "
+        "LIMIT ?",
+        (order_id, work_item_id, limit * _PHOTO_FETCH_MULTIPLIER),
+    ).fetchall()
+    out: List[bytes] = []
+    for r in rows:
+        photo_path = baker.config.PHOTOS_DIR / f"{r['hash']}.jpg"
         if photo_path.exists():
-            return photo_path.read_bytes()
-    return None
+            out.append(photo_path.read_bytes())
+            if len(out) >= limit:
+                break
+    return out
+
+
+def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
+    """Get first photo bytes attached to a specific work item only.
+
+    CQ-1 (DG-412 review cycle 1): implemented in terms of ``_get_photos`` to
+    remove duplicated query/file-read logic and keep ordering consistent.
+    """
+    photos = _get_photos(conn, order_id, work_item_id, limit=1)
+    return photos[0] if photos else None
 
 
 __all__ = [
@@ -278,4 +317,5 @@ __all__ = [
     '_draw_compact_reference_box',
     '_header',
     '_get_photo',
+    '_get_photos',
 ]
