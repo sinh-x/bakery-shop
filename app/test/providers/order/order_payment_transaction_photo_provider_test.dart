@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/api/payment_transaction_service.dart';
 import 'package:bakery_app/data/models/payment_transaction_photo.dart';
-import 'package:bakery_app/providers/order/order_payment_transaction_providers.dart';
+import 'package:bakery_app/data/providers/order/order_payment_transaction_providers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

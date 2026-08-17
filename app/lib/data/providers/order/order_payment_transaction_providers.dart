@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
-import '../../data/api/payment_transaction_service.dart';
-import '../../data/models/payment_transaction.dart';
-import '../../data/models/payment_transaction_photo.dart';
-import '../../shared/providers/logged_by_provider.dart';
+import '../../api/payment_transaction_service.dart';
+import '../../models/payment_transaction.dart';
+import '../../models/payment_transaction_photo.dart';
+import '../../../shared/providers/logged_by_provider.dart';
 import 'order_detail_notifier.dart';
 
 class OrderPaymentTransactionsNotifier

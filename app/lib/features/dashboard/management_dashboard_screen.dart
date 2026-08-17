@@ -11,7 +11,7 @@ import '../../shared/widgets/section_title.dart';
 import '../../data/providers/dashboard_metrics_provider.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import '../../providers/order/due_date_order_list_providers.dart';
-import '../../providers/order/order_list_providers.dart';
+import '../../data/providers/order/order_list_providers.dart';
 import '../../data/providers/today_journal_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import 'widgets/alert_section.dart';

@@ -9,7 +9,7 @@ import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/data/providers/customers_provider.dart';
-import 'package:bakery_app/providers/order/order_list_providers.dart';
+import 'package:bakery_app/data/providers/order/order_list_providers.dart';
 import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:dio/dio.dart';
