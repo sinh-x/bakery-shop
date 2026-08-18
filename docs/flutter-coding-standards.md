@@ -310,56 +310,77 @@ The 66-file prohibited subset is a heuristic lower bound: a `setState` body was 
 
 ### Domain Split
 
-The monolithic `lib/shared/widgets/vietnamese_labels.dart` (1,686 lines, 30+ domain sections) is being split into domain files under `lib/shared/labels/`. Migration is **incomplete**.
+The migration from the former monolithic `lib/shared/widgets/vietnamese_labels.dart` (1,686 lines, 30+ domain sections, single `VN` class) is **complete**. The monolithic file has been removed; Vietnamese labels now live in per-domain files under `lib/shared/labels/`, with cross-domain helper maps and lookup functions in `lib/shared/utils.dart`. There is no monolithic `VN` class and no `vietnamese_labels.dart` in the tree.
 
-| File | Sections Migrated | Example Labels |
-|------|-------------------|----------------|
+| File | Domain | Example Labels |
+|------|--------|----------------|
 | `lib/shared/labels/shared.dart` | Navigation, common actions, error messages, generic UI | `appName`, `cancel`, `save`, `delete`, `confirm` |
 | `lib/shared/labels/orders.dart` | Order statuses, actions, form fields, detail, photos, cake queue, cake detail | `statusNew`, `createOrder`, `orderDetail`, `payment` |
 | `lib/shared/labels/products.dart` | Product categories, form, catalog gallery, product code, display flags | `productCategories`, `addProduct`, `catalogGallery` |
 | `lib/shared/labels/events.dart` | Event types, tags, form, history filters | `eventTypes`, `eventTags`, `eventForm` |
 | `lib/shared/labels/checklist.dart` | Checklist templates, entries, print dialog | `checklistTemplate`, `checklistEntry` |
+| `lib/shared/labels/customers.dart` | Customer-domain copy | customer form/action labels |
+| `lib/shared/labels/accounting.dart` | Accounting-domain copy | accounting labels |
+| `lib/shared/labels/expenses.dart` | Expenses-domain copy | `paymentSourcePhuongVCB`, `paymentSourceAnVCB` |
+| `lib/shared/labels/stock.dart` | Stock-domain copy | stock labels |
+| `lib/shared/labels/cash_drawer.dart` | Cash-drawer-domain copy | cash drawer labels |
+| `lib/shared/labels/audit_log.dart` | Audit log-domain copy | audit log labels |
+| `lib/shared/labels/auth.dart` | Auth-domain copy | auth labels |
+| `lib/shared/labels/templates.dart` | Message-template picker (DG-375) | template picker labels |
+| `lib/shared/labels/address_labels.dart` | Address autocomplete (DG-385) | address autocomplete labels |
+| `lib/shared/labels/technical_settings.dart` | Pre-login technical settings (DG-367) | technical settings labels |
+| `lib/shared/labels/blanks.dart` | Blank/placeholder actions | `actionCancel` |
 
-### Migration Rule
+`lib/shared/utils.dart` provides cross-domain lookup helpers (`categoryMap`, `statusMap`, `validTransitions`, `statusActionLabel`, `txnTypeLabel`, `paymentMethodLabel`, `paymentTargetAccounts`, `workItemStatusMap`, etc.) that map domain slugs to the corresponding domain label.
 
-- New labels go in the appropriate domain file — never add to the `VN` class.
+### Label Rule
+
+- New labels go in the appropriate domain file under `lib/shared/labels/`. Never re-introduce a monolithic `VN` class or `vietnamese_labels.dart`.
 - When a consumer imports a label, import only the domain file(s) it needs — not a barrel file.
 - Shared/common labels that span multiple domains go in `shared.dart`.
 - If a label's domain is unclear, default to the feature that most frequently consumes it.
+- Cross-domain string-keyed lookups (mapping a backend slug to a VN label) belong in `lib/shared/utils.dart`, importing from the domain label files.
 
 ### Import Pattern
 
 ```dart
-// Before (monolithic)
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-// Usage: VN.createOrder
-
-// After (domain-split)
+// Domain label files (current state)
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 // Usage: OrdersLabels.createOrder, SharedLabels.cancel
+
+// Cross-domain lookup helpers
+import 'package:bakery_app/shared/utils.dart';
+// Usage: statusActionLabel('confirmed'), categoryMap['banh_mi']
 ```
 
-### Migration Status (audit 2026-08-17)
+### Migration Status (complete as of DG-418 follow-up)
 
-- **Remaining `vietnamese_labels` import statements: 60** (incomplete migration).
-- Files referencing `vietnamese_labels` anywhere: 67 (includes the 7 `lib/shared/labels/*.dart` re-export files that reference it internally).
+The VN labels migration is complete:
+
+- The monolithic `lib/shared/widgets/vietnamese_labels.dart` and the `VN` class are removed.
+- All user-facing copy lives in `lib/shared/labels/*.dart` (per-domain) plus helper maps/functions in `lib/shared/utils.dart`.
+- No `vietnamese_labels` import statements remain in `app/lib`.
 
 Reproduce:
 
 ```bash
-# Strict import-line count (canonical metric)
+# Strict import-line count (must be 0)
 grep -rE "import.*vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
   | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
-# → 60
+# → 0
 
-# Files referencing vietnamese_labels anywhere (broader)
+# Files referencing vietnamese_labels anywhere (must be 0)
 grep -rlE "vietnamese_labels" app/lib --include='*.dart' 2>/dev/null \
   | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
-# → 67
+# → 0
+
+# Monolithic file must be absent
+test ! -e app/lib/shared/widgets/vietnamese_labels.dart && echo "absent" || echo "present"
+# → absent
 ```
 
-The strict import-line count (60) is the canonical "remaining imports" metric per FR7. New labels must continue to go in domain files — never add to the monolithic `VN` class. Downstream migration is tracked by DG-418.
+New labels must continue to go in domain files under `lib/shared/labels/` — never add to a monolithic `VN` class. Cross-cutting lookups go in `lib/shared/utils.dart`.
 
 ---
 
