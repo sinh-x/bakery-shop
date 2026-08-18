@@ -7,7 +7,6 @@ import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/target_account_dropdown.dart';
 import '../../orders/widgets/stage_summary_card.dart';
-
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
 /// (B3), and the submit action that finalizes the order.
@@ -197,7 +196,7 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  VN.selectPaymentMethod,
+                  OrdersLabels.selectPaymentMethod,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -211,7 +210,7 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  VN.paymentAmount,
+                  OrdersLabels.paymentAmount,
                   style: theme.textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
@@ -221,13 +220,13 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
                     suffixText: ',000đ',
-                    helperText: VN.paymentThousandsHint,
+                    helperText: OrdersLabels.paymentThousandsHint,
                     suffixIcon: _amountCtrl.text
                             .replaceAll(RegExp(r'[^\d]'), '')
                             .isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
-                            tooltip: VN.clear,
+                            tooltip: OrdersLabels.clear,
                             onPressed: _clearAmountField,
                           )
                         : null,
@@ -251,7 +250,7 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                 if (widget.hasTienRut) ...[
                   const SizedBox(height: 16),
                   Text(
-                    VN.soTienRut,
+                    OrdersLabels.soTienRut,
                     style: theme.textTheme.titleSmall,
                   ),
                   const SizedBox(height: 4),
@@ -261,13 +260,13 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
                       suffixText: ',000đ',
-                      helperText: VN.paymentThousandsHint,
+                      helperText: OrdersLabels.paymentThousandsHint,
                       suffixIcon: _tienRutCtrl.text
                               .replaceAll(RegExp(r'[^\d]'), '')
                               .isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear),
-                              tooltip: VN.clear,
+                              tooltip: OrdersLabels.clear,
                               onPressed: _clearTienRutField,
                             )
                           : null,
@@ -294,12 +293,12 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   segments: const [
                     ButtonSegment(
                       value: 'cash',
-                      label: Text(VN.tienMat),
+                      label: Text(OrdersLabels.tienMat),
                       icon: Icon(Icons.money),
                     ),
                     ButtonSegment(
                       value: 'transfer',
-                      label: Text(VN.chuyenKhoan),
+                      label: Text(OrdersLabels.chuyenKhoan),
                       icon: Icon(Icons.qr_code),
                     ),
                   ],

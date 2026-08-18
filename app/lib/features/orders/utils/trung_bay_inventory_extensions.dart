@@ -1,14 +1,13 @@
 import '../../../data/models/product.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 extension TrungBayProductX on Product? {
   bool get isTrungBay =>
       this?.attributes['trung_bay']?.toString() == 'true';
 
   String get stockInlineText {
     final qty = this?.stockQty;
-    if (qty == null) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $qty';
+    if (qty == null) return StockLabels.stockUnknown;
+    return '${StockLabels.stockRemaining}: $qty';
   }
 }
 

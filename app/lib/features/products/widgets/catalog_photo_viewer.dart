@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,8 @@ import '../../../data/models/catalog_tag.dart';
 import '../../../data/providers/catalog_provider.dart';
 import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'catalog_tag_chips.dart';
 import 'catalog_tag_edit_sheet.dart';
 
@@ -70,9 +72,9 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       );
       if (resp.data == null) throw Exception('No data');
       await Gal.putImageBytes(Uint8List.fromList(resp.data!));
-      if (mounted) showTopSnackBar(context, VN.daLuuAnh);
+      if (mounted) showTopSnackBar(context, ProductsLabels.daLuuAnh);
     } catch (e) {
-      if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+      if (mounted) showTopSnackBar(context, ProductsLabels.khongTheTaiAnh);
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
@@ -101,7 +103,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
         ShareParams(files: [xfile], text: 'Tiệm Bánh Ninh Diêm'),
       );
     } catch (e) {
-      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+      if (mounted) showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
@@ -144,7 +146,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                       ),
                     )
                   : const Icon(Icons.download, color: Colors.white),
-              tooltip: VN.taiAnh,
+              tooltip: ProductsLabels.taiAnh,
               onPressed: _downloading ? null : () => _downloadPhoto(photos),
             ),
             IconButton(
@@ -158,7 +160,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                       ),
                     )
                   : const Icon(Icons.share, color: Colors.white),
-              tooltip: VN.chiaSe,
+              tooltip: ProductsLabels.chiaSe,
               onPressed: _sharing ? null : () => _sharePhoto(photos),
             ),
           ],
@@ -173,7 +175,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 : const [
                     PopupMenuItem<String>(
                       value: 'edit_photo',
-                      child: Text(VN.editCatalogPhoto),
+                      child: Text(ProductsLabels.editCatalogPhoto),
                     ),
                   ],
           ),
@@ -309,11 +311,11 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           );
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.catalogPhotoUpdated);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoUpdated);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -336,20 +338,20 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            VN.editCatalogPhoto,
+            ProductsLabels.editCatalogPhoto,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _captionCtrl,
-            decoration: const InputDecoration(labelText: VN.captionLabel),
+            decoration: const InputDecoration(labelText: ProductsLabels.captionLabel),
             maxLines: 2,
           ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -358,12 +360,12 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Row(
               children: [
-                const Expanded(child: Text(VN.apiError)),
+                const Expanded(child: Text(SharedLabels.apiError)),
                 TextButton.icon(
                   onPressed: () =>
                       ref.read(catalogTagDefsProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),
@@ -390,7 +392,7 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           const SizedBox(height: 8),
         ],
@@ -422,7 +424,7 @@ class _TagChipSelector extends StatelessWidget {
       children: [
         if (audience.isNotEmpty) ...[
           const Text(
-            VN.doiTuong,
+            ProductsLabels.doiTuong,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...audience.map(
@@ -436,7 +438,7 @@ class _TagChipSelector extends StatelessWidget {
         ],
         if (occasion.isNotEmpty) ...[
           const Text(
-            VN.dip,
+            ProductsLabels.dip,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...occasion.map(
@@ -450,7 +452,7 @@ class _TagChipSelector extends StatelessWidget {
         ],
         if (style.isNotEmpty) ...[
           const Text(
-            VN.phongCach,
+            ProductsLabels.phongCach,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...style.map(

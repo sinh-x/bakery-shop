@@ -1,6 +1,8 @@
 import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 
 class ExpenseFormCard extends StatefulWidget {
@@ -98,7 +100,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
     super.dispose();
   }
 
-  bool get _isDebt => widget.paymentMethod == VN.methodDebt;
+  bool get _isDebt => widget.paymentMethod == OrdersLabels.methodDebt;
 
   /// Subcategory names available for the currently selected category
   /// (DG-302 Phase 4 — FR1). Empty when the category has no children or
@@ -127,7 +129,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                 controller: widget.amountCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: VN.expenseAmountLabel,
+                  labelText: ExpensesLabels.expenseAmountLabel,
                   border: OutlineInputBorder(),
                 ),
                 validator: widget.amountValidator,
@@ -136,8 +138,8 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
               DropdownButtonFormField<String>(
                 initialValue: widget.category,
                 decoration: const InputDecoration(
-                  labelText: VN.expenseCategoryLabel,
-                  hintText: VN.expenseCategoryHint,
+                  labelText: ExpensesLabels.expenseCategoryLabel,
+                  hintText: ExpensesLabels.expenseCategoryHint,
                   border: OutlineInputBorder(),
                 ),
                 items: widget.categories
@@ -148,15 +150,15 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                     .toList(),
                 onChanged: widget.onCategoryChanged,
                 validator: (value) =>
-                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
+                    (value == null || value.isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 8),
               if (subcategoryOptions.isNotEmpty)
                 DropdownButtonFormField<String>(
                   initialValue: widget.subcategory,
                   decoration: const InputDecoration(
-                    labelText: VN.expenseSubcategoryLabel,
-                    hintText: VN.expenseSubcategoryHint,
+                    labelText: ExpensesLabels.expenseSubcategoryLabel,
+                    hintText: ExpensesLabels.expenseSubcategoryHint,
                     border: OutlineInputBorder(),
                   ),
                   items: subcategoryOptions
@@ -167,13 +169,13 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                       .toList(),
                   onChanged: widget.onSubcategoryChanged,
                   validator: (value) =>
-                      (value == null || value.isEmpty) ? VN.fieldRequired : null,
+                      (value == null || value.isEmpty) ? SharedLabels.fieldRequired : null,
                 ),
               if (subcategoryOptions.isNotEmpty) const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: widget.paymentMethod,
                 decoration: const InputDecoration(
-                  labelText: VN.expensePaymentMethodLabel,
+                  labelText: ExpensesLabels.expensePaymentMethodLabel,
                   border: OutlineInputBorder(),
                 ),
                 items: widget.paymentMethods
@@ -189,7 +191,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                 DropdownButtonFormField<String>(
                   initialValue: widget.paymentSource,
                   decoration: const InputDecoration(
-                    labelText: VN.expensePaymentSourceLabel,
+                    labelText: ExpensesLabels.expensePaymentSourceLabel,
                     border: OutlineInputBorder(),
                   ),
                   items: widget.paymentSources
@@ -200,7 +202,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                       .toList(),
                   onChanged: widget.onPaymentSourceChanged,
                   validator: (value) =>
-                      (value == null || value.isEmpty) ? VN.fieldRequired : null,
+                      (value == null || value.isEmpty) ? SharedLabels.fieldRequired : null,
                 ),
               const SizedBox(height: 8),
               Row(
@@ -210,7 +212,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                       onPressed: widget.onPickDate,
                       icon: const Icon(Icons.event),
                       label: Text(
-                        '${VN.expenseDateLabel}: '
+                        '${ExpensesLabels.expenseDateLabel}: '
                         '${formatDisplayDate(widget.eventDateTime)}',
                       ),
                     ),
@@ -221,7 +223,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                       onPressed: widget.onPickTime,
                       icon: const Icon(Icons.schedule),
                       label: Text(
-                        '${VN.expenseTimeLabel}: '
+                        '${ExpensesLabels.expenseTimeLabel}: '
                         '${formatDisplayTime(widget.eventDateTime)}',
                       ),
                     ),
@@ -235,7 +237,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                 controller: widget.noteCtrl,
                 maxLines: 2,
                 decoration: const InputDecoration(
-                  labelText: VN.expenseNoteLabel,
+                  labelText: ExpensesLabels.expenseNoteLabel,
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -245,7 +247,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                     ? widget.selectedPaidByName
                     : null,
                 decoration: const InputDecoration(
-                  labelText: VN.expensePaidByNameLabel,
+                  labelText: ExpensesLabels.expensePaidByNameLabel,
                   border: OutlineInputBorder(),
                 ),
                 items: widget.staffList
@@ -262,7 +264,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: widget.editing ? widget.onCancelEdit : null,
-                      child: const Text(VN.expenseCancelEditAction),
+                      child: const Text(ExpensesLabels.expenseCancelEditAction),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -271,8 +273,8 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                       onPressed: widget.loading ? null : widget.onSave,
                       child: Text(
                         widget.editing
-                            ? VN.expenseUpdateAction
-                            : VN.expenseSaveAction,
+                            ? ExpensesLabels.expenseUpdateAction
+                            : ExpensesLabels.expenseSaveAction,
                       ),
                     ),
                   ),
@@ -303,16 +305,16 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
           focusNode: focusNode,
           decoration: InputDecoration(
             labelText: _isDebt
-                ? VN.expenseCreditorLabel
-                : VN.expenseVendorLabel,
-            hintText: VN.expenseVendorAutocompleteHint,
+                ? ExpensesLabels.expenseCreditorLabel
+                : ExpensesLabels.expenseVendorLabel,
+            hintText: ExpensesLabels.expenseVendorAutocompleteHint,
             suffixIcon: const Icon(Icons.arrow_drop_down),
             border: const OutlineInputBorder(),
           ),
           validator: _isDebt
               ? (value) =>
                   (value == null || value.trim().isEmpty)
-                      ? VN.expenseDebtVendorRequired
+                      ? ExpensesLabels.expenseDebtVendorRequired
                       : null
               : null,
           onFieldSubmitted: (_) => onFieldSubmitted(),

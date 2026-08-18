@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_photo_section.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 const _testRef = 'TEST-ORDER-1';
 
@@ -39,8 +39,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(OrderPhotoSection), findsOneWidget);
-    expect(find.text(VN.orderPhotos), findsOneWidget);
-    expect(find.text(VN.noOrderPhotos), findsOneWidget);
+    expect(find.text(OrdersLabels.orderPhotos), findsOneWidget);
+    expect(find.text(OrdersLabels.noOrderPhotos), findsOneWidget);
   });
 
   testWidgets('OrderPhotoSection renders photo thumbnails when photos exist',
@@ -73,7 +73,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(OrderPhotoSection), findsOneWidget);
-    expect(find.text(VN.orderPhotos), findsOneWidget);
+    expect(find.text(OrdersLabels.orderPhotos), findsOneWidget);
     expect(find.byIcon(Icons.add_photo_alternate_outlined), findsOneWidget);
     expect(find.text('Màu trang trí'), findsOneWidget);
   });
@@ -113,7 +113,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.noOrderPhotos), findsNothing);
+    expect(find.text(OrdersLabels.noOrderPhotos), findsNothing);
     expect(find.byType(Image), findsOneWidget);
   });
 }

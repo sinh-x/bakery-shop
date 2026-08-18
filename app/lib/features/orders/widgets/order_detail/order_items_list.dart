@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -5,13 +6,12 @@ import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/order_item.dart';
 import '../../../../data/models/product.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import '../section_header.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Builds the list of regular (non-extra) order items, each row showing
 /// product photo (when available), product name, qty × unit price, markup,
 /// enum attributes, birthday/age/candle/notes info, and cash info.
@@ -52,7 +52,7 @@ class OrderItemsList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader(VN.products),
+        const SectionHeader(OrdersLabels.products),
         ...order.items.where((item) => !item.isExtra).map(
               (item) => _OrderItemRow(
                 item: item,
@@ -64,7 +64,7 @@ class OrderItemsList extends StatelessWidget {
             ),
         if (order.items.any((item) => item.isExtra)) ...[
           const SizedBox(height: 12),
-          const SectionHeader(VN.extras),
+          const SectionHeader(OrdersLabels.extras),
           ...order.items.where((item) => item.isExtra).map(
                 (item) => _OrderItemRow(
                   item: item,
@@ -171,8 +171,8 @@ class _OrderItemRow extends StatelessWidget {
                         const SizedBox(width: 4),
                         Text(
                           item.age != null
-                              ? '${VN.birthdayWithAge} ${item.age} tuổi'
-                              : VN.birthdayWithAge,
+                              ? '${OrdersLabels.birthdayWithAge} ${item.age} tuổi'
+                              : OrdersLabels.birthdayWithAge,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: Colors.pink.shade700,
                             fontWeight: FontWeight.w500,
@@ -202,7 +202,7 @@ class _OrderItemRow extends StatelessWidget {
                     item.attributes['cash_amount'].toString() != '0') ...[
                   const SizedBox(height: 2),
                   Text(
-                    '${VN.rutTien}: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                    '${OrdersLabels.rutTien}: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.green.shade700,
                       fontWeight: FontWeight.w500,
@@ -212,7 +212,7 @@ class _OrderItemRow extends StatelessWidget {
                       item.attributes['cash_fee'].toString().isNotEmpty &&
                       item.attributes['cash_fee'].toString() != '0')
                     Text(
-                      '${VN.phiRutTien}: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                      '${OrdersLabels.phiRutTien}: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: Colors.green.shade700,
                       ),
@@ -223,7 +223,7 @@ class _OrderItemRow extends StatelessWidget {
           ),
           if (isExtra && item.isGift)
             Text(
-              VN.giftBadge,
+              OrdersLabels.giftBadge,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: Colors.green,
                 fontWeight: FontWeight.w600,

@@ -31,7 +31,7 @@
 ///
 /// `type` is the raw journal `source_type` string; the Flutter UI maps it to
 /// Vietnamese labels via `accountingSourceTypeLabel()` in
-/// `vietnamese_labels.dart` (Phase 3).
+/// `utils.dart` (Phase 3).
 ///
 /// Plain Dart class (no freezed codegen) — matches the `CashDrawer` and
 /// `CashDrawerHistoryResponse` pattern for read-oriented models. `toJson` is

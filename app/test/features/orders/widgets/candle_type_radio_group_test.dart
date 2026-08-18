@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/orders/widgets/candle_type_radio_group.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Widget tests for the shared `CandleTypeRadioGroup` (review finding CQ-2).
 ///
@@ -36,10 +36,10 @@ void main() {
       // A Wrap container holds the four inline Radio options.
       expect(find.byType(Wrap), findsWidgets);
       expect(find.byType(Radio<String>), findsNWidgets(4));
-      expect(find.text(VN.candleTypeNenSo), findsOneWidget);
-      expect(find.text(VN.candleTypeNenXoan), findsOneWidget);
-      expect(find.text(VN.candleTypeNenNho), findsOneWidget);
-      expect(find.text(VN.candleTypeKhongNen), findsOneWidget);
+      expect(find.text(OrdersLabels.candleTypeNenSo), findsOneWidget);
+      expect(find.text(OrdersLabels.candleTypeNenXoan), findsOneWidget);
+      expect(find.text(OrdersLabels.candleTypeNenNho), findsOneWidget);
+      expect(find.text(OrdersLabels.candleTypeKhongNen), findsOneWidget);
     },
   );
 
@@ -52,7 +52,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(CandleTypeRadioGroup), findsOneWidget);
-      expect(find.text(VN.candleTypeKhongNen), findsOneWidget);
+      expect(find.text(OrdersLabels.candleTypeKhongNen), findsOneWidget);
       // The four values map to the four expected constants exactly.
       final radioValues = tester
           .widgetList<Radio<String>>(find.byType(Radio<String>))
@@ -89,13 +89,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap "Nến số" to change selection away from the default.
-      await tester.tap(find.text(VN.candleTypeNenSo));
+      await tester.tap(find.text(OrdersLabels.candleTypeNenSo));
       await tester.pump();
 
       expect(selected, 'nen_so');
 
       // Tap "Nến xoắn" to change selection again.
-      await tester.tap(find.text(VN.candleTypeNenXoan));
+      await tester.tap(find.text(OrdersLabels.candleTypeNenXoan));
       await tester.pump();
 
       expect(selected, 'nen_xoan');

@@ -5,9 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/customer_service.dart';
 import '../../../data/models/customer.dart';
-import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/utils/diacritics.dart';
-
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 bool _matchesDiacriticAware(String query, Customer customer) {
   final q = query.trim().toLowerCase();
   final name = customer.name.trim().toLowerCase();
@@ -118,7 +119,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = VN.customerSearchError;
+        _error = CustomersLabels.customerSearchError;
       });
     }
   }
@@ -185,7 +186,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       setState(() {
         _listCustomers = const [];
         _loading = false;
-        _error = VN.customerSearchError;
+        _error = CustomersLabels.customerSearchError;
         _showRefineHint = false;
       });
     }
@@ -233,7 +234,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
           TextButton.icon(
             onPressed: _retry,
             icon: const Icon(Icons.refresh, size: 16),
-            label: const Text(VN.retry),
+            label: const Text(SharedLabels.retry),
           ),
         ],
       ),
@@ -272,7 +273,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    VN.customerSearchLinked.replaceAll(
+                    CustomersLabels.customerSearchLinked.replaceAll(
                       '{name}',
                       _selected!.name,
                     ),
@@ -288,7 +289,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 4),
             child: Text(
-              VN.customerSearchRefineHint,
+              CustomersLabels.customerSearchRefineHint,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
@@ -309,8 +310,8 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
           focusNode: _focus,
           onChanged: _onChanged,
           decoration: InputDecoration(
-            labelText: widget.labelText ?? VN.customer,
-            hintText: widget.hintText ?? VN.customerSearchHint,
+            labelText: widget.labelText ?? OrdersLabels.customer,
+            hintText: widget.hintText ?? CustomersLabels.customerSearchHint,
             border: const OutlineInputBorder(),
             prefixIcon: const Icon(Icons.person_search_outlined),
           ),
@@ -324,7 +325,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
                   : _listCustomers.isEmpty
                       ? Center(
                           child: Text(
-                            VN.customerSearchNoMatch,
+                            CustomersLabels.customerSearchNoMatch,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.outline,
                             ),

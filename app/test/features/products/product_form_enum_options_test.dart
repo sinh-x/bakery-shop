@@ -327,7 +327,7 @@ void main() {
       final fake = await _pumpForm(tester, product: _testProduct());
 
       // Clear "Sầu riêng" value to trigger per-row validation
-      // (VN.enumOptionValueRequired).
+      // (ProductsLabels.enumOptionValueRequired).
       final sauRieng = find.widgetWithText(TextFormField, 'Sầu riêng');
       expect(sauRieng, findsOneWidget);
       await tester.enterText(sauRieng, '');

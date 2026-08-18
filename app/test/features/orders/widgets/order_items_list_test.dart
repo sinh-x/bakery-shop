@@ -3,9 +3,9 @@ import 'package:bakery_app/data/models/enum_attribute.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_items_list.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 const _nhanBanh = EnumAttribute(
   attributeType: 'nhan_banh',
@@ -211,7 +211,7 @@ void main() {
       ]);
       await _pump(tester, order, [_product(photoPath: '')]);
 
-      expect(find.text('${VN.packCandles}: ${VN.candleTypeNenSo}'),
+      expect(find.text('${OrdersLabels.packCandles}: ${OrdersLabels.candleTypeNenSo}'),
           findsOneWidget);
     });
 
@@ -227,7 +227,7 @@ void main() {
       ]);
       await _pump(tester, order, [_product(photoPath: '')]);
 
-      expect(find.textContaining(VN.packCandles), findsNothing);
+      expect(find.textContaining(OrdersLabels.packCandles), findsNothing);
     });
 
     testWidgets('does NOT show candle line when candle_type absent',
@@ -242,7 +242,7 @@ void main() {
       ]);
       await _pump(tester, order, [_product(photoPath: '')]);
 
-      expect(find.textContaining(VN.packCandles), findsNothing);
+      expect(find.textContaining(OrdersLabels.packCandles), findsNothing);
     });
 
     testWidgets('does NOT show notes line when notes empty', (tester) async {
@@ -305,7 +305,7 @@ void main() {
       expect(find.textContaining('Sinh nhật'), findsOneWidget);
       expect(find.textContaining('5 tuổi'), findsOneWidget);
       // Candle type
-      expect(find.text('${VN.packCandles}: ${VN.candleTypeNenSo}'),
+      expect(find.text('${OrdersLabels.packCandles}: ${OrdersLabels.candleTypeNenSo}'),
           findsOneWidget);
       // Notes
       expect(find.text('Không đường'), findsOneWidget);

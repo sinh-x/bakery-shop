@@ -24,6 +24,7 @@ import 'package:bakery_app/data/models/product_breakdown.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/today_sales/today_sales_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Order _order({
   required String ref,
@@ -394,7 +395,7 @@ void main() {
     );
     expect(find.text(SharedLabels.todaySalesOrderListSection), findsOneWidget);
     // Status-group header for confirmed orders with count badge
-    expect(find.text(VN.statusConfirmed), findsOneWidget);
+    expect(find.text(OrdersLabels.statusConfirmed), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
   });
 
@@ -410,14 +411,14 @@ void main() {
       summary: _summary(orders: orders),
     );
     await tester.dragUntilVisible(
-      find.text(VN.statusNew),
+      find.text(OrdersLabels.statusNew),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
     // Two status groups rendered: new (count 2) and ready (count 1)
-    expect(find.text(VN.statusNew), findsOneWidget);
+    expect(find.text(OrdersLabels.statusNew), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
-    expect(find.text(VN.statusReady), findsOneWidget);
+    expect(find.text(OrdersLabels.statusReady), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
   });
 
@@ -426,11 +427,11 @@ void main() {
   ) async {
     await _pump(tester, summary: _summary());
     await tester.dragUntilVisible(
-      find.text(VN.khongCoDonHomNay),
+      find.text(SharedLabels.khongCoDonHomNay),
       find.byType(Scrollable).first,
       const Offset(0, -200),
     );
-    expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
+    expect(find.text(SharedLabels.khongCoDonHomNay), findsOneWidget);
   });
 
   testWidgets('shows calendar button for date selection', (tester) async {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class ProductFormPricingSection extends StatelessWidget {
   const ProductFormPricingSection({
     super.key,
@@ -21,13 +20,13 @@ class ProductFormPricingSection extends StatelessWidget {
         TextFormField(
           controller: priceController,
           decoration: const InputDecoration(
-            labelText: VN.productPrice,
-            suffixText: VN.currency,
+            labelText: ProductsLabels.productPrice,
+            suffixText: SharedLabels.currency,
           ),
           keyboardType: TextInputType.number,
           validator: (v) {
-            if (v == null || v.trim().isEmpty) return VN.fieldRequired;
-            if (double.tryParse(v) == null) return VN.invalidPrice;
+            if (v == null || v.trim().isEmpty) return SharedLabels.fieldRequired;
+            if (double.tryParse(v) == null) return SharedLabels.invalidPrice;
             return null;
           },
         ),
@@ -35,8 +34,8 @@ class ProductFormPricingSection extends StatelessWidget {
         TextFormField(
           controller: costController,
           decoration: const InputDecoration(
-            labelText: VN.productCost,
-            suffixText: VN.currency,
+            labelText: ProductsLabels.productCost,
+            suffixText: SharedLabels.currency,
           ),
           keyboardType: TextInputType.number,
         ),

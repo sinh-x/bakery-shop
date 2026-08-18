@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 import 'widgets/accounts_tab.dart';
 import 'widgets/journal_tab.dart';
 import 'widgets/balances_tab.dart';
@@ -34,14 +34,14 @@ class _AccountingScreenState extends ConsumerState<AccountingScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.accountingTitle),
+        title: const Text(AccountingLabels.accountingTitle),
         actions: const [AppBarOverflowMenu()],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(icon: Icon(Icons.account_tree), text: VN.accountingTabAccounts),
-            Tab(icon: Icon(Icons.receipt_long), text: VN.accountingTabJournal),
-            Tab(icon: Icon(Icons.account_balance), text: VN.accountingTabBalances),
+            Tab(icon: Icon(Icons.account_tree), text: AccountingLabels.accountingTabAccounts),
+            Tab(icon: Icon(Icons.receipt_long), text: AccountingLabels.accountingTabJournal),
+            Tab(icon: Icon(Icons.account_balance), text: AccountingLabels.accountingTabBalances),
           ],
         ),
       ),

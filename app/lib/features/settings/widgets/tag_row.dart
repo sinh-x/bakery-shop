@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_tag.dart';
 import '../widgets/catalog_tags_dialogs.dart';
-import '../../../shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
 class TagRow extends ConsumerWidget {
   const TagRow({required this.tag, super.key});
 
@@ -67,11 +66,11 @@ class TagRow extends ConsumerWidget {
 
   Color _getColor(String category) {
     switch (category) {
-      case VN.tagCategoriesDoiTuong: // audience
+      case ProductsLabels.tagCategoriesDoiTuong: // audience
         return const Color(0xFF2196F3);
-      case VN.tagCategoriesDip: // occasion
+      case ProductsLabels.tagCategoriesDip: // occasion
         return const Color(0xFFFF9800);
-      case VN.tagCategoriesPhongCach: // style
+      case ProductsLabels.tagCategoriesPhongCach: // style
         return const Color(0xFF4CAF50);
       default:
         return Colors.grey.shade300;

@@ -1,10 +1,10 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
-import '../../shared/labels/shared.dart' show showTopSnackBar;
 import '../../shared/labels/technical_settings.dart';
 import 'widgets/settings_sections.dart';
 

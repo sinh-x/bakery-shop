@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,7 +7,7 @@ import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/api_error.dart';
 import '../../../shared/utils/launch_external_url.dart';
 import 'section_header.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Google Maps URL viewer/editor modal (DG-306 Phase 3 / FR6 / AC6).
 ///
 /// Opened from the order detail screen's context menu. Displays the current
@@ -60,7 +61,7 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: ${normalizeApiError(e).message}');
+        showTopSnackBar(context, '${SharedLabels.apiError}: ${normalizeApiError(e).message}');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

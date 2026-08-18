@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Per-photo upload status reported by [UploadProgressIndicator].
 enum PhotoUploadStatus { pending, uploading, success, error }
 
@@ -30,7 +28,7 @@ class PhotoUploadState {
 /// Shared widget rendering per-photo upload progress and error states with a
 /// count summary (e.g. "2/5 uploaded").
 ///
-/// Replaces the duplicated `CircularProgressIndicator` + `Text(VN.uploadingPhotos)`
+/// Replaces the duplicated `CircularProgressIndicator` + `Text(OrdersLabels.uploadingPhotos)`
 /// pattern across the 6 photo-upload locations. Per FR5/NFR4 the widget stays
 /// under 200 lines and updates within 100ms of each state transition (NFR1)
 /// because it is fed by a `Listenable`/`Notifier` rebuilt via `const`.
@@ -69,11 +67,11 @@ class UploadProgressIndicator extends StatelessWidget {
     // result before the screen pops/resets. DG-333 Phase 6.
     final summary = isUploading
         ? (failed > 0
-            ? VN.uploadedPhotosCountWithErrors(done, failed, total)
-            : VN.uploadedPhotosCount(done, total))
+            ? SharedLabels.uploadedPhotosCountWithErrors(done, failed, total)
+            : SharedLabels.uploadedPhotosCount(done, total))
         : (failed > 0
-            ? VN.photoUploadCompleteWithErrors(done, failed, total)
-            : VN.photoUploadComplete(total));
+            ? SharedLabels.photoUploadCompleteWithErrors(done, failed, total)
+            : SharedLabels.photoUploadComplete(total));
 
     if (compact) {
       return Row(
@@ -151,8 +149,8 @@ class _PhotoRow extends StatelessWidget {
     };
 
     final label = state.status == PhotoUploadStatus.error && state.errorMessage != null
-        ? VN.photoUploadFailed(index, state.errorMessage!)
-        : VN.photoUploadStatus(index, VN.photoUploadStatusLabels[state.status.name]!);
+        ? SharedLabels.photoUploadFailed(index, state.errorMessage!)
+        : SharedLabels.photoUploadStatus(index, SharedLabels.photoUploadStatusLabels[state.status.name]!);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),

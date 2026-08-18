@@ -1,8 +1,9 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cash_drawer.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'cash_drawer_breakdown_card.dart';
 import 'cash_drawer_breakdown_snapshot.dart';
 
@@ -23,7 +24,7 @@ import 'cash_drawer_breakdown_snapshot.dart';
 /// closed drawers — the card renders without a new network request to
 /// /transactions (NFR1). Drawers with no snapshot (closed before the v097
 /// migration and not backfilled) render an "N/A" placeholder
-/// ([VN.cashDrawerBreakdownSnapshotNa]) instead of the card. Open drawers
+/// ([CashDrawerLabels.cashDrawerBreakdownSnapshotNa]) instead of the card. Open drawers
 /// in history do not render a breakdown.
 ///
 /// DG-343 Phase 3 FR4/AC2: when [onTapClosedDrawer] is provided, tapping a
@@ -51,7 +52,7 @@ class CashDrawerHistoryList extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Center(
           child: Text(
-            VN.cashDrawerHistory,
+            CashDrawerLabels.cashDrawerHistory,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -98,7 +99,7 @@ class _HistoryCard extends StatelessWidget {
         subtitle: Row(
           children: [
             Text(
-              '${VN.cashDrawerExpectedBalance}: ${formatVND(drawer.expectedBalance.toDouble())}',
+              '${CashDrawerLabels.cashDrawerExpectedBalance}: ${formatVND(drawer.expectedBalance.toDouble())}',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(width: 8),
@@ -107,8 +108,8 @@ class _HistoryCard extends StatelessWidget {
         ),
         trailing: Text(
           drawer.isClosed
-              ? VN.cashDrawerStatusClosed
-              : VN.cashDrawerStatusOpen,
+              ? CashDrawerLabels.cashDrawerStatusClosed
+              : CashDrawerLabels.cashDrawerStatusOpen,
           style: theme.textTheme.labelSmall,
         ),
         children: [
@@ -118,26 +119,26 @@ class _HistoryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _DetailRow(
-                  label: VN.cashDrawerOpeningBalance,
+                  label: CashDrawerLabels.cashDrawerOpeningBalance,
                   value: drawer.openingBalance,
                 ),
                 if (drawer.closingBalance != null)
                   _DetailRow(
-                    label: VN.cashDrawerClosingBalance,
+                    label: CashDrawerLabels.cashDrawerClosingBalance,
                     value: drawer.closingBalance ?? 0,
                   ),
                 const Divider(height: 16),
                 _DetailRow(
-                  label: VN.cashDrawerExpectedBalance,
+                  label: CashDrawerLabels.cashDrawerExpectedBalance,
                   value: drawer.expectedBalance,
                   emphasize: true,
                 ),
                 _DetailRow(
-                  label: VN.cashDrawerCountedAmount,
+                  label: CashDrawerLabels.cashDrawerCountedAmount,
                   value: drawer.countedAmount ?? 0,
                 ),
                 _DetailRow(
-                  label: VN.cashDrawerDiscrepancy,
+                  label: CashDrawerLabels.cashDrawerDiscrepancy,
                   value: drawer.discrepancy ?? 0,
                   emphasize: true,
                 ),
@@ -173,7 +174,7 @@ class _HistoryCard extends StatelessWidget {
                     child: TextButton.icon(
                       onPressed: () => onTapClosedDrawer!(drawer),
                       icon: const Icon(Icons.receipt_long, size: 18),
-                      label: const Text(VN.cashDrawerTransactionsTab),
+                      label: const Text(CashDrawerLabels.cashDrawerTransactionsTab),
                     ),
                   ),
                 ],
@@ -239,10 +240,10 @@ class _DiscrepancyChip extends StatelessWidget {
     if (discrepancy == null) return const SizedBox.shrink();
     final value = discrepancy!;
     final label = value == 0
-        ? VN.cashDrawerExact
+        ? CashDrawerLabels.cashDrawerExact
         : value > 0
-            ? VN.cashDrawerSurplus
-            : VN.cashDrawerShortage;
+            ? CashDrawerLabels.cashDrawerSurplus
+            : CashDrawerLabels.cashDrawerShortage;
     final color = value == 0
         ? Colors.grey.shade700
         : value > 0
@@ -268,7 +269,7 @@ class _DiscrepancyChip extends StatelessWidget {
 /// DG-363 Phase 4 / FR7: placeholder rendered in place of the breakdown
 /// card for closed drawers that have no persisted snapshot (closed before
 /// the v097 migration and not backfilled). Shows the
-/// [VN.cashDrawerBreakdownSnapshotNa] label so the user understands the
+/// [CashDrawerLabels.cashDrawerBreakdownSnapshotNa] label so the user understands the
 /// breakdown is unavailable rather than empty.
 class _SnapshotUnavailable extends StatelessWidget {
   const _SnapshotUnavailable();
@@ -281,13 +282,13 @@ class _SnapshotUnavailable extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            VN.cashDrawerBreakdownTitle,
+            CashDrawerLabels.cashDrawerBreakdownTitle,
             style: theme.textTheme.titleSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 8),
           Text(
-            VN.cashDrawerBreakdownSnapshotNa,
+            CashDrawerLabels.cashDrawerBreakdownSnapshotNa,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               fontStyle: FontStyle.italic,

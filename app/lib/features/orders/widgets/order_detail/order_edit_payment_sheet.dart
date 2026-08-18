@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,9 +6,9 @@ import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'txn_photo_section.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Bottom sheet for editing an existing payment transaction.
 class OrderEditPaymentSheet extends ConsumerStatefulWidget {
   const OrderEditPaymentSheet({
@@ -71,11 +72,11 @@ class _OrderEditPaymentSheetState
           );
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.paymentUpdated);
+        showTopSnackBar(context, OrdersLabels.paymentUpdated);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -87,12 +88,12 @@ class _OrderEditPaymentSheetState
     final theme = Theme.of(context);
 
     const types = [
-      ('deposit', VN.txnTypeDeposit),
-      ('payment', VN.txnTypePayment),
-      ('full_payment', VN.txnTypeFullPayment),
-      ('refund', VN.txnTypeRefund),
+      ('deposit', OrdersLabels.txnTypeDeposit),
+      ('payment', OrdersLabels.txnTypePayment),
+      ('full_payment', OrdersLabels.txnTypeFullPayment),
+      ('refund', OrdersLabels.txnTypeRefund),
     ];
-    const methods = [('cash', VN.methodCash), ('transfer', VN.methodTransfer)];
+    const methods = [('cash', OrdersLabels.methodCash), ('transfer', OrdersLabels.methodTransfer)];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -107,9 +108,9 @@ class _OrderEditPaymentSheetState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(VN.editPayment, style: theme.textTheme.titleMedium),
+            Text(OrdersLabels.editPayment, style: theme.textTheme.titleMedium),
             const SizedBox(height: 16),
-            Text(VN.txnType, style: theme.textTheme.labelMedium),
+            Text(OrdersLabels.txnType, style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -125,7 +126,7 @@ class _OrderEditPaymentSheetState
                   .toList(),
             ),
             const SizedBox(height: 12),
-            Text(VN.paymentMethod, style: theme.textTheme.labelMedium),
+            Text(OrdersLabels.paymentMethod, style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -146,17 +147,17 @@ class _OrderEditPaymentSheetState
             TextFormField(
               controller: _amountCtrl,
               decoration: const InputDecoration(
-                labelText: VN.paymentAmountLabel,
+                labelText: OrdersLabels.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: VN.paymentThousandsHint,
+                helperText: OrdersLabels.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return VN.fieldRequired;
+                if (v == null || v.trim().isEmpty) return SharedLabels.fieldRequired;
                 final n = double.tryParse(v.trim());
-                if (n == null || n <= 0) return VN.invalidPrice;
+                if (n == null || n <= 0) return SharedLabels.invalidPrice;
                 return null;
               },
             ),
@@ -164,7 +165,7 @@ class _OrderEditPaymentSheetState
             TextFormField(
               controller: _notesCtrl,
               decoration: const InputDecoration(
-                labelText: VN.paymentNotes,
+                labelText: OrdersLabels.paymentNotes,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -192,7 +193,7 @@ class _OrderEditPaymentSheetState
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text(VN.editPayment),
+                  : const Text(OrdersLabels.editPayment),
             ),
             const SizedBox(height: 8),
           ],

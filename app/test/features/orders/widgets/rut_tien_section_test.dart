@@ -6,7 +6,8 @@ import 'package:bakery_app/data/models/payment_transaction.dart';
 import 'package:bakery_app/data/models/work_item.dart';
 import 'package:bakery_app/features/orders/widgets/rut_tien_section.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils.dart';
 
 const _testRef = 'TEST-ORDER-RUT';
 
@@ -45,7 +46,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(RutTienSection), findsOneWidget);
-    expect(find.text(VN.rutTienSection), findsNothing);
+    expect(find.text(OrdersLabels.rutTienSection), findsNothing);
   });
 
   testWidgets('RutTienSection renders section header + totals when rut_tien item present',
@@ -92,10 +93,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(RutTienSection), findsOneWidget);
-    expect(find.text(VN.rutTienSection), findsOneWidget);
+    expect(find.text(OrdersLabels.rutTienSection), findsOneWidget);
     expect(find.text('Bánh rút tiền'), findsOneWidget);
-    expect(find.text('${VN.soTienRut}: ${formatVND(500000)}'), findsOneWidget);
-    expect(find.text('${VN.phiRutTien}: ${formatVND(10000)}'), findsOneWidget);
+    expect(find.text('${OrdersLabels.soTienRut}: ${formatVND(500000)}'), findsOneWidget);
+    expect(find.text('${OrdersLabels.phiRutTien}: ${formatVND(10000)}'), findsOneWidget);
     expect(find.textContaining(formatVND(200000)), findsOneWidget);
     expect(find.textContaining('500.000đ'), findsNWidgets(2));
     final button = find.byType(OutlinedButton);

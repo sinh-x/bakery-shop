@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:bakery_app/data/api/api_client.dart' show apiBaseUrlProvider;
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
@@ -12,7 +13,10 @@ import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -43,8 +47,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   int? _editingId;
   String? _category;
   String? _subcategory;
-  String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceDrawerCash;
+  String _paymentMethod = OrdersLabels.methodCash;
+  String _paymentSource = ExpensesLabels.paymentSourceDrawerCash;
   String? _staffName;
   String? _paidByName;
   late DateTime _eventDateTime;
@@ -130,7 +134,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_editing ? VN.expenseUpdateAction : VN.expenseAddAction),
+        title: Text(_editing ? ExpensesLabels.expenseUpdateAction : ExpensesLabels.expenseAddAction),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -197,11 +201,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
     final loggedBy = ref.read(loggedByProvider);
     if (loggedBy.isEmpty) {
-      showTopSnackBar(context, VN.expenseEmptyStaffWarning);
+      showTopSnackBar(context, ExpensesLabels.expenseEmptyStaffWarning);
       return;
     }
 
-    final isDebt = _paymentMethod == VN.methodDebt;
+    final isDebt = _paymentMethod == OrdersLabels.methodDebt;
 
     // Debt expenses have no payment source (FR2); default the payer to the
     // logged-in staff without prompting, and skip the staff-advance check.
@@ -215,9 +219,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       }
 
       if (!mounted) return;
-      if (_paymentSource == VN.paymentSourceStaffAdvance &&
+      if (_paymentSource == ExpensesLabels.paymentSourceStaffAdvance &&
           (_paidByName == null || _paidByName!.isEmpty)) {
-        showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
+        showTopSnackBar(context, ExpensesLabels.expenseStaffNameRequiredForAdvance);
         return;
       }
     }
@@ -253,7 +257,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(_editingId!, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventUpdated);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventUpdated);
       } else {
         final createdEvent = await ref
             .read(eventsProvider.notifier)
@@ -267,14 +271,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(createdEvent.id, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventLogged);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventLogged);
       }
       if (mounted) context.pop(true);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
         );
       }
     } finally {
@@ -301,7 +305,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
-      showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      showTopSnackBar(context, EventsLabels.eventPhotosUploadFailed);
     }
   }
 
@@ -310,14 +314,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.expensePayerConfirmTitle),
+        title: const Text(ExpensesLabels.expensePayerConfirmTitle),
         content: Text(staffName != null && staffName.isNotEmpty
-            ? '${VN.expensePayerConfirmPrompt}\n\n$staffName'
-            : VN.expensePayerConfirmPrompt),
+            ? '${ExpensesLabels.expensePayerConfirmPrompt}\n\n$staffName'
+            : ExpensesLabels.expensePayerConfirmPrompt),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           TextButton(
             onPressed: () async {
@@ -326,13 +330,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 Navigator.of(ctx).pop(custom);
               }
             },
-            child: const Text(VN.expensePayerEnterCustom),
+            child: const Text(ExpensesLabels.expensePayerEnterCustom),
           ),
           if (staffName != null && staffName.isNotEmpty)
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(staffName),
               child: Text(
-                '${VN.expensePayerUseStaff}: $staffName',
+                '${ExpensesLabels.expensePayerUseStaff}: $staffName',
               ),
             ),
         ],
@@ -346,24 +350,24 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     final result = await showDialog<String>(
       context: ctx,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text(VN.expensePayerEnterCustom),
+        title: const Text(ExpensesLabels.expensePayerEnterCustom),
         content: Form(
           key: formKey,
           child: TextFormField(
             controller: ctrl,
             autofocus: true,
             decoration: const InputDecoration(
-              hintText: VN.expensePayerCustomHint,
+              hintText: ExpensesLabels.expensePayerCustomHint,
               border: OutlineInputBorder(),
             ),
             validator: (v) =>
-                (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(null),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -371,7 +375,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 Navigator.of(dialogCtx).pop(ctrl.text.trim());
               }
             },
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -384,16 +388,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     final raw = (value ?? '').trim();
     final parsed = int.tryParse(raw);
     if (raw.isEmpty || parsed == null || parsed <= 0) {
-      return VN.expenseAmountValidationMessage;
+      return ExpensesLabels.expenseAmountValidationMessage;
     }
     return null;
   }
 
   String _summary(ExpenseEventData data) {
-    final tail = data.paymentMethod == VN.methodDebt && data.vendor.isNotEmpty
+    final tail = data.paymentMethod == OrdersLabels.methodDebt && data.vendor.isNotEmpty
         ? '${data.paymentMethod} • ${data.vendor}'
         : data.paymentMethod;
-    return '${VN.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - $tail';
+    return '${ExpensesLabels.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - $tail';
   }
 
   Future<void> _pickDate() async {

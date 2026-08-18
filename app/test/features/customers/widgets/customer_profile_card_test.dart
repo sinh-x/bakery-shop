@@ -25,7 +25,7 @@ void main() {
     expect(find.text('Sinh'), findsOneWidget);
     expect(find.textContaining('0901234567'), findsOneWidget);
     expect(find.textContaining('0909876543'), findsOneWidget);
-    expect(find.textContaining(VN.customerPrimaryPhone), findsOneWidget);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsOneWidget);
     // Order count line: "5 đơn/năm"
     expect(find.text('5 ${CustomersLabels.orderCountThisYearSuffix}'), findsOneWidget);
   });
@@ -64,7 +64,7 @@ void main() {
     const customer = Customer(id: 1, name: 'Sinh', phone: '0901234567');
     await tester.pumpWidget(wrap(const CustomerProfileCard(customer: customer)));
     expect(find.textContaining('0901234567'), findsOneWidget);
-    expect(find.textContaining(VN.customerPrimaryPhone), findsNothing);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsNothing);
   });
 
   testWidgets('full mode shows no phone line when customer has none', (tester) async {

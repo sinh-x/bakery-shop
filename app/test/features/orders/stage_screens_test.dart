@@ -237,7 +237,7 @@ void main() {
     expect(find.text(OrdersLabels.stage1EmptyTitle), findsOneWidget);
     expect(find.text(OrdersLabels.stage1EmptyBody), findsOneWidget);
     expect(find.byIcon(Icons.add), findsWidgets);
-    expect(find.text(VN.addProduct), findsOneWidget);
+    expect(find.text(OrdersLabels.addProduct), findsOneWidget);
   });
 
   testWidgets('Stage1ProductSelectionScreen shows selected items list when items present (AC-6)',
@@ -479,7 +479,7 @@ void main() {
     expect(find.byIcon(Icons.add), findsWidgets);
 
     // Tap the (+) filled button to open the picker.
-    await tester.tap(find.text(VN.addProduct));
+    await tester.tap(find.text(OrdersLabels.addProduct));
     await tester.pumpAndSettle();
 
     // AC-2: ProductPickerPage is shown full-screen with the product grid.
@@ -530,7 +530,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Open picker.
-    await tester.tap(find.text(VN.addProduct));
+    await tester.tap(find.text(OrdersLabels.addProduct));
     await tester.pumpAndSettle();
 
     expect(find.byType(ProductPickerPage), findsOneWidget);
@@ -808,7 +808,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Open picker — should restore to the 'banh_kem' tab (index 1).
-    await tester.tap(find.text(VN.addProduct));
+    await tester.tap(find.text(OrdersLabels.addProduct));
     await tester.pumpAndSettle();
 
     expect(find.byType(ProductPickerPage), findsOneWidget);

@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,10 +12,10 @@ import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class WorkItemEditCard extends ConsumerStatefulWidget {
   const WorkItemEditCard({super.key, required this.orderRef, required this.item});
 
@@ -147,7 +148,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     final assigned = _assignedPrice;
     final clamped = selling < assigned ? assigned : selling;
     setState(() {
-      _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+      _floorWarning = selling < assigned ? OrdersLabels.markupFloorWarning : null;
       // Reflect the clamped value back into the thousands-input field so the
       // displayed text matches what was persisted.
       _priceCtrl.text = (clamped / 1000).toInt().toString();
@@ -247,12 +248,12 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              VN.remove,
+              SharedLabels.remove,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -266,7 +267,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
             .remove(widget.item.id);
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, '${VN.apiError}: $e');
+          showTopSnackBar(context, '${SharedLabels.apiError}: $e');
         }
       }
     }
@@ -427,7 +428,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                 if (item.isExtra) ...[
                   const SizedBox(width: 4),
                   Tooltip(
-                    message: VN.giftToggleTooltip,
+                    message: OrdersLabels.giftToggleTooltip,
                     child: InkWell(
                       onTap: _toggleGift,
                       borderRadius: BorderRadius.circular(4),
@@ -452,7 +453,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                             ),
                             const SizedBox(width: 2),
                             Text(
-                              VN.giftBadge,
+                              OrdersLabels.giftBadge,
                               style: TextStyle(
                                 fontSize: 11,
                                 color: item.isGift ? Colors.green : Colors.grey,
@@ -495,7 +496,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        '${VN.giaGoc}: ${formatVND(_assignedPrice)}',
+                        '${OrdersLabels.giaGoc}: ${formatVND(_assignedPrice)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -506,8 +507,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       controller: _priceCtrl,
                       focusNode: _priceFocus,
                       decoration: const InputDecoration(
-                        labelText: VN.giaBan,
-                        helperText: VN.markupThousandsHint,
+                        labelText: OrdersLabels.giaBan,
+                        helperText: OrdersLabels.markupThousandsHint,
                         border: OutlineInputBorder(),
                         suffixText: ',000đ',
                         isDense: true,
@@ -530,7 +531,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       controller: _priceCtrl,
                       focusNode: _priceFocus,
                       decoration: const InputDecoration(
-                        labelText: VN.itemPrice,
+                        labelText: OrdersLabels.itemPrice,
                         border: OutlineInputBorder(),
                         suffixText: 'đ',
                         isDense: true,
@@ -546,7 +547,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                         next['useInventory'] = value ? 'true' : 'false';
                         _editItem(attributes: next);
                       },
-                      title: const Text(VN.useInventory),
+                      title: const Text(StockLabels.useInventory),
                       subtitle: useInventory ? Text(product.stockInlineText) : null,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -558,7 +559,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     controller: _notesCtrl,
                     focusNode: _notesFocus,
                     decoration: const InputDecoration(
-                      labelText: VN.notes,
+                      labelText: OrdersLabels.notes,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -591,7 +592,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                         _saveCandleType(null);
                       }
                     },
-                    title: const Text(VN.isBirthday),
+                    title: const Text(OrdersLabels.isBirthday),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -601,7 +602,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       controller: _ageCtrl,
                       focusNode: _ageFocus,
                       decoration: const InputDecoration(
-                        labelText: VN.birthdayAge,
+                        labelText: OrdersLabels.birthdayAge,
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -616,7 +617,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 2),
                       child: Text(
-                        VN.candleTypeSectionLabel,
+                        OrdersLabels.candleTypeSectionLabel,
                         style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.outline,
                             ),
@@ -660,7 +661,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                           );
                         }
                       },
-                      title: const Text(VN.rutTien),
+                      title: const Text(OrdersLabels.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -668,7 +669,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     if (_rutTien) ...[
                       Row(
                         children: [
-                          const Text('${VN.soTienRut}: '),
+                          const Text('${OrdersLabels.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
@@ -747,7 +748,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Text('${VN.phiRutTien}: '),
+                          const Text('${OrdersLabels.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current = int.tryParse(_cashFeeCtrl.text) ?? 0;

@@ -363,7 +363,7 @@ void main() {
       await tester.pump();
 
       // The assignment label "Nhân viên giao hàng" is present.
-      expect(find.text(VN.deliveryAssignee), findsOneWidget);
+      expect(find.text(OrdersLabels.deliveryAssignee), findsOneWidget);
       // The claim button is present (repositioned inside OrderInfoBlock).
       expect(find.text(OrdersLabels.deliveryClaimButton), findsOneWidget);
 
@@ -371,7 +371,7 @@ void main() {
       // OrderInfoBlock (i.e. repositioned inside the block, not a sibling),
       // and the button paints below the assignment label.
       final infoBlockFinder = find.byType(OrderInfoBlock);
-      final labelFinder = find.text(VN.deliveryAssignee);
+      final labelFinder = find.text(OrdersLabels.deliveryAssignee);
       final buttonFinder = find.text(OrdersLabels.deliveryClaimButton);
       expect(
         find.descendant(of: infoBlockFinder, matching: labelFinder),
@@ -400,10 +400,10 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text(VN.deliveryAssignee), findsOneWidget);
+      expect(find.text(OrdersLabels.deliveryAssignee), findsOneWidget);
       expect(find.text(OrdersLabels.deliveryUnclaimButton), findsOneWidget);
 
-      final labelRect = tester.getTopLeft(find.text(VN.deliveryAssignee));
+      final labelRect = tester.getTopLeft(find.text(OrdersLabels.deliveryAssignee));
       final buttonRect = tester.getTopLeft(
           find.text(OrdersLabels.deliveryUnclaimButton));
       expect(buttonRect.dy, greaterThan(labelRect.dy),
@@ -421,7 +421,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text(VN.deliveryAssignee), findsNothing);
+      expect(find.text(OrdersLabels.deliveryAssignee), findsNothing);
       expect(find.text(OrdersLabels.deliveryClaimButton), findsNothing);
     });
   });

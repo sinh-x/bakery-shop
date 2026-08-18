@@ -5,8 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/photo_upload_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
 /// Compact photo picker for the quick-log event form (FR6).
 ///
 /// Shows a single "Add photos" button by default; expands to a compact
@@ -87,7 +86,7 @@ class _QuickLogPhotoPickerState extends ConsumerState<QuickLogPhotoPicker> {
           onPressed: uploading ? null : _pickPhotos,
           icon: const Icon(Icons.add_a_photo, size: 18),
           label: Text(
-            count > 0 ? '${VN.addEventPhoto} ($count)' : VN.addEventPhoto,
+            count > 0 ? '${EventsLabels.addEventPhoto} ($count)' : EventsLabels.addEventPhoto,
           ),
         ),
       ],

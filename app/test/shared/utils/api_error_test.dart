@@ -1,7 +1,8 @@
 import 'package:bakery_app/shared/utils/api_error.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 void main() {
   group('normalizeApiError', () {
@@ -29,7 +30,7 @@ void main() {
 
       final normalized = normalizeApiError(error);
       expect(normalized.kind, ApiErrorKind.timeout);
-      expect(normalized.message, VN.apiTimeout);
+      expect(normalized.message, SharedLabels.apiTimeout);
     });
   });
 
@@ -44,46 +45,46 @@ void main() {
 
       for (final detail in backendDetails) {
         final action = orderStatusRecoveryActionFromDetail(detail);
-        expect(action, isNot(VN.orderStatusActionContactAdmin), reason: detail);
+        expect(action, isNot(OrdersLabels.orderStatusActionContactAdmin), reason: detail);
       }
     });
 
     test('maps known stock reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail('Không đủ tồn kho');
-      expect(action, VN.orderStatusActionCheckStock);
+      expect(action, OrdersLabels.orderStatusActionCheckStock);
     });
 
     test('maps known invalid price bucket reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail(
         'Invalid product price bucket for order item',
       );
-      expect(action, VN.orderStatusActionCheckPriceBucket);
+      expect(action, OrdersLabels.orderStatusActionCheckPriceBucket);
     });
 
     test('maps missing backward transition reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail(
         'Thiếu lý do khi quay lại trạng thái trước',
       );
-      expect(action, VN.orderStatusActionAddBackwardReason);
+      expect(action, OrdersLabels.orderStatusActionAddBackwardReason);
     });
 
     test('maps incomplete payment reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail(
         'Đơn hàng chưa thanh toán đủ',
       );
-      expect(action, VN.orderStatusActionCompletePayment);
+      expect(action, OrdersLabels.orderStatusActionCompletePayment);
     });
 
     test('builds message with order ref and status code', () {
       final message = buildOrderStatusFailureMessage(
         reason: 'Không đủ tồn kho',
-        action: VN.orderStatusActionCheckStock,
+        action: OrdersLabels.orderStatusActionCheckStock,
         orderRef: 'ORD-260508-010',
         statusCode: 422,
       );
       expect(message, contains('ORD-260508-010'));
       expect(message, contains('422'));
-      expect(message, contains(VN.orderStatusRecoveryLabel));
+      expect(message, contains(OrdersLabels.orderStatusRecoveryLabel));
     });
   });
 }

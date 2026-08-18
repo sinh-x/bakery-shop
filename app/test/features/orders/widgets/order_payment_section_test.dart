@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/orders/widgets/order_payment_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils.dart';
 
 void main() {
   testWidgets('OrderPaymentSection readOnly renders unpaid status when nothing paid',
@@ -20,9 +21,9 @@ void main() {
     );
 
     expect(find.byType(OrderPaymentSection), findsOneWidget);
-    expect(find.text(VN.payment), findsWidgets);
-    expect(find.text(VN.unpaid), findsOneWidget);
-    expect(find.text(VN.methodCash), findsOneWidget);
+    expect(find.text(OrdersLabels.payment), findsWidgets);
+    expect(find.text(OrdersLabels.unpaid), findsOneWidget);
+    expect(find.text(OrdersLabels.methodCash), findsOneWidget);
     expect(find.text(formatVND(0)), findsOneWidget);
     expect(find.text(formatVND(100000)), findsOneWidget);
   });
@@ -41,8 +42,8 @@ void main() {
       ),
     );
 
-    expect(find.text(VN.paid), findsOneWidget);
-    expect(find.text(VN.methodTransfer), findsOneWidget);
+    expect(find.text(OrdersLabels.paid), findsOneWidget);
+    expect(find.text(OrdersLabels.methodTransfer), findsOneWidget);
   });
 
   testWidgets('OrderPaymentSection editable shows add-payment button when remaining > 0',
@@ -61,7 +62,7 @@ void main() {
       ),
     );
 
-    expect(find.text(VN.partialPaid), findsOneWidget);
+    expect(find.text(OrdersLabels.partialPaid), findsOneWidget);
     final button = find.byType(OutlinedButton);
     expect(button, findsOneWidget);
     await tester.tap(button);

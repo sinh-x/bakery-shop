@@ -4,7 +4,7 @@ import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/expandable_item_card.dart';
 import 'package:bakery_app/providers/order_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -137,11 +137,11 @@ void main() {
         expect(item.priceChipId, 1);
 
         // Enable the useInventory toggle so _stockInlineText subtitle appears.
-        await tester.tap(find.text(VN.useInventory));
+        await tester.tap(find.text(StockLabels.useInventory));
         await tester.pump();
 
         // _stockInlineText should show merged stock (9), not raw (3).
-        expect(find.text('${VN.stockRemaining}: 9'), findsOneWidget);
+        expect(find.text('${StockLabels.stockRemaining}: 9'), findsOneWidget);
       },
     );
 
@@ -171,11 +171,11 @@ void main() {
         expect(item.priceChipId, 2);
 
         // Enable useInventory toggle to surface _stockInlineText.
-        await tester.tap(find.text(VN.useInventory));
+        await tester.tap(find.text(StockLabels.useInventory));
         await tester.pump();
 
         // Raw chip stock (6) shown — no merge for non-base-price chips.
-        expect(find.text('${VN.stockRemaining}: 6'), findsOneWidget);
+        expect(find.text('${StockLabels.stockRemaining}: 6'), findsOneWidget);
       },
     );
 

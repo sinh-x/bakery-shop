@@ -10,7 +10,7 @@ import 'package:bakery_app/features/dashboard/widgets/today_order_list.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 Order _order({
   required String ref,
@@ -136,7 +136,7 @@ void main() {
   group('TodayOrderList widget', () {
     testWidgets('empty order list shows empty-state message', (tester) async {
       await _pump(tester, const []);
-      expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
+      expect(find.text(SharedLabels.khongCoDonHomNay), findsOneWidget);
     });
 
     testWidgets('orders grouped by status with a count per group (AC6)',
@@ -153,11 +153,11 @@ void main() {
       // Each non-empty status group renders a header with its VN label +
       // count badge. Headers: "Mới" (2), "Đã giao" (1), "Hoàn thành" (1),
       // "Đã hủy" (1).
-      expect(find.text(VN.statusNew), findsOneWidget);
+      expect(find.text(OrdersLabels.statusNew), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
-      expect(find.text(VN.statusDelivered), findsOneWidget);
-      expect(find.text(VN.statusCompleted), findsOneWidget);
-      expect(find.text(VN.statusCancelled), findsOneWidget);
+      expect(find.text(OrdersLabels.statusDelivered), findsOneWidget);
+      expect(find.text(OrdersLabels.statusCompleted), findsOneWidget);
+      expect(find.text(OrdersLabels.statusCancelled), findsOneWidget);
 
       // Each order's customer name appears via its OrderCard.
       for (final name in ['An', 'Bình', 'Cúc', 'Dung', 'Em']) {
@@ -174,10 +174,10 @@ void main() {
       await _pump(tester, orders);
 
       // Completed group header + count badge "2".
-      expect(find.text(VN.statusCompleted), findsOneWidget);
+      expect(find.text(OrdersLabels.statusCompleted), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       // New group header + count badge "1".
-      expect(find.text(VN.statusNew), findsOneWidget);
+      expect(find.text(OrdersLabels.statusNew), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       // Completed order rows render.
       expect(find.text('POS one'), findsOneWidget);
@@ -197,10 +197,10 @@ void main() {
 
       // Collect the y-offsets of each status header text to assert order.
       final labels = [
-        VN.statusNew,
-        VN.statusDelivered,
-        VN.statusCompleted,
-        VN.statusCancelled,
+        OrdersLabels.statusNew,
+        OrdersLabels.statusDelivered,
+        OrdersLabels.statusCompleted,
+        OrdersLabels.statusCancelled,
       ];
       final offsets = <String, double>{};
       for (final label in labels) {
@@ -223,8 +223,8 @@ void main() {
       await _pump(tester, orders);
 
       // Both status headers present.
-      expect(find.text(VN.statusNew), findsOneWidget);
-      expect(find.text(VN.statusCompleted), findsOneWidget);
+      expect(find.text(OrdersLabels.statusNew), findsOneWidget);
+      expect(find.text(OrdersLabels.statusCompleted), findsOneWidget);
       // Order cards visible — groups default to expanded.
       expect(find.text('An'), findsOneWidget);
       expect(find.text('Bình'), findsOneWidget);
@@ -247,7 +247,7 @@ void main() {
       expect(find.text('Bình'), findsOneWidget);
 
       // Tap the "new" status header to collapse it.
-      await tester.tap(find.text(VN.statusNew));
+      await tester.tap(find.text(OrdersLabels.statusNew));
       await tester.pumpAndSettle(const Duration(seconds: 1));
 
       // "new" group now collapsed: chevron flipped, order rows hidden.
@@ -255,16 +255,16 @@ void main() {
       expect(find.text('An'), findsNothing);
       expect(find.text('Bình'), findsNothing);
       // Header label + count badge still visible when collapsed.
-      expect(find.text(VN.statusNew), findsOneWidget);
+      expect(find.text(OrdersLabels.statusNew), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
 
       // "completed" group unaffected — still expanded.
-      expect(find.text(VN.statusCompleted), findsOneWidget);
+      expect(find.text(OrdersLabels.statusCompleted), findsOneWidget);
       expect(find.text('Cúc'), findsOneWidget);
       expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
 
       // Tap again to re-expand.
-      await tester.tap(find.text(VN.statusNew));
+      await tester.tap(find.text(OrdersLabels.statusNew));
       await tester.pumpAndSettle(const Duration(seconds: 1));
 
       // Order rows visible again.

@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../data/models/order_draft.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 class RutTienEditor extends StatefulWidget {
   const RutTienEditor({
     super.key,
@@ -77,7 +77,7 @@ class _RutTienEditorState extends State<RutTienEditor> {
             }
             widget.onStateChanged();
           },
-          title: const Text(VN.rutTien),
+          title: const Text(OrdersLabels.rutTien),
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -85,7 +85,7 @@ class _RutTienEditorState extends State<RutTienEditor> {
         if (_rutTien) ...[
           Row(
             children: [
-              const Text('${VN.soTienRut}: '),
+              const Text('${OrdersLabels.soTienRut}: '),
               IconButton.filled(
                 onPressed: () {
                   final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
@@ -187,7 +187,7 @@ class _RutTienEditorState extends State<RutTienEditor> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Text('${VN.phiRutTien}: '),
+              const Text('${OrdersLabels.phiRutTien}: '),
               IconButton.filled(
                 onPressed: () {
                   final current =

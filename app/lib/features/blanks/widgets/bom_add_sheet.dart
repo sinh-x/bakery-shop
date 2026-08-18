@@ -1,10 +1,11 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/blanks_provider.dart';
 import '../../../data/providers/bom_provider.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Show the add-BOM-mapping bottom sheet for [priceChipId].
 ///
 /// The sheet lists available blanks (excluding any already mapped to this
@@ -81,7 +82,7 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
       ),
       child: blanksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => const Text(VN.apiError),
+        error: (e, _) => const Text(SharedLabels.apiError),
         data: (blanks) {
           final mappedIds = bomAsync.maybeWhen(
             data: (boms) => boms.map((b) => b.blankId).toSet(),

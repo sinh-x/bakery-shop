@@ -8,8 +8,8 @@ import '../../data/models/event_photo.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/event_detail_photo_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 const _kTypeIcons = <String, IconData>{
   'note': Icons.edit_note,
   'equipment': Icons.warning_amber,
@@ -21,13 +21,13 @@ const _kTypeIcons = <String, IconData>{
 };
 
 const _kTypeLabels = <String, String>{
-  'note': VN.eventNote,
-  'equipment': VN.typeEquipment,
-  'production': VN.eventProduction,
-  'inventory': VN.eventInventory,
-  'expense': VN.eventExpense,
-  'delivery': VN.eventDelivery,
-  'order': VN.eventOrder,
+  'note': EventsLabels.eventNote,
+  'equipment': EventsLabels.typeEquipment,
+  'production': EventsLabels.eventProduction,
+  'inventory': EventsLabels.eventInventory,
+  'expense': EventsLabels.eventExpense,
+  'delivery': EventsLabels.eventDelivery,
+  'order': EventsLabels.eventOrder,
 };
 
 Color _badgeColor(String type) {
@@ -126,7 +126,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
-            tooltip: VN.editEvent,
+            tooltip: EventsLabels.editEvent,
             onPressed: () =>
                 context.push('/events/${event.id}/edit', extra: event),
           ),
@@ -170,7 +170,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
           // Summary
           Text(
-            VN.eventSummary,
+            EventsLabels.eventSummary,
             style: theme.textTheme.labelMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -182,7 +182,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           // Tags
           if (event.tags.isNotEmpty) ...[
             Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -214,7 +214,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${VN.loggedBy}: ${event.displayLoggedBy}',
+                  '${EventsLabels.loggedBy}: ${event.displayLoggedBy}',
                   style: theme.textTheme.bodyMedium,
                 ),
               ],
@@ -224,7 +224,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           const SizedBox(height: 20),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          Text(VN.eventPhotos, style: theme.textTheme.titleSmall),
+          Text(EventsLabels.eventPhotos, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           EventDetailPhotoSection(
             photos: _photos,

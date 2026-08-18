@@ -1,7 +1,7 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
-
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Editable shipping fee stepper section (+/− buttons with 5000đ increments)
 /// for door/bus delivery orders. Extracted from [OrderDeliverySection] to keep
 /// the parent widget under the 400-line Flutter coding-standards limit.
@@ -50,7 +50,7 @@ class ShippingFeeSection extends StatelessWidget {
         children: [
           Flexible(
             child: Text(
-              VN.errorLoading,
+              SharedLabels.errorLoading,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.error,
                   ),
@@ -62,7 +62,7 @@ class ShippingFeeSection extends StatelessWidget {
             TextButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text(VN.retry),
+              label: const Text(SharedLabels.retry),
             ),
           ],
         ],
@@ -84,7 +84,7 @@ class ShippingFeeSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            fee == 0 ? VN.shippingFree : formatVND(fee),
+            fee == 0 ? OrdersLabels.shippingFree : formatVND(fee),
             style: Theme.of(context).textTheme.titleLarge,
           ),
         ),

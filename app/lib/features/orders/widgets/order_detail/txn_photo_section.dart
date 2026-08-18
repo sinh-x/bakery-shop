@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart'
@@ -7,10 +8,10 @@ import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../../data/models/order_photo.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Shared per-transaction photo section used by both the edit-payment and
 /// transaction-detail sheets (DG-410 CQ-1).
 ///
@@ -39,7 +40,7 @@ class TxnPhotoSection extends ConsumerStatefulWidget {
   final bool showRemove;
 
   /// When true, the no-photo state renders an inline row with an
-  /// [VN.txnPhotoEmpty] label next to the attach button (detail sheet). When
+  /// [OrdersLabels.txnPhotoEmpty] label next to the attach button (detail sheet). When
   /// false, the empty state is a single left-aligned attach button
   /// (edit sheet).
   final bool showEmptyState;
@@ -73,7 +74,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
           .read(orderPaymentTransactionsProvider(_orderRef).notifier)
           .attachPhoto(_txnId, image);
       if (mounted) {
-        showTopSnackBar(context, VN.txnPhotoSaved);
+        showTopSnackBar(context, OrdersLabels.txnPhotoSaved);
       }
     } catch (e, st) {
       // CQ-3: log the exception detail for diagnostics but never surface
@@ -81,7 +82,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
       // VN label only.
       debugPrint('attachPhoto failed: $e\n$st');
       if (mounted) {
-        showTopSnackBar(context, VN.txnPhotoSaveFailed);
+        showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
       if (mounted) setState(() => _photoBusy = false);
@@ -93,18 +94,18 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.txnPhotoRemoveConfirm),
+        title: const Text(OrdersLabels.txnPhotoRemoveConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(ctx).colorScheme.error,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
@@ -116,12 +117,12 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
           .read(orderPaymentTransactionsProvider(_orderRef).notifier)
           .detachPhoto(_txnId);
       if (mounted) {
-        showTopSnackBar(context, VN.txnPhotoRemoved);
+        showTopSnackBar(context, OrdersLabels.txnPhotoRemoved);
       }
     } catch (e, st) {
       debugPrint('detachPhoto failed: $e\n$st');
       if (mounted) {
-        showTopSnackBar(context, VN.txnPhotoSaveFailed);
+        showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
       if (mounted) setState(() => _photoBusy = false);
@@ -137,7 +138,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(VN.txnPhotoSection, style: theme.textTheme.labelMedium),
+        Text(OrdersLabels.txnPhotoSection, style: theme.textTheme.labelMedium),
         const SizedBox(height: 8),
         photoAsync.when(
           loading: () => const SizedBox(
@@ -148,7 +149,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
             // CQ-3: surface the stable label, not raw exception text.
             debugPrint('transactionPhotoProvider error: $e\n$st');
             return Text(
-              VN.txnPhotoSaveFailed,
+              OrdersLabels.txnPhotoSaveFailed,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.error),
             );
@@ -161,19 +162,19 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                   children: [
                     Expanded(
                       child: Text(
-                        VN.txnPhotoEmpty,
+                        OrdersLabels.txnPhotoEmpty,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.outline,
                         ),
                       ),
                     ),
                     Tooltip(
-                      message: VN.txnPhotoAttach,
+                      message: OrdersLabels.txnPhotoAttach,
                       child: TextButton.icon(
                         onPressed: _photoBusy ? null : _pickTxnPhoto,
                         icon:
                             const Icon(Icons.photo_camera_outlined, size: 20),
-                        label: const Text(VN.txnPhotoAttach),
+                        label: const Text(OrdersLabels.txnPhotoAttach),
                       ),
                     ),
                   ],
@@ -182,11 +183,11 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
               return Align(
                 alignment: Alignment.centerLeft,
                 child: Tooltip(
-                  message: VN.txnPhotoAttach,
+                  message: OrdersLabels.txnPhotoAttach,
                   child: TextButton.icon(
                     onPressed: _photoBusy ? null : _pickTxnPhoto,
                     icon: const Icon(Icons.photo_camera_outlined, size: 20),
-                    label: const Text(VN.txnPhotoAttach),
+                    label: const Text(OrdersLabels.txnPhotoAttach),
                   ),
                 ),
               );
@@ -205,7 +206,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Tooltip(
-                  message: VN.txnPhotoTapToEnlarge,
+                  message: OrdersLabels.txnPhotoTapToEnlarge,
                   child: OrderPhotoThumbnail(
                     url: url,
                     tags: 'chuyen-khoan',
@@ -226,20 +227,20 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Tooltip(
-                        message: VN.txnPhotoReplace,
+                        message: OrdersLabels.txnPhotoReplace,
                         child: TextButton.icon(
                           onPressed: _photoBusy ? null : _pickTxnPhoto,
                           icon: const Icon(Icons.swap_horiz, size: 18),
-                          label: const Text(VN.txnPhotoReplace),
+                          label: const Text(OrdersLabels.txnPhotoReplace),
                         ),
                       ),
                       if (widget.showRemove)
                         Tooltip(
-                          message: VN.txnPhotoRemove,
+                          message: OrdersLabels.txnPhotoRemove,
                           child: TextButton.icon(
                             onPressed: _photoBusy ? null : _removeTxnPhoto,
                             icon: const Icon(Icons.delete_outline, size: 18),
-                            label: const Text(VN.txnPhotoRemove),
+                            label: const Text(OrdersLabels.txnPhotoRemove),
                           ),
                         ),
                     ],

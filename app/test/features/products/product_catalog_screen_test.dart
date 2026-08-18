@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 
 class _FakeCategoryService extends CategoryService {
   _FakeCategoryService(this._categories) : super(Dio());
@@ -182,16 +183,16 @@ void main() {
 
     expect(find.text('Banh kem dau'), findsOneWidget);
     expect(find.byType(ProductCard), findsOneWidget);
-    expect(find.text(VN.hiddenProducts), findsOneWidget);
+    expect(find.text(ProductsLabels.hiddenProducts), findsOneWidget);
     expect(find.text('Banh kem cu'), findsNothing);
-    expect(find.text(VN.showProduct), findsNothing);
+    expect(find.text(ProductsLabels.showProduct), findsNothing);
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
 
     expect(find.text('Banh kem cu'), findsOneWidget);
-    expect(find.text(VN.productHiddenState), findsOneWidget);
-    expect(find.text(VN.showProduct), findsNothing);
+    expect(find.text(ProductsLabels.productHiddenState), findsOneWidget);
+    expect(find.text(ProductsLabels.showProduct), findsNothing);
     expect(find.byType(ProductCard), findsNWidgets(2));
   });
 

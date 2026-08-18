@@ -1,4 +1,5 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting filter/search/tile/empty/loading widgets now would require broad state-lift changes across persisted filter and refresh flows. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +23,8 @@ import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
-
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
 const _statusFilters = [
@@ -337,7 +339,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   ),
                 const Expanded(
                   child: Center(
-                    child: Text(VN.tabOrders),
+                    child: Text(SharedLabels.tabOrders),
                   ),
                 ),
               ],
@@ -347,7 +349,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: () => ref.read(orderListProvider.notifier).refresh(),
           ),
           IconButton(
@@ -355,8 +357,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
             tooltip: _viewMode == 'list'
-                ? VN.switchToKanbanView
-                : VN.switchToListView,
+                ? SharedLabels.switchToKanbanView
+                : SharedLabels.switchToListView,
             onPressed: _toggleViewMode,
           ),
           AppBarOverflowMenu(
@@ -364,11 +366,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             items: const [
               PopupMenuItem<String>(
                 value: 'orders_history',
-                child: Text(VN.openOrderHistory),
+                child: Text(SharedLabels.openOrderHistory),
               ),
               PopupMenuItem<String>(
                 value: 'manage_customers',
-                child: Text(VN.openCustomerManagement),
+                child: Text(CustomersLabels.openCustomerManagement),
               ),
               PopupMenuItem<String>(
                 value: 'manage_blanks',
@@ -388,14 +390,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(text: VN.orderListTab),
-            const Tab(text: VN.cakeQueue),
+            const Tab(text: OrdersLabels.orderListTab),
+            const Tab(text: OrdersLabels.cakeQueue),
             Tab(
               text: () {
                 final orders = ordersAsync.asData?.value ?? [];
                 final todayCount =
                     filterDeliveryOrders(orders, todayOnly: true).length;
-                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : VN.deliveryTab;
+                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : OrdersLabels.deliveryTab;
               }(),
             ),
           ],
@@ -404,7 +406,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       floatingActionButton: isOrdersTab
           ? FloatingActionButton(
               onPressed: () => context.push('/orders/new'),
-              tooltip: VN.createOrder,
+              tooltip: OrdersLabels.createOrder,
               child: const Icon(Icons.add),
             )
           : null,
@@ -420,7 +422,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: VN.searchOrders,
+                    hintText: SharedLabels.searchOrders,
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
@@ -499,11 +501,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(VN.apiError),
+                              const Text(SharedLabels.apiError),
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _onRefresh,
-                                child: const Text(VN.retry),
+                                child: const Text(SharedLabels.retry),
                               ),
                             ],
                           ),

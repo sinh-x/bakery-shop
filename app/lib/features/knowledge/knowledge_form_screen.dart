@@ -1,4 +1,5 @@
 // EXEMPT: 300-line threshold exceeded — pre-existing oversized file (was 436 lines before DG-333 Phase 8). Splitting form fields (title/content/type/tags/photos/pin) into sub-widgets now would duplicate controller ownership and save-flow wiring across widget boundaries. Phase 8 only replaced the inline upload loop with the shared notifier + indicator (+13 net). Reviewed 2026-08-02.
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -14,8 +15,9 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
 // Knowledge types for the form
 const _kTypeChips = [
   ('recipe', 'Công thức'),
@@ -152,7 +154,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
         ref.invalidate(knowledgeEntriesProvider);
         ref.invalidate(knowledgeEntryDetailProvider(widget.entry!.id));
         if (mounted) {
-          showTopSnackBar(context, VN.knowledgeSaved);
+          showTopSnackBar(context, SharedLabels.knowledgeSaved);
           context.pop();
         }
       } else {
@@ -177,7 +179,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           } catch (_) {}
         }
         if (mounted) {
-          showTopSnackBar(context, VN.knowledgeCreated);
+          showTopSnackBar(context, SharedLabels.knowledgeCreated);
           context.pop();
         }
       }
@@ -187,7 +189,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
         // (DG-333 Phase 5.6-c1-fix m3); fall back to e.toString() for other
         // unexpected errors.
         final message = e is PhotoUploadPartialFailure
-            ? VN.photoUploadCompleteWithErrors(
+            ? SharedLabels.photoUploadCompleteWithErrors(
                 e.completedCount,
                 e.failedCount,
                 e.totalCount,
@@ -207,7 +209,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? VN.editKnowledge : VN.createKnowledge),
+        title: Text(_isEditing ? SharedLabels.editKnowledge : SharedLabels.createKnowledge),
         actions: [
           IconButton(
             icon: _saving
@@ -217,7 +219,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check),
-            tooltip: VN.save,
+            tooltip: SharedLabels.save,
             onPressed: _saving ? null : _submit,
           ),
           const AppBarOverflowMenu(),
@@ -232,7 +234,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             autofocus: !_isEditing,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              labelText: VN.knowledgeTitleField,
+              labelText: SharedLabels.knowledgeTitleField,
               border: OutlineInputBorder(),
             ),
           ),
@@ -245,7 +247,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             maxLines: 10,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              labelText: VN.knowledgeContentField,
+              labelText: SharedLabels.knowledgeContentField,
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
@@ -257,7 +259,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(
-              VN.knowledgeTypeField,
+              SharedLabels.knowledgeTypeField,
               style: theme.textTheme.titleSmall,
             ),
           ),
@@ -280,7 +282,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.tagsLabel, style: theme.textTheme.titleSmall),
+            child: Text(ProductsLabels.tagsLabel, style: theme.textTheme.titleSmall),
           ),
           Wrap(
             spacing: 6,
@@ -301,7 +303,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                     autofocus: true,
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
-                      hintText: VN.addTag,
+                      hintText: EventsLabels.addTag,
                       isDense: true,
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(
@@ -315,7 +317,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
               else
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 16),
-                  label: const Text(VN.addTag),
+                  label: const Text(EventsLabels.addTag),
                   onPressed: () => setState(() => _showTagField = true),
                 ),
             ],
@@ -327,7 +329,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(
-              VN.knowledgePhotosField,
+              SharedLabels.knowledgePhotosField,
               style: theme.textTheme.titleSmall,
             ),
           ),
@@ -352,7 +354,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                         Icon(Icons.add_a_photo, color: colorScheme.primary),
                         const SizedBox(height: 4),
                         Text(
-                          VN.addPhoto,
+                          SharedLabels.addPhoto,
                           style: TextStyle(
                             fontSize: 11,
                             color: colorScheme.primary,

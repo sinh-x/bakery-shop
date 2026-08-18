@@ -1,11 +1,11 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Print checklist dialog shown after the new → confirmed transition
 /// (Flow A). Lets staff pick which receipts to print immediately.
 class OrderPrintChecklistDialog extends ConsumerStatefulWidget {
@@ -45,7 +45,7 @@ class _OrderPrintChecklistDialogState
             .toList();
 
         for (final itemId in mainItemIds) {
-          setState(() => _statusText = VN.printingInternalReceipt);
+          setState(() => _statusText = SharedLabels.printingInternalReceipt);
           await receiptService.printReceipt(
             orderRef: widget.orderRef,
             type: ReceiptType.workTicket,
@@ -56,14 +56,14 @@ class _OrderPrintChecklistDialogState
 
         if (mainItemIds.isNotEmpty) {
           if (mounted) {
-            showTopSnackBar(context, VN.internalReceiptPrinted);
+            showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
           }
         }
       }
 
       // Print customer receipt (via server USB printer)
       if (_printCustomer) {
-        setState(() => _statusText = VN.printingCustomerReceipt);
+        setState(() => _statusText = SharedLabels.printingCustomerReceipt);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.customer,
@@ -72,12 +72,12 @@ class _OrderPrintChecklistDialogState
       }
 
       if (mounted) {
-        showTopSnackBar(context, VN.printSuccess);
+        showTopSnackBar(context, SharedLabels.printSuccess);
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) {
@@ -100,7 +100,7 @@ class _OrderPrintChecklistDialogState
     final hasSelection = _printInternal || _printCustomer;
 
     return AlertDialog(
-      title: const Text(VN.printChecklistTitle),
+      title: const Text(SharedLabels.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -125,14 +125,14 @@ class _OrderPrintChecklistDialogState
                     value: _printInternal,
                     onChanged: (v) =>
                         setState(() => _printInternal = v ?? false),
-                    title: const Text(VN.printWorkTicket),
+                    title: const Text(SharedLabels.printWorkTicket),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                   ),
                 CheckboxListTile(
                   value: _printCustomer,
                   onChanged: (v) => setState(() => _printCustomer = v ?? false),
-                  title: const Text(VN.printCustomerReceipt),
+                  title: const Text(SharedLabels.printCustomerReceipt),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -141,12 +141,12 @@ class _OrderPrintChecklistDialogState
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: const Text(VN.printSkip),
+          child: const Text(SharedLabels.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: hasSelection ? _printSelected : null,
-            child: const Text(VN.print),
+            child: const Text(SharedLabels.print),
           ),
       ],
     );

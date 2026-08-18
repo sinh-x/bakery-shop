@@ -1,7 +1,8 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/features/events/event_list_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,13 +106,13 @@ Future<void> _pump(
 void main() {
   testWidgets('renders app bar with events title and FAB', (tester) async {
     await _pump(tester, interceptor: _EventsInterceptor(const []));
-    expect(find.text(VN.tabEvents), findsOneWidget);
+    expect(find.text(SharedLabels.tabEvents), findsOneWidget);
     expect(find.byIcon(Icons.add), findsOneWidget);
   });
 
   testWidgets('shows empty state when no events', (tester) async {
     await _pump(tester, interceptor: _EventsInterceptor(const []));
-    expect(find.text(VN.noEvents), findsOneWidget);
+    expect(find.text(EventsLabels.noEvents), findsOneWidget);
   });
 
   testWidgets('renders event cards with summary', (tester) async {
@@ -135,27 +136,27 @@ void main() {
 
   testWidgets('shows error state with retry when API fails', (tester) async {
     await _pump(tester, interceptor: _EventsInterceptor(const [], fail: true));
-    expect(find.text(VN.errorLoading), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.errorLoading), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('date range chips are present', (tester) async {
     await _pump(tester, interceptor: _EventsInterceptor(const []));
-    expect(find.text(VN.filterToday), findsOneWidget);
-    expect(find.text(VN.filterWeek), findsOneWidget);
-    expect(find.text(VN.filterMonth), findsOneWidget);
-    expect(find.text(VN.filterAll), findsAtLeast(1));
+    expect(find.text(EventsLabels.filterToday), findsOneWidget);
+    expect(find.text(EventsLabels.filterWeek), findsOneWidget);
+    expect(find.text(EventsLabels.filterMonth), findsOneWidget);
+    expect(find.text(EventsLabels.filterAll), findsAtLeast(1));
   });
 
   testWidgets('type filter dropdown shows all type labels', (tester) async {
     await _pump(tester, interceptor: _EventsInterceptor(const []));
     // The dropdown hint shows "Tất cả" initially.
-    expect(find.text(VN.filterAll), findsAtLeast(1));
+    expect(find.text(EventsLabels.filterAll), findsAtLeast(1));
     // Tap the dropdown to open it.
     await tester.tap(find.byType(DropdownButton<String?>).first);
     await tester.pumpAndSettle();
-    expect(find.text(VN.eventNote), findsOneWidget);
-    expect(find.text(VN.typeEquipment), findsOneWidget);
+    expect(find.text(EventsLabels.eventNote), findsOneWidget);
+    expect(find.text(EventsLabels.typeEquipment), findsOneWidget);
   });
 
   testWidgets('FAB navigates to new-event route', (tester) async {
@@ -179,6 +180,6 @@ void main() {
     await tester.tap(find.byIcon(Icons.search));
     await tester.pumpAndSettle();
     // Search field now visible with hint text.
-    expect(find.text(VN.searchEvents), findsOneWidget);
+    expect(find.text(EventsLabels.searchEvents), findsOneWidget);
   });
 }

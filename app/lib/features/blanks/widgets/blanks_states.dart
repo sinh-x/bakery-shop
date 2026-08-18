@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/labels/blanks.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Shared error-state widget for the blanks feature screens.
 ///
 /// Shows a `cloud_off` icon, the standard API error label, and a retry
@@ -20,12 +18,12 @@ class BlanksErrorView extends StatelessWidget {
         children: [
           const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
           const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
+          Text(SharedLabels.apiError, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
+            label: const Text(SharedLabels.retry),
           ),
         ],
       ),

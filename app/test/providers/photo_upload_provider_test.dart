@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
@@ -240,16 +240,16 @@ void main() {
   // FR6 (DG-364 Phase 4): the VN status label for `pending` must read
   // "Đang xử lý" (not "Đang chờ"). The provider itself does not emit labels,
   // but the label map is the single source of truth consumed by
-  // `UploadProgressIndicator` via `VN.photoUploadStatusLabels`.
+  // `UploadProgressIndicator` via `SharedLabels.photoUploadStatusLabels`.
   group('VN photo upload pending label (FR6)', () {
     test('pending status label is "Đang xử lý" (not "Đang chờ")', () {
-      expect(VN.photoUploadStatusLabels['pending'], 'Đang xử lý');
-      expect(VN.photoUploadStatusLabels['pending'], isNot('Đang chờ'));
+      expect(SharedLabels.photoUploadStatusLabels['pending'], 'Đang xử lý');
+      expect(SharedLabels.photoUploadStatusLabels['pending'], isNot('Đang chờ'));
     });
 
     test('all expected status labels are present and non-empty', () {
       for (final status in PhotoUploadStatus.values) {
-        final label = VN.photoUploadStatusLabels[status.name];
+        final label = SharedLabels.photoUploadStatusLabels[status.name];
         expect(label, isNotNull, reason: 'missing label for ${status.name}');
         expect(label, isNotEmpty, reason: 'empty label for ${status.name}');
       }

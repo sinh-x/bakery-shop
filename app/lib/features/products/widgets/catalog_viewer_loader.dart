@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/providers/catalog_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../widgets/catalog_photo_viewer.dart';
 
 /// Loads a product's catalog photos and opens the viewer at the requested photo.
@@ -30,15 +31,15 @@ class CatalogViewerLoader extends ConsumerWidget {
       ),
       error: (_, stackTrace) {
         return Scaffold(
-          appBar: AppBar(title: const Text(VN.catalogTitle)),
-          body: const Center(child: Text(VN.apiError)),
+          appBar: AppBar(title: const Text(ProductsLabels.catalogTitle)),
+          body: const Center(child: Text(SharedLabels.apiError)),
         );
       },
       data: (photos) {
         if (photos.isEmpty) {
           return Scaffold(
-            appBar: AppBar(title: const Text(VN.catalogTitle)),
-            body: const Center(child: Text(VN.noCatalogPhotos)),
+            appBar: AppBar(title: const Text(ProductsLabels.catalogTitle)),
+            body: const Center(child: Text(ProductsLabels.noCatalogPhotos)),
           );
         }
         final initialIndex = initialPhotoId == null

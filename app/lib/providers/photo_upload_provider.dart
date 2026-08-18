@@ -6,7 +6,7 @@ import '../shared/widgets/upload_progress_indicator.dart';
 /// Typed exception thrown when a photo-upload batch completes with one or
 /// more per-photo failures (DG-333 Phase 5.6-c1-fix m3).
 ///
-/// Replaces the prior `throw Exception(VN...)` pattern in
+/// Replaces the prior `throw Exception(<user-facing VN string>)` pattern in
 /// `knowledge_form_screen._uploadNewPhotos` so callers can catch a
 /// structured failure instead of string-matching on the user-facing
 /// message. The [userMessage] getter formats the VN summary from the

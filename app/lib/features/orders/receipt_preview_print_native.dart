@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -8,8 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../data/services/printer_service.dart';
 import '../../providers/printer_provider.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Native (Android/iOS) Bluetooth print via TSPL.
 Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref) async {
   final widgetRef = ref as WidgetRef;
@@ -23,7 +23,7 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
       final success = await widgetRef.read(printerProvider.notifier).printImage(imageBytes);
       if (success) {
         if (context.mounted) {
-          showTopSnackBar(context, VN.printSuccess);
+          showTopSnackBar(context, SharedLabels.printSuccess);
         }
         return;
       }
@@ -41,7 +41,7 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
 
   if (!context.mounted) return;
   if (result == PrinterPickerResult.success) {
-    showTopSnackBar(context, VN.printSuccess);
+    showTopSnackBar(context, SharedLabels.printSuccess);
   }
 }
 

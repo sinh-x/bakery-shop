@@ -9,8 +9,7 @@
 library;
 
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'cash_drawer_breakdown_card.dart';
 import 'cash_drawer_breakdown_row.dart';
 
@@ -31,7 +30,7 @@ class CashDrawerBreakdownOutflowGroup extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          VN.cashDrawerBreakdownOutflowGroup,
+          CashDrawerLabels.cashDrawerBreakdownOutflowGroup,
           style: theme.textTheme.labelMedium?.copyWith(
             fontWeight: FontWeight.bold,
             color: theme.colorScheme.onSurfaceVariant,
@@ -41,7 +40,7 @@ class CashDrawerBreakdownOutflowGroup extends StatelessWidget {
         const CashDrawerBreakdownHeaderRow(),
         for (final r in rows) CashDrawerBreakdownRowWidget(row: r),
         CashDrawerBreakdownGroupTotalRow(
-          label: VN.cashDrawerBreakdownTotalOut,
+          label: CashDrawerLabels.cashDrawerBreakdownTotalOut,
           amount: totalOut,
           inflow: false,
         ),

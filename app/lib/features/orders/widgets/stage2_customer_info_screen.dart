@@ -10,7 +10,6 @@ import 'section_header.dart';
 import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
   const Stage2CustomerInfoScreen({
     super.key,
@@ -108,7 +107,7 @@ class _Stage2CustomerInfoScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SectionHeader(VN.customer),
+                  const SectionHeader(OrdersLabels.customer),
                   OrderCustomerSection(
                     selectedCustomer: state.wizardData.selectedCustomer,
                     customerTouched: _customerTouched,
@@ -122,7 +121,7 @@ class _Stage2CustomerInfoScreenState
                   ),
                   if (!widget.posMode) ...[
                     const SizedBox(height: 20),
-                    const SectionHeader(VN.orderSource),
+                    const SectionHeader(OrdersLabels.orderSource),
                     const SizedBox(height: 8),
                     _buildSourceSelector(state, sourcesAsync),
                   ],

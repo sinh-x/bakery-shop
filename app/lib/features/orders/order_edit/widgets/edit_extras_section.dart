@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,7 +8,8 @@ import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
 import '../../widgets/section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class EditExtrasSection extends ConsumerWidget {
   const EditExtrasSection({super.key, required this.orderRef});
 
@@ -33,7 +35,7 @@ class EditExtrasSection extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(VN.extras),
+                const SectionHeader(OrdersLabels.extras),
                 if (extras.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -169,11 +171,11 @@ class _EditCatalogExtraPriceDialogState
   @override
   Widget build(BuildContext context) {
     final options = <(int id, String label, double price, int? chipId)>[
-      (0, VN.giaCoSo, widget.product.basePrice, null),
+      (0, StockLabels.giaCoSo, widget.product.basePrice, null),
       ...widget.product.priceChips.map(
         (chip) => (chip.id, chip.label, chip.price, chip.id),
       ),
-      (_manualOptionId, VN.donGiaNhapTay, widget.product.basePrice, null),
+      (_manualOptionId, StockLabels.donGiaNhapTay, widget.product.basePrice, null),
     ];
 
     return AlertDialog(
@@ -199,7 +201,7 @@ class _EditCatalogExtraPriceDialogState
               controller: _manualCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: VN.itemPrice,
+                labelText: OrdersLabels.itemPrice,
                 suffixText: 'đ',
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -211,14 +213,14 @@ class _EditCatalogExtraPriceDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: () {
             if (_selectedOptionId == _manualOptionId) {
               final manualPrice = double.tryParse(_manualCtrl.text.trim());
               if (manualPrice == null || manualPrice < 0) {
-                showTopSnackBar(context, VN.invalidPrice);
+                showTopSnackBar(context, SharedLabels.invalidPrice);
                 return;
               }
               Navigator.pop(
@@ -241,7 +243,7 @@ class _EditCatalogExtraPriceDialogState
               );
             }
           },
-          child: const Text(VN.xacNhan),
+          child: const Text(OrdersLabels.xacNhan),
         ),
       ],
     );
@@ -285,7 +287,7 @@ class _ExtraEditRow extends StatelessWidget {
                 ),
               ),
               child: Text(
-                item.isGift ? VN.giftBadge : VN.paymentFee,
+                item.isGift ? OrdersLabels.giftBadge : OrdersLabels.paymentFee,
                 style: TextStyle(
                   fontSize: 10,
                   color: item.isGift ? Colors.green : Colors.grey,

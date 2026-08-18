@@ -9,10 +9,11 @@ import '../../data/providers/categories_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/reconciliation_history_line_card.dart';
 import 'widgets/reconciliation_history_summary_card.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class StockReconciliationHistoryScreen extends ConsumerWidget {
   const StockReconciliationHistoryScreen({super.key});
 
@@ -21,11 +22,11 @@ class StockReconciliationHistoryScreen extends ConsumerWidget {
     final historyAsync = ref.watch(reconciliationHistoryListProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.lichSuDoiSoatTonKho),
+        title: const Text(StockLabels.lichSuDoiSoatTonKho),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: () => ref.invalidate(reconciliationHistoryListProvider),
           ),
           const AppBarOverflowMenu(),
@@ -39,20 +40,20 @@ class StockReconciliationHistoryScreen extends ConsumerWidget {
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 12),
-              const Text(VN.khongTaiDuocLichSuDoiSoat),
+              const Text(StockLabels.khongTaiDuocLichSuDoiSoat),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: () =>
                     ref.invalidate(reconciliationHistoryListProvider),
                 icon: const Icon(Icons.refresh),
-                label: const Text(VN.taiLai),
+                label: const Text(OrdersLabels.taiLai),
               ),
             ],
           ),
         ),
         data: (sessions) {
           if (sessions.isEmpty) {
-            return const Center(child: Text(VN.chuaCoLichSuDoiSoat));
+            return const Center(child: Text(StockLabels.chuaCoLichSuDoiSoat));
           }
           return RefreshIndicator(
             onRefresh: () async {
@@ -65,9 +66,9 @@ class StockReconciliationHistoryScreen extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final item = sessions[index];
                 return ListTile(
-                  title: Text('${VN.ngayDoiSoat}: ${item.reconciliationDate}'),
+                  title: Text('${StockLabels.ngayDoiSoat}: ${item.reconciliationDate}'),
                   subtitle: Text(
-                    '${VN.nhanVien}: ${item.staffName}\n${VN.soDong}: ${item.lineCount}',
+                    '${StockLabels.nhanVien}: ${item.staffName}\n${StockLabels.soDong}: ${item.lineCount}',
                   ),
                   isThreeLine: true,
                   trailing: const Icon(Icons.chevron_right),
@@ -99,7 +100,7 @@ class StockReconciliationHistoryDetailScreen extends ConsumerWidget {
     );
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.chiTietDoiSoat),
+        title: const Text(StockLabels.chiTietDoiSoat),
         actions: const [AppBarOverflowMenu()],
       ),
       body: detailAsync.when(
@@ -108,14 +109,14 @@ class StockReconciliationHistoryDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.khongTaiDuocChiTietDoiSoat),
+              const Text(StockLabels.khongTaiDuocChiTietDoiSoat),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: () => ref.invalidate(
                   reconciliationHistoryDetailProvider(sessionId),
                 ),
                 icon: const Icon(Icons.refresh),
-                label: const Text(VN.taiLai),
+                label: const Text(OrdersLabels.taiLai),
               ),
             ],
           ),
@@ -143,7 +144,7 @@ class _DetailView extends ConsumerWidget {
     ).map((section) => section.categoryName.isEmpty
         ? GroupedCategorySection<ReconciliationHistoryLine>(
             categoryKey: section.categoryKey,
-            categoryName: VN.khongPhanLoai,
+            categoryName: StockLabels.khongPhanLoai,
             items: section.items,
             categoryPosition: section.categoryPosition,
           )
@@ -155,7 +156,7 @@ class _DetailView extends ConsumerWidget {
         children: [
           ReconciliationHistorySummaryCard(detail: detail),
           const SizedBox(height: 24),
-          const Center(child: Text(VN.khongCoSanPham)),
+          const Center(child: Text(OrdersLabels.khongCoSanPham)),
         ],
       );
     }

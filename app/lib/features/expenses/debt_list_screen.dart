@@ -1,9 +1,10 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e is DioException ? (e.message ?? VN.debtListLoadError) : VN.debtListLoadError;
+        _error = e is DioException ? (e.message ?? ExpensesLabels.debtListLoadError) : ExpensesLabels.debtListLoadError;
         _loading = false;
       });
     }
@@ -102,7 +103,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
     final totalOwed = (_data['total_owed'] as num?)?.toDouble() ?? 0.0;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.debtListTitle)),
+      appBar: AppBar(title: const Text(ExpensesLabels.debtListTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -126,7 +127,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
-                child: Text(VN.debtListEmpty),
+                child: Text(ExpensesLabels.debtListEmpty),
               ),
             )
           else ...[
@@ -135,7 +136,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(
-                  '${VN.debtListTotalOwed}: ${formatVND(totalOwed)}',
+                  '${ExpensesLabels.debtListTotalOwed}: ${formatVND(totalOwed)}',
                   style: theme.textTheme.titleMedium,
                 ),
               ),
@@ -169,7 +170,7 @@ class _StatusFilterStrip extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 6, top: 9),
             child: Text(
-              VN.debtListFilterStatusLabel,
+              ExpensesLabels.debtListFilterStatusLabel,
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
@@ -217,7 +218,7 @@ class _CreditorGroupCard extends StatelessWidget {
           children: [
             Text(name, style: theme.textTheme.titleMedium),
             Text(
-              '${VN.debtListCreditorTotal}: ${formatVND(totalOwed)} • ${VN.debtListDebtCount}: $count',
+              '${ExpensesLabels.debtListCreditorTotal}: ${formatVND(totalOwed)} • ${ExpensesLabels.debtListDebtCount}: $count',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -256,9 +257,9 @@ class _DebtRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (summary.isNotEmpty) Text(summary, style: theme.textTheme.bodyMedium),
-                Text('${VN.debtListItemAmount}: ${formatVND(amount)}'),
-                Text('${VN.debtListItemSettled}: ${formatVND(settled)}'),
-                Text('${VN.debtListItemRemaining}: ${formatVND(remaining)}'),
+                Text('${ExpensesLabels.debtListItemAmount}: ${formatVND(amount)}'),
+                Text('${ExpensesLabels.debtListItemSettled}: ${formatVND(settled)}'),
+                Text('${ExpensesLabels.debtListItemRemaining}: ${formatVND(remaining)}'),
                 if (timestamp != null)
                   Text(formatDisplay(parseApiDateTime(timestamp))),
               ],
@@ -273,7 +274,7 @@ class _DebtRow extends StatelessWidget {
               if (remaining > 0)
                 FilledButton.tonal(
                   onPressed: eventId > 0 ? () => onTap(eventId) : null,
-                  child: const Text(VN.debtListOpenSettlement),
+                  child: const Text(ExpensesLabels.debtListOpenSettlement),
                 ),
             ],
           ),

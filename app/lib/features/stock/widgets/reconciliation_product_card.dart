@@ -1,16 +1,17 @@
 // EXEMPT: This widget remains above local file-size thresholds while DG-138
 // tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
 import 'reconciliation_sell_waste_modal.dart';
 import 'reconciliation_shared_widgets.dart';
 import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class ReconciliationProductCard extends ConsumerStatefulWidget {
   const ReconciliationProductCard({required this.product, super.key});
 
@@ -147,20 +148,20 @@ class _ReconciliationProductCardState
               spacing: 6,
               runSpacing: 6,
               children: [
-                ReconciliationSummaryChip(label: VN.tonDuKien, value: expectedTotal),
-                ReconciliationSummaryChip(label: VN.tonDaDem, value: countedTotal),
-                ReconciliationSummaryChip(label: VN.soLuongThieu, value: missingTotal),
+                ReconciliationSummaryChip(label: StockLabels.tonDuKien, value: expectedTotal),
+                ReconciliationSummaryChip(label: StockLabels.tonDaDem, value: countedTotal),
+                ReconciliationSummaryChip(label: StockLabels.soLuongThieu, value: missingTotal),
                 if (surplusTotal > 0)
-                  ReconciliationSummaryChip(label: VN.soLuongBu, value: surplusTotal),
-                ReconciliationSummaryChip(label: VN.soLuongBan, value: saleTotal),
-                ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
+                  ReconciliationSummaryChip(label: StockLabels.soLuongBu, value: surplusTotal),
+                ReconciliationSummaryChip(label: StockLabels.soLuongBan, value: saleTotal),
+                ReconciliationSummaryChip(label: StockLabels.soLuongHaoHut, value: wasteTotal),
                 _StatusChip(hasError: hasAnyError),
               ],
             ),
             if (!_isExpanded) ...[
               const SizedBox(height: 6),
               Text(
-                '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
+                '${StockLabels.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (widget.product.options.length > 1)
@@ -350,7 +351,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ReconciliationQuantityStepperField(
-          label: VN.tonDaDem,
+          label: StockLabels.tonDaDem,
           controller: countedController,
           onChanged: (value) => notifier.setCountedQty(optionKey, value),
           onDecrement: () {
@@ -366,7 +367,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           ReconciliationSurplusIndicator(surplus: surplus),
           const SizedBox(height: 4),
           Text(
-            VN.nhapBuHint,
+            StockLabels.nhapBuHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.teal[700],
             ),
@@ -391,7 +392,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
                 notifier: notifier,
               ),
               icon: const Icon(Icons.point_of_sale_outlined),
-              label: const Text(VN.banHang),
+              label: const Text(OrdersLabels.banHang),
             ),
             OutlinedButton.icon(
               onPressed: () => showReconciliationWasteModal(
@@ -406,7 +407,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
                 notifier: notifier,
               ),
               icon: const Icon(Icons.delete_sweep_outlined),
-              label: const Text(VN.haoHutSheet),
+              label: const Text(StockLabels.haoHutSheet),
             ),
             ReconciliationVarianceIndicator(variance: variance),
           ],
@@ -460,7 +461,7 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = hasError ? Colors.red[700]! : Colors.green[700]!;
-    final text = hasError ? VN.trangThaiCoLoi : VN.trangThaiOn;
+    final text = hasError ? StockLabels.trangThaiCoLoi : StockLabels.trangThaiOn;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -468,7 +469,7 @@ class _StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        '${VN.trangThai}: $text',
+        '${StockLabels.trangThai}: $text',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
       ),
     );
@@ -496,7 +497,7 @@ class _OptionHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Giá ${formatVND(option.normalizedPrice.toDouble())} - ${VN.tonDuKien}: ${option.expectedQty}',
+            'Giá ${formatVND(option.normalizedPrice.toDouble())} - ${StockLabels.tonDuKien}: ${option.expectedQty}',
             style: priceLineStyle?.copyWith(
               fontWeight: FontWeight.bold,
               fontSize: (priceLineStyle.fontSize ?? 14) + 1,
@@ -504,14 +505,14 @@ class _OptionHeader extends StatelessWidget {
           ),
           if (isBaseCollisionOption)
             Text(
-              VN.giaGoc,
+              OrdersLabels.giaGoc,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
           if (visibleChipLabels.isNotEmpty)
             Text(
-              '${VN.nhanChip}: $visibleChipLabels',
+              '${StockLabels.nhanChip}: $visibleChipLabels',
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
@@ -645,9 +646,9 @@ class _OptionInventoryHeader extends StatelessWidget {
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  ReconciliationSummaryChip(label: VN.tonDaDem, value: countedQty),
-                  ReconciliationSummaryChip(label: VN.soLuongBan, value: saleQty),
-                  ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+                  ReconciliationSummaryChip(label: StockLabels.tonDaDem, value: countedQty),
+                  ReconciliationSummaryChip(label: StockLabels.soLuongBan, value: saleQty),
+                  ReconciliationSummaryChip(label: StockLabels.soLuongHaoHut, value: wasteQty),
                   ReconciliationVarianceIndicator(variance: variance),
                   if (surplus > 0)
                     ReconciliationSurplusIndicator(surplus: surplus),
@@ -757,7 +758,7 @@ class _InlineSaleRowItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${VN.dongBan} ${rowIndex + 1}',
+                  '${StockLabels.dongBan} ${rowIndex + 1}',
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -765,14 +766,14 @@ class _InlineSaleRowItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${VN.soLuongBan}: ${row.quantity} - $priceText - $methodText',
+                  '${StockLabels.soLuongBan}: ${row.quantity} - $priceText - $methodText',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
           IconButton(
-            tooltip: VN.sua,
+            tooltip: StockLabels.sua,
             onPressed: () => showReconciliationSaleModal(
               context,
               product: product,
@@ -788,7 +789,7 @@ class _InlineSaleRowItem extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
-            tooltip: VN.xoa,
+            tooltip: OrdersLabels.xoa,
             onPressed: () => notifier.removeSaleRow(optionKey, rowIndex),
             icon: const Icon(Icons.close),
           ),
@@ -837,7 +838,7 @@ class _InlineWasteItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  VN.haoHutSheet,
+                  StockLabels.haoHutSheet,
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -845,14 +846,14 @@ class _InlineWasteItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${VN.soLuongHaoHut}: $waste - ${VN.lyDoHaoHut}: $reasonText',
+                  '${StockLabels.soLuongHaoHut}: $waste - ${StockLabels.lyDoHaoHut}: $reasonText',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
           IconButton(
-            tooltip: VN.sua,
+            tooltip: StockLabels.sua,
             onPressed: () => showReconciliationWasteModal(
               context,
               product: product,
@@ -867,7 +868,7 @@ class _InlineWasteItem extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
-            tooltip: VN.xoa,
+            tooltip: OrdersLabels.xoa,
             onPressed: () {
               notifier.setWasteQty(optionKey, 0);
               notifier.setWasteReasonForOption(optionKey, '');

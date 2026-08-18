@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,7 +6,7 @@ import '../../../data/models/work_item.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../shared/labels/blanks.dart';
 import 'add_blank_modal.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///
 /// Shows a "Thêm phôi bánh" button that opens the [showAddBlankModal] and a
@@ -63,7 +64,7 @@ class _CakeDetailBlankSectionState
       await action();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -117,7 +118,7 @@ class _CakeDetailBlankSectionState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(

@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/accounting_provider.dart';
 import '../../../shared/utils/account_type_helper.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../data/models/account.dart';
 import 'empty_state.dart';
 
@@ -22,18 +23,18 @@ class AccountsTab extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref.invalidate(accountsProvider),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
         ),
         data: (accounts) {
           if (accounts.isEmpty) {
-            return const AccountingEmptyState(text: VN.accountingNoAccounts);
+            return const AccountingEmptyState(text: AccountingLabels.accountingNoAccounts);
           }
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),

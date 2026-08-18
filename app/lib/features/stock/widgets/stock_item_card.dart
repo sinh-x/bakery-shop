@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../data/api/stock_service.dart';
 import '../../../shared/utils/product_photo_url.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import '../stock_screen.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Card widget rendering a single [StockOverviewItem] on the stock management
 /// screen.
 ///
@@ -125,7 +124,7 @@ class StockItemCard extends StatelessWidget {
                           ),
                     ),
                     Text(
-                      VN.tonKho,
+                      StockLabels.tonKho,
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: Colors.grey),
@@ -196,7 +195,7 @@ class StockItemCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text(VN.nhapHang),
+                    label: const Text(StockLabels.nhapHang),
                     onPressed: onRestock,
                   ),
                 ),
@@ -204,7 +203,7 @@ class StockItemCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.remove, size: 18),
-                    label: const Text(VN.haoHut),
+                    label: const Text(StockLabels.haoHut),
                     onPressed: onWaste,
                   ),
                 ),
@@ -212,7 +211,7 @@ class StockItemCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.edit, size: 18),
-                    label: const Text(VN.dieuChinh),
+                    label: const Text(StockLabels.dieuChinh),
                     onPressed: onAdjust,
                   ),
                 ),

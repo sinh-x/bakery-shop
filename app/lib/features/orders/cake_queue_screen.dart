@@ -1,4 +1,5 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting queue tile/time slot/summary widgets now would duplicate in-file queue action orchestration and event refresh contracts. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,11 +14,11 @@ import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/cake_queue_group_header.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/enum_attribute_display.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/blanks.dart' as blanks_v;
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
@@ -62,7 +63,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: FilterChip(
-            label: const Text(VN.includeReadyFilter),
+            label: const Text(OrdersLabels.includeReadyFilter),
             selected: _includeReady,
             onSelected: (v) => setState(() {
               _includeReady = v;
@@ -79,11 +80,11 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(VN.apiError),
+                  const Text(SharedLabels.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onRefresh,
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -94,7 +95,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               if (filtered.isEmpty) {
                 return Center(
                   child: Text(
-                    VN.noCakeQueueItems,
+                    OrdersLabels.noCakeQueueItems,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
@@ -232,7 +233,7 @@ class _CakeQueueCard extends ConsumerWidget {
                         item.candleType!.isNotEmpty &&
                         item.candleType != 'khong_nen')
                       Text(
-                        'Nến: ${VN.candleTypeLabel(item.candleType)}',
+                        'Nến: ${OrdersLabels.candleTypeLabel(item.candleType)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: Colors.pink.shade700,
                           fontWeight: FontWeight.w600,

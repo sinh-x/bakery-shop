@@ -1,15 +1,16 @@
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../data/providers/order/order_list_providers.dart';
-import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/order_card.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 const _historyStatuses = <String>[
   'new',
   'confirmed',
@@ -104,11 +105,11 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.lichSuDonHang),
+        title: const Text(OrdersLabels.lichSuDonHang),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: notifier.refresh,
           ),
           const AppBarOverflowMenu(),
@@ -125,13 +126,13 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   spacing: 8,
                   children: [
                     ChoiceChip(
-                      label: const Text(VN.lichSuDonHangLocMotNgay),
+                      label: const Text(OrdersLabels.lichSuDonHangLocMotNgay),
                       selected: _mode == _DateFilterMode.single,
                       onSelected: (_) =>
                           setState(() => _mode = _DateFilterMode.single),
                     ),
                     ChoiceChip(
-                      label: const Text(VN.lichSuDonHangLocKhoangNgay),
+                      label: const Text(OrdersLabels.lichSuDonHangLocKhoangNgay),
                       selected: _mode == _DateFilterMode.range,
                       onSelected: (_) =>
                           setState(() => _mode = _DateFilterMode.range),
@@ -174,7 +175,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                 TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: VN.lichSuDonHangTimKiem,
+                    hintText: OrdersLabels.lichSuDonHangTimKiem,
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
@@ -204,11 +205,11 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(VN.apiError),
+                      const Text(SharedLabels.apiError),
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: notifier.refresh,
-                        child: const Text(VN.retry),
+                        child: const Text(SharedLabels.retry),
                       ),
                     ],
                   ),
@@ -217,13 +218,13 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
               data: (state) {
                 final orders = state.loaded;
                 if (orders.isEmpty) {
-                  return const Center(child: Text(VN.lichSuDonHangTrong));
+                  return const Center(child: Text(OrdersLabels.lichSuDonHangTrong));
                 }
 
                 final filtered = _applySearch(orders);
                 if (filtered.isEmpty) {
                   return const Center(
-                    child: Text(VN.lichSuDonHangKhongTimThay),
+                    child: Text(OrdersLabels.lichSuDonHangKhongTimThay),
                   );
                 }
 
@@ -331,7 +332,7 @@ class _OrderHistoryLoadMore extends StatelessWidget {
           onPressed: onLoadMore,
           icon: const Icon(Icons.expand_more),
           label: Text(
-            '${VN.loadMore} (${state.total - state.loaded.length})',
+            '${SharedLabels.loadMore} (${state.total - state.loaded.length})',
           ),
         ),
       ),

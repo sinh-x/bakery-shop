@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/paper_mode_service.dart';
 import '../../../providers/paper_mode_provider.dart';
-import '../../../shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class ConnectionResult {
   const ConnectionResult({required this.success, this.errorMessage});
 
@@ -51,7 +51,7 @@ class StaffDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: staffList.contains(selected) ? selected : null,
-      hint: const Text(VN.staffPickerHint),
+      hint: const Text(SharedLabels.staffPickerHint),
       items: staffList.map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
       onChanged: (name) {
         if (name != null) onSelected(name);
@@ -78,8 +78,8 @@ class ManualNameField extends StatelessWidget {
           child: TextField(
             controller: controller,
             decoration: const InputDecoration(
-              labelText: VN.staffNameManual,
-              hintText: VN.staffNameHint,
+              labelText: SharedLabels.staffNameManual,
+              hintText: SharedLabels.staffNameHint,
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.person_outline),
             ),
@@ -87,7 +87,7 @@ class ManualNameField extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        FilledButton(onPressed: onSave, child: const Text(VN.save)),
+        FilledButton(onPressed: onSave, child: const Text(SharedLabels.save)),
       ],
     );
   }
@@ -109,9 +109,9 @@ class _PaperModeSectionState extends ConsumerState<PaperModeSection> {
   String? _paperModeLabel(String mode) {
     switch (mode) {
       case 'label':
-        return VN.paperModeLabelOption;
+        return SharedLabels.paperModeLabelOption;
       case 'roll':
-        return VN.paperModeRollOption;
+        return SharedLabels.paperModeRollOption;
       default:
         return null;
     }
@@ -123,7 +123,7 @@ class _PaperModeSectionState extends ConsumerState<PaperModeSection> {
       await ref.read(paperModeProvider.notifier).setMode(mode);
       messenger.showSnackBar(
         const SnackBar(
-          content: Text(VN.paperModeSaved),
+          content: Text(SharedLabels.paperModeSaved),
           behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
@@ -131,7 +131,7 @@ class _PaperModeSectionState extends ConsumerState<PaperModeSection> {
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text(VN.paperModeSaveFailed),
+          content: Text(SharedLabels.paperModeSaveFailed),
           behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
@@ -155,10 +155,10 @@ class _PaperModeSectionState extends ConsumerState<PaperModeSection> {
       error: (_, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(VN.paperModeLabel, style: Theme.of(context).textTheme.titleSmall),
+          Text(SharedLabels.paperModeLabel, style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            VN.paperModeLoadError,
+            SharedLabels.paperModeLoadError,
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -186,10 +186,10 @@ class _PaperModeDropdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(VN.paperModeLabel, style: Theme.of(context).textTheme.titleSmall),
+        Text(SharedLabels.paperModeLabel, style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          VN.paperModeHelp,
+          SharedLabels.paperModeHelp,
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -198,7 +198,7 @@ class _PaperModeDropdown extends StatelessWidget {
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: selected,
-          hint: const Text(VN.paperModeLabel),
+          hint: const Text(SharedLabels.paperModeLabel),
           items: paperModes
               .map(
                 (mode) => DropdownMenuItem(
@@ -243,11 +243,11 @@ class _ExtrasSettingsTabState extends ConsumerState<ExtrasSettingsTab> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.info_outline),
-                    title: Text(VN.extrasSettingsDeprecatedTitle),
-                    subtitle: Text(VN.extrasSettingsDeprecatedBody),
+                    title: Text(OrdersLabels.extrasSettingsDeprecatedTitle),
+                    subtitle: Text(OrdersLabels.extrasSettingsDeprecatedBody),
                   ),
                   SizedBox(height: 8),
-                  Text(VN.extrasSettingsDeprecatedAction),
+                  Text(OrdersLabels.extrasSettingsDeprecatedAction),
                 ],
               ),
             ),

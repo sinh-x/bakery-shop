@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,7 +10,7 @@ import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 const _pulseDuration = Duration(milliseconds: 1500);
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
@@ -204,8 +205,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
         ['completed', 'cancelled', 'delivered'].contains(order.status);
     final printedBy = order.displayPrintedBy;
     final printedLabel = printedBy.isNotEmpty
-        ? '${VN.printStatusPrintedShort}: $printedBy'
-        : VN.printStatusPrintedShort;
+        ? '${SharedLabels.printStatusPrintedShort}: $printedBy'
+        : SharedLabels.printStatusPrintedShort;
 
     // Build left border decoration driven by urgency tier only (FR-3).
     // Completeness is shown as a badge only, not as a border color.
@@ -439,7 +440,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
                           border: Border.all(color: Colors.orange.shade200),
                         ),
                         child: Text(
-                          VN.printStatusUnprintedShort,
+                          SharedLabels.printStatusUnprintedShort,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: Colors.orange.shade800,
                             fontSize: 12,

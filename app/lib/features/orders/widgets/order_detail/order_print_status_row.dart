@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Row showing the work-ticket print status with mark/unmark actions.
 class OrderPrintStatusRow extends StatelessWidget {
   const OrderPrintStatusRow({
@@ -42,7 +40,7 @@ class OrderPrintStatusRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isPrinted ? VN.printStatusPrinted : VN.printStatusUnprinted,
+                  isPrinted ? SharedLabels.printStatusPrinted : SharedLabels.printStatusUnprinted,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: isPrinted
@@ -66,7 +64,7 @@ class OrderPrintStatusRow extends StatelessWidget {
             TextButton(
               onPressed: onUnmarkPrinted,
               child: Text(
-                VN.unmarkPrinted,
+                SharedLabels.unmarkPrinted,
                 style: TextStyle(color: Colors.red.shade700),
               ),
             )
@@ -77,7 +75,7 @@ class OrderPrintStatusRow extends StatelessWidget {
                 backgroundColor: Colors.green.shade700,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: const Text(VN.markAsPrinted),
+              child: const Text(SharedLabels.markAsPrinted),
             ),
         ],
       ),

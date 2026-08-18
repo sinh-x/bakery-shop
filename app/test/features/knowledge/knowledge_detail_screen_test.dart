@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/knowledge_service.dart';
 import 'package:bakery_app/features/knowledge/knowledge_detail_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -139,7 +139,7 @@ void main() {
       tester,
       interceptor: _KnowledgeDetailInterceptor(_entryJson(type: 'recipe')),
     );
-    expect(find.text(VN.knowledgeTypes['recipe']!), findsOneWidget);
+    expect(find.text(SharedLabels.knowledgeTypes['recipe']!), findsOneWidget);
   });
 
   testWidgets('renders tag chips', (tester) async {
@@ -165,8 +165,8 @@ void main() {
       tester,
       interceptor: _KnowledgeDetailInterceptor(null, fail: true),
     );
-    expect(find.text(VN.apiError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('edit button navigates to edit route', (tester) async {
@@ -197,13 +197,13 @@ void main() {
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
     // The popup menu shows the delete item.
-    expect(find.text(VN.deleteKnowledge), findsOneWidget);
+    expect(find.text(SharedLabels.deleteKnowledge), findsOneWidget);
     // Tap the delete menu item to open the confirmation dialog.
-    await tester.tap(find.text(VN.deleteKnowledge).last);
+    await tester.tap(find.text(SharedLabels.deleteKnowledge).last);
     await tester.pumpAndSettle();
     // Confirmation dialog now shows the title and cancel button.
-    expect(find.text(VN.confirmDeleteKnowledge), findsOneWidget);
-    expect(find.text(VN.cancel), findsOneWidget);
+    expect(find.text(SharedLabels.confirmDeleteKnowledge), findsOneWidget);
+    expect(find.text(SharedLabels.cancel), findsOneWidget);
   });
 
   testWidgets('share button is present', (tester) async {

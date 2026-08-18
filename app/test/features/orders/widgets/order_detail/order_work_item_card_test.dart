@@ -1,8 +1,8 @@
 import 'package:bakery_app/data/models/work_item.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_work_item_card.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 WorkItem _item({
   bool isBirthday = false,
@@ -53,7 +53,7 @@ void main() {
 
       expect(find.textContaining('Sinh nhật'), findsOneWidget);
       expect(find.textContaining('3 tuổi'), findsOneWidget);
-      expect(find.text('${VN.packCandles}: ${VN.candleTypeNenSo}'),
+      expect(find.text('${OrdersLabels.packCandles}: ${OrdersLabels.candleTypeNenSo}'),
           findsOneWidget);
     });
 
@@ -63,7 +63,7 @@ void main() {
         _item(attributes: const {'candle_type': 'nen_xoan'}),
       );
 
-      expect(find.text('${VN.packCandles}: ${VN.candleTypeNenXoan}'),
+      expect(find.text('${OrdersLabels.packCandles}: ${OrdersLabels.candleTypeNenXoan}'),
           findsOneWidget);
     });
 
@@ -73,14 +73,14 @@ void main() {
         _item(attributes: const {'candle_type': 'khong_nen'}),
       );
 
-      expect(find.textContaining(VN.packCandles), findsNothing);
+      expect(find.textContaining(OrdersLabels.packCandles), findsNothing);
     });
 
     testWidgets('does NOT show candle line when candle_type absent',
         (tester) async {
       await _pump(tester, _item());
 
-      expect(find.textContaining(VN.packCandles), findsNothing);
+      expect(find.textContaining(OrdersLabels.packCandles), findsNothing);
     });
 
     testWidgets('shows notes when present', (tester) async {

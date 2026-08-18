@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/events/event_detail_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -51,7 +51,7 @@ Future<void> _pump(WidgetTester tester, BakeryEvent event) async {
 void main() {
   testWidgets('renders type label as app bar title', (tester) async {
     await _pump(tester, _event(type: 'equipment'));
-    expect(find.text(VN.typeEquipment), findsNWidgets(2)); // AppBar + body
+    expect(find.text(EventsLabels.typeEquipment), findsNWidgets(2)); // AppBar + body
   });
 
   testWidgets('renders event summary', (tester) async {
@@ -61,7 +61,7 @@ void main() {
 
   testWidgets('renders summary label', (tester) async {
     await _pump(tester, _event());
-    expect(find.text(VN.eventSummary), findsOneWidget);
+    expect(find.text(EventsLabels.eventSummary), findsOneWidget);
   });
 
   testWidgets('renders tag chips for tagged events', (tester) async {
@@ -72,13 +72,13 @@ void main() {
 
   testWidgets('renders logged-by row when loggedBy is set', (tester) async {
     await _pump(tester, _event(loggedBy: 'lan', staffName: 'Lan'));
-    expect(find.textContaining(VN.loggedBy), findsOneWidget);
+    expect(find.textContaining(EventsLabels.loggedBy), findsOneWidget);
     expect(find.textContaining('Lan'), findsOneWidget);
   });
 
   testWidgets('omits logged-by row when loggedBy empty', (tester) async {
     await _pump(tester, _event(loggedBy: '', staffName: ''));
-    expect(find.textContaining(VN.loggedBy), findsNothing);
+    expect(find.textContaining(EventsLabels.loggedBy), findsNothing);
   });
 
   testWidgets('edit button navigates to edit route', (tester) async {

@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../section_header.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Summary overview widget for the General tab (Phase 3 — DG-334 / FR4 / AC4).
 ///
 /// Renders a compact paid-vs-total line, e.g.
@@ -34,7 +34,7 @@ class OrderPaymentStatusSummary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(VN.paymentStatusSummaryTitle),
+        const SectionHeader(OrdersLabels.paymentStatusSummaryTitle),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -47,7 +47,7 @@ class OrderPaymentStatusSummary extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  VN.paid,
+                  OrdersLabels.paid,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface,
                   ),
@@ -64,7 +64,7 @@ class OrderPaymentStatusSummary extends StatelessWidget {
                       ),
                     ),
                     TextSpan(
-                      text: ' ${VN.paymentStatusSummaryOfTotal} ${formatVND(total)}',
+                      text: ' ${OrdersLabels.paymentStatusSummaryOfTotal} ${formatVND(total)}',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.outline,
                       ),

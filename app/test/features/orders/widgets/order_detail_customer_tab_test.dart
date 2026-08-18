@@ -5,7 +5,9 @@ import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_card.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_detail_customer_tab.dart';
 import 'package:bakery_app/data/providers/order/order_photo_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -132,11 +134,11 @@ void main() {
         _FakeCustomerService(_customer(createdAt: DateTime(2026, 1, 15)), const []);
     await _pump(tester, service, customerId: 42);
 
-    expect(find.text(VN.orderDetailCustomerInfoTitle), findsOneWidget);
+    expect(find.text(OrdersLabels.orderDetailCustomerInfoTitle), findsOneWidget);
     expect(find.text('Nguyễn Văn A'), findsOneWidget);
     expect(find.text('0901234567 (Số chính)'), findsOneWidget);
     // createdAt rendered via formatDisplayDate → "15/01/2026".
-    expect(find.textContaining(VN.customerCreatedAt), findsOneWidget);
+    expect(find.textContaining(CustomersLabels.customerCreatedAt), findsOneWidget);
     expect(find.textContaining('15/01/2026'), findsOneWidget);
   });
 
@@ -154,7 +156,7 @@ void main() {
       orderRefs: const ['ORD-100', 'ORD-101'],
     );
 
-    expect(find.text(VN.customerOrderHistory), findsOneWidget);
+    expect(find.text(CustomersLabels.customerOrderHistory), findsOneWidget);
     // Two OrderCard widgets — one per historical order.
     expect(find.byType(OrderCard), findsNWidgets(2));
     expect(find.text('ORD-100'), findsOneWidget);
@@ -167,7 +169,7 @@ void main() {
     final service = _FakeCustomerService(_customer(), const []);
     await _pump(tester, service, customerId: 42);
 
-    expect(find.text(VN.customerNoOrders), findsOneWidget);
+    expect(find.text(CustomersLabels.customerNoOrders), findsOneWidget);
     expect(find.byType(OrderCard), findsNothing);
   });
 
@@ -179,11 +181,11 @@ void main() {
     final service = _FakeCustomerService(_customer(), const []);
     await _pump(tester, service, customerId: null);
 
-    expect(find.text(VN.orderDetailCustomerEmpty), findsOneWidget);
+    expect(find.text(OrdersLabels.orderDetailCustomerEmpty), findsOneWidget);
     expect(find.byIcon(Icons.person_off_outlined), findsOneWidget);
     // No customer info or order history sections rendered.
-    expect(find.text(VN.orderDetailCustomerInfoTitle), findsNothing);
-    expect(find.text(VN.customerOrderHistory), findsNothing);
+    expect(find.text(OrdersLabels.orderDetailCustomerInfoTitle), findsNothing);
+    expect(find.text(CustomersLabels.customerOrderHistory), findsNothing);
   });
 
   testWidgets('shows error state with retry when customer fetch fails',
@@ -191,7 +193,7 @@ void main() {
     final service = _FakeCustomerService(null, const []);
     await _pump(tester, service, customerId: 42);
 
-    expect(find.text(VN.apiError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 }

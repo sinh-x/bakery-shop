@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 // Keep one-line SnackBar messages readable before forcing wrapped formatting.
 const _orderStatusFailureInlineThreshold = 280;
 
@@ -34,12 +34,12 @@ String orderStatusRecoveryActionFromDetail(String detail) {
   if (normalized.contains('ton kho') ||
       normalized.contains('tồn kho') ||
       normalized.contains('insufficient stock')) {
-    return VN.orderStatusActionCheckStock;
+    return OrdersLabels.orderStatusActionCheckStock;
   }
   if (normalized.contains('price bucket') ||
       normalized.contains('muc gia') ||
       normalized.contains('mức giá')) {
-    return VN.orderStatusActionCheckPriceBucket;
+    return OrdersLabels.orderStatusActionCheckPriceBucket;
   }
   if ((normalized.contains('ly do') || normalized.contains('lý do')) &&
       (normalized.contains('quay lai') ||
@@ -48,14 +48,14 @@ String orderStatusRecoveryActionFromDetail(String detail) {
           normalized.contains('trạng thái trước') ||
           normalized.contains('backward') ||
           normalized.contains('lùi'))) {
-    return VN.orderStatusActionAddBackwardReason;
+    return OrdersLabels.orderStatusActionAddBackwardReason;
   }
   if (normalized.contains('thanh toan') ||
       normalized.contains('thanh toán') ||
       normalized.contains('incomplete payment')) {
-    return VN.orderStatusActionCompletePayment;
+    return OrdersLabels.orderStatusActionCompletePayment;
   }
-  return VN.orderStatusActionContactAdmin;
+  return OrdersLabels.orderStatusActionContactAdmin;
 }
 
 String buildOrderStatusFailureMessage({
@@ -65,11 +65,11 @@ String buildOrderStatusFailureMessage({
   required int statusCode,
 }) {
   final singleLine =
-      '${VN.orderStatusChangeFailedPrefix}: $reason. ${VN.orderStatusRecoveryLabel}: $action. ${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
+      '${OrdersLabels.orderStatusChangeFailedPrefix}: $reason. ${OrdersLabels.orderStatusRecoveryLabel}: $action. ${OrdersLabels.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
   if (singleLine.length <= _orderStatusFailureInlineThreshold) {
     return singleLine;
   }
-  return '${VN.orderStatusChangeFailedPrefix}: $reason.\n${VN.orderStatusRecoveryLabel}: $action.\n${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
+  return '${OrdersLabels.orderStatusChangeFailedPrefix}: $reason.\n${OrdersLabels.orderStatusRecoveryLabel}: $action.\n${OrdersLabels.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
 }
 
 ApiError normalizeApiError(Object error) {
@@ -79,13 +79,13 @@ ApiError normalizeApiError(Object error) {
         error.type == DioExceptionType.receiveTimeout) {
       return const ApiError(
         kind: ApiErrorKind.timeout,
-        message: VN.apiTimeout,
+        message: SharedLabels.apiTimeout,
       );
     }
 
     if (error.type == DioExceptionType.connectionError ||
         error.response == null) {
-      return const ApiError(kind: ApiErrorKind.network, message: VN.apiError);
+      return const ApiError(kind: ApiErrorKind.network, message: SharedLabels.apiError);
     }
 
     final statusCode = error.response?.statusCode;
@@ -93,7 +93,7 @@ ApiError normalizeApiError(Object error) {
     if (statusCode == 422) {
       return ApiError(
         kind: ApiErrorKind.validation,
-        message: detail ?? VN.loiKhongXacDinhTuMayChu,
+        message: detail ?? OrdersLabels.loiKhongXacDinhTuMayChu,
         statusCode: statusCode,
       );
     }
@@ -101,17 +101,17 @@ ApiError normalizeApiError(Object error) {
     if (statusCode != null && statusCode >= 500) {
       return ApiError(
         kind: ApiErrorKind.server,
-        message: VN.loiMayChu,
+        message: OrdersLabels.loiMayChu,
         statusCode: statusCode,
       );
     }
 
     return ApiError(
       kind: ApiErrorKind.unknown,
-      message: detail ?? VN.loiHeThong,
+      message: detail ?? StockLabels.loiHeThong,
       statusCode: statusCode,
     );
   }
 
-  return const ApiError(kind: ApiErrorKind.unknown, message: VN.loiHeThong);
+  return const ApiError(kind: ApiErrorKind.unknown, message: StockLabels.loiHeThong);
 }

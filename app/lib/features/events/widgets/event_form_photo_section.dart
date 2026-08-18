@@ -6,8 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/event_photo.dart';
 import '../../../providers/photo_upload_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
 /// Photo picker + preview section for the event create/edit form.
 ///
 /// Shows existing event photos (fetched via `EventService.getEventPhotos`)
@@ -83,13 +82,13 @@ class _EventFormPhotoSectionState extends ConsumerState<EventFormPhotoSection> {
         const Divider(height: 1),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Text(VN.eventPhotos, style: theme.textTheme.titleSmall),
+          child: Text(EventsLabels.eventPhotos, style: theme.textTheme.titleSmall),
         ),
         if (totalCount == 0)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              VN.noEventPhotos,
+              EventsLabels.noEventPhotos,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
@@ -122,7 +121,7 @@ class _EventFormPhotoSectionState extends ConsumerState<EventFormPhotoSection> {
         OutlinedButton.icon(
           onPressed: uploading ? null : _pickPhotos,
           icon: const Icon(Icons.add_a_photo, size: 18),
-          label: const Text(VN.addEventPhoto),
+          label: const Text(EventsLabels.addEventPhoto),
         ),
         const SizedBox(height: 24),
       ],

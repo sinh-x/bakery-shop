@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Result returned by the edit-transaction dialog (DG-379 Phase 4.3).
 ///
 /// `null` means the user cancelled. A non-null value carries the entered
@@ -50,7 +50,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
   return showDialog<CashDrawerEditResult>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('${VN.cashDrawerEditTxnTitle} — $txnTypeLabel'),
+      title: Text('${CashDrawerLabels.cashDrawerEditTxnTitle} — $txnTypeLabel'),
       content: Form(
         key: formKey,
         child: SingleChildScrollView(
@@ -64,7 +64,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
                 ),
                 inputFormatters: const [_ThousandsSeparatorInputFormatter()],
                 decoration: const InputDecoration(
-                  labelText: VN.paymentAmountLabel,
+                  labelText: OrdersLabels.paymentAmountLabel,
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
@@ -72,7 +72,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
                   if (raw.isEmpty) return null; // leave unchanged
                   final parsed = int.tryParse(raw);
                   if (parsed == null || parsed <= 0) {
-                    return VN.cashDrawerAmountLabel;
+                    return CashDrawerLabels.cashDrawerAmountLabel;
                   }
                   return null;
                 },
@@ -81,7 +81,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
               TextFormField(
                 controller: noteCtrl,
                 decoration: const InputDecoration(
-                  labelText: VN.notes,
+                  labelText: OrdersLabels.notes,
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 2,
@@ -93,7 +93,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: () {
@@ -115,7 +115,7 @@ Future<CashDrawerEditResult?> showEditTransactionDialog(
               CashDrawerEditResult(amount: newAmount, notes: newNotes),
             );
           },
-          child: const Text(VN.save),
+          child: const Text(SharedLabels.save),
         ),
       ],
     ),

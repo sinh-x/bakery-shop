@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _RecordingCustomerService extends CustomerService {
   _RecordingCustomerService({this.searchResults = const {}})
@@ -97,7 +98,7 @@ void main() {
 
     // One phone field by default.
     expect(find.byType(TextFormField), findsNWidgets(2)); // name + 1 phone
-    expect(find.text(VN.customerAddPhone), findsOneWidget);
+    expect(find.text(CustomersLabels.customerAddPhone), findsOneWidget);
     // Remove button disabled when only one row.
     final removeBtn = find.byIcon(Icons.remove_circle_outline);
     expect(removeBtn, findsOneWidget);
@@ -114,7 +115,7 @@ void main() {
     final service = _RecordingCustomerService();
     await _pumpForm(tester, service);
 
-    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.tap(find.text(CustomersLabels.customerAddPhone));
     await tester.pumpAndSettle();
     expect(find.byType(TextFormField), findsNWidgets(3)); // name + 2 phones
 
@@ -132,7 +133,7 @@ void main() {
     await _pumpForm(tester, service);
 
     // Add a second phone row.
-    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.tap(find.text(CustomersLabels.customerAddPhone));
     await tester.pumpAndSettle();
 
     // Tap star on the second phone row to mark it primary.
@@ -145,7 +146,7 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
     await tester.enterText(find.byType(TextFormField).at(2), '0987654321');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(service.lastCreatedPhones, isNotNull);
@@ -188,7 +189,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(service.lastCreatedPhones, isNotNull);
@@ -204,18 +205,18 @@ void main() {
     await _pumpForm(tester, service);
 
     // Add a second phone row.
-    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.tap(find.text(CustomersLabels.customerAddPhone));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
     await tester.enterText(find.byType(TextFormField).at(2), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Save blocked: duplicate snackbar shown, no creation attempted.
     expect(service.lastCreated, isNull);
-    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+    expect(find.text(CustomersLabels.customerPhoneDuplicate), findsOneWidget);
   });
 
   // DG-251 Phase 3 / §11 Risk: formatter changes the text the duplicate
@@ -228,7 +229,7 @@ void main() {
     await _pumpForm(tester, service);
 
     // Add a second phone row.
-    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.tap(find.text(CustomersLabels.customerAddPhone));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
@@ -236,12 +237,12 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
     // Row 2: same digits typed again -> identical formatted value.
     await tester.enterText(find.byType(TextFormField).at(2), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Both rows format to '0901-234-567', so duplicate detection must fire.
     expect(service.lastCreated, isNull);
-    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+    expect(find.text(CustomersLabels.customerPhoneDuplicate), findsOneWidget);
   });
 
   // CQ-6: prefilled and typed 11-digit phones render identically via
@@ -266,17 +267,17 @@ void main() {
 
     // Add a second phone row and type the same 11 digits. PhoneInputFormatter
     // dash-formats them to '0901-234-5678' as well.
-    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.tap(find.text(CustomersLabels.customerAddPhone));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Long');
     await tester.enterText(find.byType(TextFormField).at(2), '09012345678');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Both rows render identically; digit-only normalization flags duplicate.
     expect(service.lastUpdatedId, isNull);
-    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+    expect(find.text(CustomersLabels.customerPhoneDuplicate), findsOneWidget);
   });
 
   // DG-251 Phase 3 / FR5: prefilled (edit-mode) phone values render
@@ -314,7 +315,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // No dialog shown, create proceeds.
@@ -340,7 +341,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Warning dialog shown with the existing customer.
@@ -380,7 +381,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
@@ -421,7 +422,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
@@ -455,13 +456,13 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
 
     // Tap "Hủy" (cancel) — scoped to the dialog so it does not match the
-    // bottom-sheet's own VN.cancel button.
+    // bottom-sheet's own SharedLabels.cancel button.
     final dialogCancel = find.descendant(
       of: find.byType(AlertDialog),
       matching: find.text(CustomersLabels.duplicateWarningCancel),
@@ -471,8 +472,8 @@ void main() {
 
     // No create, form still visible.
     expect(service.createCallCount, 0);
-    expect(find.text(VN.save), findsOneWidget);
-    expect(find.text(VN.addCustomer), findsOneWidget);
+    expect(find.text(SharedLabels.save), findsOneWidget);
+    expect(find.text(CustomersLabels.addCustomer), findsOneWidget);
   });
 
   testWidgets(
@@ -498,7 +499,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Dialog shown with three unique customers (1, 2, 3) — shared appears
@@ -532,7 +533,7 @@ void main() {
     );
     await _pumpForm(tester, service, customer: editing);
 
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     // Edit goes straight through; no duplicate dialog.

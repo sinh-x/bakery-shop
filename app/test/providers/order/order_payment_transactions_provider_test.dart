@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/payment_transaction_service.dart';
 import 'package:bakery_app/data/models/payment_transaction.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,13 +89,13 @@ void main() {
         type: 'deposit',
         method: 'transfer',
         notes: 'ghi chu',
-        paymentSource: VN.paymentSourcePhuongVCB,
+        paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
       );
 
       expect(service.lastCreateOrderRef, _testRef);
       expect(
         service.lastCreatePaymentSource,
-        VN.paymentSourcePhuongVCB,
+        ExpensesLabels.paymentSourcePhuongVCB,
         reason: 'record() must forward paymentSource to createTransaction',
       );
     });
@@ -128,12 +128,12 @@ void main() {
         type: 'payment',
         method: 'transfer',
         notes: 'sua',
-        paymentSource: VN.paymentSourceAnVCB,
+        paymentSource: ExpensesLabels.paymentSourceAnVCB,
       );
 
       expect(service.lastUpdateOrderRef, _testRef);
       expect(service.lastUpdateTxnId, 'txn-42');
-      expect(service.lastUpdatePaymentSource, VN.paymentSourceAnVCB);
+      expect(service.lastUpdatePaymentSource, ExpensesLabels.paymentSourceAnVCB);
     });
 
     test('null paymentSource is forwarded to updateTransaction (NFR3)',

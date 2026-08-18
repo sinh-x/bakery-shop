@@ -5,7 +5,9 @@ import 'package:bakery_app/data/models/cash_drawer.dart';
 import 'package:bakery_app/features/cash_drawer/cash_drawer_screen.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_transaction_list.dart';
 import 'package:bakery_app/data/providers/cash_drawer_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -138,8 +140,8 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, VN.cashDrawerOpen), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerNoActive), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen), findsOneWidget);
   });
 
   testWidgets('renders active drawer status card with expected balance (FR4/AC6)',
@@ -153,19 +155,19 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    expect(find.text(VN.cashDrawerStatusOpen), findsWidgets);
+    expect(find.text(CashDrawerLabels.cashDrawerStatusOpen), findsWidgets);
     // DG-363 Phase 3: the breakdown card is taller now (8 categories in 2
     // groups + group totals + expected balance), so the action bar sits
     // below the fold. Drag up to reveal it before asserting on its buttons.
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
     await tester.pumpAndSettle();
-    expect(find.text(VN.cashDrawerCashIn), findsOneWidget);
-    expect(find.text(VN.cashDrawerCashOut), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCashIn), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCashOut), findsOneWidget);
     // DG-359 Phase 2: the breakdown card now renders a "Đóng quầy" category
     // label that collides with the close action button label, so scope the
     // assertion to a FilledButton.
     expect(
-      find.widgetWithText(FilledButton, VN.cashDrawerClose),
+      find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerClose),
       findsOneWidget,
     );
     // 1.550.000đ is the expected balance per AC6 formula.
@@ -185,12 +187,12 @@ void main() {
     // button test above.
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.cashDrawerCashIn));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCashIn));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.cashDrawerCashIn), findsWidgets);
+    expect(find.text(CashDrawerLabels.cashDrawerCashIn), findsWidgets);
     expect(find.byType(TextFormField), findsNWidgets(2));
-    expect(find.widgetWithText(FilledButton, VN.xacNhan), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, OrdersLabels.xacNhan), findsOneWidget);
   });
 
   testWidgets('cash out button opens dialog (AC3)', (tester) async {
@@ -202,11 +204,11 @@ void main() {
     // (see the cash-in test above for the reason).
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.cashDrawerCashOut));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCashOut));
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, VN.xacNhan), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, OrdersLabels.xacNhan), findsOneWidget);
   });
 
   testWidgets('close button opens dialog showing expected balance (AC7)',
@@ -229,14 +231,14 @@ void main() {
     await tester.tap(find.byIcon(Icons.lock_outline));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.cashDrawerClose), findsWidgets);
+    expect(find.text(CashDrawerLabels.cashDrawerClose), findsWidgets);
     expect(find.textContaining('1.550.000'), findsWidgets);
     // The dialog confirm button is inside the AlertDialog.
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerClose),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerClose),
       ),
       findsOneWidget,
     );
@@ -266,7 +268,7 @@ void main() {
     // The closed drawer's expected balance appears in the history card.
     expect(find.textContaining('1.550.000'), findsOneWidget);
     // Discrepancy chip shows the shortage label.
-    expect(find.textContaining(VN.cashDrawerShortage), findsOneWidget);
+    expect(find.textContaining(CashDrawerLabels.cashDrawerShortage), findsOneWidget);
   });
 
   testWidgets('open dialog cancels without mutating when cancelled',
@@ -275,14 +277,14 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.cancel));
+    await tester.tap(find.text(SharedLabels.cancel));
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsNothing);
-    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerNoActive), findsOneWidget);
   });
 
   testWidgets(
@@ -301,26 +303,26 @@ void main() {
     await _pump(tester, container);
 
     // Tap "Mở quầy" → amount dialog.
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
     // Enter an opening balance and confirm (dialog's confirm button).
     await tester.enterText(find.byType(TextFormField).first, '1550000');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen),
       ),
     );
     await tester.pumpAndSettle();
 
     // The first open returned 409 → carry-over proposal dialog should appear.
-    expect(find.text(VN.cashDrawerCarryOverTitle), findsOneWidget);
-    expect(find.text(VN.cashDrawerCarryOverQuestion), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCarryOverTitle), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCarryOverQuestion), findsOneWidget);
     expect(find.textContaining('1.550.000'), findsOneWidget);
-    expect(find.text(VN.cashDrawerCarryOverAccept), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCarryOverAccept), findsOneWidget);
 
     // Accept the carry-over.
-    await tester.tap(find.text(VN.cashDrawerCarryOverAccept));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCarryOverAccept));
     await tester.pumpAndSettle();
 
     // The second open call must carry carryOverConfirmed: true. DG-360
@@ -341,7 +343,7 @@ void main() {
       },
     ]);
     // Success snackbar appears.
-    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSuccess), findsOneWidget);
   });
 
   testWidgets(
@@ -359,26 +361,26 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '1550000');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen),
       ),
     );
     await tester.pumpAndSettle();
 
     // Decline the carry-over.
-    await tester.tap(find.text(VN.cashDrawerCarryOverDecline));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCarryOverDecline));
     await tester.pumpAndSettle();
 
     // CQ-4: even on decline, `carryOverConfirmed` must be `true` — the flag
     // confirms awareness of the carry-over proposal, not acceptance. Sending
     // `false` would cause the backend to re-emit a 409 and re-loop the dialog.
     expect(interceptor.openCalls.last['carryOverConfirmed'], true);
-    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSuccess), findsOneWidget);
   });
 
   // UI-1: widget test coverage for loading/error states in _EmptyActiveView.
@@ -427,7 +429,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerNoActive), findsOneWidget);
     // Two inline CircularProgressIndicator spinners (one per reference line).
     expect(
       find.byType(CircularProgressIndicator),
@@ -458,11 +460,11 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    expect(find.text(VN.cashDrawerNoActive), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerNoActive), findsOneWidget);
     // The reference-balance labels must NOT appear on error — the lines
     // collapse to SizedBox.shrink rather than crashing the screen.
-    expect(find.textContaining(VN.cashDrawerReferenceBalance), findsNothing);
-    expect(find.textContaining(VN.cashDrawerPreviousCloseBalance), findsNothing);
+    expect(find.textContaining(CashDrawerLabels.cashDrawerReferenceBalance), findsNothing);
+    expect(find.textContaining(CashDrawerLabels.cashDrawerPreviousCloseBalance), findsNothing);
     // No inline spinners remain once both providers settle to error.
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
@@ -482,26 +484,26 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '1550000');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.cashDrawerCarryOverTitle), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerCarryOverTitle), findsOneWidget);
     // Press the cancel TextButton (not accept/decline).
-    await tester.tap(find.text(VN.cancel));
+    await tester.tap(find.text(SharedLabels.cancel));
     await tester.pumpAndSettle();
 
     // Only the first (409) open call occurred.
     expect(interceptor.openCalls.length, 1);
     // No success snackbar.
-    expect(find.text(VN.cashDrawerOpenSuccess), findsNothing);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSuccess), findsNothing);
   });
 
   // ── DG-343 Phase 3: "Chi tiết giao dịch" tab + history tap navigation ─────
@@ -513,9 +515,9 @@ void main() {
     await _pump(tester, container);
 
     // All three tab labels are present in the TabBar.
-    expect(find.text(VN.cashDrawerStatusOpen), findsWidgets);
-    expect(find.text(VN.cashDrawerHistory), findsWidgets);
-    expect(find.text(VN.cashDrawerTransactionsTab), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerStatusOpen), findsWidgets);
+    expect(find.text(CashDrawerLabels.cashDrawerHistory), findsWidgets);
+    expect(find.text(CashDrawerLabels.cashDrawerTransactionsTab), findsOneWidget);
   });
 
   testWidgets(
@@ -549,8 +551,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // The active drawer's transactions render with short type labels (AC3).
-    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsOneWidget);
     expect(find.text('Mở quầy sáng'), findsOneWidget);
     expect(find.text('Bán bánh mì'), findsOneWidget);
   });
@@ -564,7 +566,7 @@ void main() {
 
     // The tab label is present.
     final tabFinder = find.ancestor(
-      of: find.text(VN.cashDrawerTransactionsTab),
+      of: find.text(CashDrawerLabels.cashDrawerTransactionsTab),
       matching: find.byType(Tab),
     );
     expect(tabFinder, findsOneWidget);
@@ -628,13 +630,13 @@ void main() {
 
     // Tap the "Chi tiết giao dịch" TextButton inside the expanded card to
     // navigate to the transaction detail screen for this closed drawer.
-    await tester.tap(find.widgetWithText(TextButton, VN.cashDrawerTransactionsTab));
+    await tester.tap(find.widgetWithText(TextButton, CashDrawerLabels.cashDrawerTransactionsTab));
     await tester.pumpAndSettle();
 
     // The pushed screen shows the transaction list for drawer 7.
     expect(find.byType(CashDrawerTransactionList), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-    expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerTxnTypeClose), findsOneWidget);
     // The notes (distinct from the short type labels) are present.
     expect(find.text('Mở quầy sáng'), findsOneWidget);
     expect(find.text('Đóng quầy tối'), findsOneWidget);
@@ -667,7 +669,7 @@ void main() {
     await _pump(tester, container);
 
     // The 1101 reference line is rendered with the negative value.
-    final refLine = find.textContaining(VN.cashDrawerReferenceBalance);
+    final refLine = find.textContaining(CashDrawerLabels.cashDrawerReferenceBalance);
     expect(refLine, findsOneWidget);
     expect(find.textContaining('-200.000'), findsOneWidget);
     // NFR1: the negative value uses the error color.
@@ -697,7 +699,7 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    expect(find.textContaining(VN.cashDrawerReferenceBalance), findsOneWidget);
+    expect(find.textContaining(CashDrawerLabels.cashDrawerReferenceBalance), findsOneWidget);
     expect(find.textContaining('0'), findsWidgets);
   });
 
@@ -738,7 +740,7 @@ void main() {
 
     // The 1101 reference line is rendered inside the status card with the
     // negative value and the error color (NFR1 via `_BalanceRow`).
-    final refRow = find.text(VN.cashDrawerReferenceBalance);
+    final refRow = find.text(CashDrawerLabels.cashDrawerReferenceBalance);
     expect(refRow, findsOneWidget);
     expect(find.textContaining('-200.000'), findsWidgets);
     // The _BalanceRow value Text is rendered with colorScheme.error. Walk
@@ -773,14 +775,14 @@ void main() {
     await _pump(tester, container);
 
     // Tap "Mở quầy" → amount dialog.
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
     // Enter an opening balance greater than the 1101 reference and confirm.
     await tester.enterText(find.byType(TextFormField).first, '500000');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen),
       ),
     );
     await tester.pumpAndSettle();
@@ -788,19 +790,19 @@ void main() {
     // The first open returned 409 → surplus proposal dialog should appear.
     // The dialog reuses showCloseSurplusDialog with openFlow: true, so its
     // title/question/labels are the open surplus variants.
-    expect(find.text(VN.cashDrawerOpenSurplusTitle), findsOneWidget);
-    expect(find.text(VN.cashDrawerOpenSurplusQuestion), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSurplusTitle), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSurplusQuestion), findsOneWidget);
     expect(find.textContaining('700.000'), findsOneWidget);
 
     // Accept the surplus as owner_cash.
-    await tester.tap(find.text(VN.cashDrawerCloseSurplusOwnerCash));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCloseSurplusOwnerCash));
     await tester.pumpAndSettle();
 
     // The retry must carry surplusConfirmed + surplusSource=owner_cash.
     expect(interceptor.openCalls.length, 2);
     expect(interceptor.openCalls.last['surplusConfirmed'], true);
     expect(interceptor.openCalls.last['surplusSource'], 'owner_cash');
-    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSuccess), findsOneWidget);
   });
 
   testWidgets(
@@ -821,13 +823,13 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.cashDrawerOpen));
+    await tester.tap(find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '100000');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, VN.cashDrawerOpen),
+        matching: find.widgetWithText(FilledButton, CashDrawerLabels.cashDrawerOpen),
       ),
     );
     await tester.pumpAndSettle();
@@ -835,18 +837,18 @@ void main() {
     // The first open returned 409 → shortage proposal dialog should appear.
     // The dialog reuses showCloseShortageDialog with openFlow: true, so its
     // title/question/labels are the open shortage variants.
-    expect(find.text(VN.cashDrawerOpenShortageTitle), findsOneWidget);
-    expect(find.text(VN.cashDrawerOpenShortageQuestion), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenShortageTitle), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenShortageQuestion), findsOneWidget);
     expect(find.textContaining('400.000'), findsOneWidget);
 
     // Accept the shortage as equity_loss.
-    await tester.tap(find.text(VN.cashDrawerCloseShortageEquityLoss));
+    await tester.tap(find.text(CashDrawerLabels.cashDrawerCloseShortageEquityLoss));
     await tester.pumpAndSettle();
 
     expect(interceptor.openCalls.length, 2);
     expect(interceptor.openCalls.last['shortageConfirmed'], true);
     expect(interceptor.openCalls.last['shortageSource'], 'equity_loss');
-    expect(find.text(VN.cashDrawerOpenSuccess), findsOneWidget);
+    expect(find.text(CashDrawerLabels.cashDrawerOpenSuccess), findsOneWidget);
   });
 }
 

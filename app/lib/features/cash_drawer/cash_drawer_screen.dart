@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,7 +12,8 @@ import '../../data/providers/cash_drawer_provider.dart';
 import '../../data/providers/staff_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
 import 'widgets/cash_drawer_history_list.dart';
 import 'widgets/cash_drawer_status_card.dart';
@@ -57,7 +59,7 @@ class _CashDrawerMutationNotifier extends Notifier<bool> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
+          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
         );
       }
     } finally {
@@ -202,11 +204,11 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.cashDrawerTitle),
+        title: const Text(CashDrawerLabels.cashDrawerTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: () {
               ref.invalidate(cashDrawerStatusProvider);
               ref.invalidate(cashDrawerHistoryProvider);
@@ -232,15 +234,15 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           tabs: [
             const Tab(
               icon: Icon(Icons.point_of_sale),
-              text: VN.cashDrawerStatusOpen,
+              text: CashDrawerLabels.cashDrawerStatusOpen,
             ),
-            const Tab(icon: Icon(Icons.history), text: VN.cashDrawerHistory),
+            const Tab(icon: Icon(Icons.history), text: CashDrawerLabels.cashDrawerHistory),
             Tab(
               icon: Icon(
                 Icons.receipt_long,
                 color: transactionsEnabled ? null : Theme.of(context).disabledColor,
               ),
-              text: VN.cashDrawerTransactionsTab,
+              text: CashDrawerLabels.cashDrawerTransactionsTab,
             ),
           ],
         ),
@@ -400,7 +402,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       } catch (e) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
+          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
         );
         return;
       }
@@ -413,7 +415,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     ref.invalidate(cashDrawerAccountingBalance1101Provider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(VN.cashDrawerOpenSuccess)),
+        const SnackBar(content: Text(CashDrawerLabels.cashDrawerOpenSuccess)),
       );
     }
   }
@@ -438,7 +440,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
                 source: result.source ?? 'equity',
                 staffName: result.staffName,
               ),
-          VN.cashDrawerCashInSuccess,
+          CashDrawerLabels.cashDrawerCashInSuccess,
           ref,
         );
   }
@@ -463,7 +465,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
                 destination: result.destination ?? 'owner',
                 staffName: result.staffName,
               ),
-          VN.cashDrawerCashOutSuccess,
+          CashDrawerLabels.cashDrawerCashOutSuccess,
           ref,
         );
   }
@@ -508,7 +510,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.invalidate(cashDrawerPreviousCloseProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text(VN.cashDrawerCloseSuccess)),
+            const SnackBar(content: Text(CashDrawerLabels.cashDrawerCloseSuccess)),
           );
         }
         return;
@@ -541,7 +543,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       } catch (e) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
+          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
         );
         return;
       }
@@ -586,11 +588,11 @@ class _ActiveTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: onOpen,
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
@@ -656,7 +658,7 @@ class _EmptyActiveView extends StatelessWidget {
           children: [
             const Icon(Icons.lock_open_outlined, size: 48),
             const SizedBox(height: 12),
-            const Text(VN.cashDrawerNoActive),
+            const Text(CashDrawerLabels.cashDrawerNoActive),
             // FR1/AC1: render the 1101 reference balance line at any value
             // (negative, zero, or positive) — DG-360 Phase 2 removed the old
             // `<= 0` guard so an over-drawn 1101 balance is surfaced too.
@@ -680,7 +682,7 @@ class _EmptyActiveView extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    '${VN.cashDrawerReferenceBalance}: ${formatVND(balance1101.toDouble())}',
+                    '${CashDrawerLabels.cashDrawerReferenceBalance}: ${formatVND(balance1101.toDouble())}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: isNegative
                               ? Theme.of(context).colorScheme.error
@@ -705,7 +707,7 @@ class _EmptyActiveView extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    '${VN.cashDrawerPreviousCloseBalance}: ${formatVND(previousClose.toDouble())}',
+                    '${CashDrawerLabels.cashDrawerPreviousCloseBalance}: ${formatVND(previousClose.toDouble())}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 );
@@ -715,7 +717,7 @@ class _EmptyActiveView extends StatelessWidget {
             FilledButton.icon(
               onPressed: mutating ? null : onOpen,
               icon: const Icon(Icons.lock_open),
-              label: const Text(VN.cashDrawerOpen),
+              label: const Text(CashDrawerLabels.cashDrawerOpen),
             ),
           ],
         ),
@@ -752,23 +754,23 @@ class _ActionBar extends StatelessWidget {
           FilledButton.icon(
             onPressed: mutating ? null : onCashIn,
             icon: const Icon(Icons.south_west),
-            label: const Text(VN.cashDrawerCashIn),
+            label: const Text(CashDrawerLabels.cashDrawerCashIn),
           ),
           FilledButton.tonalIcon(
             onPressed: mutating ? null : onCashOut,
             icon: const Icon(Icons.north_east),
-            label: const Text(VN.cashDrawerCashOut),
+            label: const Text(CashDrawerLabels.cashDrawerCashOut),
           ),
           FilledButton.tonalIcon(
             onPressed: mutating ? null : onClose,
             icon: const Icon(Icons.lock_outline),
-            label: const Text(VN.cashDrawerClose),
+            label: const Text(CashDrawerLabels.cashDrawerClose),
           ),
           if (!isOpen)
             FilledButton.icon(
               onPressed: mutating ? null : onOpen,
               icon: const Icon(Icons.lock_open),
-              label: const Text(VN.cashDrawerOpen),
+              label: const Text(CashDrawerLabels.cashDrawerOpen),
             ),
         ],
       ),
@@ -793,11 +795,11 @@ class _HistoryTab extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {},
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
@@ -835,7 +837,7 @@ class _DisabledTransactionsPlaceholder extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              VN.cashDrawerNoActive,
+              CashDrawerLabels.cashDrawerNoActive,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).disabledColor,
                   ),
@@ -863,7 +865,7 @@ class _DrawerTransactionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = '${VN.cashDrawerTransactionsTab} — ${formatDisplayDate(drawer.openedAt)}';
+    final title = '${CashDrawerLabels.cashDrawerTransactionsTab} — ${formatDisplayDate(drawer.openedAt)}';
     return Scaffold(
       appBar: AppBar(
         title: Text(title),

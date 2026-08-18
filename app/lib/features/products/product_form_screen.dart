@@ -1,4 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -20,7 +21,8 @@ import '../../providers/photo_upload_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
 import 'widgets/catalog_tag_edit_sheet.dart';
@@ -144,11 +146,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(VN.cancel),
+              child: const Text(SharedLabels.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(VN.remove),
+              child: const Text(SharedLabels.remove),
             ),
           ],
         ),
@@ -186,9 +188,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final parsedPrice = _parseChipPrice(priceText);
 
       final rowErrors = _PriceChipValidationErrors(
-        labelError: label.isEmpty ? VN.priceChipLabelRequired : null,
+        labelError: label.isEmpty ? ProductsLabels.priceChipLabelRequired : null,
         priceError: parsedPrice == null || parsedPrice < 0
-            ? VN.priceChipPriceInvalid
+            ? ProductsLabels.priceChipPriceInvalid
             : null,
       );
 
@@ -317,12 +319,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+          Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _addPriceChip,
             icon: const Icon(Icons.add),
-            label: const Text(VN.addPriceChip),
+            label: const Text(ProductsLabels.addPriceChip),
           ),
           const SizedBox(height: 16),
         ],
@@ -332,7 +334,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+        Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         ReorderableListView.builder(
           physics: const NeverScrollableScrollPhysics(),
@@ -352,7 +354,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: TextFormField(
                       controller: row.labelController,
                       decoration: InputDecoration(
-                        labelText: VN.priceChipLabel,
+                        labelText: ProductsLabels.priceChipLabel,
                         errorText: row.labelError,
                       ),
                       onChanged: (_) {
@@ -372,8 +374,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: TextFormField(
                       controller: row.priceController,
                       decoration: InputDecoration(
-                        labelText: VN.priceChipPrice,
-                        suffixText: VN.currency,
+                        labelText: ProductsLabels.priceChipPrice,
+                        suffixText: SharedLabels.currency,
                         errorText: row.priceError,
                       ),
                       keyboardType: TextInputType.number,
@@ -390,7 +392,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     ),
                   ),
                   IconButton(
-                    tooltip: VN.remove,
+                    tooltip: SharedLabels.remove,
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () => _removePriceChip(index),
                   ),
@@ -415,7 +417,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               ? null
               : _addPriceChip,
           icon: const Icon(Icons.add),
-          label: const Text(VN.addPriceChip),
+          label: const Text(ProductsLabels.addPriceChip),
         ),
         const SizedBox(height: 16),
       ],
@@ -477,7 +479,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       var liveRowCount = 0;
       for (final row in section.rows) {
         final newError = !row.removed && row.valueController.text.trim().isEmpty
-            ? VN.enumOptionValueRequired
+            ? ProductsLabels.enumOptionValueRequired
             : null;
         sectionChanged = row.setValueError(newError) || sectionChanged;
         if (row.valueError != null) ok = false;
@@ -488,7 +490,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
       if (liveRowCount > 0 && defaultCount != 1) {
         sectionChanged =
-            section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
+            section.setError(ProductsLabels.enumOptionDefaultRequired) || sectionChanged;
         ok = false;
       }
       changed = changed || sectionChanged;
@@ -571,12 +573,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          VN.enumOptionsSection,
+          ProductsLabels.enumOptionsSection,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(
-          VN.enumOptionsHintAttributeWide,
+          ProductsLabels.enumOptionsHintAttributeWide,
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -622,7 +624,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      tooltip: VN.enumOptionDefaultLabel,
+                      tooltip: ProductsLabels.enumOptionDefaultLabel,
                       icon: Icon(
                         row.isDefault
                             ? Icons.radio_button_checked
@@ -640,9 +642,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         controller: row.valueController,
                         enabled: !row.removed,
                         decoration: InputDecoration(
-                          labelText: VN.enumOptionValueLabel,
+                          labelText: ProductsLabels.enumOptionValueLabel,
                           errorText: row.valueError,
-                          helperText: row.removed ? VN.enumOptionRemoved : null,
+                          helperText: row.removed ? ProductsLabels.enumOptionRemoved : null,
                         ),
                         onChanged: (_) {
                           if (row.valueError != null) {
@@ -652,7 +654,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       ),
                     ),
                     IconButton(
-                      tooltip: row.removed ? VN.enumOptionRestore : VN.remove,
+                      tooltip: row.removed ? ProductsLabels.enumOptionRestore : SharedLabels.remove,
                       icon: Icon(
                         row.removed ? Icons.restore : Icons.delete_outline,
                       ),
@@ -679,7 +681,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           child: OutlinedButton.icon(
             onPressed: () => _addEnumOption(section),
             icon: const Icon(Icons.add),
-            label: const Text(VN.addEnumOption),
+            label: const Text(ProductsLabels.addEnumOption),
           ),
         ),
         const SizedBox(height: 8),
@@ -696,12 +698,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt),
-              title: const Text(VN.takePhoto),
+              title: const Text(ProductsLabels.takePhoto),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text(VN.fromGallery),
+              title: const Text(ProductsLabels.fromGallery),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
           ],
@@ -874,7 +876,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (mounted) {
         showTopSnackBar(
           context,
-          _isEditing ? VN.productUpdated : VN.productCreated,
+          _isEditing ? ProductsLabels.productUpdated : ProductsLabels.productCreated,
         );
         context.pop();
       }
@@ -883,7 +885,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final detail = e.response?.data is Map
             ? e.response!.data['detail'] as String?
             : null;
-        showTopSnackBar(context, detail ?? e.message ?? VN.apiError);
+        showTopSnackBar(context, detail ?? e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -894,16 +896,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.deleteProduct),
-        content: const Text(VN.deleteConfirm),
+        title: const Text(ProductsLabels.deleteProduct),
+        content: const Text(ProductsLabels.deleteConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
@@ -916,12 +918,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           .read(productsProvider.notifier)
           .deleteProduct(widget.product!.id);
       if (mounted) {
-        showTopSnackBar(context, VN.productDeleted);
+        showTopSnackBar(context, ProductsLabels.productDeleted);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -935,12 +937,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           .read(productsProvider.notifier)
           .reactivateProduct(widget.product!.id);
       if (mounted) {
-        showTopSnackBar(context, VN.productUpdated);
+        showTopSnackBar(context, ProductsLabels.productUpdated);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -972,13 +974,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? VN.editProduct : VN.createProduct),
+        title: Text(_isEditing ? ProductsLabels.editProduct : ProductsLabels.createProduct),
         actions: [
           if (_isEditing)
             IconButton(
               tooltip: widget.product!.active == 0
-                  ? VN.showProduct
-                  : VN.deleteProduct,
+                  ? ProductsLabels.showProduct
+                  : ProductsLabels.deleteProduct,
               icon: Icon(
                 widget.product!.active == 0
                     ? Icons.visibility_outlined
@@ -1047,7 +1049,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text(VN.save),
+                  : const Text(SharedLabels.save),
             ),
 
             ProductFormCatalogIntegrationSection(
@@ -1329,7 +1331,7 @@ class _PhotoSection extends StatelessWidget {
       children: [
         Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
         SizedBox(height: 8),
-        Text(VN.choosePhoto, style: TextStyle(color: Colors.grey)),
+        Text(ProductsLabels.choosePhoto, style: TextStyle(color: Colors.grey)),
       ],
     );
   }
@@ -1377,12 +1379,12 @@ class _CatalogGallerySectionState
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt),
-              title: const Text(VN.takePhoto),
+              title: const Text(ProductsLabels.takePhoto),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text(VN.fromGallery),
+              title: const Text(ProductsLabels.fromGallery),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
           ],
@@ -1414,7 +1416,7 @@ class _CatalogGallerySectionState
       showTopSnackBar(
         context,
         failed == 0
-            ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
+            ? (added == 1 ? ProductsLabels.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
             : 'Đã thêm $added ảnh, $failed ảnh lỗi',
       );
     } else {
@@ -1433,9 +1435,9 @@ class _CatalogGallerySectionState
           (i) => i.state.status == PhotoUploadStatus.error,
           orElse: () => batch.items.first,
         );
-        showTopSnackBar(context, err.state.errorMessage ?? VN.apiError);
+        showTopSnackBar(context, err.state.errorMessage ?? SharedLabels.apiError);
       } else {
-        showTopSnackBar(context, VN.catalogPhotoAdded);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoAdded);
       }
     }
   }
@@ -1444,16 +1446,16 @@ class _CatalogGallerySectionState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.deleteCatalogPhoto),
-        content: const Text(VN.deleteCatalogConfirm),
+        title: const Text(ProductsLabels.deleteCatalogPhoto),
+        content: const Text(ProductsLabels.deleteCatalogConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
@@ -1465,11 +1467,11 @@ class _CatalogGallerySectionState
           .read(catalogProvider(widget.productId).notifier)
           .deletePhoto(photo.id);
       if (mounted) {
-        showTopSnackBar(context, VN.catalogPhotoDeleted);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoDeleted);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     }
   }
@@ -1481,11 +1483,11 @@ class _CatalogGallerySectionState
           .read(catalogProvider(widget.productId).notifier)
           .promotePhotoToProductMain(photo.id);
       if (mounted) {
-        showTopSnackBar(context, VN.productPhotoSetFromCatalog);
+        showTopSnackBar(context, ProductsLabels.productPhotoSetFromCatalog);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) {
@@ -1526,7 +1528,7 @@ class _CatalogGallerySectionState
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: [
-              Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
+              Text(ProductsLabels.catalogTitle, style: theme.textTheme.titleMedium),
               if (_promoting) ...[
                 const SizedBox(width: 12),
                 const SizedBox(
@@ -1542,7 +1544,7 @@ class _CatalogGallerySectionState
         catalogAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, st) => Text(
-            VN.errorLoading,
+            SharedLabels.errorLoading,
             style: TextStyle(color: theme.colorScheme.error),
           ),
           data: (photos) => Column(
@@ -1551,7 +1553,7 @@ class _CatalogGallerySectionState
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    VN.noCatalogPhotos,
+                    ProductsLabels.noCatalogPhotos,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.grey,
                     ),
@@ -1620,7 +1622,7 @@ class _AddPhotoCard extends StatelessWidget {
                   : const Icon(Icons.add_photo_alternate_outlined, size: 36),
               const SizedBox(height: 8),
               Text(
-                VN.addCatalogPhoto,
+                ProductsLabels.addCatalogPhoto,
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -1745,7 +1747,7 @@ class _CatalogPhotoCard extends StatelessWidget {
                               ),
                               SizedBox(width: 4),
                               Text(
-                                VN.setAsProductPhoto,
+                                ProductsLabels.setAsProductPhoto,
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,

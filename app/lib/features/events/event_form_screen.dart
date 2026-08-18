@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,8 +18,9 @@ import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
 import 'widgets/event_form_photo_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../data/api/api_client.dart' show apiBaseUrlProvider;
 
 class _EventType {
@@ -29,24 +31,24 @@ class _EventType {
 }
 
 const _kTypes = [
-  _EventType('note', VN.eventNote, Icons.edit_note),
-  _EventType('equipment', VN.typeEquipment, Icons.warning_amber),
-  _EventType('production', VN.eventProduction, Icons.bakery_dining),
-  _EventType('inventory', VN.eventInventory, Icons.inventory_2),
-  _EventType('expense', VN.eventExpense, Icons.payments),
-  _EventType('delivery', VN.eventDelivery, Icons.local_shipping),
-  _EventType('order', VN.eventOrder, Icons.receipt_long),
+  _EventType('note', EventsLabels.eventNote, Icons.edit_note),
+  _EventType('equipment', EventsLabels.typeEquipment, Icons.warning_amber),
+  _EventType('production', EventsLabels.eventProduction, Icons.bakery_dining),
+  _EventType('inventory', EventsLabels.eventInventory, Icons.inventory_2),
+  _EventType('expense', EventsLabels.eventExpense, Icons.payments),
+  _EventType('delivery', EventsLabels.eventDelivery, Icons.local_shipping),
+  _EventType('order', EventsLabels.eventOrder, Icons.receipt_long),
 ];
 
 const _kStandardTags = [
-  ('incident', VN.tagIncident),
-  ('knowledge-gap', VN.tagKnowledgeGap),
-  ('maintenance', VN.tagMaintenance),
-  ('equipment', VN.tagEquipment),
-  ('pricing', VN.tagPricing),
-  ('ordering', VN.tagOrdering),
-  ('decoration', VN.tagDecoration),
-  ('staff', VN.tagStaff),
+  ('incident', EventsLabels.tagIncident),
+  ('knowledge-gap', EventsLabels.tagKnowledgeGap),
+  ('maintenance', EventsLabels.tagMaintenance),
+  ('equipment', EventsLabels.tagEquipment),
+  ('pricing', EventsLabels.tagPricing),
+  ('ordering', EventsLabels.tagOrdering),
+  ('decoration', EventsLabels.tagDecoration),
+  ('staff', EventsLabels.tagStaff),
 ];
 
 class EventFormScreen extends ConsumerStatefulWidget {
@@ -147,7 +149,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(widget.event!.id, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventUpdated);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventUpdated);
       } else {
         final createdEvent = await ref
             .read(eventsProvider.notifier)
@@ -162,7 +164,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(createdEvent.id, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventLogged);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventLogged);
       }
       if (mounted) context.pop();
     } catch (e) {
@@ -193,7 +195,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
-      showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      showTopSnackBar(context, EventsLabels.eventPhotosUploadFailed);
     }
   }
 
@@ -203,21 +205,21 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.loggedBy),
+        title: const Text(EventsLabels.loggedBy),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: VN.setYourName),
+          decoration: const InputDecoration(hintText: EventsLabels.setYourName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -249,10 +251,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final loggedBy = ref.watch(loggedByProvider);
 
     final title = _isEditing
-        ? VN.editEvent
+        ? EventsLabels.editEvent
         : _isOrderLinked
-            ? VN.addOrderIncident
-            : VN.createEvent;
+            ? EventsLabels.addOrderIncident
+            : EventsLabels.createEvent;
 
     return Scaffold(
       appBar: AppBar(
@@ -270,7 +272,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   const Icon(Icons.receipt_long, size: 18),
                   const SizedBox(width: 6),
                   Text(
-                    '${VN.orderLabel}: ${widget.orderRef}',
+                    '${EventsLabels.orderLabel}: ${widget.orderRef}',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
@@ -286,8 +288,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             maxLines: 6,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              labelText: VN.eventSummary,
-              hintText: VN.eventPrompt,
+              labelText: EventsLabels.eventSummary,
+              hintText: EventsLabels.eventPrompt,
               border: OutlineInputBorder(),
             ),
           ),
@@ -295,7 +297,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.eventType, style: theme.textTheme.titleSmall),
+            child: Text(EventsLabels.eventType, style: theme.textTheme.titleSmall),
           ),
           Wrap(
             spacing: 6,
@@ -317,7 +319,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.tagsLabel, style: theme.textTheme.titleSmall),
+            child: Text(ProductsLabels.tagsLabel, style: theme.textTheme.titleSmall),
           ),
           Wrap(
             spacing: 6,
@@ -357,7 +359,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     autofocus: true,
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
-                      hintText: VN.addTag,
+                      hintText: EventsLabels.addTag,
                       isDense: true,
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(
@@ -371,7 +373,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               else
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 16),
-                  label: const Text(VN.addTag),
+                  label: const Text(EventsLabels.addTag),
                   onPressed: () => setState(() => _showCustomTagField = true),
                 ),
             ],
@@ -393,9 +395,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             children: [
               const Icon(Icons.person_outline, size: 18),
               const SizedBox(width: 6),
-              Text('${VN.loggedBy}: ', style: theme.textTheme.bodyMedium),
+              Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
               Text(
-                loggedBy.isNotEmpty ? loggedBy : VN.setYourName,
+                loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: loggedBy.isEmpty ? colorScheme.error : null,
@@ -404,7 +406,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               const Spacer(),
               TextButton(
                 onPressed: _changeLogger,
-                child: const Text(VN.changeLogger),
+                child: const Text(EventsLabels.changeLogger),
               ),
             ],
           ),
@@ -421,7 +423,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
-                    _isEditing ? VN.save : VN.logEvent,
+                    _isEditing ? SharedLabels.save : EventsLabels.logEvent,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,

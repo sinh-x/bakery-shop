@@ -56,8 +56,8 @@ void main() {
 
     expect(find.byType(OrderDeliverySection), findsOneWidget);
     // Editable mode shows the delivery type segmented selector.
-    expect(find.text(VN.deliveryType), findsOneWidget);
-    expect(find.text(VN.pickup), findsWidgets);
+    expect(find.text(OrdersLabels.deliveryType), findsOneWidget);
+    expect(find.text(OrdersLabels.pickup), findsWidgets);
   });
 
   testWidgets('edit Stage 3 delivery fields are editable', (tester) async {
@@ -74,16 +74,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // Address, delivery phone, and notes fields all render and accept input.
-    expect(find.text(VN.deliveryAddress), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryAddress), findsOneWidget);
     expect(find.text(OrdersLabels.deliveryPhone), findsOneWidget);
-    expect(find.text(VN.notes), findsOneWidget);
+    expect(find.text(OrdersLabels.notes), findsOneWidget);
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, VN.deliveryAddress),
+      find.widgetWithText(TextFormField, OrdersLabels.deliveryAddress),
       '12 Lê Lợi',
     );
     await tester.enterText(
-      find.widgetWithText(TextFormField, VN.notes),
+      find.widgetWithText(TextFormField, OrdersLabels.notes),
       'Giao buổi sáng',
     );
     expect(addressCtrl.text, '12 Lê Lợi');
@@ -125,13 +125,13 @@ void main() {
 
     // The due date section renders the edit-specific preset chips.
     expect(find.byType(HourPresetChips), findsOneWidget);
-    expect(find.text(VN.dueDate), findsWidgets);
+    expect(find.text(OrdersLabels.dueDate), findsWidgets);
 
     // The default DueDateTimePickerRow is NOT used (replaced by the slot).
     expect(find.text(OrdersLabels.notSelected), findsNothing);
 
     // Tapping a preset chip fires the callback with the expected time slot.
-    await tester.tap(find.text('${VN.timeSlotMorning} 8:00'));
+    await tester.tap(find.text('${OrdersLabels.timeSlotMorning} 8:00'));
     await tester.pump();
     expect(selected, const TimeOfDay(hour: 8, minute: 0));
   });

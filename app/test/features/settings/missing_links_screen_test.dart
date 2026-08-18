@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Fake [AddressService] with an in-memory missing-links store for the
 /// screen. Mirrors the [address_library_screen_test] pattern
@@ -104,8 +105,8 @@ void main() {
         service: _ThrowingAddressService(),
       );
       expect(find.byIcon(Icons.cloud_off), findsOneWidget);
-      expect(find.textContaining(VN.apiError), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, VN.retry), findsOneWidget);
+      expect(find.textContaining(SharedLabels.apiError), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, SharedLabels.retry), findsOneWidget);
     });
 
     testWidgets('retry button re-fetches the list (AC5)', (tester) async {
@@ -119,7 +120,7 @@ void main() {
       expect(find.byIcon(Icons.cloud_off), findsOneWidget);
       // Now allow success and tap retry.
       shouldThrow = false;
-      await tester.tap(find.widgetWithText(FilledButton, VN.retry));
+      await tester.tap(find.widgetWithText(FilledButton, SharedLabels.retry));
       await tester.pumpAndSettle();
       expect(find.text('12 Nguyễn Huệ, Q1'), findsOneWidget);
     });

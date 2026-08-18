@@ -5,12 +5,14 @@ import 'package:bakery_app/data/models/payment_transaction.dart';
 import 'package:bakery_app/data/models/payment_transaction_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_edit_payment_sheet.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_transaction_detail_sheet.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 const _testRef = 'TEST-ORD-PHOTO-UI';
 const _testBaseUrl = 'http://test.local:8000';
@@ -27,7 +29,7 @@ PaymentTransaction _txn() => const PaymentTransaction(
       method: 'transfer',
       amount: 200000,
       notes: '',
-      paymentSource: VN.paymentSourcePhuongVCB,
+      paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
     );
 
 /// Fake service that controls what [getTransactionPhoto] returns so the
@@ -99,12 +101,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.txnPhotoSection), findsOneWidget);
-      expect(find.text(VN.txnPhotoAttach), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoSection), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoAttach), findsOneWidget);
       expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
       // Replace / Remove are not shown when there is no photo.
-      expect(find.text(VN.txnPhotoReplace), findsNothing);
-      expect(find.text(VN.txnPhotoRemove), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoReplace), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoRemove), findsNothing);
     });
 
     testWidgets(
@@ -128,9 +130,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // The attach button is replaced by Replace + Remove.
-      expect(find.text(VN.txnPhotoAttach), findsNothing);
-      expect(find.text(VN.txnPhotoReplace), findsOneWidget);
-      expect(find.text(VN.txnPhotoRemove), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoAttach), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoReplace), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoRemove), findsOneWidget);
       // The thumbnail renders an Image.network pointing at the photo URL.
       final image = find.byType(Image);
       expect(image, findsWidgets);
@@ -154,13 +156,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(VN.txnPhotoRemove));
+      await tester.tap(find.text(OrdersLabels.txnPhotoRemove));
       await tester.pumpAndSettle();
 
       // Confirm dialog appears with the remove + cancel actions.
-      expect(find.text(VN.txnPhotoRemove), findsOneWidget);
-      expect(find.text(VN.cancel), findsOneWidget);
-      expect(find.text(VN.remove), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoRemove), findsOneWidget);
+      expect(find.text(SharedLabels.cancel), findsOneWidget);
+      expect(find.text(SharedLabels.remove), findsOneWidget);
     });
   });
 
@@ -181,11 +183,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.txnPhotoSection), findsOneWidget);
-      expect(find.text(VN.txnPhotoEmpty), findsOneWidget);
-      expect(find.text(VN.txnPhotoAttach), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoSection), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoEmpty), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoAttach), findsOneWidget);
       // No Replace when there is no photo.
-      expect(find.text(VN.txnPhotoReplace), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoReplace), findsNothing);
     });
 
     testWidgets(
@@ -213,9 +215,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Empty state is gone; Replace is shown inline.
-      expect(find.text(VN.txnPhotoEmpty), findsNothing);
-      expect(find.text(VN.txnPhotoAttach), findsNothing);
-      expect(find.text(VN.txnPhotoReplace), findsOneWidget);
+      expect(find.text(OrdersLabels.txnPhotoEmpty), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoAttach), findsNothing);
+      expect(find.text(OrdersLabels.txnPhotoReplace), findsOneWidget);
       // Thumbnail image present.
       expect(find.byType(Image), findsWidgets);
     });

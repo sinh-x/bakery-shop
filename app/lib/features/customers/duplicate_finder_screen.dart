@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +10,8 @@ import 'package:bakery_app/shared/utils/diacritics.dart';
 import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Returns `true` if any member of [group] matches [query]
 /// (case-insensitive, diacritic-insensitive) against `name` or `phone`.
 ///
@@ -190,7 +192,7 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
                     : IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: _clearSearch,
-                        tooltip: VN.clear,
+                        tooltip: OrdersLabels.clear,
                       ),
                 border: const OutlineInputBorder(),
               ),
@@ -214,7 +216,7 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
                   children: [
                     const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(VN.apiError),
+                    const Text(SharedLabels.apiError),
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: () =>

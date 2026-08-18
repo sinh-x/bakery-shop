@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
@@ -6,7 +7,10 @@ import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/blanks.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
@@ -168,26 +172,26 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
         const <ExpenseCategory>[];
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.expenseTitle),
+        title: const Text(ExpensesLabels.expenseTitle),
         actions: [
           if (widget.onOpenDebts != null)
             IconButton(
               onPressed: widget.onOpenDebts,
-              tooltip: VN.debtListTitle,
+              tooltip: ExpensesLabels.debtListTitle,
               icon: const Icon(Icons.account_balance),
             ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAdd,
-        tooltip: VN.expenseAddAction,
+        tooltip: ExpensesLabels.expenseAddAction,
         child: const Icon(Icons.add),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            VN.expenseHistorySection,
+            ExpensesLabels.expenseHistorySection,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -266,7 +270,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
-                child: Text(VN.expenseNoHistory),
+                child: Text(ExpensesLabels.expenseNoHistory),
               ),
             ),
         ],
@@ -331,7 +335,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
         );
       }
     }
@@ -341,16 +345,16 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text(VN.deleteEvent),
-        content: const Text(VN.deleteEventConfirm),
+        title: const Text(EventsLabels.deleteEvent),
+        content: const Text(EventsLabels.deleteEventConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(VN.actionCancel),
+            child: const Text(BlanksLabels.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(VN.deleteEvent),
+            child: const Text(EventsLabels.deleteEvent),
           ),
         ],
       ),
@@ -366,12 +370,12 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
         await ref.read(eventsProvider.notifier).deleteEvent(id, deletedBy: deletedBy);
       }
       await _refreshHistory();
-      if (mounted) showTopSnackBar(context, VN.eventDeleted);
+      if (mounted) showTopSnackBar(context, EventsLabels.eventDeleted);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
         );
       }
     } finally {

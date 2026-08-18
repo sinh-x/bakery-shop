@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, categoryMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

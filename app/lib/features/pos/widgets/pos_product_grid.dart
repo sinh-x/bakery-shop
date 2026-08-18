@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,10 +7,12 @@ import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../orders/utils/trung_bay_inventory_extensions.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
   const PosProductGrid({
@@ -186,7 +189,7 @@ class PosProductGrid extends ConsumerWidget {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        '${VN.giaGoc}: ${formatVND(assignedPrice!)}',
+                        '${OrdersLabels.giaGoc}: ${formatVND(assignedPrice!)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -199,8 +202,8 @@ class PosProductGrid extends ConsumerWidget {
                     TextFormField(
                       controller: priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.giaBan,
-                        helperText: VN.markupThousandsHint,
+                        labelText: OrdersLabels.giaBan,
+                        helperText: OrdersLabels.markupThousandsHint,
                         border: OutlineInputBorder(),
                         suffixText: ',000đ',
                         isDense: true,
@@ -228,7 +231,7 @@ class PosProductGrid extends ConsumerWidget {
                           // Price floor: selling price cannot go below the
                           // assigned price (FR3). Clamp + warn.
                           if (selling < assignedPrice!) {
-                            floorWarning = VN.markupFloorWarning;
+                            floorWarning = OrdersLabels.markupFloorWarning;
                           } else {
                             floorWarning = null;
                           }
@@ -249,7 +252,7 @@ class PosProductGrid extends ConsumerWidget {
                     TextFormField(
                       controller: priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.itemPrice,
+                        labelText: OrdersLabels.itemPrice,
                         border: OutlineInputBorder(),
                         suffixText: 'đ',
                         isDense: true,
@@ -280,7 +283,7 @@ class PosProductGrid extends ConsumerWidget {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogCtx),
-                child: const Text(VN.cancel),
+                child: const Text(SharedLabels.cancel),
               ),
               FilledButton(
                 onPressed: () {
@@ -354,12 +357,12 @@ class PosProductGrid extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text(VN.sanPhamHetHang),
-        content: const Text(VN.banAnyway),
+        title: const Text(OrdersLabels.sanPhamHetHang),
+        content: const Text(OrdersLabels.banAnyway),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -383,7 +386,7 @@ class PosProductGrid extends ConsumerWidget {
                 );
               }
             },
-            child: const Text(VN.xacNhan),
+            child: const Text(OrdersLabels.xacNhan),
           ),
         ],
       ),
@@ -426,7 +429,7 @@ List<_PosChipOption> _posChipOptions(
       options.add(
         _PosChipOption(
           uiId: _basePriceOptionUiId,
-          label: VN.giaCoSo,
+          label: StockLabels.giaCoSo,
           cartLabel: null,
           price: product.basePrice,
           stockQty: baseStock,
@@ -458,9 +461,9 @@ List<_PosChipOption> _posChipOptions(
 
 @visibleForTesting
 String posStockStatusLabel(int qty) {
-  if (qty > 3) return VN.availableStock(qty);
-  if (qty >= 1) return VN.lowStock(qty);
-  return VN.outOfStock;
+  if (qty > 3) return StockLabels.availableStock(qty);
+  if (qty >= 1) return StockLabels.lowStock(qty);
+  return StockLabels.outOfStock;
 }
 
 @visibleForTesting
@@ -502,7 +505,7 @@ class _ProductPosCard extends StatelessWidget {
         ? product.basePrice
         : chipMin;
 
-    return '${VN.priceFrom} ${formatVND(minPrice)}';
+    return '${ProductsLabels.priceFrom} ${formatVND(minPrice)}';
   }
 
   @override

@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../providers/order/incomplete_count_provider.dart';
 import '../../../providers/order/urgency_count_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Shell scaffold with the bottom navigation bar. Wraps the active child
 /// widget and highlights the current tab based on the router location.
 class ShellScaffold extends ConsumerWidget {
@@ -116,7 +116,7 @@ class ShellScaffold extends ConsumerWidget {
           const NavigationDestination(
             icon: Icon(Icons.storefront_outlined),
             selectedIcon: Icon(Icons.storefront),
-            label: VN.banHang,
+            label: OrdersLabels.banHang,
           ),
         ],
       ),

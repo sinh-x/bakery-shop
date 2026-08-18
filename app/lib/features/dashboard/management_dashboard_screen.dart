@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +19,7 @@ import 'widgets/alert_section.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/shortcut_grid.dart';
 import 'widgets/today_order_list.dart';
-
+import 'package:bakery_app/shared/labels/accounting.dart';
 /// Management dashboard screen — admin-facing "Quản lý" tab.
 ///
 /// Phase 3 wires the real API providers and progressive loading:
@@ -105,7 +106,7 @@ class _ManagementDashboardScreenState
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: onAutoRefreshTriggered,
           ),
           AppBarOverflowMenu(
@@ -117,7 +118,7 @@ class _ManagementDashboardScreenState
             items: const [
               PopupMenuItem<String>(
                 value: 'accounting',
-                child: Text(VN.accountingTitle),
+                child: Text(AccountingLabels.accountingTitle),
               ),
             ],
           ),
@@ -309,7 +310,7 @@ class _TodayOrdersSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionTitle(title: VN.todayOrders),
+        const SectionTitle(title: SharedLabels.todayOrders),
         const SizedBox(height: 8),
         if (ordersAsync.isLoading)
           const Padding(

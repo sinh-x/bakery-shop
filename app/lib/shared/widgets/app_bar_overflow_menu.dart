@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
-import 'vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class AppBarOverflowMenu extends StatelessWidget {
   const AppBarOverflowMenu({
     super.key,
@@ -20,7 +18,7 @@ class AppBarOverflowMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      tooltip: VN.moreActions,
+      tooltip: SharedLabels.moreActions,
       onSelected: (value) {
         if (includeSettings && value == settingsValue) {
           context.push('/settings');
@@ -33,7 +31,7 @@ class AppBarOverflowMenu extends StatelessWidget {
         if (includeSettings)
           const PopupMenuItem<String>(
             value: settingsValue,
-            child: Text(VN.openSettings),
+            child: Text(SharedLabels.openSettings),
           ),
       ],
     );

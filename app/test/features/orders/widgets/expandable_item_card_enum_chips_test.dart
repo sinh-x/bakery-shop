@@ -4,9 +4,10 @@ import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/expandable_item_card.dart';
 import 'package:bakery_app/providers/order_providers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 
 const _nhanBanhAttribute = EnumAttribute(
   attributeType: 'nhan_banh',
@@ -211,12 +212,12 @@ void main() {
         await _pumpCard(tester, item);
 
         final switchFinder = find.byType(Switch);
-        expect(find.text(VN.useInventory), findsOneWidget);
+        expect(find.text(StockLabels.useInventory), findsOneWidget);
         expect(switchFinder, findsOneWidget);
         expect(tester.widget<Switch>(switchFinder).value, isFalse);
         expect(item.attributes['useInventory'], 'false');
 
-        await tester.tap(find.text(VN.useInventory));
+        await tester.tap(find.text(StockLabels.useInventory));
         await tester.pump();
 
         expect(tester.widget<Switch>(switchFinder).value, isTrue);
@@ -241,11 +242,11 @@ void main() {
         await _pumpCard(tester, item);
 
         // "Giá gốc" label shows the assigned price (200.000đ).
-        expect(find.textContaining('${VN.giaGoc}:'), findsOneWidget);
+        expect(find.textContaining('${OrdersLabels.giaGoc}:'), findsOneWidget);
         expect(find.text('200.000đ'), findsWidgets);
         // "Giá bán" editable field is present (not "Đơn giá").
-        expect(find.text(VN.giaBan), findsOneWidget);
-        expect(find.text(VN.itemPrice), findsNothing);
+        expect(find.text(OrdersLabels.giaBan), findsOneWidget);
+        expect(find.text(OrdersLabels.itemPrice), findsNothing);
         // Default selling price == assigned price (no markup yet).
         expect(item.unitPrice, 200000);
         expect(item.assignedPrice, 200000);
@@ -275,7 +276,7 @@ void main() {
         // Assigned price (COGS anchor) stays at base price.
         expect(item.assignedPrice, 200000);
         // No floor warning since 250.000 >= 200.000.
-        expect(find.text(VN.markupFloorWarning), findsNothing);
+        expect(find.text(OrdersLabels.markupFloorWarning), findsNothing);
       },
     );
 
@@ -297,7 +298,7 @@ void main() {
         await tester.enterText(find.byType(TextFormField).first, '150');
         await tester.pump();
 
-        expect(find.text(VN.markupFloorWarning), findsOneWidget);
+        expect(find.text(OrdersLabels.markupFloorWarning), findsOneWidget);
         // DG-296 FR3/AC3 review-remediation: the editor now clamps the draft
         // item's customUnitPrice upward to the assigned price (COGS anchor)
         // instead of leaving the below-floor value in place. The floor warning
@@ -321,9 +322,9 @@ void main() {
 
         await _pumpCard(tester, item);
 
-        expect(find.text(VN.itemPrice), findsOneWidget);
-        expect(find.text(VN.giaBan), findsNothing);
-        expect(find.textContaining('${VN.giaGoc}:'), findsNothing);
+        expect(find.text(OrdersLabels.itemPrice), findsOneWidget);
+        expect(find.text(OrdersLabels.giaBan), findsNothing);
+        expect(find.textContaining('${OrdersLabels.giaGoc}:'), findsNothing);
         // assignedPrice stays null for non-trưng bày (FR8).
         expect(item.assignedPrice, isNull);
       },

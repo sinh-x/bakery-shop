@@ -4,6 +4,7 @@
 // Pre-existing at 295 lines before DG-333 Phase 5; race-condition fix added
 // the _uploadPhotos helper + UploadProgressIndicator and grew it to 342.
 // Reviewed 2026-08-02.
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,7 +14,8 @@ import '../../../data/providers/events_provider.dart';
 import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'quick_log_photo_picker.dart';
 
 class _EventType {
@@ -24,24 +26,24 @@ class _EventType {
 }
 
 const _kTypes = [
-  _EventType('note', VN.eventNote, Icons.edit_note),
-  _EventType('equipment', VN.typeEquipment, Icons.warning_amber),
-  _EventType('production', VN.eventProduction, Icons.bakery_dining),
-  _EventType('inventory', VN.eventInventory, Icons.inventory_2),
-  _EventType('expense', VN.eventExpense, Icons.payments),
-  _EventType('delivery', VN.eventDelivery, Icons.local_shipping),
-  _EventType('order', VN.eventOrder, Icons.receipt_long),
+  _EventType('note', EventsLabels.eventNote, Icons.edit_note),
+  _EventType('equipment', EventsLabels.typeEquipment, Icons.warning_amber),
+  _EventType('production', EventsLabels.eventProduction, Icons.bakery_dining),
+  _EventType('inventory', EventsLabels.eventInventory, Icons.inventory_2),
+  _EventType('expense', EventsLabels.eventExpense, Icons.payments),
+  _EventType('delivery', EventsLabels.eventDelivery, Icons.local_shipping),
+  _EventType('order', EventsLabels.eventOrder, Icons.receipt_long),
 ];
 
 const _kStandardTags = [
-  ('incident', VN.tagIncident),
-  ('knowledge-gap', VN.tagKnowledgeGap),
-  ('maintenance', VN.tagMaintenance),
-  ('equipment', VN.tagEquipment),
-  ('pricing', VN.tagPricing),
-  ('ordering', VN.tagOrdering),
-  ('decoration', VN.tagDecoration),
-  ('staff', VN.tagStaff),
+  ('incident', EventsLabels.tagIncident),
+  ('knowledge-gap', EventsLabels.tagKnowledgeGap),
+  ('maintenance', EventsLabels.tagMaintenance),
+  ('equipment', EventsLabels.tagEquipment),
+  ('pricing', EventsLabels.tagPricing),
+  ('ordering', EventsLabels.tagOrdering),
+  ('decoration', EventsLabels.tagDecoration),
+  ('staff', EventsLabels.tagStaff),
 ];
 
 /// Quick-log form for recording bakery events from the phone.
@@ -105,7 +107,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         await _uploadPhotos(createdEvent.id);
       }
       if (mounted) {
-        showTopSnackBar(context, VN.eventLogged);
+        showTopSnackBar(context, EventsLabels.eventLogged);
         _reset();
       }
     } catch (e) {
@@ -134,7 +136,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
-      showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      showTopSnackBar(context, EventsLabels.eventPhotosUploadFailed);
     }
   }
 
@@ -156,21 +158,21 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.loggedBy),
+        title: const Text(EventsLabels.loggedBy),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: VN.setYourName),
+          decoration: const InputDecoration(hintText: EventsLabels.setYourName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -213,7 +215,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
-            hintText: VN.eventPrompt,
+            hintText: EventsLabels.eventPrompt,
             border: OutlineInputBorder(),
           ),
         ),
@@ -277,7 +279,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                   autofocus: true,
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
-                    hintText: VN.addTag,
+                    hintText: EventsLabels.addTag,
                     isDense: true,
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(
@@ -291,7 +293,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             else
               ActionChip(
                 avatar: const Icon(Icons.add, size: 16),
-                label: const Text(VN.addTag),
+                label: const Text(EventsLabels.addTag),
                 onPressed: () => setState(() => _showCustomTagField = true),
               ),
           ],
@@ -317,9 +319,9 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           children: [
             const Icon(Icons.person_outline, size: 18),
             const SizedBox(width: 6),
-            Text('${VN.loggedBy}: ', style: theme.textTheme.bodyMedium),
+            Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
             Text(
-              loggedBy.isNotEmpty ? loggedBy : VN.setYourName,
+              loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: loggedBy.isEmpty ? colorScheme.error : null,
@@ -328,7 +330,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             const Spacer(),
             TextButton(
               onPressed: _changeLogger,
-              child: const Text(VN.changeLogger),
+              child: const Text(EventsLabels.changeLogger),
             ),
           ],
         ),
@@ -347,7 +349,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text(
-                  VN.logEvent,
+                  EventsLabels.logEvent,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,

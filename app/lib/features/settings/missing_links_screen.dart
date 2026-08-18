@@ -5,7 +5,7 @@ import '../../../data/models/address.dart';
 import '../../../data/providers/missing_links_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import '../../../shared/utils/launch_external_url.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Missing-links screen (DG-388 Phase 3 / FR1/FR2/FR6/AC1/AC2/AC5).
 ///
 /// A full-screen read-only list of door-delivery addresses that lack a
@@ -163,7 +163,7 @@ class _MissingLinksErrorView extends ConsumerWidget {
                 const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                 const SizedBox(height: 16),
                 Text(
-                  '${VN.apiError}: $error',
+                  '${SharedLabels.apiError}: $error',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium,
                 ),
@@ -172,7 +172,7 @@ class _MissingLinksErrorView extends ConsumerWidget {
                   onPressed: () =>
                       ref.read(missingLinksProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),

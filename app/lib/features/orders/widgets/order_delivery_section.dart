@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -16,7 +17,7 @@ import 'order_delivery_gps_section.dart';
 import 'section_header.dart';
 import 'shipping_fee_section.dart';
 import 'stage1_responsive_content.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class OrderDeliverySection extends StatelessWidget {
   const OrderDeliverySection({
     super.key,
@@ -153,24 +154,24 @@ class OrderDeliverySection extends StatelessWidget {
           _buildInfoRow(
             context,
             Icons.calendar_today,
-            VN.dueDate,
+            OrdersLabels.dueDate,
             '${dueDate!.day}/${dueDate!.month}/${dueDate!.year}',
           ),
         if (dueTime != null)
           _buildInfoRow(
             context,
             Icons.access_time,
-            VN.dueTime,
+            OrdersLabels.dueTime,
             '${dueTime!.hour.toString().padLeft(2, '0')}:${dueTime!.minute.toString().padLeft(2, '0')}',
           ),
-        _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, deliveryTypeLabel(deliveryType)),
+        _buildInfoRow(context, Icons.local_shipping_outlined, OrdersLabels.deliveryType, deliveryTypeLabel(deliveryType)),
         if (_needsAddress) ...[
           if (_shouldShowCustomerPhone)
-            _buildPhoneRow(context, VN.customerPhone, customerPhone!),
+            _buildPhoneRow(context, OrdersLabels.customerPhone, customerPhone!),
           if (_shouldShowDeliveryPhone)
             _buildPhoneRow(context, OrdersLabels.deliveryPhone, deliveryPhone!),
           if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
-            _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
+            _buildInfoRow(context, Icons.location_on_outlined, OrdersLabels.deliveryAddress, deliveryAddress!),
         ],
         // DG-306 Phase 1 / FR1: the time slot is auto-derived from `dueTime`
         // (the stored `deliveryTimeSlot` DB column is ignored by the frontend).
@@ -196,9 +197,9 @@ class OrderDeliverySection extends StatelessWidget {
             onTap: onLaunchMap,
           ),
         if (shippingFee != null && shippingFee! > 0)
-          _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
+          _buildInfoRow(context, Icons.monetization_on_outlined, OrdersLabels.shippingFee, formatVND(shippingFee!)),
         if (notes != null && notes!.isNotEmpty)
-          _buildInfoRow(context, Icons.notes, VN.notes, notes!),
+          _buildInfoRow(context, Icons.notes, OrdersLabels.notes, notes!),
       ],
     );
   }
@@ -207,7 +208,7 @@ class OrderDeliverySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(VN.dueDate),
+        const SectionHeader(OrdersLabels.dueDate),
         dueDateTimeSlot ??
             DueDateTimePickerRow(
               dueDate: dueDate,
@@ -216,22 +217,22 @@ class OrderDeliverySection extends StatelessWidget {
               onDueTimeChanged: onDueTimeChanged,
             ),
         const SizedBox(height: 20),
-        const SectionHeader(VN.deliveryType),
+        const SectionHeader(OrdersLabels.deliveryType),
         SegmentedButton<String>(
           segments: const [
             ButtonSegment(
               value: 'pickup',
-              label: Text(VN.pickup),
+              label: Text(OrdersLabels.pickup),
               icon: Icon(Icons.store, size: 16),
             ),
             ButtonSegment(
               value: 'bus',
-              label: Text(VN.deliveryBus),
+              label: Text(OrdersLabels.deliveryBus),
               icon: Icon(Icons.directions_bus, size: 16),
             ),
             ButtonSegment(
               value: 'door',
-              label: Text(VN.deliveryDoor),
+              label: Text(OrdersLabels.deliveryDoor),
               icon: Icon(Icons.home, size: 16),
             ),
           ],
@@ -254,19 +255,19 @@ class OrderDeliverySection extends StatelessWidget {
               TextFormField(
                 controller: addressCtrl,
                 decoration: const InputDecoration(
-                  labelText: VN.deliveryAddress,
+                  labelText: OrdersLabels.deliveryAddress,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) =>
                     _needsAddress && (v == null || v.trim().isEmpty)
-                    ? VN.fieldRequired
+                    ? SharedLabels.fieldRequired
                     : null,
               ),
         ],
         if ((deliveryType == 'bus' || deliveryType == 'door') &&
             onShippingFeeChanged != null) ...[
           const SizedBox(height: 20),
-          const SectionHeader(VN.shippingFee),
+          const SectionHeader(OrdersLabels.shippingFee),
           ShippingFeeSection(
             shippingFee: shippingFee,
             onChanged: onShippingFeeChanged!,
@@ -280,7 +281,7 @@ class OrderDeliverySection extends StatelessWidget {
           TextFormField(
             controller: notesCtrl,
             decoration: const InputDecoration(
-              labelText: VN.notes,
+              labelText: OrdersLabels.notes,
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),

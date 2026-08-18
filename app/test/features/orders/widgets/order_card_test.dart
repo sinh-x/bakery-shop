@@ -437,7 +437,7 @@ void main() {
   // Phase 3 added `paymentMethods` (List<String>) to the API response.
   // Phase 4 surfaces it on the OrderCard beside the existing payment status
   // badge, mapping "cash" → "Tiền mặt" and "transfer" → "Chuyển khoản" via
-  // the shared `paymentMethodLabel()` helper (vietnamese_labels.dart:1533).
+  // the shared `paymentMethodLabel()` helper (shared/utils.dart).
 
   Order orderWithPaymentMethods(List<String> paymentMethods) => Order(
         id: '8',

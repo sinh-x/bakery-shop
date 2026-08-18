@@ -10,7 +10,7 @@ import 'order_delivery_section.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/address_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
   const Stage3DeliveryOptionsScreen({
     super.key,
@@ -233,7 +233,7 @@ class _Stage3DeliveryOptionsScreenState
                 customerId: data.selectedCustomer?.id,
                 onSelected: _onAddressSelected,
                 validator: (v) => data.needsAddress && (v == null || v.trim().isEmpty)
-                    ? VN.fieldRequired
+                    ? SharedLabels.fieldRequired
                     : null,
               ),
               dueDate: state.dueDate,
@@ -246,7 +246,7 @@ class _Stage3DeliveryOptionsScreenState
                   .updateDueTime(t),
               shippingFeeConfigLoading: feeConfig?.isLoading ?? false,
               shippingFeeConfigError:
-                  (feeConfig?.hasError ?? false) ? VN.errorLoading : null,
+                  (feeConfig?.hasError ?? false) ? SharedLabels.errorLoading : null,
               onRetryShippingFeeConfig: () =>
                   _retryShippingFeeConfig(data.deliveryType),
               summaryCardSlots: [

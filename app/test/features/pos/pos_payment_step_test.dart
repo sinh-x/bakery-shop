@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/pos/widgets/pos_payment_step.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 
 void main() {
   group('PosPaymentStep target account selector (DG-244 Phase 2)', () {
@@ -63,7 +63,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(DropdownButtonFormField<String?>), findsNothing);
-      expect(find.text(VN.paymentTargetAccountLabel), findsNothing);
+      expect(find.text(ExpensesLabels.paymentTargetAccountLabel), findsNothing);
     });
 
     testWidgets('AC1/FR7: transfer method shows the TK đích dropdown with empty default and both VCB options',
@@ -71,10 +71,10 @@ void main() {
       await tester.pumpWidget(buildStep(paymentMethod: 'transfer'));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.paymentTargetAccountLabel), findsOneWidget);
+      expect(find.text(ExpensesLabels.paymentTargetAccountLabel), findsOneWidget);
       // The "no account" label is rendered as the default selected item.
-      expect(find.text(VN.paymentNoAccount), findsOneWidget);
-      expectDropdownItems(tester, [null, VN.paymentSourcePhuongVCB, VN.paymentSourceAnVCB]);
+      expect(find.text(ExpensesLabels.paymentNoAccount), findsOneWidget);
+      expectDropdownItems(tester, [null, ExpensesLabels.paymentSourcePhuongVCB, ExpensesLabels.paymentSourceAnVCB]);
     });
 
     testWidgets('FR2: dropdown defaults to empty (no pre-selection)',
@@ -93,7 +93,7 @@ void main() {
       await tester.pumpWidget(
         buildStep(
           paymentMethod: 'transfer',
-          selectedTargetAccount: VN.paymentSourceAnVCB,
+          selectedTargetAccount: ExpensesLabels.paymentSourceAnVCB,
         ),
       );
       await tester.pumpAndSettle();
@@ -101,7 +101,7 @@ void main() {
       final dropdown = tester.widget<DropdownButtonFormField<String?>>(
         find.byType(DropdownButtonFormField<String?>),
       );
-      expect(dropdown.initialValue, VN.paymentSourceAnVCB);
+      expect(dropdown.initialValue, ExpensesLabels.paymentSourceAnVCB);
     });
 
     testWidgets('AC7: selecting an account fires onTargetAccountChanged with the value',
@@ -122,10 +122,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.paymentSourcePhuongVCB).last);
+      await tester.tap(find.text(ExpensesLabels.paymentSourcePhuongVCB).last);
       await tester.pumpAndSettle();
 
-      expect(captured, VN.paymentSourcePhuongVCB);
+      expect(captured, ExpensesLabels.paymentSourcePhuongVCB);
     });
 
     testWidgets('NFR3: dropdown has no validator (empty selection allowed)',

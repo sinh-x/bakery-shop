@@ -4,12 +4,12 @@ import 'package:bakery_app/data/api/work_item_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_payment_status_summary.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_work_item_summary.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 class _WorkItemsInterceptor extends Interceptor {
   _WorkItemsInterceptor(this._items);
@@ -93,14 +93,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.workItemSummaryTitle), findsOneWidget);
-    expect(find.text(VN.workItemSummaryCount(3)), findsOneWidget);
+    expect(find.text(OrdersLabels.workItemSummaryTitle), findsOneWidget);
+    expect(find.text(OrdersLabels.workItemSummaryCount(3)), findsOneWidget);
     expect(
-      find.textContaining('2 ${VN.workItemDelivered}'),
+      find.textContaining('2 ${OrdersLabels.workItemDelivered}'),
       findsOneWidget,
     );
     expect(
-      find.textContaining('1 ${VN.workItemWorking}'),
+      find.textContaining('1 ${OrdersLabels.workItemWorking}'),
       findsOneWidget,
     );
   });
@@ -128,7 +128,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.workItemSummaryEmpty), findsOneWidget);
+    expect(find.text(OrdersLabels.workItemSummaryEmpty), findsOneWidget);
   });
 
   testWidgets('OrderPaymentStatusSummary renders paid vs total', (tester) async {
@@ -144,8 +144,8 @@ void main() {
         ),
       ),
     );
-    expect(find.text(VN.paymentStatusSummaryTitle), findsOneWidget);
-    expect(find.text(VN.paid), findsOneWidget);
+    expect(find.text(OrdersLabels.paymentStatusSummaryTitle), findsOneWidget);
+    expect(find.text(OrdersLabels.paid), findsOneWidget);
     expect(find.textContaining('500.000'), findsOneWidget);
     expect(find.textContaining('750.000'), findsOneWidget);
   });

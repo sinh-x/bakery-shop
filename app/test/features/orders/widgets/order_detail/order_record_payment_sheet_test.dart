@@ -1,9 +1,10 @@
 import 'package:bakery_app/features/orders/widgets/order_detail/order_record_payment_sheet.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
       home: Scaffold(
@@ -31,7 +32,7 @@ void main() {
       // Cash is the default method — no transfer-only UI.
       expect(find.byType(TargetAccountDropdown), findsNothing);
       expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
-      expect(find.text(VN.attachTransferPhoto), findsNothing);
+      expect(find.text(OrdersLabels.attachTransferPhoto), findsNothing);
     });
 
     testWidgets(
@@ -49,14 +50,14 @@ void main() {
       );
 
       // Switch to transfer method.
-      await tester.tap(find.text(VN.methodTransfer));
+      await tester.tap(find.text(OrdersLabels.methodTransfer));
       await tester.pumpAndSettle();
 
       // Transfer-only UI is now visible.
       expect(find.byType(TargetAccountDropdown), findsOneWidget);
       expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
-      expect(find.text(VN.attachTransferPhoto), findsOneWidget);
-      expect(find.text(VN.attachTransferPhotoTooltip), findsNothing);
+      expect(find.text(OrdersLabels.attachTransferPhoto), findsOneWidget);
+      expect(find.text(OrdersLabels.attachTransferPhotoTooltip), findsNothing);
     });
 
     testWidgets(
@@ -73,13 +74,13 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text(VN.methodTransfer));
+      await tester.tap(find.text(OrdersLabels.methodTransfer));
       await tester.pumpAndSettle();
 
       final tooltip = find.byType(Tooltip);
       expect(tooltip, findsOneWidget);
       final tooltipWidget = tester.widget<Tooltip>(tooltip);
-      expect(tooltipWidget.message, VN.attachTransferPhotoTooltip);
+      expect(tooltipWidget.message, OrdersLabels.attachTransferPhotoTooltip);
     });
 
     testWidgets(
@@ -97,17 +98,17 @@ void main() {
       );
 
       // Switch to transfer then back to cash.
-      await tester.tap(find.text(VN.methodTransfer));
+      await tester.tap(find.text(OrdersLabels.methodTransfer));
       await tester.pumpAndSettle();
-      expect(find.text(VN.attachTransferPhoto), findsOneWidget);
+      expect(find.text(OrdersLabels.attachTransferPhoto), findsOneWidget);
 
-      await tester.tap(find.text(VN.methodCash));
+      await tester.tap(find.text(OrdersLabels.methodCash));
       await tester.pumpAndSettle();
 
       // Transfer-only UI is hidden again.
       expect(find.byType(TargetAccountDropdown), findsNothing);
       expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
-      expect(find.text(VN.attachTransferPhoto), findsNothing);
+      expect(find.text(OrdersLabels.attachTransferPhoto), findsNothing);
     });
   });
 
@@ -138,7 +139,7 @@ void main() {
     test(
         'tag string for "TK Phượng VCB" is "chuyen-khoan,TK-Phượng-VCB" '
         '(AC3)', () {
-      final accountTag = sanitizeAccountTag(VN.paymentSourcePhuongVCB);
+      final accountTag = sanitizeAccountTag(ExpensesLabels.paymentSourcePhuongVCB);
       expect(accountTag, 'TK-Phượng-VCB');
       final tags =
           accountTag.isEmpty ? 'chuyen-khoan' : 'chuyen-khoan,$accountTag';

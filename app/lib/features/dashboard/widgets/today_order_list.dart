@@ -1,12 +1,12 @@
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/order.dart';
-import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../../orders/widgets/order_card.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// All order statuses in workflow order, including terminal statuses
 /// (completed, cancelled). Used by [TodayOrderList] to group today's orders
 /// (FR6/AC6 — DG-376 Phase 5).
@@ -126,7 +126,7 @@ class _TodayOrderListState extends State<TodayOrderList> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Text(
-          VN.khongCoDonHomNay,
+          SharedLabels.khongCoDonHomNay,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),

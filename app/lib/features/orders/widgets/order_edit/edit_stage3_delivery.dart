@@ -12,7 +12,7 @@ import '../order_wizard.dart';
 import '../stage_summary_card.dart';
 import 'staff_assignment_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Stage 3 of the order edit wizard — delivery.
 ///
 /// Uses the canonical shared `OrderDeliverySection` (DG-216 Phase 3).
@@ -122,7 +122,7 @@ class EditStage3Delivery extends ConsumerWidget {
                     customerId: customerId,
                     onSelected: onAddressSelected,
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? VN.fieldRequired
+                        ? SharedLabels.fieldRequired
                         : null,
                   ),
                   onDeliveryTypeChanged: (type) {
@@ -184,7 +184,7 @@ class EditStage3Delivery extends ConsumerWidget {
                 onPressed: onPickDate,
                 icon: const Icon(Icons.calendar_today, size: 18),
                 label: Text(
-                  dueDate != null ? formatDisplayDate(dueDate) : VN.dueDate,
+                  dueDate != null ? formatDisplayDate(dueDate) : OrdersLabels.dueDate,
                 ),
                 style: OutlinedButton.styleFrom(
                   alignment: Alignment.centerLeft,
@@ -197,7 +197,7 @@ class EditStage3Delivery extends ConsumerWidget {
                 onPressed: onPickTime,
                 icon: const Icon(Icons.schedule, size: 18),
                 label: Text(
-                  dueTime != null ? _formatTime(dueTime!) : VN.dueTime,
+                  dueTime != null ? _formatTime(dueTime!) : OrdersLabels.dueTime,
                 ),
                 style: OutlinedButton.styleFrom(
                   alignment: Alignment.centerLeft,

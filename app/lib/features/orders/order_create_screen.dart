@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,7 +17,7 @@ import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
 import 'widgets/stage4_review_screen.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Normal order creation wizard.
 ///
 /// Thin wrapper over [OrderCreationOrchestrator] (Phase 3 of DG-322). The
@@ -141,7 +142,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       onAfterSubmit: (hookCtx, order) async {
         hookCtx.ref.read(orderDraftProvider.notifier).clear();
         hookCtx.ref.read(orderCreateStateProvider.notifier).reset();
-        showTopSnackBar(hookCtx.context, VN.orderCreated);
+        showTopSnackBar(hookCtx.context, OrdersLabels.orderCreated);
       },
       onNavigateAfterSubmit: (ctx, orderRef) {
         ctx.pushReplacement('/orders/$orderRef');
@@ -153,7 +154,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.createOrder),
+        title: const Text(OrdersLabels.createOrder),
         actions: [
           AppBarOverflowMenu(
             items: const [

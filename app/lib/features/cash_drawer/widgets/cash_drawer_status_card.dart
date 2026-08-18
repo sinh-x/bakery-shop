@@ -1,9 +1,10 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cash_drawer.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'cash_drawer_breakdown_card.dart';
 
 /// Status card for the active (open) cash drawer (FR4 / AC6, updated by
@@ -50,7 +51,7 @@ class CashDrawerStatusCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${VN.cashDrawerStatusOpen} • ${formatDisplayDate(drawer.openedAt)}',
+                    '${CashDrawerLabels.cashDrawerStatusOpen} • ${formatDisplayDate(drawer.openedAt)}',
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
@@ -59,7 +60,7 @@ class CashDrawerStatusCard extends StatelessWidget {
             ),
             const Divider(height: 24),
             _BalanceRow(
-              label: VN.cashDrawerOpeningBalance,
+              label: CashDrawerLabels.cashDrawerOpeningBalance,
               // DG-354 Phase 4 FR7/AC6: display the physical cash count
               // (countedOpeningBalance) as the opening balance, falling
               // back to the accounting openingBalance for older backends.
@@ -74,7 +75,7 @@ class CashDrawerStatusCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  VN.cashDrawerExpectedBalance,
+                  CashDrawerLabels.cashDrawerExpectedBalance,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -98,7 +99,7 @@ class CashDrawerStatusCard extends StatelessWidget {
             // `colorScheme.error` (NFR1).
             const SizedBox(height: 4),
             _BalanceRow(
-              label: VN.cashDrawerReferenceBalance,
+              label: CashDrawerLabels.cashDrawerReferenceBalance,
               value: drawer.accountingBalance1101,
             ),
           ],
@@ -123,7 +124,7 @@ class _StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        isOpen ? VN.cashDrawerStatusOpen : VN.cashDrawerStatusClosed,
+        isOpen ? CashDrawerLabels.cashDrawerStatusOpen : CashDrawerLabels.cashDrawerStatusClosed,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: color,
               fontWeight: FontWeight.bold,

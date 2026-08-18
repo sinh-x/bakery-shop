@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../data/models/catalog_tag.dart';
 import 'tag_group.dart';
-import '../../../shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
 class TagList extends StatelessWidget {
   const TagList({required this.tags, super.key});
 
@@ -18,11 +17,11 @@ class TagList extends StatelessWidget {
 
     for (final tag in tags) {
       switch (tag.category) {
-        case VN.tagCategoriesDoiTuong:
+        case ProductsLabels.tagCategoriesDoiTuong:
           objectTags.add(tag);
-        case VN.tagCategoriesDip:
+        case ProductsLabels.tagCategoriesDip:
           occasionTags.add(tag);
-        case VN.tagCategoriesPhongCach:
+        case ProductsLabels.tagCategoriesPhongCach:
           styleTags.add(tag);
         default:
           // Handle unknown-category tags by adding them to objectTags for visibility
@@ -40,21 +39,21 @@ class TagList extends StatelessWidget {
       children: [
         // Group: Đối tượng
         TagGroup(
-          category: VN.tagCategoriesDoiTuong,
+          category: ProductsLabels.tagCategoriesDoiTuong,
           tags: objectTags,
         ),
         const SizedBox(height: 24),
 
         // Group: Dịp
         TagGroup(
-          category: VN.tagCategoriesDip,
+          category: ProductsLabels.tagCategoriesDip,
           tags: occasionTags,
         ),
         const SizedBox(height: 24),
 
         // Group: Phong cách
         TagGroup(
-          category: VN.tagCategoriesPhongCach,
+          category: ProductsLabels.tagCategoriesPhongCach,
           tags: styleTags,
         ),
       ],

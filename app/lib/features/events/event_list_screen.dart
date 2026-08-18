@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../data/providers/events_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -48,7 +48,7 @@ class _EventListScreenState extends ConsumerState<EventListScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.tabEvents),
+        title: const Text(SharedLabels.tabEvents),
         actions: const [AppBarOverflowMenu()],
       ),
       body: const Padding(
@@ -57,7 +57,7 @@ class _EventListScreenState extends ConsumerState<EventListScreen>
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/events/new'),
-        tooltip: VN.createEvent,
+        tooltip: EventsLabels.createEvent,
         child: const Icon(Icons.add),
       ),
     );

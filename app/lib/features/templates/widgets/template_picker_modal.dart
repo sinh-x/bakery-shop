@@ -9,7 +9,7 @@ import '../../orders/widgets/section_header.dart';
 import '../message_template_resolver.dart';
 import '../template_context.dart';
 import '../template_management_screen.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Template picker modal (DG-375 Phase 4.3 / FR1, FR5, AC1, AC4, AC5).
 ///
 /// A scrollable bottom sheet that shows message templates grouped by
@@ -179,7 +179,7 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
           Text(TemplatesLabels.emptyTitle, style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            '${VN.apiError}: $error',
+            '${SharedLabels.apiError}: $error',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall,
           ),

@@ -1,10 +1,12 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Payment method option values shared across reconciliation modals and row
 /// editors. Centralized here to avoid hardcoded string literals (CQ-2).
 const kPaymentMethodCash = 'cash';
@@ -14,10 +16,10 @@ const kPaymentMethodTransfer = 'transfer';
 /// the sale row editor. Keeps the [DropdownMenuItem] definitions in one place
 /// so labels and values stay consistent.
 const List<DropdownMenuItem<String>> kReconciliationPaymentMethodItems = [
-  DropdownMenuItem<String>(value: kPaymentMethodCash, child: Text(VN.methodCash)),
+  DropdownMenuItem<String>(value: kPaymentMethodCash, child: Text(OrdersLabels.methodCash)),
   DropdownMenuItem<String>(
     value: kPaymentMethodTransfer,
-    child: Text(VN.methodTransfer),
+    child: Text(OrdersLabels.methodTransfer),
   ),
 ];
 
@@ -76,10 +78,10 @@ String _modalHeaderDiscriminatorSuffix(
   ReconciliationDraftProduct product,
 ) {
   if (option.isCollidingBaseBucket) {
-    return VN.giaGoc;
+    return OrdersLabels.giaGoc;
   }
   final chipLabels = visibleChipLabelsForOption(product, option);
-  return chipLabels.isEmpty ? '' : '${VN.nhanChip}: $chipLabels';
+  return chipLabels.isEmpty ? '' : '${StockLabels.nhanChip}: $chipLabels';
 }
 
 /// Renders the modal action row (close + confirm) reused by both reconciliation
@@ -93,14 +95,14 @@ Widget buildReconciliationModalActions(
       Expanded(
         child: TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text(VN.dong),
+          child: const Text(SharedLabels.dong),
         ),
       ),
       const SizedBox(width: 8),
       Expanded(
         child: FilledButton(
           onPressed: onSubmit,
-          child: const Text(VN.xacNhan),
+          child: const Text(OrdersLabels.xacNhan),
         ),
       ),
     ],
@@ -170,7 +172,7 @@ class ReconciliationQuantityStepperField extends StatelessWidget {
         IconButton(
           onPressed: onDecrement,
           icon: const Icon(Icons.remove_circle_outline),
-          tooltip: VN.giam,
+          tooltip: StockLabels.giam,
         ),
         Expanded(
           child: TextField(
@@ -188,7 +190,7 @@ class ReconciliationQuantityStepperField extends StatelessWidget {
         IconButton(
           onPressed: onIncrement,
           icon: const Icon(Icons.add_circle_outline),
-          tooltip: VN.tang,
+          tooltip: StockLabels.tang,
         ),
       ],
     );
@@ -214,7 +216,7 @@ class ReconciliationVarianceChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        '${VN.soLuongChenhLech}: $text',
+        '${StockLabels.soLuongChenhLech}: $text',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
       ),
     );
@@ -306,14 +308,14 @@ class _ReconciliationSaleRowEditorState
             children: [
               Expanded(
                 child: Text(
-                  '${VN.dongBan} ${widget.rowIndex + 1}',
+                  '${StockLabels.dongBan} ${widget.rowIndex + 1}',
                   style: Theme.of(
                     context,
                   ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
-                tooltip: VN.xoa,
+                tooltip: OrdersLabels.xoa,
                 onPressed: widget.onRemove,
                 icon: const Icon(Icons.delete_outline),
               ),
@@ -321,7 +323,7 @@ class _ReconciliationSaleRowEditorState
           ),
           const SizedBox(height: 8),
           ReconciliationQuantityStepperField(
-            label: VN.soLuongBan,
+            label: StockLabels.soLuongBan,
             controller: _qtyController,
             errorText: widget.rowError?.quantity,
             onChanged: widget.onQtyChanged,
@@ -349,7 +351,7 @@ class _ReconciliationSaleRowEditorState
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],
             decoration: InputDecoration(
-              labelText: VN.donGiaNhapTay,
+              labelText: StockLabels.donGiaNhapTay,
               border: const OutlineInputBorder(),
               isDense: true,
               errorText: widget.rowError?.unitPrice,
@@ -359,7 +361,7 @@ class _ReconciliationSaleRowEditorState
           DropdownButtonFormField<String>(
             initialValue: widget.row.paymentMethod,
             decoration: InputDecoration(
-              labelText: VN.phuongThucThanhToan,
+              labelText: StockLabels.phuongThucThanhToan,
               border: const OutlineInputBorder(),
               isDense: true,
               errorText: widget.rowError?.paymentMethod,

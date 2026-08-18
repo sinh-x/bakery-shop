@@ -5,9 +5,9 @@
 /// `cash_drawer_breakdown_card.dart` per NFR3 (file ≤ 300 lines).
 library;
 
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'cash_drawer_breakdown_card.dart';
 
 /// Column header row shown once at the top of each group. The count column
@@ -34,7 +34,7 @@ class CashDrawerBreakdownHeaderRow extends StatelessWidget {
           SizedBox(
             width: 40,
             child: Text(
-              VN.cashDrawerBreakdownCount,
+              CashDrawerLabels.cashDrawerBreakdownCount,
               textAlign: TextAlign.end,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.bold,
@@ -174,7 +174,7 @@ class CashDrawerBreakdownExpectedBalanceRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            VN.cashDrawerBreakdownExpected,
+            CashDrawerLabels.cashDrawerBreakdownExpected,
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),

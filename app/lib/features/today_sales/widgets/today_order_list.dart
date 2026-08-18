@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, statusMap;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/order.dart';
@@ -5,7 +6,7 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/widgets/section_title.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Today's order list for the Today Sales screen (DG-374 Phase 2 / FR4).
 ///
 /// Renders one row per order due today, showing:
@@ -74,11 +75,11 @@ class TodayOrderList extends StatelessWidget {
 /// row widget does not recompute it on every build pass (CQ-6).
 (Color, String) _paymentBadgeFor(Order order) {
   if (order.isPaid) {
-    return (Colors.green, VN.paid);
+    return (Colors.green, OrdersLabels.paid);
   } else if (order.amountPaid > 0) {
-    return (Colors.orange, VN.partialPaid);
+    return (Colors.orange, OrdersLabels.partialPaid);
   } else {
-    return (Colors.red, VN.unpaid);
+    return (Colors.red, OrdersLabels.unpaid);
   }
 }
 

@@ -5,7 +5,6 @@ import 'package:bakery_app/features/settings/widgets/tag_group.dart';
 import 'package:bakery_app/features/settings/widgets/tag_row.dart';
 import 'package:bakery_app/data/providers/catalog_provider.dart';
 import 'package:bakery_app/data/api/config_service.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +12,8 @@ import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 
 import 'catalog_tags_settings_tab_test.mocks.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 @GenerateMocks([ConfigService])
 void main() {
@@ -77,7 +78,7 @@ void main() {
       // Category dropdown.
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.doiTuong).last);
+      await tester.tap(find.text(ProductsLabels.doiTuong).last);
       await tester.pumpAndSettle();
 
       // Key field.
@@ -86,7 +87,7 @@ void main() {
       await tester.enterText(find.byType(TextFormField).at(1), 'Khách lẻ');
 
       // Tap Save.
-      await tester.tap(find.text(VN.save));
+      await tester.tap(find.text(SharedLabels.save));
       await tester.pumpAndSettle();
 
       // REGRESSION GUARD (MJ-A): the mutation must fire EXACTLY ONCE.
@@ -96,7 +97,7 @@ void main() {
 
       // Success SnackBar confirms the in-dialog path ran (and the duplicate
       // post-dialog block was removed).
-      expect(find.text(VN.tagAdded), findsOneWidget);
+      expect(find.text(ProductsLabels.tagAdded), findsOneWidget);
 
       // Provider invalidation: the dialog calls ref.invalidate() on both
       // catalogTagDefsProvider and catalogBrowseProvider. We assert the
@@ -120,7 +121,7 @@ void main() {
           .thenAnswer((_) async {});
 
       const seededTag = CatalogTagDef(
-        category: VN.tagCategoriesDoiTuong,
+        category: ProductsLabels.tagCategoriesDoiTuong,
         key: 'khach-le',
         label: 'Khách lẻ',
       );
@@ -151,7 +152,7 @@ void main() {
       await tester.enterText(find.byType(TextFormField).at(1), 'Khách vãng lai');
 
       // Tap Save.
-      await tester.tap(find.text(VN.save));
+      await tester.tap(find.text(SharedLabels.save));
       await tester.pumpAndSettle();
 
       // REGRESSION GUARD (MJ-A): updateConfigValue EXACTLY ONCE.
@@ -160,7 +161,7 @@ void main() {
           .called(1);
 
       // Success SnackBar from the in-dialog path.
-      expect(find.text(VN.tagUpdated), findsOneWidget);
+      expect(find.text(ProductsLabels.tagUpdated), findsOneWidget);
     });
   });
 
@@ -175,7 +176,7 @@ void main() {
           .thenAnswer((_) async {});
 
       const seededTag = CatalogTagDef(
-        category: VN.tagCategoriesDip,
+        category: ProductsLabels.tagCategoriesDip,
         key: 'sinh-nhat',
         label: 'Sinh nhật',
       );
@@ -203,8 +204,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // The blocking dialog shows the "cannot delete" title + in-use message.
-      expect(find.text(VN.tagCannotDelete), findsOneWidget);
-      expect(find.text(VN.tagInUse(3)), findsOneWidget);
+      expect(find.text(ProductsLabels.tagCannotDelete), findsOneWidget);
+      expect(find.text(ProductsLabels.tagInUse(3)), findsOneWidget);
 
       // deleteConfigValue MUST NEVER be called when the tag is in use.
       verifyNever(mockConfigService.deleteConfigValue(any, any));
@@ -219,7 +220,7 @@ void main() {
           .thenAnswer((_) async {});
 
       const seededTag = CatalogTagDef(
-        category: VN.tagCategoriesPhongCach,
+        category: ProductsLabels.tagCategoriesPhongCach,
         key: 'hoa-hong',
         label: 'Hoa hồng',
       );
@@ -247,17 +248,17 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirmation dialog appears.
-      expect(find.text(VN.tagDeleteConfirm('Hoa hồng')), findsOneWidget);
+      expect(find.text(ProductsLabels.tagDeleteConfirm('Hoa hồng')), findsOneWidget);
 
       // Confirm deletion.
-      await tester.tap(find.text(VN.remove));
+      await tester.tap(find.text(SharedLabels.remove));
       await tester.pumpAndSettle();
 
       // deleteConfigValue called exactly once.
       verify(mockConfigService.deleteConfigValue('catalog_tag', any)).called(1);
 
       // Success SnackBar.
-      expect(find.text(VN.tagDeleted), findsOneWidget);
+      expect(find.text(ProductsLabels.tagDeleted), findsOneWidget);
     });
   });
 
@@ -266,25 +267,25 @@ void main() {
         (tester) async {
       final seededTags = [
         const CatalogTagDef(
-            category: VN.tagCategoriesDoiTuong,
+            category: ProductsLabels.tagCategoriesDoiTuong,
             key: 'khach-le',
             label: 'Khách lẻ'),
         const CatalogTagDef(
-            category: VN.tagCategoriesDoiTuong,
+            category: ProductsLabels.tagCategoriesDoiTuong,
             key: 'khach-cu',
             label: 'Khách cũ'),
         const CatalogTagDef(
-            category: VN.tagCategoriesDip,
+            category: ProductsLabels.tagCategoriesDip,
             key: 'sinh-nhat',
             label: 'Sinh nhật'),
         const CatalogTagDef(
-            category: VN.tagCategoriesDip, key: '8-3', label: '8/3'),
+            category: ProductsLabels.tagCategoriesDip, key: '8-3', label: '8/3'),
         const CatalogTagDef(
-            category: VN.tagCategoriesPhongCach,
+            category: ProductsLabels.tagCategoriesPhongCach,
             key: 'hoa-hong',
             label: 'Hoa hồng'),
         const CatalogTagDef(
-            category: VN.tagCategoriesPhongCach,
+            category: ProductsLabels.tagCategoriesPhongCach,
             key: 'gan-dau',
             label: 'Gan đầu'),
       ];
@@ -313,9 +314,9 @@ void main() {
       expect(find.byType(TagRow), findsNWidgets(6));
 
       // Group headers render.
-      expect(find.text(VN.doiTuong), findsOneWidget);
-      expect(find.text(VN.dip), findsOneWidget);
-      expect(find.text(VN.phongCach), findsOneWidget);
+      expect(find.text(ProductsLabels.doiTuong), findsOneWidget);
+      expect(find.text(ProductsLabels.dip), findsOneWidget);
+      expect(find.text(ProductsLabels.phongCach), findsOneWidget);
 
       // Spot-check a label from each group renders.
       expect(find.text('Khách lẻ'), findsOneWidget);

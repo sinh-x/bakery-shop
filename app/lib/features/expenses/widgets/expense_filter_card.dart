@@ -1,5 +1,7 @@
 import 'package:bakery_app/data/models/expense_category.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 
 enum ExpenseDateFilterMode { single, range }
@@ -12,13 +14,13 @@ enum ExpenseDebtStatusFilter { all, unpaid, partial, paid }
 String expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter status) {
   switch (status) {
     case ExpenseDebtStatusFilter.all:
-      return VN.debtListFilterAll;
+      return ExpensesLabels.debtListFilterAll;
     case ExpenseDebtStatusFilter.unpaid:
-      return VN.debtStatusUnpaid;
+      return ExpensesLabels.debtStatusUnpaid;
     case ExpenseDebtStatusFilter.partial:
-      return VN.debtStatusPartial;
+      return ExpensesLabels.debtStatusPartial;
     case ExpenseDebtStatusFilter.paid:
-      return VN.debtStatusPaid;
+      return ExpensesLabels.debtStatusPaid;
   }
 }
 
@@ -28,19 +30,19 @@ String expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter status) {
 String expenseSubcategoryLabel(String name) {
   switch (name) {
     case 'Trứng':
-      return VN.expenseSubcategoryEggs;
+      return ExpensesLabels.expenseSubcategoryEggs;
     case 'Kem':
-      return VN.expenseSubcategoryCream;
+      return ExpensesLabels.expenseSubcategoryCream;
     case 'Bột':
-      return VN.expenseSubcategoryFlour;
+      return ExpensesLabels.expenseSubcategoryFlour;
     case 'Phụ gia khác':
-      return VN.expenseSubcategoryOtherAdditives;
+      return ExpensesLabels.expenseSubcategoryOtherAdditives;
     case 'Hộp & đế':
-      return VN.expenseSubcategoryBoxAndBase;
+      return ExpensesLabels.expenseSubcategoryBoxAndBase;
     case 'Phụ kiện':
-      return VN.expenseSubcategoryAccessories;
+      return ExpensesLabels.expenseSubcategoryAccessories;
     case 'Bọc nilon':
-      return VN.expenseSubcategoryWrap;
+      return ExpensesLabels.expenseSubcategoryWrap;
     default:
       return name;
   }
@@ -149,7 +151,7 @@ class ExpenseFilterCard extends StatelessWidget {
     if (subs.isEmpty) return const <Widget>[];
     return [
       FilterChip(
-        label: const Text(VN.filterAll),
+        label: const Text(EventsLabels.filterAll),
         selected: filterSubcategory.isEmpty,
         onSelected: (_) => onFilterSubcategoryChanged!(''),
         visualDensity: VisualDensity.compact,
@@ -169,10 +171,10 @@ class ExpenseFilterCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final rangeLabel = since == null || until == null
-        ? VN.lichSuDonHangLocKhoangNgay
+        ? OrdersLabels.lichSuDonHangLocKhoangNgay
         : '${formatDate(since!)} - ${formatDate(until!)}';
     final singleLabel = since == null
-        ? VN.expenseSinceLabel
+        ? ExpensesLabels.expenseSinceLabel
         : formatDate(since!);
     final subcategoryChips = _subcategoryChips;
     return Card(
@@ -185,7 +187,7 @@ class ExpenseFilterCard extends StatelessWidget {
             TextField(
               controller: searchCtrl,
               decoration: const InputDecoration(
-                labelText: VN.expenseSearchLabel,
+                labelText: ExpensesLabels.expenseSearchLabel,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -194,13 +196,13 @@ class ExpenseFilterCard extends StatelessWidget {
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text(VN.lichSuDonHangLocMotNgay),
+                  label: const Text(OrdersLabels.lichSuDonHangLocMotNgay),
                   selected: dateFilterMode == ExpenseDateFilterMode.single,
                   onSelected: (_) =>
                       onDateFilterModeChanged(ExpenseDateFilterMode.single),
                 ),
                 ChoiceChip(
-                  label: const Text(VN.lichSuDonHangLocKhoangNgay),
+                  label: const Text(OrdersLabels.lichSuDonHangLocKhoangNgay),
                   selected: dateFilterMode == ExpenseDateFilterMode.range,
                   onSelected: (_) =>
                       onDateFilterModeChanged(ExpenseDateFilterMode.range),
@@ -243,10 +245,10 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _FilterChipStrip(
-              label: VN.expenseCategoryLabel,
+              label: ExpensesLabels.expenseCategoryLabel,
               chips: [
                 FilterChip(
-                  label: const Text(VN.filterAll),
+                  label: const Text(EventsLabels.filterAll),
                   selected: filterCategory.isEmpty,
                   onSelected: (_) => onFilterCategoryChanged(''),
                   visualDensity: VisualDensity.compact,
@@ -264,16 +266,16 @@ class ExpenseFilterCard extends StatelessWidget {
             if (subcategoryChips.isNotEmpty) ...[
               const SizedBox(height: 4),
               _FilterChipStrip(
-                label: VN.expenseSubcategoryLabel,
+                label: ExpensesLabels.expenseSubcategoryLabel,
                 chips: subcategoryChips,
               ),
             ],
             const SizedBox(height: 4),
             _FilterChipStrip(
-              label: VN.expensePaymentSourceLabel,
+              label: ExpensesLabels.expensePaymentSourceLabel,
               chips: [
                 FilterChip(
-                  label: const Text(VN.filterAll),
+                  label: const Text(EventsLabels.filterAll),
                   selected: filterPaymentSource.isEmpty,
                   onSelected: (_) => onFilterPaymentSourceChanged(''),
                   visualDensity: VisualDensity.compact,
@@ -290,10 +292,10 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             _FilterChipStrip(
-              label: VN.expensePaidByNameLabel,
+              label: ExpensesLabels.expensePaidByNameLabel,
               chips: [
                 FilterChip(
-                  label: const Text(VN.filterAll),
+                  label: const Text(EventsLabels.filterAll),
                   selected: filterPaidByName.isEmpty,
                   onSelected: (_) => onFilterPaidByNameChanged(''),
                   visualDensity: VisualDensity.compact,
@@ -310,10 +312,10 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             _FilterChipStrip(
-              label: VN.expenseLoggedByLabel,
+              label: ExpensesLabels.expenseLoggedByLabel,
               chips: [
                 FilterChip(
-                  label: const Text(VN.filterAll),
+                  label: const Text(EventsLabels.filterAll),
                   selected: filterLoggedByName.isEmpty,
                   onSelected: (_) => onFilterLoggedByNameChanged(''),
                   visualDensity: VisualDensity.compact,
@@ -331,7 +333,7 @@ class ExpenseFilterCard extends StatelessWidget {
             if (onFilterDebtStatusChanged != null) ...[
               const SizedBox(height: 4),
               _FilterChipStrip(
-                label: VN.debtListFilterStatusLabel,
+                label: ExpensesLabels.debtListFilterStatusLabel,
                 chips: [
                   for (final status in ExpenseDebtStatusFilter.values)
                     FilterChip(
@@ -349,14 +351,14 @@ class ExpenseFilterCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: onClearFilters,
-                    child: const Text(VN.expenseResetFiltersAction),
+                    child: const Text(ExpensesLabels.expenseResetFiltersAction),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
                     onPressed: onApplyFilters,
-                    child: const Text(VN.expenseApplyFiltersAction),
+                    child: const Text(ExpensesLabels.expenseApplyFiltersAction),
                   ),
                 ),
               ],
