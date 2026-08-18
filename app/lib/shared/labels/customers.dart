@@ -126,7 +126,7 @@ class CustomersLabels {
   static const duplicateFinderSearchNoResults =
       'Không tìm thấy nhóm trùng lặp nào';
 
-  // ── Phase 4.2 migration: relocated from VN (vietnamese_labels.dart) ──
+  // ── Phase 4.2 migration: relocated from VN ──
 
   // Customer management (DG-182 Phase 3)
   static const manageCustomers = 'Quản lý khách hàng';

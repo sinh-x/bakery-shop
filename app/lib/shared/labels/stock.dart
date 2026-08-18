@@ -5,7 +5,7 @@
 /// management feature lives in its own domain file rather than being
 /// appended to the monolithic `VN` class. Consumers import this file and use
 /// `StockLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via `vietnamese_labels.dart`.
+/// re-exported via the per-domain label files.
 class StockLabels {
   StockLabels._();
 

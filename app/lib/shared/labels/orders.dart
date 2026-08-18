@@ -177,7 +177,7 @@ class OrdersLabels {
 
   // Date filter labels for order list (DG-193 Phase 1).
   // "Hôm nay" and "Tất cả" reuse VN.filterToday and VN.filterAll respectively
-  // (see vietnamese_labels.dart) — only the two new options live here.
+  // (see orders.dart) — only the two new options live here.
   static const dateFilterTomorrow = 'Ngày mai';
   static const dateFilterTodayTomorrow = 'Nay + Mai';
 
@@ -328,7 +328,7 @@ class OrdersLabels {
     return '${fmt(start)} – ${fmt(end)}';
   }
 
-  // ── Phase 4.2 migration: relocated from VN (vietnamese_labels.dart) ──
+  // ── Phase 4.2 migration: relocated from VN ──
 
   // Order statuses
   static const statusNew = 'Mới';

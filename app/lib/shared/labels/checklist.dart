@@ -5,7 +5,7 @@
 /// feature lives in its own domain file rather than being appended to the
 /// monolithic `VN` class. Consumers import this file and use
 /// `ChecklistLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via `vietnamese_labels.dart`.
+/// re-exported via the per-domain label files.
 class ChecklistLabels {
   ChecklistLabels._();
 

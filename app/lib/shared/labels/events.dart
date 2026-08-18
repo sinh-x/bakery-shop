@@ -5,7 +5,7 @@
 /// lives in its own domain file rather than being appended to the monolithic
 /// `VN` class. Consumers import this file and use `EventsLabels.*` for new
 /// labels or `VN.*` for legacy labels still re-exported via
-/// `vietnamese_labels.dart`.
+/// the per-domain label files.
 class EventsLabels {
   EventsLabels._();
 

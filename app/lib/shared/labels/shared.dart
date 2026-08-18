@@ -319,7 +319,7 @@ class SharedLabels {
   // that surfaces an explicit tap-to-load affordance.
   static const loadMore = 'Tải thêm';
 
-  // ── Phase 4.2 migration: relocated from VN (vietnamese_labels.dart) ──
+  // ── Phase 4.2 migration: relocated from VN ──
 
   // Dashboard
   static const chonNgay = 'Chọn ngày';

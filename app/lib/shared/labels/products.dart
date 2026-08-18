@@ -5,7 +5,7 @@
 /// lives in its own domain file rather than being appended to the monolithic
 /// `VN` class. Consumers import this file and use `ProductsLabels.*` for new
 /// labels or `VN.*` for legacy labels still re-exported via
-/// `vietnamese_labels.dart`.
+/// the per-domain label files.
 class ProductsLabels {
   ProductsLabels._();
 
@@ -101,7 +101,7 @@ class ProductsLabels {
   static const trungBay = 'Trưng bày';
   static const tangKem = 'Tặng kèm';
 
-  // ── Phase 4.2 migration: relocated from VN (vietnamese_labels.dart) ──
+  // ── Phase 4.2 migration: relocated from VN ──
 
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
