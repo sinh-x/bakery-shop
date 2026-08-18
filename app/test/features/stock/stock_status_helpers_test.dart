@@ -1,7 +1,7 @@
 import 'package:bakery_app/features/stock/stock_screen.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   group('stockStatusColor', () {

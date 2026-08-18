@@ -5,6 +5,7 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/widgets/section_title.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Today's order list for the Today Sales screen (DG-374 Phase 2 / FR4).
 ///

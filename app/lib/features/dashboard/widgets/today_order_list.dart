@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/order.dart';
-import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../../orders/widgets/order_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// All order statuses in workflow order, including terminal statuses
 /// (completed, cancelled). Used by [TodayOrderList] to group today's orders

@@ -4,9 +4,9 @@ import 'package:bakery_app/features/orders/widgets/order_detail/order_detail_tra
 import 'package:bakery_app/features/orders/widgets/order_detail/order_payment_history.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_photo_thumbnail.dart';
 import 'package:bakery_app/data/models/order.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Order _order({double totalPrice = 500000, double shippingFee = 0}) =>
     Order.fromJson({

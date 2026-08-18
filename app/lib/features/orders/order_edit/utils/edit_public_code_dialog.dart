@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Edit-specific due-date-change decision dialog for orders with a public
 /// order code. Shown before save when the due date changed and the order has

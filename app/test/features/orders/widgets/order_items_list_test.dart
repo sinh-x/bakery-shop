@@ -3,9 +3,9 @@ import 'package:bakery_app/data/models/enum_attribute.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_items_list.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _nhanBanh = EnumAttribute(
   attributeType: 'nhan_banh',

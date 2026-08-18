@@ -7,6 +7,7 @@ import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/target_account_dropdown.dart';
 import '../../orders/widgets/stage_summary_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field

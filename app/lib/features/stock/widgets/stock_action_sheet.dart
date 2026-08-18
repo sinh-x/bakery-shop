@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/stock_service.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 enum ActionType { restock, waste, adjust }
 

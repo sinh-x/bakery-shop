@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Print checklist dialog shown after the new → confirmed transition
 /// (Flow A). Lets staff pick which receipts to print immediately.

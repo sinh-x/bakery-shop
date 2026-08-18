@@ -15,6 +15,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'customer_form.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Customer detail screen (FR13/AC4).
 ///

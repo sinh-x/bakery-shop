@@ -1,9 +1,9 @@
 import 'package:bakery_app/features/orders/widgets/order_detail/order_record_payment_sheet.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
       home: Scaffold(

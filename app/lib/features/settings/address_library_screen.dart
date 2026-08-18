@@ -6,6 +6,7 @@ import '../../../data/models/address.dart';
 import '../../../data/providers/address_library_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import '../../../shared/utils/launch_external_url.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Address-library management screen (DG-385 Phase 5 / FR6/FR8/AC6).
 ///

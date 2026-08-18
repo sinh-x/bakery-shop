@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../providers/pos_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Sticky bottom cart summary bar for POS screen.
 class PosCartBar extends ConsumerWidget {

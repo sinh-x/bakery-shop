@@ -16,6 +16,7 @@ import '../order_customer_section.dart';
 import '../order_delivery_section.dart';
 import '../section_header.dart';
 import 'order_info_row.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Order info block: customer, public code, source, due date, delivery
 /// assignment, delivery details, and created-by. Rendered between the status

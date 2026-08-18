@@ -5,6 +5,7 @@ import '../../../data/api/template_service.dart';
 import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Template editor screen (DG-375 Phase 4 / FR8, AC8).
 ///

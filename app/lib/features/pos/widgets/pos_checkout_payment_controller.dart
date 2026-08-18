@@ -14,9 +14,9 @@ import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../data/providers/products_provider.dart';
-import '../../../shared/labels/orders.dart';
 import '../../../features/stock/stock_screen.dart';
 import 'pos_checkout_dialogs.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Callback the controller uses to invoke the shared orchestrator's
 /// submission spine. Returns `true` when the order was created and

@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/order_draft.dart';
 import '../../../data/models/product.dart';
 import '../../../data/providers/products_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'stage1_extras_states.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Result of the catalog-extra price selection dialog.
 class CatalogExtraSelection {

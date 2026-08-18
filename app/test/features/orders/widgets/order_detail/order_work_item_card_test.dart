@@ -1,8 +1,8 @@
 import 'package:bakery_app/data/models/work_item.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_work_item_card.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 WorkItem _item({
   bool isBirthday = false,

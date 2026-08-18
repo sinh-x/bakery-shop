@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../section_header.dart';
 import 'order_payment_row.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Payment summary container with total, paid, remaining, and a status
 /// badge. Also renders the totals divider and the add-payment button.

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../shared/labels/blanks.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Result of the add/edit blank modal (DG-294 FR3-FR5).
 ///

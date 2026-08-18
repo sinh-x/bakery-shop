@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:bakery_app/shared/labels/shared.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _HubTile {
   final IconData icon;

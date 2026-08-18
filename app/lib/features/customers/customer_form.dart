@@ -8,6 +8,7 @@ import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
 import 'widgets/phone_entry_row.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Show the add/edit customer bottom sheet.
 ///

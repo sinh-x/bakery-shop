@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import '../../../data/providers/staff_provider.dart';
 import '../../../data/providers/user_binding_provider.dart';
-import '../../../shared/labels/shared.dart';
 import '../../../shared/providers/auth_provider.dart';
 import 'settings_sections.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class StaffBindingSection extends ConsumerStatefulWidget {
   const StaffBindingSection({

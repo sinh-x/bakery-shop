@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/payment_transaction.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared status-rank maps and helpers extracted from `order_detail_screen.dart`
 /// (DG-308 Phase 4.2 / FR-FL-1).

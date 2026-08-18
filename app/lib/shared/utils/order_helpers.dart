@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../labels/orders.dart';
 import '../theme/bakery_theme.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.

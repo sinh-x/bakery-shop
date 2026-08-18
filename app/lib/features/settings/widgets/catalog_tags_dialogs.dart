@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/labels/shared.dart';
 import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/api/config_service.dart';
 import '../../../data/providers/catalog_provider.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;

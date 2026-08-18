@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Future<Object?> showTransferSourceDialog(BuildContext context) {
   return showDialog<Object>(

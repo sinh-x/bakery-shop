@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/receipt_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.

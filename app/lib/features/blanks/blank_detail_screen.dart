@@ -12,6 +12,7 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/blank_form.dart';
 import 'widgets/blanks_states.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// View / edit / delete a single blank (FR1 / AC1).
 ///

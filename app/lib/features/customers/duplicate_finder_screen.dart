@@ -9,6 +9,7 @@ import 'package:bakery_app/shared/utils/diacritics.dart';
 import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Returns `true` if any member of [group] matches [query]
 /// (case-insensitive, diacritic-insensitive) against `name` or `phone`.

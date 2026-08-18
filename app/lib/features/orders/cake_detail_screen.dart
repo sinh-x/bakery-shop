@@ -7,9 +7,9 @@ import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/cake_detail_body.dart';
 import 'widgets/internal_print_dialog.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _workItemStatusRank = {
   'pending': 0,

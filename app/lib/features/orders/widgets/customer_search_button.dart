@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/customer.dart';
 import '../../customers/widgets/customer_search_field.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Customer search modal host (DG-218 Phase 1 — FR-8).
 ///

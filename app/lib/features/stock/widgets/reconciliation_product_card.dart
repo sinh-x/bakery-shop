@@ -5,11 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
 import 'reconciliation_sell_waste_modal.dart';
 import 'reconciliation_shared_widgets.dart';
 import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ReconciliationProductCard extends ConsumerStatefulWidget {
   const ReconciliationProductCard({required this.product, super.key});

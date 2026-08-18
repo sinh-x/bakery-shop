@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/bakery_theme.dart';
-import 'package:bakery_app/shared/labels/orders.dart' show statusMap;
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Status-group header row for the delivery list view: a colored status dot,
 /// the localized status label, and a count badge.

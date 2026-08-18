@@ -6,11 +6,11 @@ import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
 import 'package:bakery_app/features/orders/widgets/selected_items_list.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/order/order_draft_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _nhanBanhAttribute = EnumAttribute(
   attributeType: 'nhan_banh',

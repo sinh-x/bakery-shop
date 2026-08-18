@@ -8,6 +8,7 @@ import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'widgets/order_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Filters [orders] to those with urgency critical OR urgent AND an active
 /// (non-terminal) status. Used by the urgency filtered listing reached by

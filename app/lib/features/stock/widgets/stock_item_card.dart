@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../data/api/stock_service.dart';
 import '../../../shared/utils/product_photo_url.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import '../stock_screen.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Card widget rendering a single [StockOverviewItem] on the stock management
 /// screen.

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../providers/order_providers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'work_item_edit_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class WorkItemsSection extends ConsumerWidget {
   const WorkItemsSection({super.key, required this.orderRef, required this.onAddTap});

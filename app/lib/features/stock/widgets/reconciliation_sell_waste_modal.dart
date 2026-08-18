@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
 import 'reconciliation_shared_widgets.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Opens the reconciliation sale modal bottom sheet for a single product
 /// option.

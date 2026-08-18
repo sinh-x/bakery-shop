@@ -4,11 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../data/providers/order/order_list_providers.dart';
-import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/order_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _historyStatuses = <String>[
   'new',

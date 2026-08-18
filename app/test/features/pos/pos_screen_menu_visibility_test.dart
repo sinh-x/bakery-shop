@@ -4,7 +4,6 @@ import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/pos/pos_screen.dart';
 import 'package:bakery_app/data/providers/categories_provider.dart';
 import 'package:bakery_app/data/providers/products_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/login_screen_test_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _TestCategoriesNotifier extends CategoriesNotifier {
   _TestCategoriesNotifier(this._categories);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'stage1_responsive_content.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Empty-state widget shown by Stage 1 when no products have been selected.
 ///

@@ -7,9 +7,9 @@ import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../../data/models/order_photo.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared per-transaction photo section used by both the edit-payment and
 /// transaction-detail sheets (DG-410 CQ-1).

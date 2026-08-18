@@ -6,9 +6,9 @@ import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../orders/utils/trung_bay_inventory_extensions.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {

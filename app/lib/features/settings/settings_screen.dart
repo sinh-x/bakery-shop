@@ -15,6 +15,7 @@ import 'package:bakery_app/shared/labels/templates.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});

@@ -1,5 +1,3 @@
-export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Shared/common Vietnamese labels for the bakery app.
 ///
 /// Per the VN Label Policy in CLAUDE.md and §5 of
@@ -320,4 +318,114 @@ class SharedLabels {
   // Used by the product catalog grid footer and any future paginated list
   // that surfaces an explicit tap-to-load affordance.
   static const loadMore = 'Tải thêm';
+
+  // ── Phase 4.2 migration: relocated from VN (vietnamese_labels.dart) ──
+
+  // Dashboard
+  static const chonNgay = 'Chọn ngày';
+  static const todayOrders = 'Đơn hàng hôm nay';
+  static const upcomingDue = 'Sắp đến hạn';
+  static const overdueOrders = 'Quá hạn';
+  static const recentActivity = 'Sự kiện gần đây';
+  // Today's order list empty state (DG-376 Phase 5 — FR6/AC6).
+  // Today's order list empty state (DG-376 Phase 5 — FR6/AC6).
+  static const khongCoDonHomNay = 'Không có đơn hàng hôm nay';
+
+  // Packing items
+  // ── Photo upload progress (shared UploadProgressIndicator) ──────────────
+  /// "X/N đã tải lên" — success-only count summary shown beneath per-photo
+  /// rows. DG-333 Phase 1.
+  static String uploadedPhotosCount(int done, int total) =>
+      '$done/$total đã tải lên';
+
+  /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
+  /// DG-333 Phase 1.
+  /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
+  /// DG-333 Phase 1.
+  static String uploadedPhotosCountWithErrors(
+    int done,
+    int failed,
+    int total,
+  ) => '$done/$total đã tải lên ($failed lỗi)';
+
+  /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
+  /// localized status words returned by [photoUploadStatusLabel]. DG-333
+  /// Phase 1.
+  /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
+  /// localized status words returned by [photoUploadStatusLabel]. DG-333
+  /// Phase 1.
+  static String photoUploadStatus(int index, String statusLabel) =>
+      'Ảnh $index: $statusLabel';
+
+  /// Per-photo error line: "Ảnh N: Lỗi — `message`". DG-333 Phase 1.
+  /// Per-photo error line: "Ảnh N: Lỗi — `message`". DG-333 Phase 1.
+  static String photoUploadFailed(int index, String message) =>
+      'Ảnh $index: Lỗi — $message';
+
+  /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
+  /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
+  static const photoUploadStatusLabels = <String, String>{
+    'pending': 'Đang xử lý',
+    'uploading': 'Đang tải',
+    'success': 'Đã xong',
+    'error': 'Lỗi',
+  };
+
+  /// "Đã tải lên xong — N/N ảnh" — terminal success summary shown when every
+  /// photo in the batch uploaded without errors (AC6). DG-333 Phase 6.
+  /// "Đã tải lên xong — N/N ảnh" — terminal success summary shown when every
+  /// photo in the batch uploaded without errors (AC6). DG-333 Phase 6.
+  static String photoUploadComplete(int total) =>
+      'Đã tải lên xong — $total/$total ảnh';
+
+  /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
+  /// batch finished but some photos failed (AC6). DG-333 Phase 6.
+  /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
+  /// batch finished but some photos failed (AC6). DG-333 Phase 6.
+  static String photoUploadCompleteWithErrors(
+    int done,
+    int failed,
+    int total,
+  ) => 'Đã tải lên xong — $done/$total ảnh ($failed lỗi)';
+
+  // ── Markup (trưng bày) ──────────────────────────────────────────────────
+  /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
+  /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
+  // Knowledge base
+  static const knowledgeTitle = 'Sổ tay';
+  static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
+  static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
+  static const pinnedSection = '📌 Đã ghim';
+  static const pinSuccess = 'Đã ghim';
+  static const unpinSuccess = 'Đã bỏ ghim';
+  static const pinError = 'Lỗi khi ghim';
+  static const pinAfterSave = 'Ghim sau khi lưu';
+  static const knowledgeEntry = 'Mục tri thức';
+  static const createKnowledge = 'Tạo mục mới';
+  static const editKnowledge = 'Sửa mục';
+  static const knowledgeTypes = {
+    'recipe': 'Công thức',
+    'procedure': 'Quy trình',
+    'equipment': 'Thiết bị',
+    'supplier': 'Nhà cung cấp',
+    'reference': 'Tham khảo',
+    'note': 'Ghi chú',
+  };
+  static const addPhoto = 'Thêm ảnh';
+  static const noKnowledgeEntries = 'Chưa có mục nào';
+  static const searchKnowledge = 'Tìm kiếm sổ tay';
+  static const confirmDeleteKnowledge = 'Xóa mục này?';
+  static const deleteKnowledge = 'Xóa mục';
+  static const knowledgeDeleted = 'Đã xóa mục';
+  static const knowledgeSaved = 'Đã lưu mục';
+  static const knowledgeCreated = 'Đã tạo mục mới';
+  static const knowledgeTitleField = 'Tiêu đề';
+  static const knowledgeContentField = 'Nội dung';
+  static const knowledgeTypeField = 'Loại';
+  static const knowledgeTagsField = 'Nhãn';
+  static const knowledgePhotosField = 'Ảnh';
+  static const knowledgeNoPhotos = 'Chưa có ảnh';
+
+  // Expenses
+
 }

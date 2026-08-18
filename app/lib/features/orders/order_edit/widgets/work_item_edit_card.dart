@@ -11,7 +11,6 @@ import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 

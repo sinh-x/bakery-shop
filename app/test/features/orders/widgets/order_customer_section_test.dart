@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/features/orders/widgets/order_customer_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   testWidgets('OrderCustomerSection readOnly renders customer name and phone info rows',

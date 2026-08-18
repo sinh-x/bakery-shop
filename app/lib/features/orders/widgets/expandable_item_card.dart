@@ -5,7 +5,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'candle_type_radio_group.dart';

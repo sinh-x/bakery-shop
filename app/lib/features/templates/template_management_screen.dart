@@ -7,6 +7,7 @@ import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
 import 'widgets/template_editor_screen.dart';
 import 'widgets/template_management_tile.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Template management screen (DG-375 Phase 4 / FR6, FR7, FR10 / AC6, AC7).
 ///

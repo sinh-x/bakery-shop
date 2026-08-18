@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared customer profile card used across order detail, create, and edit
 /// screens (DG-206 FR1/FR8).

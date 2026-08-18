@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Payment method option values shared across reconciliation modals and row
 /// editors. Centralized here to avoid hardcoded string literals (CQ-2).

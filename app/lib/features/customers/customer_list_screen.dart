@@ -6,9 +6,9 @@ import '../../data/models/customer.dart';
 import '../../data/providers/customers_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/phone_count_badge.dart';
 import 'customer_form.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Customer management screen (FR12).
 ///

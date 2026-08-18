@@ -18,6 +18,7 @@ import 'widgets/alert_section.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/shortcut_grid.dart';
 import 'widgets/today_order_list.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Management dashboard screen — admin-facing "Quản lý" tab.
 ///

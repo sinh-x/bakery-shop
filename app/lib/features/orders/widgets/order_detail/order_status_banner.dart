@@ -4,6 +4,7 @@ import '../../../../data/models/order.dart';
 import 'package:bakery_app/shared/theme/bakery_theme.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Status banner showing the order's current status and visual order code.
 class OrderStatusBanner extends StatelessWidget {

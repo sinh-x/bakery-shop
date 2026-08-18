@@ -1,5 +1,3 @@
-export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Blanks-domain Vietnamese labels for the bakery app (DG-291 Phase 4.3).
 ///
 /// Per the VN Label Policy in CLAUDE.md and §5 of docs/flutter-coding-standards.md,

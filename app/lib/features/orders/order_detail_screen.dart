@@ -33,6 +33,7 @@ import 'widgets/order_detail/order_receipt_type_selector.dart';
 import 'widgets/order_detail/order_status_actions.dart';
 import 'widgets/order_detail/order_status_banner.dart';
 import 'widgets/order_detail/order_transaction_detail_sheet.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   const OrderDetailScreen({super.key, required this.orderRef});

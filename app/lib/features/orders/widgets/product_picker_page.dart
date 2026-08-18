@@ -8,10 +8,10 @@ import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'category_tab_tracker.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ProductPickerPage extends ConsumerStatefulWidget {
   const ProductPickerPage({

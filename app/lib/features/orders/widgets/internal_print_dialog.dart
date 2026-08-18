@@ -7,8 +7,8 @@ import '../../../data/services/printer_service.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/printer_provider.dart';
-import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/printer_picker_dialog.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Dialog shown after confirming a work item, prompting the staff to print
 /// the internal receipt (work ticket) for that item.

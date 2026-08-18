@@ -9,6 +9,7 @@ import '../order_wizard.dart';
 import '../section_header.dart';
 import '../stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Stage 2 of the order edit wizard — customer (name, phone, source).
 ///

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/pos_provider.dart';
-import '../../../shared/labels/shared.dart';
 import '../utils/pos_cart_item_display.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class PosCheckoutCartItemTile extends ConsumerWidget {
   const PosCheckoutCartItemTile({super.key, required this.item});

@@ -8,10 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
 import 'order_detail_row.dart';
 import 'txn_photo_section.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Bottom sheet showing a single payment transaction's details with
 /// invalidate / restore / edit actions.

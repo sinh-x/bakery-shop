@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../section_header.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Summary overview widget for the General tab (Phase 3 — DG-334 / FR4 / AC4).
 ///

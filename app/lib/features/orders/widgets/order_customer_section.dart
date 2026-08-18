@@ -8,7 +8,7 @@ import '../../../shared/widgets/phone_text_field.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import 'customer_search_button.dart';
 import 'order_customer_suggestions.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class OrderCustomerSection extends ConsumerWidget {
   const OrderCustomerSection({

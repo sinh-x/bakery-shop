@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/labels/orders.dart';
 import 'section_header.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class OrderPaymentSection extends StatelessWidget {
   const OrderPaymentSection({

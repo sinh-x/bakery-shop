@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ReconciliationVarianceIndicator extends StatelessWidget {
   const ReconciliationVarianceIndicator({required this.variance, super.key});

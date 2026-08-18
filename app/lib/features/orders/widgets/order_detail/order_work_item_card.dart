@@ -7,12 +7,12 @@ import 'package:flutter/material.dart';
 import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/work_item.dart';
-import 'package:bakery_app/shared/labels/orders.dart' hide workItemStatusColors;
 import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_photo_strip.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' hide workItemStatusColors;
 
 /// A card showing a single work item with status, qty/price, photos, and
 /// status-transition chips.

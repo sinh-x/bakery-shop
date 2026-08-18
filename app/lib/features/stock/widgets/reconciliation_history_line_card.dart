@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import '../../../shared/labels/shared.dart';
 import 'reconciliation_history_sale_rows.dart';
 import 'reconciliation_history_summary_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Collapsible card for a single reconciliation history line.
 ///

@@ -1,10 +1,10 @@
 import 'package:bakery_app/data/api/paper_mode_service.dart';
 import 'package:bakery_app/features/settings/widgets/settings_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FakePaperModeService extends PaperModeService {
   _FakePaperModeService({

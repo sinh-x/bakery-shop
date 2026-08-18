@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/order_photo.dart';
 import '../../../../data/models/payment_transaction.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_payment_history.dart';
 import 'order_payment_row.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Transactions tab content: payment summary at the top (total, paid,
 /// remaining), an "add transaction" button that opens

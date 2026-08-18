@@ -16,6 +16,7 @@ import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
 import 'widgets/stage4_review_screen.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Normal order creation wizard.
 ///

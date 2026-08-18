@@ -20,6 +20,7 @@ import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/pos/utils/pos_cart_wizard_sync.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _SeededPosCartNotifier extends PosCartNotifier {
   _SeededPosCartNotifier(this._items);

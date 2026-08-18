@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../shared/labels/shared.dart';
 import '../../data/providers/catalog_provider.dart';
 import 'widgets/catalog_tags_dialogs.dart';
 import 'widgets/tag_list.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class CatalogTagsSettingsTab extends ConsumerWidget {
   const CatalogTagsSettingsTab({super.key});

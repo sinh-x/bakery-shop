@@ -14,7 +14,7 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 // Knowledge types for the form
 const _kTypeChips = [

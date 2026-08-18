@@ -9,9 +9,9 @@ import '../../data/providers/categories_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/reconciliation_history_line_card.dart';
 import 'widgets/reconciliation_history_summary_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class StockReconciliationHistoryScreen extends ConsumerWidget {
   const StockReconciliationHistoryScreen({super.key});

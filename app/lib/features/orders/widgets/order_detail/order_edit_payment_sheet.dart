@@ -5,8 +5,8 @@ import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'txn_photo_section.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Bottom sheet for editing an existing payment transaction.
 class OrderEditPaymentSheet extends ConsumerStatefulWidget {

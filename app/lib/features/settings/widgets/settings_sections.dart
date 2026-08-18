@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/paper_mode_service.dart';
 import '../../../providers/paper_mode_provider.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ConnectionResult {
   const ConnectionResult({required this.success, this.errorMessage});

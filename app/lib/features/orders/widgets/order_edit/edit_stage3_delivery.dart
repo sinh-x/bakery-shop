@@ -12,6 +12,7 @@ import '../order_wizard.dart';
 import '../stage_summary_card.dart';
 import 'staff_assignment_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Stage 3 of the order edit wizard — delivery.
 ///

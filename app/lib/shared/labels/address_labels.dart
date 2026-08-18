@@ -1,5 +1,3 @@
-export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Address-library domain labels (DG-385 Phase 4 / NFR3).
 ///
 /// All user-facing copy for the address autocomplete widget, the auto-bind

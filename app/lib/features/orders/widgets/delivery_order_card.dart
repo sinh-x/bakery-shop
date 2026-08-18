@@ -11,6 +11,7 @@ import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'delivery_claim_actions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class DeliveryOrderCard extends ConsumerWidget {
   const DeliveryOrderCard({super.key, required this.order, this.onTap});

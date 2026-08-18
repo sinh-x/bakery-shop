@@ -13,6 +13,7 @@ import 'package:bakery_app/features/orders/widgets/order_detail/order_info_block
 import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _testRef = 'TEST-INLINE-1';
 

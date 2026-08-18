@@ -6,7 +6,7 @@ import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
 import '../../widgets/section_header.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class EditExtrasSection extends ConsumerWidget {
   const EditExtrasSection({super.key, required this.orderRef});

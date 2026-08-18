@@ -1,4 +1,4 @@
-import '../labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared helper to get the display label for a tag category.
 String getCategoryLabel(String category) {

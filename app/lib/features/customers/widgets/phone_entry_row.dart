@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/widgets/phone_text_field.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// A single editable phone row (controller + primary flag).
 ///

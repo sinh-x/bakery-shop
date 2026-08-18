@@ -8,7 +8,6 @@ import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../data/providers/products_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../shared/mixins/auto_refresh_mixin.dart';
 import '../../../shared/utils/category_grouping.dart';
 import '../../../shared/utils/date_formatting.dart';
@@ -17,6 +16,7 @@ import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Main POS (Point of Sale) screen — 6th bottom tab.
 /// Product-first flow with 3-tap quick sale for walk-in customers.

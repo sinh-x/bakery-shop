@@ -8,8 +8,8 @@ import '../../data/api/receipt_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'receipt_preview_print_stub.dart'
     if (dart.library.io) 'receipt_preview_print_native.dart'
     if (dart.library.js_interop) 'receipt_preview_print_web.dart'

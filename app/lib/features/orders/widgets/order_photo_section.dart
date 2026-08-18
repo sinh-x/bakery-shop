@@ -8,8 +8,8 @@ import '../../../providers/order_providers.dart';
 import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/order_photo_tags.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 // ── Predefined tag definitions ─────────────────────────────────────────────────
 

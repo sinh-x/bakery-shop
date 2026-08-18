@@ -11,6 +11,7 @@ import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
 import 'stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Stage 1 of the order creation wizard — product selection.
 ///

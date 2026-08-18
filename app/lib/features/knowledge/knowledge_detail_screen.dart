@@ -13,8 +13,8 @@ import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/xfile_utils.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/knowledge_photo_gallery.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class KnowledgeDetailScreen extends ConsumerWidget {
   const KnowledgeDetailScreen({super.key, required this.entryId});

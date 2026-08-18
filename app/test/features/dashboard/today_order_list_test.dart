@@ -9,7 +9,6 @@ import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/dashboard/widgets/today_order_list.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Order _order({

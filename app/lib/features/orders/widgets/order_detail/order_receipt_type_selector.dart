@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../data/api/receipt_service.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Bottom sheet that lets staff pick which receipt type to print for an order.
 class OrderReceiptTypeSelector extends ConsumerWidget {

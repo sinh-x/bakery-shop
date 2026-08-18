@@ -9,6 +9,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/day_tab_body.dart';
 import 'widgets/period_tab_body.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Today Sales screen (DG-374 Phase 2 / FR3, FR4 / AC5, AC6), refactored in
 /// DG-386 Phase 6 to add a Ngày/Tuần/Tháng tab bar with week/month prev/next

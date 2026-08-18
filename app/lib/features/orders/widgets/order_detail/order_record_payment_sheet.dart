@@ -7,7 +7,7 @@ import '../../../../providers/order_providers.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
 /// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.

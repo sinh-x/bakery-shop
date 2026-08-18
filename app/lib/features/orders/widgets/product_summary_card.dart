@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../data/models/order_draft.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Product summary card shown on Stage 2/3/4 of the order wizard.
 ///

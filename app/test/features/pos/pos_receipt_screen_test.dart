@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FakeReceiptService extends ReceiptService {
   _FakeReceiptService() : super(Dio());

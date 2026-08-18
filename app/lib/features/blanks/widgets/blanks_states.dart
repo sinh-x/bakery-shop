@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:bakery_app/shared/labels/blanks.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shared error-state widget for the blanks feature screens.
 ///

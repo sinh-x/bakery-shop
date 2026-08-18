@@ -5,12 +5,12 @@ import 'package:bakery_app/data/models/payment_transaction.dart';
 import 'package:bakery_app/data/models/payment_transaction_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_edit_payment_sheet.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_transaction_detail_sheet.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _testRef = 'TEST-ORD-PHOTO-UI';
 const _testBaseUrl = 'http://test.local:8000';

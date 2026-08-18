@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'order_wizard.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 export 'product_summary_card.dart' show ProductSummaryCard;
 

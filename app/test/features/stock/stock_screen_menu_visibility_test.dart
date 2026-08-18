@@ -3,7 +3,6 @@ import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/features/stock/stock_screen.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/login_screen_test_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FakeStockService extends StockService {
   _FakeStockService(this._items) : super(Dio());

@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/order_service.dart';
 import '../../models/order.dart';
 import '../../models/paginated_response.dart';
-import '../../../shared/labels/shared.dart';
 import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/date_formatting.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
   String? _statusFilter;

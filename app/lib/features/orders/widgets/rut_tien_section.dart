@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order_providers.dart';
 import '../../../data/models/work_item.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'section_header.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class RutTienSection extends ConsumerWidget {
   const RutTienSection({

@@ -16,6 +16,7 @@ import 'package:bakery_app/data/providers/config_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FixedStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;

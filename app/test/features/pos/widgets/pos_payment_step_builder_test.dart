@@ -11,7 +11,7 @@ import 'package:bakery_app/features/pos/widgets/pos_checkout_payment_controller.
 import 'package:bakery_app/features/pos/widgets/pos_payment_step.dart';
 import 'package:bakery_app/features/pos/widgets/pos_payment_step_builder.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _BuilderHost extends ConsumerWidget {
   const _BuilderHost({

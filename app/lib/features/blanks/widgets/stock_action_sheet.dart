@@ -5,6 +5,7 @@ import '../../../data/models/blank.dart';
 import '../../../data/providers/blank_stock_provider.dart';
 import '../../../shared/utils/format_double.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Type of stock movement being recorded.
 enum BlankStockAction { production, usage }

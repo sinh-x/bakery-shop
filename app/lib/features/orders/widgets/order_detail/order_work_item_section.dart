@@ -11,11 +11,11 @@ import '../../../../data/models/order.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
 import 'order_work_item_print_dialog.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Expandable section listing the order's work items (regular + extras),
 /// with per-item status transition and internal-print prompts.

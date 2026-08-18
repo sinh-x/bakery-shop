@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/customer_service.dart';
 import '../../../data/models/customer.dart';
-import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/utils/diacritics.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 bool _matchesDiacriticAware(String query, Customer customer) {
   final q = query.trim().toLowerCase();

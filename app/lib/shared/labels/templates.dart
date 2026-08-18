@@ -1,5 +1,3 @@
-export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Message-template domain labels (DG-375 Phase 4.3 / NFR4).
 ///
 /// All user-facing copy for the template picker modal and integration points

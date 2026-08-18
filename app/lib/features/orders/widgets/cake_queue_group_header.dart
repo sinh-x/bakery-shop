@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/bakery_theme.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Header row for a status group in the cake queue (FR1, FR3).
 ///

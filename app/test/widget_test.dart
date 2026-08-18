@@ -6,6 +6,7 @@ import 'package:bakery_app/app.dart';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'features/auth/login_screen_test_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   testWidgets('App launches with bakery title', (tester) async {

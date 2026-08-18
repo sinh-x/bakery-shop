@@ -10,6 +10,7 @@ import 'section_header.dart';
 import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
   const Stage2CustomerInfoScreen({

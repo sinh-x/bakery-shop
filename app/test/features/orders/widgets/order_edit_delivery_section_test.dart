@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/features/orders/widgets/hour_picker.dart';
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 // DG-216 Phase 3 / DG-251 Phase 2: the order edit screen's Stage 3 delivery UI
 // renders the canonical shared [OrderDeliverySection] in editable mode, which

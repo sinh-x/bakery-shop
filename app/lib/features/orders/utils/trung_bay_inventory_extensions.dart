@@ -1,5 +1,5 @@
 import '../../../data/models/product.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 extension TrungBayProductX on Product? {
   bool get isTrungBay =>

@@ -6,7 +6,7 @@ import 'data/providers/fingerprint_provider.dart';
 import 'shared/build_fingerprint.dart';
 import 'shared/router/app_router.dart';
 import 'shared/theme/bakery_theme.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class BakeryApp extends ConsumerWidget {
   const BakeryApp({super.key});

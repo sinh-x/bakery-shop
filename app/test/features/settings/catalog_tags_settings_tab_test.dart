@@ -5,7 +5,6 @@ import 'package:bakery_app/features/settings/widgets/tag_group.dart';
 import 'package:bakery_app/features/settings/widgets/tag_row.dart';
 import 'package:bakery_app/data/providers/catalog_provider.dart';
 import 'package:bakery_app/data/api/config_service.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +12,7 @@ import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 
 import 'catalog_tags_settings_tab_test.mocks.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 @GenerateMocks([ConfigService])
 void main() {

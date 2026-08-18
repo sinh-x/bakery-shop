@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Future<bool> showSubmitReviewDialog({
   required BuildContext context,

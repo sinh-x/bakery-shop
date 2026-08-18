@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Collapsible sale-rows section rendered inside an expanded
 /// [ReconciliationHistoryLineCard]. The section header shows the sale-row

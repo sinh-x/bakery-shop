@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
-import '../../shared/labels/shared.dart' show showTopSnackBar;
 import '../../shared/labels/technical_settings.dart';
 import 'widgets/settings_sections.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Factory that builds a standalone [Dio] instance for pre-login connection
 /// tests (no auth interceptor). Overridable in tests via [preLoginDioFactoryProvider].

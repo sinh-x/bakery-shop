@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../features/auth/login_screen_test_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FakeCustomerService extends CustomerService {
   _FakeCustomerService(this._customer, this._orders, {this.deleteError})

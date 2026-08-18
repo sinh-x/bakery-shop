@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../data/models/catalog_tag.dart';
 import 'tag_group.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class TagList extends StatelessWidget {
   const TagList({required this.tags, super.key});

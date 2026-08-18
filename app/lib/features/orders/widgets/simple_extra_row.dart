@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/models/order_draft.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// One-line row for an extra (phu_kien) [DraftOrderItem] in Stage 1.
 ///

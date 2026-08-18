@@ -11,10 +11,10 @@ import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/reconciliation_product_card.dart';
 import 'widgets/reconciliation_submit_review_dialog.dart';
 import 'stock_screen.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class StockReconciliationScreen extends ConsumerStatefulWidget {
   const StockReconciliationScreen({super.key});

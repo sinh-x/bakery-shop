@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../data/providers/bom_provider.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Show the add-BOM-mapping bottom sheet for [priceChipId].
 ///

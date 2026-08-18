@@ -22,6 +22,7 @@ import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)

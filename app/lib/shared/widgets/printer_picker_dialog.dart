@@ -7,7 +7,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
 import '../../providers/printer_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Result of the printer picker dialog.
 enum PrinterPickerResult {

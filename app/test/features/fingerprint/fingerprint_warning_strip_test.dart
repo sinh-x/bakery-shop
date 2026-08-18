@@ -1,12 +1,12 @@
 import 'package:bakery_app/app.dart';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/providers/fingerprint_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../auth/login_screen_test_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   testWidgets('shows top warning strip when fingerprints mismatch', (

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_tag.dart';
 import '../widgets/catalog_tags_dialogs.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class TagRow extends ConsumerWidget {
   const TagRow({required this.tag, super.key});

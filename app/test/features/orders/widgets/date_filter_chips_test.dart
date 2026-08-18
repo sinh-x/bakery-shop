@@ -2,6 +2,7 @@ import 'package:bakery_app/features/orders/widgets/date_filter_chips.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   Future<void> pumpChips(

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/labels/shared.dart';
 import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import 'tag_row.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class TagGroup extends StatelessWidget {
   const TagGroup({required this.category, required this.tags, super.key});

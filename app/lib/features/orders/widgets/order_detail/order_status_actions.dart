@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../section_header.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Status transition action buttons (forward, backward, cancel, completed-
 /// blocked). Shown only when the order has available transitions.

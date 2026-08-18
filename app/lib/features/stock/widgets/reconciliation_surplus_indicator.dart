@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Displays the surplus inflow quantity for a reconciliation option.
 ///

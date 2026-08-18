@@ -3,6 +3,7 @@ import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dar
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   group('Stage1ResponsiveContent (DG-214 Phase 6, NFR-1)', () {

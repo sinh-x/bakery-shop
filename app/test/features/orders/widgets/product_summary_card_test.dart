@@ -5,6 +5,7 @@ import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/product_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Product _product({Map<String, String> attributes = const {}}) {
   return Product(

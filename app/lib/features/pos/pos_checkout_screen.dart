@@ -21,12 +21,12 @@ import '../../features/pos/widgets/pos_review_panel.dart';
 import '../../features/pos/widgets/pos_stage3_pickup_screen.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
-import '../../shared/labels/orders.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 String posCheckoutLocalDueDate(DateTime dateTime) {
   return formatApiDate(dateTime);

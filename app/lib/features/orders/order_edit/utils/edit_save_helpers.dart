@@ -4,8 +4,7 @@ import '../../../../data/api/customer_service.dart';
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
 import '../../../../shared/utils/order_helpers.dart';
-import '../../../../shared/labels/customers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// FR1: auto-create-and-link a customer when name+phone are present but no
 /// customer is linked. Mirrors `order_create_screen.dart:137-151`. No dedup

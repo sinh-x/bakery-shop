@@ -12,6 +12,7 @@ import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/product_card.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class ProductCatalogScreen extends ConsumerStatefulWidget {
   const ProductCatalogScreen({super.key});

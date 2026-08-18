@@ -4,12 +4,12 @@ import 'package:bakery_app/data/api/work_item_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_payment_status_summary.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_work_item_summary.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _WorkItemsInterceptor extends Interceptor {
   _WorkItemsInterceptor(this._items);

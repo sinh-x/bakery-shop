@@ -9,6 +9,7 @@ import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 const _pulseDuration = Duration(milliseconds: 1500);
 

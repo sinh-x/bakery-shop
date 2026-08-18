@@ -5,12 +5,12 @@ import '../../../../data/models/enum_attribute.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/order_item.dart';
 import '../../../../data/models/product.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import '../section_header.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Builds the list of regular (non-extra) order items, each row showing
 /// product photo (when available), product name, qty × unit price, markup,

@@ -6,10 +6,10 @@ import 'package:bakery_app/features/orders/widgets/stage1_product_selection_scre
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/shared/gift_config.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;

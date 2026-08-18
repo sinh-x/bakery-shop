@@ -1,11 +1,11 @@
 import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/features/customers/widgets/customer_search_field.dart';
-import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class _FakeCustomerService extends CustomerService {
   _FakeCustomerService(this._customers) : super(Dio());

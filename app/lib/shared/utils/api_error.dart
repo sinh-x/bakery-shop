@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 // Keep one-line SnackBar messages readable before forcing wrapped formatting.
 const _orderStatusFailureInlineThreshold = 280;

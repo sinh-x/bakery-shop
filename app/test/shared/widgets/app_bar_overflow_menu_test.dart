@@ -1,8 +1,8 @@
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Widget _buildApp({
   List<PopupMenuEntry<String>> items = const [],

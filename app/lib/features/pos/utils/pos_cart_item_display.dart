@@ -1,5 +1,5 @@
 import '../../../providers/pos_provider.dart';
-import '../../../shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 String posCartItemDisplayName(PosCartItem item) {
   if (item.isGift) {

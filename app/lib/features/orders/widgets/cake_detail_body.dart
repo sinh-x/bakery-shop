@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
 import '../../../data/providers/products_provider.dart';
-import '../../../shared/labels/shared.dart';
 import '../../../shared/utils/vnd_units.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import 'cake_detail_blank_section.dart';

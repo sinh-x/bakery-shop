@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Renders the candle-type line for an order item or work item when the
 /// `candle_type` attribute is present, non-empty, and not `khong_nen`

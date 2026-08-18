@@ -5,6 +5,7 @@ import '../../../data/models/address.dart';
 import '../../../data/providers/missing_links_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import '../../../shared/utils/launch_external_url.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Missing-links screen (DG-388 Phase 3 / FR1/FR2/FR6/AC1/AC2/AC5).
 ///

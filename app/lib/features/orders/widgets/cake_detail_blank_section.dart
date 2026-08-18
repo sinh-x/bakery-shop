@@ -5,6 +5,7 @@ import '../../../data/models/work_item.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../shared/labels/blanks.dart';
 import 'add_blank_modal.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///

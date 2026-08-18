@@ -14,6 +14,7 @@ import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 Order _order({
   required String ref,

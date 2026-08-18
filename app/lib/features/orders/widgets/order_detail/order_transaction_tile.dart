@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../data/models/payment_transaction.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// A single transaction row in the payment history list.
 class OrderTransactionTile extends StatelessWidget {

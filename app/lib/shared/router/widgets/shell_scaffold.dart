@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../providers/order/incomplete_count_provider.dart';
 import '../../../providers/order/urgency_count_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Shell scaffold with the bottom navigation bar. Wraps the active child
 /// widget and highlights the current tab based on the router location.

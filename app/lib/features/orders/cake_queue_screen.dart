@@ -17,7 +17,6 @@ import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/cake_queue_group_header.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/enum_attribute_display.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/blanks.dart' as blanks_v;
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
