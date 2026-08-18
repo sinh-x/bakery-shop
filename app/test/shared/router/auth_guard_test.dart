@@ -1,4 +1,4 @@
-import 'package:bakery_app/features/auth/auth_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
 import 'package:bakery_app/shared/router/auth_guard.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 /// A widget that hides its [child] unless the authenticated user is an admin.

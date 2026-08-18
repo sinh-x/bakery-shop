@@ -5,7 +5,7 @@ import '../../../shared/providers/logged_by_provider.dart';
 import '../../../data/providers/staff_provider.dart';
 import '../../../data/providers/user_binding_provider.dart';
 import '../../../shared/labels/shared.dart';
-import '../../auth/auth_provider.dart';
+import '../../../shared/providers/auth_provider.dart';
 import 'settings_sections.dart';
 
 class StaffBindingSection extends ConsumerStatefulWidget {

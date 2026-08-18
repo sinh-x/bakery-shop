@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
-import '../../features/auth/auth_provider.dart';
+import 'auth_provider.dart';
 
 const kLoggedByKey = 'logged_by_name';
 

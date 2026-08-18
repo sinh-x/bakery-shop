@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import '../../data/providers/categories_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/labels/shared.dart';

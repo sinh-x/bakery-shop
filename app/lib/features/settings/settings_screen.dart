@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../data/api/api_client.dart';
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/address_labels.dart';
 import 'package:bakery_app/shared/labels/auth.dart';

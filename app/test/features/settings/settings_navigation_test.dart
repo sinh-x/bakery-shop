@@ -2,7 +2,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/data/api/user_service.dart';
 import 'package:bakery_app/data/models/address.dart';
-import 'package:bakery_app/features/auth/auth_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
 import 'package:bakery_app/features/settings/address_library_screen.dart';
 import 'package:bakery_app/features/settings/missing_links_screen.dart';
 import 'package:bakery_app/features/settings/settings_screen.dart';

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import '../../features/auth/force_change_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/password_change_screen.dart';

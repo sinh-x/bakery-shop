@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../features/auth/auth_provider.dart';
+import '../../../shared/providers/auth_provider.dart';
 import '../../../features/templates/template_management_screen.dart';
 
 /// Message-template feature route definitions (DG-375 Phase 4 / FR10).

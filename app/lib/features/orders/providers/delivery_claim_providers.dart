@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/order_service.dart';
 import '../../../data/api/staff_service.dart';
 import '../../../data/models/order.dart';
-import '../../../features/auth/auth_provider.dart';
+import '../../../shared/providers/auth_provider.dart';
 import '../../../data/providers/order/order_detail_notifier.dart';
 import '../../../data/providers/order/order_list_providers.dart';
 import '../../../data/providers/staff_provider.dart';
