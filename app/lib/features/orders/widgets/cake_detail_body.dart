@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel;
+import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel, workItemStatusColors;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,17 +13,6 @@ import 'cake_detail_blank_section.dart';
 import 'candle_type_radio_group.dart';
 import 'enum_attribute_display.dart';
 import 'order_photo_section.dart';
-
-/// Status → color map for work item status chips (shared between the detail
-/// body and the status transition chips).
-const Map<String, Color> workItemStatusColors = {
-  'pending': Colors.grey,
-  'confirmed': Colors.blue,
-  'working': Colors.orange,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'cancelled': Colors.red,
-};
 
 /// Renders the scrollable body of the CakeDetailScreen (DG-294).
 ///

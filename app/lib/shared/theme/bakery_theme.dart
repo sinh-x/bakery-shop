@@ -70,6 +70,14 @@ class BakeryTheme {
   };
 
   // Work item status colors (cake queue items: pending/working/ready/delivered)
+  //
+  // NOTE: This is an intentional 4-status subset of the full 6-status
+  // `workItemStatusColors` map in `app/lib/shared/utils.dart:121`
+  // (pending/confirmed/working/ready/delivered/cancelled). The cake-queue
+  // domain only uses the four states below — `confirmed` and `cancelled` are
+  // not cake-queue states — so this narrower map must NOT be consolidated
+  // into the shared one. Do not re-flag this as a duplication in future
+  // code-quality reviews.
   static const workItemStatusColors = {
     'pending': Colors.grey,
     'working': Colors.orange,
