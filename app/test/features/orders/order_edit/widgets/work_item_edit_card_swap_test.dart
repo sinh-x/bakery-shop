@@ -383,5 +383,98 @@ void main() {
         expect(find.text('Bánh cũ'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'UI-1 (DG-414 review): swap button is disabled when item is delivered',
+      (tester) async {
+        final container = await _buildContainer(_SwapInterceptor());
+        final delivered = _richItem().copyWith(status: 'delivered');
+        await _pumpCard(tester, delivered, container);
+
+        final swapButton = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.swap_horiz),
+        );
+        // FR5/UI-1: swap button onPressed is null when status is delivered,
+        // so tapping it does nothing (the backend would 422 the PATCH).
+        expect(swapButton.onPressed, isNull,
+            reason: 'UI-1: swap button must be disabled on delivered items');
+      },
+    );
+
+    testWidgets(
+      'UI-1 (DG-414 review): swap button is disabled when item is cancelled',
+      (tester) async {
+        final container = await _buildContainer(_SwapInterceptor());
+        final cancelled = _richItem().copyWith(status: 'cancelled');
+        await _pumpCard(tester, cancelled, container);
+
+        final swapButton = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.swap_horiz),
+        );
+        expect(swapButton.onPressed, isNull,
+            reason: 'UI-1: swap button must be disabled on cancelled items');
+      },
+    );
+
+    testWidgets(
+      'UI-1 (DG-414 review): swap button stays enabled on non-terminal status',
+      (tester) async {
+        final container = await _buildContainer(_SwapInterceptor());
+        // pending is the default in _richItem(); assert the button is enabled.
+        await _pumpCard(tester, _richItem(), container);
+
+        final swapButton = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.swap_horiz),
+        );
+        expect(swapButton.onPressed, isNotNull,
+            reason: 'UI-1: swap button should remain enabled on pending items');
+      },
+    );
+
+    testWidgets(
+      'CQ-1 (DG-414 review): swap PATCH failure surfaces a top snack bar error',
+      (tester) async {
+        final container = await _buildContainer(_FailingSwapInterceptor());
+        await _pumpCard(tester, _richItem(), container);
+
+        // Tap swap, pick the new product, the PATCH 422s — _changeProduct
+        // must catch the error and surface a SnackBar (no unhandled throw).
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.swap_horiz));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Bánh mới'));
+        await tester.pumpAndSettle();
+
+        // CQ-1: a SnackBar is shown with the normalized error message.
+        expect(find.byType(SnackBar), findsOneWidget,
+            reason: 'CQ-1: swap failure must surface user-visible feedback');
+      },
+    );
   });
+}
+
+/// Interceptor that rejects the swap PATCH with a 422 (mirrors the backend's
+/// FR5/SEC-1 rejection). Used by the CQ-1 error-handling test.
+class _FailingSwapInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final path = options.path;
+    final method = options.method;
+
+    if (path == '/api/orders/ORD-SWAP/items/10' && method == 'PATCH') {
+      handler.reject(
+        DioException(
+          requestOptions: options,
+          response: Response(
+            requestOptions: options,
+            statusCode: 422,
+            data: <String, dynamic>{'detail': 'Không thể đổi sản phẩm'},
+          ),
+        ),
+      );
+      return;
+    }
+    // Other routes (order-detail refresh, photos, items list) — reuse the
+    // success stubs from _SwapInterceptor by delegating.
+    _SwapInterceptor().onRequest(options, handler);
+  }
 }

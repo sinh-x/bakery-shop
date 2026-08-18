@@ -1033,3 +1033,107 @@ def test_update_work_item_without_product_id_backward_compatible(api_client):
     assert updated["quantity"] == 5
     assert updated["unitPrice"] == 300000.0
     assert updated["productId"] == "BKS-16"
+
+
+# --- SEC-1 (DG-414 review): productId validation on swap ---------------------
+
+
+def test_update_work_item_swap_rejects_unknown_product_id(api_client):
+    """SEC-1: PATCH with a productId that does not resolve to an existing
+    active product is rejected with 422; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "NOPE-99", "productName": "Sản phẩm ảo"},
+    )
+    assert resp.status_code == 422
+    assert "không tồn tại" in resp.json()["detail"]
+
+    # product_id unchanged in DB
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_rejects_inactive_product_id(api_client):
+    """SEC-1: PATCH with a productId that resolves to an inactive product
+    is rejected with 422; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    # Deactivate BKS-20 (seeded) via the products API.
+    prod = api_client.get("/api/products/code/BKS-20").json()
+    pid = prod["id"]
+    deact = api_client.patch(f"/api/products/{pid}", json={"active": 0})
+    assert deact.status_code == 200
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 422
+    assert "không tồn tại hoặc đã ngừng" in resp.json()["detail"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_rejects_null_product_id(api_client):
+    """SEC-1: an explicit JSON null productId is rejected with 422 (would
+    otherwise bypass the swap guard and attempt SET product_id = NULL)."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": None, "productName": "Bánh không mã"},
+    )
+    assert resp.status_code == 422
+    assert "null" in resp.json()["detail"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_allows_empty_product_id_sentinel(api_client):
+    """SEC-1 backward compat: an explicit empty-string productId is still
+    accepted as the no-catalog sentinel (matches historical create flow and
+    rows that legitimately use product_id = '')."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "", "productName": "Sản phẩm tự do"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productId"] == ""
+    assert updated["productName"] == "Sản phẩm tự do"
