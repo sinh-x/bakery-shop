@@ -1,12 +1,13 @@
-import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
+import '../../../shared/utils.dart' show showTopSnackBar;
+import 'widgets/management_error_view.dart';
 import 'widgets/template_editor_screen.dart';
+import 'widgets/template_grouped_list.dart';
 import 'widgets/template_management_tile.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Template management screen (DG-375 Phase 4 / FR6, FR7, FR10 / AC6, AC7).
@@ -124,17 +125,17 @@ class _TemplateManagementScreenState
       ),
       body: templatesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _ManagementErrorView(error: e),
+        error: (e, _) => ManagementErrorView(error: e),
         data: (templates) => TabBarView(
           controller: _tabController,
           children: [
-            _TemplateGroupedList(
+            TemplateGroupedList(
               templates: templates.where((t) => t.isSystem).toList(),
               isAdmin: widget.isAdmin,
               onEdit: (t) => _openEditor(template: t),
               onDelete: _deleteTemplate,
             ),
-            _TemplateGroupedList(
+            TemplateGroupedList(
               templates: templates.where((t) => !t.isSystem).toList(),
               isAdmin: true, // personal tab always editable by owner
               onEdit: (t) => _openEditor(template: t),
@@ -150,125 +151,4 @@ class _TemplateManagementScreenState
       ),
     );
   }
-}
-
-/// Error view for the management screen. Offers a retry button that
-/// re-fetches templates (which falls back to bundled defaults when the
-/// backend is still unavailable).
-class _ManagementErrorView extends ConsumerWidget {
-  const _ManagementErrorView({required this.error});
-  final Object error;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text('${SharedLabels.apiError}: $error', textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: () => ref.read(templateListProvider.notifier).refresh(),
-            icon: const Icon(Icons.refresh),
-            label: const Text(SharedLabels.retry),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Scenario-grouped list of templates shown inside one tab.
-class _TemplateGroupedList extends StatelessWidget {
-  const _TemplateGroupedList({
-    required this.templates,
-    required this.isAdmin,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final List<MessageTemplate> templates;
-  final bool isAdmin;
-  final ValueChanged<MessageTemplate> onEdit;
-  final ValueChanged<MessageTemplate> onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (templates.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.message_outlined, size: 40, color: Colors.grey),
-              const SizedBox(height: 8),
-              Text(TemplatesLabels.managementEmpty,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium),
-            ],
-          ),
-        ),
-      );
-    }
-    // Memoize the scenario grouping so it only recomputes when the templates
-    // list actually changes (CQ-Grouping), rather than on every frame. We
-    // store the previous source list and grouped result on the State so a
-    // rebuild with identical templates reuses the cached grouping.
-    final grouped = _groupedCache(templates);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-      children: [
-        for (final entry in grouped.entries) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 4),
-            child: Text(
-              TemplatesLabels.scenarioLabel(entry.key),
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          for (final template in entry.value)
-            TemplateManagementTile(
-              template: template,
-              canEdit: isAdmin,
-              onEdit: () => onEdit(template),
-              onDelete: () => onDelete(template),
-            ),
-        ],
-      ],
-    );
-  }
-
-  static _GroupedCache? _cache;
-
-  /// Returns the cached grouping for [templates], recomputing only when the
-  /// list identity or contents change (CQ-Grouping).
-  static Map<String, List<MessageTemplate>> _groupedCache(
-      List<MessageTemplate> templates) {
-    final cached = _cache;
-    if (cached != null && listEquals(cached.templates, templates)) {
-      return cached.grouped;
-    }
-    final grouped = <String, List<MessageTemplate>>{};
-    for (final t in templates) {
-      grouped.putIfAbsent(t.scenario, () => []).add(t);
-    }
-    _cache = _GroupedCache(templates, grouped);
-    return grouped;
-  }
-}
-
-/// Cached (source list, scenario-grouped result) pair used by
-/// [_TemplateGroupedList._groupedCache] (CQ-Grouping).
-class _GroupedCache {
-  const _GroupedCache(this.templates, this.grouped);
-
-  final List<MessageTemplate> templates;
-  final Map<String, List<MessageTemplate>> grouped;
 }
