@@ -26,8 +26,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 String posCheckoutLocalDueDate(DateTime dateTime) {
   return formatApiDate(dateTime);
 }
@@ -98,12 +97,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     final posNotifier = ref.read(posOrderStateProvider.notifier);
     const wizardData = OrderWizardData(
-      customerName: VN.khachLe,
-      source: VN.taiTiemPOS,
+      customerName: OrdersLabels.khachLe,
+      source: OrdersLabels.taiTiemPOS,
       deliveryType: 'pickup',
     );
     posNotifier.updateWizardData(wizardData);
-    posNotifier.updateSource(VN.taiTiemPOS);
+    posNotifier.updateSource(OrdersLabels.taiTiemPOS);
     final posDue = posDefaultDueDateTime(DateTime.now());
     posNotifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
     posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
@@ -303,10 +302,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.thanhToan),
+        title: const Text(OrdersLabels.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          tooltip: VN.backToCart,
+          tooltip: OrdersLabels.backToCart,
           onPressed: () {
             _writeBackToCart();
             context.pop();
@@ -316,7 +315,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           TextButton.icon(
             onPressed: _confirmClearCart,
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text(VN.clearCart),
+            label: const Text(OrdersLabels.clearCart),
           ),
           const AppBarOverflowMenu(),
         ],

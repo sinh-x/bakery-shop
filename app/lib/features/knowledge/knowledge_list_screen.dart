@@ -9,8 +9,7 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 const _kTypeChips = [
   ('recipe', 'Công thức'),
   ('procedure', 'Quy trình'),
@@ -82,7 +81,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.knowledgeTitle),
+        title: const Text(SharedLabels.knowledgeTitle),
         actions: const [AppBarOverflowMenu()],
       ),
       body: Column(
@@ -93,7 +92,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
             child: TextField(
               controller: _searchCtrl,
               decoration: const InputDecoration(
-                hintText: VN.searchKnowledge,
+                hintText: SharedLabels.searchKnowledge,
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -141,11 +140,11 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(VN.apiError),
+                    const Text(SharedLabels.apiError),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => ref.invalidate(knowledgeEntriesProvider),
-                      child: const Text(VN.retry),
+                      child: const Text(SharedLabels.retry),
                     ),
                   ],
                 ),
@@ -165,7 +164,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          VN.noKnowledgeEntries,
+                          SharedLabels.noKnowledgeEntries,
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                       ],
@@ -219,7 +218,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/knowledge/new'),
-        tooltip: VN.createKnowledge,
+        tooltip: SharedLabels.createKnowledge,
         child: const Icon(Icons.add),
       ),
     );
@@ -250,7 +249,7 @@ class _KnowledgeEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final typeLabel = VN.knowledgeTypes[entry.type] ?? entry.type;
+    final typeLabel = SharedLabels.knowledgeTypes[entry.type] ?? entry.type;
     final theme = Theme.of(context);
 
     return Card(

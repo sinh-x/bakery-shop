@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/accounting.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Builds the confirmation [AlertDialog] for the journal lock action.
 ///
 /// Extracted from journal_tab.dart (DG-189 Phase 1, finding M-2) to keep
@@ -13,19 +13,19 @@ AlertDialog buildLockConfirmDialog({
   required void Function() onConfirm,
 }) {
   return AlertDialog(
-    title: const Text(VN.accountingLockJournal),
+    title: const Text(AccountingLabels.accountingLockJournal),
     content: Text(
-      '${VN.accountingFilterSince} $sinceStr\n'
-      '${VN.accountingFilterUntil} $untilStr',
+      '${AccountingLabels.accountingFilterSince} $sinceStr\n'
+      '${AccountingLabels.accountingFilterUntil} $untilStr',
     ),
     actions: [
       TextButton(
         onPressed: onCancel,
-        child: const Text(VN.cancel),
+        child: const Text(SharedLabels.cancel),
       ),
       FilledButton(
         onPressed: onConfirm,
-        child: const Text(VN.xacNhan),
+        child: const Text(OrdersLabels.xacNhan),
       ),
     ],
   );

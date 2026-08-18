@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, statusMap;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,7 +12,6 @@ import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'delivery_claim_actions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 class DeliveryOrderCard extends ConsumerWidget {
   const DeliveryOrderCard({super.key, required this.order, this.onTap});

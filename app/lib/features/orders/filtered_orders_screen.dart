@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show statusMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,8 +9,7 @@ import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'widgets/order_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Filters [orders] to those with urgency critical OR urgent AND an active
 /// (non-terminal) status. Used by the urgency filtered listing reached by
 /// tapping the urgency banner — must match the banner's count.
@@ -132,7 +132,7 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: VN.lichSuDonHangTimKiem,
+                hintText: OrdersLabels.lichSuDonHangTimKiem,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -161,11 +161,11 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(VN.apiError),
+                      const Text(SharedLabels.apiError),
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: notifier.refresh,
-                        child: const Text(VN.retry),
+                        child: const Text(SharedLabels.retry),
                       ),
                     ],
                   ),
@@ -185,7 +185,7 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                 final searched = _applySearch(filtered);
                 if (searched.isEmpty) {
                   return const Center(
-                    child: Text(VN.lichSuDonHangKhongTimThay),
+                    child: Text(OrdersLabels.lichSuDonHangKhongTimThay),
                   );
                 }
 

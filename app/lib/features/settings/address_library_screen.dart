@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,8 +7,7 @@ import '../../../data/models/address.dart';
 import '../../../data/providers/address_library_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import '../../../shared/utils/launch_external_url.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Address-library management screen (DG-385 Phase 5 / FR6/FR8/AC6).
 ///
 /// A full-screen management surface accessible from Settings. It lists
@@ -84,7 +84,7 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text(VN.cancel),
+                child: const Text(SharedLabels.cancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
@@ -302,12 +302,12 @@ class _AddressLibraryErrorView extends ConsumerWidget {
         children: [
           const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
           const SizedBox(height: 16),
-          Text('${VN.apiError}: $error', textAlign: TextAlign.center),
+          Text('${SharedLabels.apiError}: $error', textAlign: TextAlign.center),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: () => ref.read(addressLibraryProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
+            label: const Text(SharedLabels.retry),
           ),
         ],
       ),
@@ -472,7 +472,7 @@ class _AddressLibraryEditorDialogState
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -482,7 +482,7 @@ class _AddressLibraryEditorDialogState
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text(VN.save),
+              : const Text(SharedLabels.save),
         ),
       ],
     );

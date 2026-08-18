@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show workItemStatusLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,8 +6,8 @@ import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../section_header.dart';
 import 'order_detail_helpers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Summary overview widget for the General tab (Phase 3 — DG-334 / FR4 / AC4).
 ///
 /// Renders a compact count of work items grouped by status, e.g.
@@ -29,7 +30,7 @@ class OrderWorkItemSummary extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(VN.workItemSummaryTitle),
+        const SectionHeader(OrdersLabels.workItemSummaryTitle),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -45,7 +46,7 @@ class OrderWorkItemSummary extends ConsumerWidget {
               child: Center(child: LinearProgressIndicator()),
             ),
             error: (e, _) => Text(
-              VN.apiError,
+              SharedLabels.apiError,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),
@@ -68,7 +69,7 @@ class _WorkItemSummaryBody extends StatelessWidget {
     final theme = Theme.of(context);
     if (items.isEmpty) {
       return Text(
-        VN.workItemSummaryEmpty,
+        OrdersLabels.workItemSummaryEmpty,
         style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.outline,
         ),
@@ -91,7 +92,7 @@ class _WorkItemSummaryBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          VN.workItemSummaryCount(items.length),
+          OrdersLabels.workItemSummaryCount(items.length),
           style: theme.textTheme.titleSmall?.copyWith(
             color: theme.colorScheme.primary,
             fontWeight: FontWeight.bold,

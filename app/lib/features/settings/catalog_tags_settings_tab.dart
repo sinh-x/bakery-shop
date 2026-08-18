@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/catalog_provider.dart';
 import 'widgets/catalog_tags_dialogs.dart';
 import 'widgets/tag_list.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class CatalogTagsSettingsTab extends ConsumerWidget {
   const CatalogTagsSettingsTab({super.key});
 
@@ -22,7 +21,7 @@ class CatalogTagsSettingsTab extends ConsumerWidget {
         data: (tags) => TagList(tags: tags),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => const Center(
-          child: Text(VN.errorLoading),
+          child: Text(SharedLabels.errorLoading),
         ),
       ),
     );

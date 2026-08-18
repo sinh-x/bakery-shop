@@ -5,8 +5,7 @@ import '../../models/order.dart';
 import '../../models/paginated_response.dart';
 import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
   String? _statusFilter;
 
@@ -56,8 +55,8 @@ class OrderHistoryNotifier extends AsyncNotifier<List<Order>> {
     final start = DateTime(fromDate.year, fromDate.month, fromDate.day);
     final end = DateTime(toDate.year, toDate.month, toDate.day);
     final dayCount = end.difference(start).inDays + 1;
-    if (dayCount < 1) return VN.lichSuDonHangKhoangNgayKhongHopLe;
-    if (dayCount > 7) return VN.lichSuDonHangToiDa7Ngay;
+    if (dayCount < 1) return OrdersLabels.lichSuDonHangKhoangNgayKhongHopLe;
+    if (dayCount > 7) return OrdersLabels.lichSuDonHangToiDa7Ngay;
     return null;
   }
 
@@ -190,8 +189,8 @@ class OrderHistoryPaginationNotifier
     final start = DateTime(fromDate.year, fromDate.month, fromDate.day);
     final end = DateTime(toDate.year, toDate.month, toDate.day);
     final dayCount = end.difference(start).inDays + 1;
-    if (dayCount < 1) return VN.lichSuDonHangKhoangNgayKhongHopLe;
-    if (dayCount > 7) return VN.lichSuDonHangToiDa7Ngay;
+    if (dayCount < 1) return OrdersLabels.lichSuDonHangKhoangNgayKhongHopLe;
+    if (dayCount > 7) return OrdersLabels.lichSuDonHangToiDa7Ngay;
     return null;
   }
 

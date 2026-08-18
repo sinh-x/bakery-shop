@@ -6,7 +6,9 @@ import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/providers/customers_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../order_card.dart';
 
 /// Customer tab content for the order detail screen (DG-371 Phase 1).
@@ -44,7 +46,7 @@ class OrderDetailCustomerTab extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
           child: Text(
-            VN.orderDetailCustomerInfoTitle,
+            OrdersLabels.orderDetailCustomerInfoTitle,
             style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
@@ -60,12 +62,12 @@ class OrderDetailCustomerTab extends ConsumerWidget {
               children: [
                 const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                 const SizedBox(height: 12),
-                const Text(VN.apiError),
+                const Text(SharedLabels.apiError),
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: () => ref.invalidate(customerProvider(id)),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),
@@ -76,7 +78,7 @@ class OrderDetailCustomerTab extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
           child: Text(
-            VN.customerOrderHistory,
+            CustomersLabels.customerOrderHistory,
             style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
@@ -87,13 +89,13 @@ class OrderDetailCustomerTab extends ConsumerWidget {
           ),
           error: (e, _) => const Padding(
             padding: EdgeInsets.all(16),
-            child: Text(VN.apiError),
+            child: Text(SharedLabels.apiError),
           ),
           data: (orderJsonList) {
             if (orderJsonList.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: Text(VN.customerNoOrders)),
+                child: Center(child: Text(CustomersLabels.customerNoOrders)),
               );
             }
             // Parse via Order.fromJson — same pattern as
@@ -131,7 +133,7 @@ class _EmptyCustomerState extends StatelessWidget {
           children: [
             Icon(Icons.person_off_outlined, size: 48, color: Colors.grey),
             SizedBox(height: 12),
-            Text(VN.orderDetailCustomerEmpty),
+            Text(OrdersLabels.orderDetailCustomerEmpty),
           ],
         ),
       ),
@@ -181,7 +183,7 @@ class _CustomerInfoCard extends StatelessWidget {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                '${entry.phone}${entry.isPrimary ? ' (${VN.customerPrimaryPhone})' : ''}',
+                '${entry.phone}${entry.isPrimary ? ' (${CustomersLabels.customerPrimaryPhone})' : ''}',
                 style: entry.isPrimary
                     ? theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.bold)
@@ -222,7 +224,7 @@ class _CustomerInfoCard extends StatelessWidget {
                   if (createdAt != null) ...[
                     const SizedBox(height: 4),
                     Text(
-                      '${VN.customerCreatedAt}: ${formatDisplayDate(createdAt)}',
+                      '${CustomersLabels.customerCreatedAt}: ${formatDisplayDate(createdAt)}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: Colors.grey,
                       ),

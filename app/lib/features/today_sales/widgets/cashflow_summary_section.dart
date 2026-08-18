@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cashflow_summary.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Cashflow-summary section for the Today Sales screen
 /// (DG-386 Phase 9 / FR5 / AC5).

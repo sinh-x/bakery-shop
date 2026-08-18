@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/address.dart';
 import '../../../providers/address/address_autocomplete_provider.dart';
 import '../../../shared/labels/address_labels.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Reusable delivery-address field with autocomplete suggestions from the
 /// address library (DG-385 Phase 4 / FR1/FR2/FR5/AC1/AC2/AC5/AC7).
 ///
@@ -237,7 +236,7 @@ class _AddressAutocompleteFieldState
         focusNode: _focusNode,
         enabled: widget.enabled,
         decoration: InputDecoration(
-          labelText: widget.labelText ?? VN.deliveryAddress,
+          labelText: widget.labelText ?? OrdersLabels.deliveryAddress,
           hintText: widget.hintText ?? AddressLabels.autocompleteHint,
           border: const OutlineInputBorder(),
         ),

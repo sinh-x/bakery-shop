@@ -16,8 +16,10 @@ import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Main POS (Point of Sale) screen — 6th bottom tab.
 /// Product-first flow with 3-tap quick sale for walk-in customers.
 class PosScreen extends ConsumerStatefulWidget {
@@ -139,7 +141,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   }
 
   String _refreshLabel() {
-    return VN.stockUpdatedAt(formatDisplayTime(_lastStockRefreshAt));
+    return StockLabels.stockUpdatedAt(formatDisplayTime(_lastStockRefreshAt));
   }
 
   void _onPosAppBarMenuSelected(String value) {
@@ -178,11 +180,11 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.banHang),
+        title: const Text(OrdersLabels.banHang),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: _refreshStock,
           ),
           AppBarOverflowMenu(
@@ -190,19 +192,19 @@ class _PosScreenState extends ConsumerState<PosScreen>
             items: const [
               PopupMenuItem<String>(
                 value: 'stock_reconciliation',
-                child: Text(VN.openStockReconciliation),
+                child: Text(SharedLabels.openStockReconciliation),
               ),
               PopupMenuItem<String>(
                 value: 'stock_reconciliation_history',
-                child: Text(VN.openStockReconciliationHistory),
+                child: Text(SharedLabels.openStockReconciliationHistory),
               ),
               PopupMenuItem<String>(
                 value: 'orders_history',
-                child: Text(VN.openOrderHistory),
+                child: Text(SharedLabels.openOrderHistory),
               ),
               PopupMenuItem<String>(
                 value: 'stock',
-                child: Text(VN.openStock),
+                child: Text(SharedLabels.openStock),
               ),
             ],
           ),
@@ -215,7 +217,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
             padding: const EdgeInsets.all(8),
             child: TextField(
               decoration: InputDecoration(
-                hintText: VN.searchProducts,
+                hintText: ProductsLabels.searchProducts,
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -231,7 +233,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
               children: [
                 Expanded(
                   child: Text(
-                    VN.showOutOfStockProducts,
+                    StockLabels.showOutOfStockProducts,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -284,10 +286,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       children: [
                         const Icon(Icons.error_outline, size: 18),
                         const SizedBox(width: 8),
-                        const Expanded(child: Text(VN.categoryLoadError)),
+                        const Expanded(child: Text(ProductsLabels.categoryLoadError)),
                         TextButton(
                           onPressed: () => ref.invalidate(categoriesProvider),
-                          child: const Text(VN.taiLai),
+                          child: const Text(OrdersLabels.taiLai),
                         ),
                       ],
                     ),
@@ -299,11 +301,11 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(VN.apiError),
+                          const Text(SharedLabels.apiError),
                           const SizedBox(height: 8),
                           ElevatedButton(
                             onPressed: _refreshStock,
-                            child: const Text(VN.taiLai),
+                            child: const Text(OrdersLabels.taiLai),
                           ),
                         ],
                       ),
@@ -316,7 +318,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       if (sections.isEmpty) {
                         return Center(
                           child: Text(
-                            VN.khongCoSanPham,
+                            OrdersLabels.khongCoSanPham,
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                         );

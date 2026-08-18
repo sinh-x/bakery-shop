@@ -7,8 +7,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
 import '../../providers/printer_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Result of the printer picker dialog.
 enum PrinterPickerResult {
   cancelled,
@@ -128,7 +127,7 @@ class _PrinterPickerBottomSheetState
           final printerStatus = ref.read(printerProvider).asData?.value;
           setState(() {
             _state = _PickerState.error;
-            _errorMessage = printerStatus?.errorMessage ?? VN.printerConnectionFailed;
+            _errorMessage = printerStatus?.errorMessage ?? SharedLabels.printerConnectionFailed;
           });
           return;
         }
@@ -150,7 +149,7 @@ class _PrinterPickerBottomSheetState
         setState(() {
           _state = _PickerState.error;
           _errorMessage =
-              '${VN.printerConnectionFailed}\n\nLỗi: $e';
+              '${SharedLabels.printerConnectionFailed}\n\nLỗi: $e';
         });
       }
     }
@@ -198,7 +197,7 @@ class _PrinterPickerBottomSheetState
           const Icon(Icons.bluetooth, size: 24),
           const SizedBox(width: 8),
           Text(
-            VN.selectPrinter,
+            SharedLabels.selectPrinter,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const Spacer(),
@@ -285,7 +284,7 @@ class _PrinterPickerBottomSheetState
           ),
           const SizedBox(height: 16),
           Text(
-            VN.noDevicesFound,
+            SharedLabels.noDevicesFound,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 8),
@@ -309,7 +308,7 @@ class _PrinterPickerBottomSheetState
           const CircularProgressIndicator(strokeWidth: 2),
           const SizedBox(height: 16),
           Text(
-            VN.connectingTo,
+            SharedLabels.connectingTo,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           if (_connectingToName != null) ...[
@@ -332,7 +331,7 @@ class _PrinterPickerBottomSheetState
           const CircularProgressIndicator(strokeWidth: 2),
           const SizedBox(height: 16),
           Text(
-            VN.printing,
+            SharedLabels.printing,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
         ],
@@ -352,7 +351,7 @@ class _PrinterPickerBottomSheetState
           ),
           const SizedBox(height: 16),
           Text(
-            _errorMessage ?? VN.printerConnectionFailed,
+            _errorMessage ?? SharedLabels.printerConnectionFailed,
             style: Theme.of(context).textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -377,14 +376,14 @@ class _PrinterPickerBottomSheetState
             FilledButton.icon(
               onPressed: _loadBondedDevices,
               icon: const Icon(Icons.refresh),
-              label: const Text(VN.tapToRetry),
+              label: const Text(SharedLabels.tapToRetry),
             ),
           ],
           const SizedBox(height: 8),
           TextButton(
             onPressed: () =>
                 Navigator.of(context).pop(PrinterPickerResult.cancelled),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
         ],
       ),

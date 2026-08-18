@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Loading skeleton shown while the `phu_kien` catalog products are being
 /// fetched for the Stage 1 extras section (DG-214 Phase 6, NFR-2).
 ///
@@ -74,7 +73,7 @@ class Stage1ExtrasError extends StatelessWidget {
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh, size: 16),
-            label: const Text(VN.retry),
+            label: const Text(SharedLabels.retry),
           ),
         ],
       ),

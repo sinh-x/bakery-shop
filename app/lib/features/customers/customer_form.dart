@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,8 +9,7 @@ import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
 import 'widgets/phone_entry_row.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Show the add/edit customer bottom sheet.
 ///
 /// Pass [customer] for edit mode; omit for add mode. Returns `true` when the
@@ -151,7 +151,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       if (phone.isEmpty) continue;
       final key = phone.replaceAll(RegExp(r'\D'), '');
       if (!seen.add(key)) {
-        _duplicateError = VN.customerPhoneDuplicate;
+        _duplicateError = CustomersLabels.customerPhoneDuplicate;
         return null;
       }
     }
@@ -181,12 +181,12 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     if (phones == null) {
       showTopSnackBar(
         context,
-        _duplicateError ?? VN.customerPhoneRequired,
+        _duplicateError ?? CustomersLabels.customerPhoneRequired,
       );
       return;
     }
     if (!phones.any((p) => p.isPrimary)) {
-      showTopSnackBar(context, VN.customerPhonePrimaryRequired);
+      showTopSnackBar(context, CustomersLabels.customerPhonePrimaryRequired);
       return;
     }
     final name = _nameCtrl.text.trim();
@@ -246,7 +246,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       }
       showTopSnackBar(
         context,
-        _isEditing ? VN.customerUpdated : VN.customerCreated,
+        _isEditing ? CustomersLabels.customerUpdated : CustomersLabels.customerCreated,
       );
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -320,7 +320,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _isEditing ? VN.editCustomer : VN.addCustomer,
+                _isEditing ? CustomersLabels.editCustomer : CustomersLabels.addCustomer,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 20),
@@ -330,11 +330,11 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(
-                  labelText: VN.customerNameField,
+                  labelText: CustomersLabels.customerNameField,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 12),
               for (var i = 0; i < _phones.length; i++)
@@ -350,7 +350,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                 child: TextButton.icon(
                   onPressed: _saving ? null : _addPhone,
                   icon: const Icon(Icons.add),
-                  label: const Text(VN.customerAddPhone),
+                  label: const Text(CustomersLabels.customerAddPhone),
                 ),
               ),
               if (_sharedPhone.isNotEmpty) ...[
@@ -365,7 +365,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                     onPressed: _saving
                         ? null
                         : () => Navigator.of(context).pop(false),
-                    child: const Text(VN.cancel),
+                    child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -376,7 +376,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text(VN.save),
+                        : const Text(SharedLabels.save),
                   ),
                 ],
               ),
@@ -477,7 +477,7 @@ class _SharedPhoneBanner extends StatelessWidget {
               Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSecondaryContainer),
               const SizedBox(width: 6),
               Text(
-                VN.customerSharedPhoneTitle,
+                CustomersLabels.customerSharedPhoneTitle,
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.onSecondaryContainer,
                   fontWeight: FontWeight.w600,
@@ -487,7 +487,7 @@ class _SharedPhoneBanner extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            VN.customerSharedPhoneHint,
+            CustomersLabels.customerSharedPhoneHint,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSecondaryContainer,
             ),

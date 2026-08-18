@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
@@ -7,8 +8,7 @@ import 'order_payment_history.dart';
 import 'order_payment_row.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Transactions tab content: payment summary at the top (total, paid,
 /// remaining), an "add transaction" button that opens
 /// [OrderRecordPaymentSheet], then the existing [OrderPaymentHistory] list,
@@ -61,7 +61,7 @@ class OrderDetailTransactionsTab extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onAddPayment,
           icon: const Icon(Icons.add, size: 18),
-          label: const Text(VN.orderDetailAddTransaction),
+          label: const Text(OrdersLabels.orderDetailAddTransaction),
         ),
         const SizedBox(height: 16),
         OrderPaymentHistory(txns: txns, onTransactionTap: onTransactionTap),
@@ -104,7 +104,7 @@ class _TransactionsSummary extends StatelessWidget {
       child: Column(
         children: [
           OrderPaymentRow(
-            label: VN.total,
+            label: OrdersLabels.total,
             value: formatVND(order.totalPrice),
             valueStyle: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
@@ -112,7 +112,7 @@ class _TransactionsSummary extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           OrderPaymentRow(
-            label: VN.amountPaidLabel,
+            label: OrdersLabels.amountPaidLabel,
             value: formatVND(amountPaid),
             valueStyle: theme.textTheme.bodyMedium?.copyWith(
               color: amountPaid > 0 ? Colors.green : null,
@@ -121,7 +121,7 @@ class _TransactionsSummary extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           OrderPaymentRow(
-            label: VN.remainingLabel,
+            label: OrdersLabels.remainingLabel,
             value: formatVND(remaining),
             valueStyle: theme.textTheme.bodyMedium?.copyWith(
               color: remainingColor,
@@ -155,7 +155,7 @@ class _TransferPhotoSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          VN.transferPhotosSection,
+          OrdersLabels.transferPhotosSection,
           style: theme.textTheme.titleSmall?.copyWith(
             color: theme.colorScheme.primary,
           ),
@@ -165,7 +165,7 @@ class _TransferPhotoSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              VN.noTransferPhotos,
+              OrdersLabels.noTransferPhotos,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),

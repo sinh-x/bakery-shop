@@ -1,10 +1,12 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
 import '../../../data/providers/accounting_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../providers/journal_pagination_notifier.dart';
 import 'empty_state.dart';
 import 'filter_bar.dart';
@@ -62,12 +64,12 @@ class _JournalTabState extends ConsumerState<JournalTab> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(VN.apiError),
+                  const Text(SharedLabels.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: () =>
                         ref.invalidate(journalPaginationProvider(_filter)),
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -75,7 +77,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
             data: (state) {
               final loaded = state.loaded;
               if (loaded.isEmpty) {
-                return const AccountingEmptyState(text: VN.accountingNoEntries);
+                return const AccountingEmptyState(text: AccountingLabels.accountingNoEntries);
               }
               return Column(
                 children: [
@@ -93,7 +95,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                         vertical: 4,
                       ),
                       child: Text(
-                        VN.apiError,
+                        SharedLabels.apiError,
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
@@ -112,7 +114,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                                 .loadMore(),
                         icon: const Icon(Icons.expand_more),
                         label: Text(
-                          '${VN.accountingLoadMore} (${state.total - loaded.length})',
+                          '${AccountingLabels.accountingLoadMore} (${state.total - loaded.length})',
                         ),
                       ),
                     ),
@@ -160,7 +162,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
       if (mounted) {
         showTopSnackBar(
           context,
-          VN.accountingLockResult(count),
+          AccountingLabels.accountingLockResult(count),
           backgroundColor: Colors.green,
         );
         // CQ-1: the accumulated pagination state lives in the notifier.
@@ -170,7 +172,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
       }
     }
   }

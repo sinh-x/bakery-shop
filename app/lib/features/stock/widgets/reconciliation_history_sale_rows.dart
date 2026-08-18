@@ -1,8 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, paymentMethodLabel;
 import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Collapsible sale-rows section rendered inside an expanded
 /// [ReconciliationHistoryLineCard]. The section header shows the sale-row
 /// count and toggles the list of [ReconciliationHistorySaleRow] items.
@@ -33,7 +34,7 @@ class ReconciliationHistorySaleRowsSection extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '${VN.soDongBan}: ${saleRows.length}',
+                    '${StockLabels.soDongBan}: ${saleRows.length}',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -61,8 +62,8 @@ class ReconciliationHistorySaleRowView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = row.isLegacy
-        ? '${index + 1}. ${VN.dongBanCu}'
-        : '${index + 1}. ${VN.dongBan}';
+        ? '${index + 1}. ${StockLabels.dongBanCu}'
+        : '${index + 1}. ${StockLabels.dongBan}';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(8),
@@ -75,16 +76,16 @@ class ReconciliationHistorySaleRowView extends StatelessWidget {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
-          Text('${VN.soLuongBan}: ${row.quantity}'),
+          Text('${StockLabels.soLuongBan}: ${row.quantity}'),
           Text(
-            '${VN.donGia}: ${row.unitPrice != null ? formatVND(row.unitPrice!) : VN.khongCo}',
+            '${OrdersLabels.donGia}: ${row.unitPrice != null ? formatVND(row.unitPrice!) : StockLabels.khongCo}',
           ),
           Text(
-            '${VN.phuongThucThanhToan}: ${paymentMethodLabel(row.paymentMethod)}',
+            '${StockLabels.phuongThucThanhToan}: ${paymentMethodLabel(row.paymentMethod)}',
           ),
-          Text('${VN.thamChieuDonHang}: ${row.linkedOrderRef ?? VN.khongCo}'),
+          Text('${StockLabels.thamChieuDonHang}: ${row.linkedOrderRef ?? StockLabels.khongCo}'),
           Text(
-            '${VN.thamChieuThanhToan}: ${row.linkedPaymentRef ?? VN.khongCo}',
+            '${StockLabels.thamChieuThanhToan}: ${row.linkedPaymentRef ?? StockLabels.khongCo}',
           ),
         ],
       ),

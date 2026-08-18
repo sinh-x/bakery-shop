@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show ImagePicker, ImageSource, XFile;
@@ -7,8 +8,8 @@ import '../../../../providers/order_providers.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
 /// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
 /// Unicode letters/digits are preserved; only ASCII punctuation/symbols
@@ -144,19 +145,19 @@ class _OrderRecordPaymentSheetState
                     .notifier)
                 .linkPhoto(txn.id, photo.photoHash);
             if (mounted) {
-              showTopSnackBar(context, VN.txnPhotoLinked);
+              showTopSnackBar(context, OrdersLabels.txnPhotoLinked);
             }
           } catch (e) {
             if (mounted) {
-              showTopSnackBar(context, VN.txnPhotoLinkFailed);
+              showTopSnackBar(context, OrdersLabels.txnPhotoLinkFailed);
             }
           }
           if (mounted) {
-            showTopSnackBar(context, VN.transferPhotoUploaded);
+            showTopSnackBar(context, OrdersLabels.transferPhotoUploaded);
           }
         } catch (e) {
           if (mounted) {
-            showTopSnackBar(context, VN.transferPhotoUploadFailed);
+            showTopSnackBar(context, OrdersLabels.transferPhotoUploadFailed);
           }
         }
         // Clear the pending photo after the upload attempt (both success and
@@ -173,11 +174,11 @@ class _OrderRecordPaymentSheetState
         // persisted. The transfer photo outcome snackbar (success or failure)
         // is shown separately above so the user knows both the payment result
         // and the photo upload result (MN-1, MN-5).
-        showTopSnackBar(context, VN.paymentRecorded);
+        showTopSnackBar(context, OrdersLabels.paymentRecorded);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -189,13 +190,13 @@ class _OrderRecordPaymentSheetState
     final theme = Theme.of(context);
 
     const types = [
-      ('deposit', VN.txnTypeDeposit),
-      ('payment', VN.txnTypePayment),
-      ('full_payment', VN.txnTypeFullPayment),
-      ('tien_rut', VN.txnTypeRutTien),
-      ('refund', VN.txnTypeRefund),
+      ('deposit', OrdersLabels.txnTypeDeposit),
+      ('payment', OrdersLabels.txnTypePayment),
+      ('full_payment', OrdersLabels.txnTypeFullPayment),
+      ('tien_rut', OrdersLabels.txnTypeRutTien),
+      ('refund', OrdersLabels.txnTypeRefund),
     ];
-    const methods = [('cash', VN.methodCash), ('transfer', VN.methodTransfer)];
+    const methods = [('cash', OrdersLabels.methodCash), ('transfer', OrdersLabels.methodTransfer)];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -210,9 +211,9 @@ class _OrderRecordPaymentSheetState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(VN.addPayment, style: theme.textTheme.titleMedium),
+            Text(OrdersLabels.addPayment, style: theme.textTheme.titleMedium),
             const SizedBox(height: 16),
-            Text(VN.txnType, style: theme.textTheme.labelMedium),
+            Text(OrdersLabels.txnType, style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -228,7 +229,7 @@ class _OrderRecordPaymentSheetState
                   .toList(),
             ),
             const SizedBox(height: 12),
-            Text(VN.paymentMethod, style: theme.textTheme.labelMedium),
+            Text(OrdersLabels.paymentMethod, style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -246,17 +247,17 @@ class _OrderRecordPaymentSheetState
             TextFormField(
               controller: _amountCtrl,
               decoration: const InputDecoration(
-                labelText: VN.paymentAmountLabel,
+                labelText: OrdersLabels.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: VN.paymentThousandsHint,
+                helperText: OrdersLabels.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return VN.fieldRequired;
+                if (v == null || v.trim().isEmpty) return SharedLabels.fieldRequired;
                 final n = double.tryParse(v.trim());
-                if (n == null || n <= 0) return VN.invalidPrice;
+                if (n == null || n <= 0) return SharedLabels.invalidPrice;
                 return null;
               },
             ),
@@ -264,7 +265,7 @@ class _OrderRecordPaymentSheetState
             TextFormField(
               controller: _notesCtrl,
               decoration: const InputDecoration(
-                labelText: VN.paymentNotes,
+                labelText: OrdersLabels.paymentNotes,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -283,14 +284,14 @@ class _OrderRecordPaymentSheetState
               Align(
                 alignment: Alignment.centerLeft,
                 child: Tooltip(
-                  message: VN.attachTransferPhotoTooltip,
+                  message: OrdersLabels.attachTransferPhotoTooltip,
                   child: TextButton.icon(
                     onPressed: _pickTransferPhoto,
                     icon: const Icon(Icons.photo_camera_outlined, size: 20),
                     label: Text(
                       _pendingTransferPhoto == null
-                          ? VN.attachTransferPhoto
-                          : VN.transferPhotoSelected,
+                          ? OrdersLabels.attachTransferPhoto
+                          : OrdersLabels.transferPhotoSelected,
                     ),
                   ),
                 ),
@@ -317,7 +318,7 @@ class _OrderRecordPaymentSheetState
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text(VN.addPayment),
+                  : const Text(OrdersLabels.addPayment),
             ),
             const SizedBox(height: 8),
           ],

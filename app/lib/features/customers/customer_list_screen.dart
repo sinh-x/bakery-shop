@@ -8,8 +8,9 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/phone_count_badge.dart';
 import 'customer_form.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Customer management screen (FR12).
 ///
 /// Lists all customers with a search bar (FR1/AC5), a create button, and
@@ -63,7 +64,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.manageCustomers),
+        title: const Text(CustomersLabels.manageCustomers),
         actions: const [AppBarOverflowMenu()],
       ),
       body: Column(
@@ -74,14 +75,14 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
               controller: _searchController,
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
-                hintText: VN.searchCustomers,
+                hintText: CustomersLabels.searchCustomers,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: _clearSearch,
-                        tooltip: VN.clear,
+                        tooltip: OrdersLabels.clear,
                       ),
                 border: const OutlineInputBorder(),
               ),
@@ -96,13 +97,13 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   children: [
                     const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(VN.apiError),
+                    const Text(SharedLabels.apiError),
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: () =>
                           ref.read(customerPaginationProvider.notifier).refresh(),
                       icon: const Icon(Icons.refresh),
-                      label: const Text(VN.retry),
+                      label: const Text(SharedLabels.retry),
                     ),
                   ],
                 ),
@@ -119,7 +120,7 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        tooltip: VN.addCustomer,
+        tooltip: CustomersLabels.addCustomer,
         onPressed: _openCreateForm,
         child: const Icon(Icons.add),
       ),
@@ -148,7 +149,7 @@ class _CustomerList extends StatelessWidget {
           children: [
             Icon(Icons.person_off_outlined, size: 48, color: Colors.grey),
             SizedBox(height: 12),
-            Text(VN.noCustomers),
+            Text(CustomersLabels.noCustomers),
           ],
         ),
       );
@@ -221,7 +222,7 @@ class _LoadMoreTile extends StatelessWidget {
           onPressed: onLoadMore,
           icon: const Icon(Icons.expand_more),
           label: Text(
-            '${VN.loadMore} (${state.total - state.loaded.length})',
+            '${SharedLabels.loadMore} (${state.total - state.loaded.length})',
           ),
         ),
       ),

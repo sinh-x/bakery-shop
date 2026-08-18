@@ -1,10 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, categoryMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../data/models/category.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class ProductFormBasicInfoSection extends StatelessWidget {
   const ProductFormBasicInfoSection({
     super.key,
@@ -44,14 +45,14 @@ class ProductFormBasicInfoSection extends StatelessWidget {
         const SizedBox(height: 24),
         TextFormField(
           controller: nameController,
-          decoration: const InputDecoration(labelText: VN.productName),
-          validator: (v) => (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+          decoration: const InputDecoration(labelText: ProductsLabels.productName),
+          validator: (v) => (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
         ),
         const SizedBox(height: 16),
         TextFormField(
           controller: codeController,
           decoration: InputDecoration(
-            labelText: VN.productCode,
+            labelText: ProductsLabels.productCode,
             prefixText: currentPrefix.isNotEmpty ? '$currentPrefix-' : null,
             hintText: currentPrefix.isEmpty ? 'VD: BKS-16' : '16',
             helperText: 'Tự động tạo nếu để trống',
@@ -76,7 +77,7 @@ class ProductFormBasicInfoSection extends StatelessWidget {
                 : (validSlugs.isNotEmpty ? validSlugs.first : category);
             return DropdownButtonFormField<String>(
               initialValue: selected,
-              decoration: const InputDecoration(labelText: VN.productCategory),
+              decoration: const InputDecoration(labelText: ProductsLabels.productCategory),
               items: active
                   .map(
                     (cat) => DropdownMenuItem(
@@ -98,7 +99,7 @@ class ProductFormBasicInfoSection extends StatelessWidget {
   Widget _fallbackCategoryDropdown(String initialValue, {required String Function(String slug) labelResolver}) {
     return DropdownButtonFormField<String>(
       initialValue: initialValue,
-      decoration: const InputDecoration(labelText: VN.productCategory),
+      decoration: const InputDecoration(labelText: ProductsLabels.productCategory),
       items: categoryMap.entries
           .map((e) => DropdownMenuItem(value: e.key, child: Text(labelResolver(e.key))))
           .toList(),

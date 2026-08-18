@@ -6,8 +6,7 @@ import 'data/providers/fingerprint_provider.dart';
 import 'shared/build_fingerprint.dart';
 import 'shared/router/app_router.dart';
 import 'shared/theme/bakery_theme.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class BakeryApp extends ConsumerWidget {
   const BakeryApp({super.key});
 
@@ -17,7 +16,7 @@ class BakeryApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: VN.appName,
+      title: SharedLabels.appName,
       locale: const Locale('vi'),
       supportedLocales: const [Locale('vi')],
       localizationsDelegates: const [
@@ -76,8 +75,8 @@ class _FingerprintWarningStrip extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     comparison.state == FingerprintComparisonState.serverUnknown
-                        ? VN.serverFingerprintUnavailableWarning
-                        : VN.fingerprintMismatchStrip(
+                        ? SharedLabels.serverFingerprintUnavailableWarning
+                        : SharedLabels.fingerprintMismatchStrip(
                             shortBuildFingerprint(comparison.clientFingerprint),
                             shortBuildFingerprint(comparison.serverFingerprint),
                           ),
@@ -90,7 +89,7 @@ class _FingerprintWarningStrip extends ConsumerWidget {
                   ),
                 ),
                 Semantics(
-                  label: VN.dismissFingerprintWarning,
+                  label: SharedLabels.dismissFingerprintWarning,
                   button: true,
                   child: IconButton(
                     icon: Icon(Icons.close, size: 18, color: colorScheme.onErrorContainer),

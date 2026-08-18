@@ -1,11 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order_providers.dart';
 import '../../../data/models/work_item.dart';
 import 'section_header.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 class RutTienSection extends ConsumerWidget {
   const RutTienSection({
     super.key,
@@ -48,7 +48,7 @@ class RutTienSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader(VN.rutTienSection),
+        const SectionHeader(OrdersLabels.rutTienSection),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -134,7 +134,7 @@ class _RutTienItemRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 4, top: 2),
               child: Text(
-                '${VN.soTienRut}: ${formatVND(cashAmount.toDouble())}',
+                '${OrdersLabels.soTienRut}: ${formatVND(cashAmount.toDouble())}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.green.shade700,
                 ),
@@ -144,7 +144,7 @@ class _RutTienItemRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 4, top: 2),
               child: Text(
-                '${VN.phiRutTien}: ${formatVND(cashFee.toDouble())}',
+                '${OrdersLabels.phiRutTien}: ${formatVND(cashFee.toDouble())}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.green.shade700,
                 ),

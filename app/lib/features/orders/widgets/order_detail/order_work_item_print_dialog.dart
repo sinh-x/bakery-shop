@@ -1,11 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Internal receipt print dialog shown when confirming a work item that has
 /// not yet been printed. Offers to print the work ticket(s) immediately.
 class OrderInternalPrintDialog extends ConsumerStatefulWidget {
@@ -31,7 +31,7 @@ class _OrderInternalPrintDialogState
   Future<void> _printInternal() async {
     setState(() {
       _printing = true;
-      _statusText = VN.printingInternalReceipt;
+      _statusText = SharedLabels.printingInternalReceipt;
     });
 
     try {
@@ -59,7 +59,7 @@ class _OrderInternalPrintDialogState
       }
 
       for (final id in itemIds) {
-        setState(() => _statusText = VN.printingInternalReceipt);
+        setState(() => _statusText = SharedLabels.printingInternalReceipt);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
@@ -70,12 +70,12 @@ class _OrderInternalPrintDialogState
 
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
-        showTopSnackBar(context, VN.internalReceiptPrinted);
+        showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) {
@@ -87,7 +87,7 @@ class _OrderInternalPrintDialogState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text(VN.printChecklistTitle),
+      title: const Text(SharedLabels.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -104,14 +104,14 @@ class _OrderInternalPrintDialogState
                 ],
               ),
             )
-          : const Text(VN.printInternalPrompt),
+          : const Text(SharedLabels.printInternalPrompt),
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: const Text(VN.printSkip),
+          child: const Text(SharedLabels.printSkip),
         ),
         if (!_printing)
-          FilledButton(onPressed: _printInternal, child: const Text(VN.print)),
+          FilledButton(onPressed: _printInternal, child: const Text(SharedLabels.print)),
       ],
     );
   }

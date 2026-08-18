@@ -1,10 +1,12 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/pos_provider.dart';
 import '../utils/pos_cart_item_display.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class PosCheckoutCartItemTile extends ConsumerWidget {
   const PosCheckoutCartItemTile({super.key, required this.item});
 
@@ -21,18 +23,18 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
         return await showDialog<bool>(
               context: context,
               builder: (dialogCtx) => AlertDialog(
-                title: const Text(VN.removeFromCartTitle),
+                title: const Text(OrdersLabels.removeFromCartTitle),
                 content: Text(
-                  '${VN.clear} "${item.product.name}" ${VN.removedFromCartSuffix}?',
+                  '${OrdersLabels.clear} "${item.product.name}" ${OrdersLabels.removedFromCartSuffix}?',
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogCtx, false),
-                    child: const Text(VN.huy),
+                    child: const Text(SharedLabels.huy),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(dialogCtx, true),
-                    child: const Text(VN.xoa),
+                    child: const Text(OrdersLabels.xoa),
                   ),
                 ],
               ),
@@ -43,7 +45,7 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
         ref.read(posCartProvider.notifier).removeItemByLineKey(item.lineKey);
         showTopSnackBar(
           context,
-          '${VN.removedFromCartPrefix} ${item.product.name} ${VN.removedFromCartSuffix}',
+          '${OrdersLabels.removedFromCartPrefix} ${item.product.name} ${OrdersLabels.removedFromCartSuffix}',
         );
       },
       background: Container(
@@ -99,7 +101,7 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
-                      tooltip: VN.decreaseQuantity,
+                      tooltip: OrdersLabels.decreaseQuantity,
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)
@@ -115,7 +117,7 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
-                      tooltip: VN.increaseQuantity,
+                      tooltip: OrdersLabels.increaseQuantity,
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)
@@ -150,7 +152,7 @@ class _UseInventoryBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        VN.useInventory,
+        StockLabels.useInventory,
         style: theme.textTheme.labelSmall?.copyWith(
           color: useInventory
               ? theme.colorScheme.onTertiaryContainer

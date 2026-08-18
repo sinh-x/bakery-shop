@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/accounting.dart';
 /// Shared helpers for accounting account-type presentation.
 ///
 /// Extracted from accounts_tab.dart and balances_tab.dart to avoid
@@ -28,15 +26,15 @@ Color accountTypeColor(String type) {
 String accountTypeLabel(String type) {
   switch (type) {
     case 'asset':
-      return VN.accountingTypeAsset;
+      return AccountingLabels.accountingTypeAsset;
     case 'liability':
-      return VN.accountingTypeLiability;
+      return AccountingLabels.accountingTypeLiability;
     case 'equity':
-      return VN.accountingTypeEquity;
+      return AccountingLabels.accountingTypeEquity;
     case 'income':
-      return VN.accountingTypeIncome;
+      return AccountingLabels.accountingTypeIncome;
     case 'expense':
-      return VN.accountingTypeExpense;
+      return AccountingLabels.accountingTypeExpense;
     default:
       return type;
   }

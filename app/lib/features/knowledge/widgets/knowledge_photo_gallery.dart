@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,8 +11,7 @@ import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
 import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
 class KnowledgePhotoGallery extends StatefulWidget {
   const KnowledgePhotoGallery({
@@ -196,7 +196,7 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
       if (kIsWeb) {
         await _downloadPhotoFallback(dio, photo, url);
       } else {
-        showTopSnackBar(context, VN.khongTheChiaSe);
+        showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
       }
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -226,7 +226,7 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) {
-        if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+        if (mounted) showTopSnackBar(context, ProductsLabels.khongTheTaiAnh);
         return;
       }
       final bytes = Uint8List.fromList(resp.data!);
@@ -238,9 +238,9 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
       );
       if (mounted) {
         if (downloaded) {
-          showTopSnackBar(context, VN.taiMotPhanAnh);
+          showTopSnackBar(context, ProductsLabels.taiMotPhanAnh);
         } else {
-          showTopSnackBar(context, VN.khongTheTaiAnh);
+          showTopSnackBar(context, ProductsLabels.khongTheTaiAnh);
         }
       }
     } catch (e) {
@@ -271,7 +271,7 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
                     ),
                   )
                 : const Icon(Icons.share, color: Colors.white),
-            tooltip: VN.chiaSe,
+            tooltip: ProductsLabels.chiaSe,
             onPressed: _sharing ? null : _shareCurrentPhoto,
           ),
           const AppBarOverflowMenu(),

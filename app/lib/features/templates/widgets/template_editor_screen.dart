@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,8 +6,7 @@ import '../../../data/api/template_service.dart';
 import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Template editor screen (DG-375 Phase 4 / FR8, AC8).
 ///
 /// A full-screen create/edit form for a single message template. The body
@@ -232,7 +232,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                 children: [
                   TextButton(
                     onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                    child: const Text(VN.cancel),
+                    child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -243,7 +243,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text(VN.save),
+                        : const Text(SharedLabels.save),
                   ),
                 ],
               ),

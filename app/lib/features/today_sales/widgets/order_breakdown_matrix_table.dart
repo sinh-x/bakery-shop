@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/order_breakdown.dart';
 import '../../../shared/labels/shared.dart';
 import 'order_breakdown_mode.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Renders the order-breakdown matrix as a [Table] with a leading source
 /// column, one column per delivery type, and a trailing totals row.

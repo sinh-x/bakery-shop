@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,8 +10,7 @@ import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class ChecklistScreen extends ConsumerStatefulWidget {
   const ChecklistScreen({super.key});
 
@@ -66,7 +66,7 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
           .toggleEntry(entry.id, staffName);
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
       }
     }
   }
@@ -132,12 +132,12 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: () =>
                     ref.read(dailyChecklistProvider.notifier).refresh(),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),

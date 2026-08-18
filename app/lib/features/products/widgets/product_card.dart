@@ -1,7 +1,8 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/product.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 class ProductCard extends StatelessWidget {
@@ -35,7 +36,7 @@ class ProductCard extends StatelessWidget {
         ? product.basePrice
         : chipMin;
 
-    return '${VN.priceFrom} ${formatVND(minPrice)}';
+    return '${ProductsLabels.priceFrom} ${formatVND(minPrice)}';
   }
 
   @override
@@ -164,7 +165,7 @@ class ProductCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          VN.productHiddenState,
+                          ProductsLabels.productHiddenState,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.onErrorContainer,
                             fontWeight: FontWeight.bold,

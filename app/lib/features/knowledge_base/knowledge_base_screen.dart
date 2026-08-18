@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/checklist.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class _HubTile {
   final IconData icon;
   final String title;
@@ -28,31 +31,31 @@ class KnowledgeBaseScreen extends ConsumerWidget {
       _HubTile(
         icon: Icons.event_note_outlined,
         title: 'Sự kiện',
-        subtitle: VN.knowledgeBaseEventsSubtitle,
+        subtitle: EventsLabels.knowledgeBaseEventsSubtitle,
         route: '/events',
       ),
       _HubTile(
         icon: Icons.payments_outlined,
-        title: VN.expenseTitle,
-        subtitle: VN.knowledgeBaseExpensesSubtitle,
+        title: ExpensesLabels.expenseTitle,
+        subtitle: ExpensesLabels.knowledgeBaseExpensesSubtitle,
         route: '/expenses',
       ),
       _HubTile(
         icon: Icons.checklist,
         title: 'Checklist hàng ngày',
-        subtitle: VN.knowledgeBaseChecklistSubtitle,
+        subtitle: ChecklistLabels.knowledgeBaseChecklistSubtitle,
         route: '/checklist',
       ),
       _HubTile(
         icon: Icons.menu_book,
         title: 'Tài liệu tri thức',
-        subtitle: VN.knowledgeBaseDocsSubtitle,
+        subtitle: SharedLabels.knowledgeBaseDocsSubtitle,
         route: '/knowledge',
       ),
       _HubTile(
         icon: Icons.point_of_sale,
-        title: VN.cashDrawerTitle,
-        subtitle: VN.knowledgeBaseCashDrawerSubtitle,
+        title: CashDrawerLabels.cashDrawerTitle,
+        subtitle: CashDrawerLabels.knowledgeBaseCashDrawerSubtitle,
         route: '/cash-drawer',
       ),
     ];
@@ -60,7 +63,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
     // ignore: prefer_const_constructors
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.tabKnowledgeBase),
+        title: const Text(SharedLabels.tabKnowledgeBase),
         actions: const [AppBarOverflowMenu()],
       ),
       body: ListView.builder(

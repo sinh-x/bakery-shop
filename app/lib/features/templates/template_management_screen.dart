@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,8 +8,7 @@ import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
 import 'widgets/template_editor_screen.dart';
 import 'widgets/template_management_tile.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Template management screen (DG-375 Phase 4 / FR6, FR7, FR10 / AC6, AC7).
 ///
 /// A full-screen management surface for message templates. It exposes two
@@ -83,7 +83,7 @@ class _TemplateManagementScreenState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text(VN.cancel),
+                child: const Text(SharedLabels.cancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
@@ -167,12 +167,12 @@ class _ManagementErrorView extends ConsumerWidget {
         children: [
           const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
           const SizedBox(height: 16),
-          Text('${VN.apiError}: $error', textAlign: TextAlign.center),
+          Text('${SharedLabels.apiError}: $error', textAlign: TextAlign.center),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: () => ref.read(templateListProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
+            label: const Text(SharedLabels.retry),
           ),
         ],
       ),

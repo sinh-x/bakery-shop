@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../data/models/payment_transaction.dart';
 import '../section_header.dart';
 import 'order_transaction_tile.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Payment history section listing all transactions or an empty-state message.
 class OrderPaymentHistory extends StatelessWidget {
   const OrderPaymentHistory({
@@ -22,12 +21,12 @@ class OrderPaymentHistory extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(VN.paymentHistory),
+        const SectionHeader(OrdersLabels.paymentHistory),
         if (txns.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              VN.noPaymentHistory,
+              OrdersLabels.noPaymentHistory,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),

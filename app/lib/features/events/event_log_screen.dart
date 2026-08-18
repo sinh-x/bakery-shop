@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/event_history_list.dart';
 import 'widgets/event_log_form.dart';
@@ -14,7 +13,7 @@ class EventLogScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.tabEvents),
+        title: const Text(SharedLabels.tabEvents),
         actions: const [AppBarOverflowMenu()],
       ),
       body: const Column(

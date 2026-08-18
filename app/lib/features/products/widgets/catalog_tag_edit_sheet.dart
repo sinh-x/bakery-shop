@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/providers/catalog_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Shared bottom sheet for editing a catalog photo's caption and tags.
 ///
 /// Use `showEditCatalogTagsSheet` to display from any context.
@@ -60,11 +61,11 @@ class _EditCatalogTagsSheetState
           );
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.catalogPhotoUpdated);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoUpdated);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -87,20 +88,20 @@ class _EditCatalogTagsSheetState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            VN.editCatalogPhoto,
+            ProductsLabels.editCatalogPhoto,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _captionCtrl,
-            decoration: const InputDecoration(labelText: VN.captionLabel),
+            decoration: const InputDecoration(labelText: ProductsLabels.captionLabel),
             maxLines: 2,
           ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -109,12 +110,12 @@ class _EditCatalogTagsSheetState
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Row(
               children: [
-                const Expanded(child: Text(VN.apiError)),
+                const Expanded(child: Text(SharedLabels.apiError)),
                 TextButton.icon(
                   onPressed: () =>
                       ref.read(catalogTagDefsProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),
@@ -141,7 +142,7 @@ class _EditCatalogTagsSheetState
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           const SizedBox(height: 8),
         ],
@@ -176,7 +177,7 @@ class TagChipSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (audience.isNotEmpty) ...[
-          const Text(VN.doiTuong,
+          const Text(ProductsLabels.doiTuong,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
@@ -194,7 +195,7 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (occasion.isNotEmpty) ...[
-          const Text(VN.dip,
+          const Text(ProductsLabels.dip,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
@@ -212,7 +213,7 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (style.isNotEmpty) ...[
-          const Text(VN.phongCach,
+          const Text(ProductsLabels.phongCach,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(

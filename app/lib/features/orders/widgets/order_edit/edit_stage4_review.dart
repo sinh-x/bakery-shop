@@ -10,8 +10,7 @@ import '../section_header.dart';
 import '../stage1_responsive_content.dart';
 import '../stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Stage 4 of the order edit wizard — review (summary + order photos + save).
 ///
 /// FR13/FR14: aligned with create's Stage 4 layout — wrapped in
@@ -76,7 +75,7 @@ class EditStage4Review extends ConsumerWidget {
                     dueTime: dueTime,
                   ),
                   const SizedBox(height: 20),
-                  const SectionHeader(VN.orderPhotos),
+                  const SectionHeader(OrdersLabels.orderPhotos),
                   OrderPhotoSection(
                     orderRef: orderRef,
                     baseUrl: ref.watch(apiBaseUrlProvider),
@@ -119,7 +118,7 @@ class EditStage4Review extends ConsumerWidget {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
         ],
       ),

@@ -1,11 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/checklist_template.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class ChecklistConfigScreen extends ConsumerStatefulWidget {
   const ChecklistConfigScreen({super.key});
 
@@ -51,7 +51,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -71,7 +71,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
         }
       }
     }
@@ -96,11 +96,11 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -116,7 +116,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
         }
       }
     }
@@ -134,12 +134,12 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
@@ -155,7 +155,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
         }
       }
     }
@@ -175,7 +175,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
       await ref.read(checklistTemplatesProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
       }
     }
   }
@@ -194,7 +194,7 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
       await ref.read(checklistTemplatesProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
       }
     }
   }
@@ -221,12 +221,12 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: () =>
                     ref.read(checklistTemplatesProvider.notifier).refresh(),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -350,7 +350,7 @@ class _TemplateList extends StatelessWidget {
                               color: Colors.red.shade400,
                             ),
                             onPressed: () => onDelete(item),
-                            tooltip: VN.remove,
+                            tooltip: SharedLabels.remove,
                           ),
                         ],
                       ),

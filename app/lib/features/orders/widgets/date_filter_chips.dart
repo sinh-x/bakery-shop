@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
 /// Available date filter options for the order list (DG-193 Phase 1).
 ///
 /// The four options form an exclusive single-select set. [all] clears the
@@ -25,10 +24,10 @@ enum DateFilterOption {
 /// pattern.
 ///
 /// Labels:
-/// - today     → `VN.filterToday` ("Hôm nay")
+/// - today     → `EventsLabels.filterToday` ("Hôm nay")
 /// - tomorrow  → `OrdersLabels.dateFilterTomorrow` ("Ngày mai")
 /// - today+tom → `OrdersLabels.dateFilterTodayTomorrow` ("Nay + Mai")
-/// - all       → `VN.filterAll` ("Tất cả")
+/// - all       → `EventsLabels.filterAll` ("Tất cả")
 class DateFilterChips extends StatelessWidget {
   const DateFilterChips({
     super.key,
@@ -54,13 +53,13 @@ class DateFilterChips extends StatelessWidget {
   String _label(DateFilterOption option) {
     switch (option) {
       case DateFilterOption.today:
-        return VN.filterToday;
+        return EventsLabels.filterToday;
       case DateFilterOption.tomorrow:
         return OrdersLabels.dateFilterTomorrow;
       case DateFilterOption.todayTomorrow:
         return OrdersLabels.dateFilterTodayTomorrow;
       case DateFilterOption.all:
-        return VN.filterAll;
+        return EventsLabels.filterAll;
     }
   }
 

@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,8 +6,9 @@ import '../../../data/models/order_draft.dart';
 import '../../../data/models/product.dart';
 import '../../../data/providers/products_provider.dart';
 import 'stage1_extras_states.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Result of the catalog-extra price selection dialog.
 class CatalogExtraSelection {
   const CatalogExtraSelection({
@@ -56,11 +58,11 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
   @override
   Widget build(BuildContext context) {
     final options = <(int id, String label, double price, int? chipId)>[
-      (0, VN.giaCoSo, widget.product.basePrice, null),
+      (0, StockLabels.giaCoSo, widget.product.basePrice, null),
       ...widget.product.priceChips.map(
         (chip) => (chip.id, chip.label, chip.price, chip.id),
       ),
-      (_manualOptionId, VN.donGiaNhapTay, widget.product.basePrice, null),
+      (_manualOptionId, StockLabels.donGiaNhapTay, widget.product.basePrice, null),
     ];
 
     return AlertDialog(
@@ -86,7 +88,7 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
               controller: _manualCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: VN.itemPrice,
+                labelText: OrdersLabels.itemPrice,
                 suffixText: 'đ',
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -108,7 +110,7 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
                 ),
               ),
               child: Text(
-                _isGift ? VN.giftBadge : VN.paymentFee,
+                _isGift ? OrdersLabels.giftBadge : OrdersLabels.paymentFee,
                 style: TextStyle(
                   fontSize: 12,
                   color: _isGift ? Colors.green : Colors.grey,
@@ -122,14 +124,14 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: () {
             if (_selectedOptionId == _manualOptionId) {
               final manualPrice = double.tryParse(_manualCtrl.text.trim());
               if (manualPrice == null || manualPrice < 0) {
-                showTopSnackBar(context, VN.invalidPrice);
+                showTopSnackBar(context, SharedLabels.invalidPrice);
                 return;
               }
               Navigator.pop(
@@ -161,7 +163,7 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
               );
             }
           },
-          child: const Text(VN.xacNhan),
+          child: const Text(OrdersLabels.xacNhan),
         ),
       ],
     );
@@ -203,7 +205,7 @@ class ExtrasSection extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              VN.noConfiguredExtras,
+              OrdersLabels.noConfiguredExtras,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),

@@ -1,10 +1,12 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
 import '../../data/providers/categories_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'category_form.dart';
 
 class CategoryManagementScreen extends ConsumerWidget {
@@ -16,7 +18,7 @@ class CategoryManagementScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.manageCategories),
+        title: const Text(ProductsLabels.manageCategories),
         actions: const [AppBarOverflowMenu()],
       ),
       body: categoriesAsync.when(
@@ -27,13 +29,13 @@ class CategoryManagementScreen extends ConsumerWidget {
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 16),
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: () =>
                     ref.read(categoriesProvider.notifier).refresh(),
                 icon: const Icon(Icons.refresh),
-                label: const Text(VN.retry),
+                label: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -41,7 +43,7 @@ class CategoryManagementScreen extends ConsumerWidget {
         data: (categories) => _CategoryList(categories: categories),
       ),
       floatingActionButton: FloatingActionButton(
-        tooltip: VN.addCategory,
+        tooltip: ProductsLabels.addCategory,
         onPressed: () => showCategoryForm(context),
         child: const Icon(Icons.add),
       ),
@@ -90,7 +92,7 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
     try {
       await ref.read(categoriesProvider.notifier).reorderCategories(ids);
       if (mounted) {
-        showTopSnackBar(context, VN.orderUpdated);
+        showTopSnackBar(context, ProductsLabels.orderUpdated);
       }
     } catch (e) {
       if (mounted) {
@@ -123,7 +125,7 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Text(
-                VN.hiddenCategories,
+                ProductsLabels.hiddenCategories,
                 style: Theme.of(
                   context,
                 ).textTheme.labelLarge?.copyWith(color: Colors.grey),
@@ -173,15 +175,15 @@ class _ActiveCategoryTile extends ConsumerWidget {
             await showDialog<bool>(
               context: context,
               builder: (ctx) => AlertDialog(
-                content: const Text(VN.deactivateConfirm),
+                content: const Text(ProductsLabels.deactivateConfirm),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text(VN.cancel),
+                    child: const Text(SharedLabels.cancel),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text(VN.deactivateCategory),
+                    child: const Text(ProductsLabels.deactivateCategory),
                   ),
                 ],
               ),
@@ -193,7 +195,7 @@ class _ActiveCategoryTile extends ConsumerWidget {
               .read(categoriesProvider.notifier)
               .deactivateCategory(category.id);
           if (context.mounted) {
-            showTopSnackBar(context, VN.categoryDeactivated);
+            showTopSnackBar(context, ProductsLabels.categoryDeactivated);
           }
         } catch (e) {
           if (context.mounted) {
@@ -246,14 +248,14 @@ class _InactiveCategoryTile extends ConsumerWidget {
           const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.visibility),
-            tooltip: VN.reactivateCategory,
+            tooltip: ProductsLabels.reactivateCategory,
             onPressed: () async {
               try {
                 await ref
                     .read(categoriesProvider.notifier)
                     .reactivateCategory(category.id);
                 if (context.mounted) {
-                  showTopSnackBar(context, VN.categoryReactivated);
+                  showTopSnackBar(context, ProductsLabels.categoryReactivated);
                 }
               } catch (e) {
                 if (context.mounted) {

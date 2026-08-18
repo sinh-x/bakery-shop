@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 Future<Object?> showTransferSourceDialog(BuildContext context) {
   return showDialog<Object>(
     context: context,
     builder: (dialogCtx) => AlertDialog(
-      title: const Text(VN.transferProofTitle),
-      content: const Text(VN.transferProofPrompt),
+      title: const Text(OrdersLabels.transferProofTitle),
+      content: const Text(OrdersLabels.transferProofPrompt),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx, 'skip'),
-          child: const Text(VN.skip),
+          child: const Text(OrdersLabels.skip),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
-          child: const Text(VN.takePhoto),
+          child: const Text(ProductsLabels.takePhoto),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
-          child: const Text(VN.photoLibrary),
+          child: const Text(OrdersLabels.photoLibrary),
         ),
       ],
     ),
@@ -34,19 +34,19 @@ Future<void> showClearCartDialog({
   await showDialog<void>(
     context: context,
     builder: (dialogCtx) => AlertDialog(
-      title: const Text(VN.clearCartTitle),
-      content: const Text(VN.clearCartPrompt),
+      title: const Text(OrdersLabels.clearCartTitle),
+      content: const Text(OrdersLabels.clearCartPrompt),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: () {
             onConfirm();
             Navigator.pop(dialogCtx);
           },
-          child: const Text(VN.clear),
+          child: const Text(OrdersLabels.clear),
         ),
       ],
     ),

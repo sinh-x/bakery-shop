@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,7 +6,6 @@ import '../../../data/models/blank.dart';
 import '../../../data/providers/blank_stock_provider.dart';
 import '../../../shared/utils/format_double.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Type of stock movement being recorded.
 enum BlankStockAction { production, usage }

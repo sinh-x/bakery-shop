@@ -2,6 +2,7 @@
 // photo thumbnails, attribute chips, and status badges in a tightly coupled
 // layout that does not decompose into reusable sub-widgets.
 // Reviewed 2026-07-30.
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, workItemStatusLabel;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/enum_attribute.dart';
@@ -12,7 +13,7 @@ import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_photo_strip.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' hide workItemStatusColors;
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// A card showing a single work item with status, qty/price, photos, and
 /// status-transition chips.
@@ -106,7 +107,7 @@ class OrderWorkItemCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            item.isGift ? VN.giftBadge : VN.paymentFee,
+                            item.isGift ? OrdersLabels.giftBadge : OrdersLabels.paymentFee,
                             style: TextStyle(
                               fontSize: 9,
                               color: item.isGift ? Colors.green : Colors.grey,
@@ -169,8 +170,8 @@ class OrderWorkItemCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         item.age != null
-                            ? '${VN.birthdayWithAge} ${item.age} tuổi'
-                            : VN.birthdayWithAge,
+                            ? '${OrdersLabels.birthdayWithAge} ${item.age} tuổi'
+                            : OrdersLabels.birthdayWithAge,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: Colors.pink.shade700,
                           fontWeight: FontWeight.w500,

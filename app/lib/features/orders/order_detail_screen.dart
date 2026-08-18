@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar, validTransitions;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,8 +34,8 @@ import 'widgets/order_detail/order_receipt_type_selector.dart';
 import 'widgets/order_detail/order_status_actions.dart';
 import 'widgets/order_detail/order_status_banner.dart';
 import 'widgets/order_detail/order_transaction_detail_sheet.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class OrderDetailScreen extends ConsumerStatefulWidget {
   const OrderDetailScreen({super.key, required this.orderRef});
 
@@ -99,7 +100,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           .transitionTo(targetStatus, reason: reason);
       ref.read(orderWorkItemsProvider(order.orderRef).notifier).refresh();
       if (mounted) {
-        showTopSnackBar(context, VN.orderStatusUpdated);
+        showTopSnackBar(context, OrdersLabels.orderStatusUpdated);
       }
       if (targetStatus == 'confirmed' && order.status == 'new') {
         await _showPrintChecklistDialog();
@@ -127,7 +128,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         return;
       }
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: ${normalized.message}');
+        showTopSnackBar(context, '${SharedLabels.apiError}: ${normalized.message}');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -166,11 +167,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       ref.invalidate(orderDetailProvider(widget.orderRef));
       ref.invalidate(orderListProvider);
       if (mounted) {
-        showTopSnackBar(context, VN.internalReceiptPrinted);
+        showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -187,11 +188,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       ref.invalidate(orderDetailProvider(widget.orderRef));
       ref.invalidate(orderListProvider);
       if (mounted) {
-        showTopSnackBar(context, VN.printStatusUnprinted);
+        showTopSnackBar(context, SharedLabels.printStatusUnprinted);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -228,7 +229,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       items.addAll([
         const PopupMenuItem<String>(
           value: 'addIncident',
-          child: Text(VN.addOrderIncident),
+          child: Text(EventsLabels.addOrderIncident),
         ),
         const PopupMenuItem<String>(
           value: 'googleMaps',
@@ -284,12 +285,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.orderDetail),
+        title: const Text(OrdersLabels.orderDetail),
         actions: [
           if (orderAsync.asData != null)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
-              tooltip: VN.editOrder,
+              tooltip: OrdersLabels.editOrder,
               onPressed: () async {
                 await context.push('/orders/${widget.orderRef}/edit');
                 ref
@@ -299,7 +300,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
             ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
-            tooltip: VN.printReceipt,
+            tooltip: SharedLabels.printReceipt,
             onPressed: () => showOrderReceiptTypeSelector(
               context,
               ref,
@@ -345,10 +346,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: VN.orderDetailTabGeneral),
-            Tab(text: VN.orderDetailTabWorkItems),
-            Tab(text: VN.orderDetailTabTransactions),
-            Tab(text: VN.orderDetailTabCustomer),
+            Tab(text: OrdersLabels.orderDetailTabGeneral),
+            Tab(text: OrdersLabels.orderDetailTabWorkItems),
+            Tab(text: OrdersLabels.orderDetailTabTransactions),
+            Tab(text: OrdersLabels.orderDetailTabCustomer),
           ],
         ),
       ),
@@ -358,13 +359,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref
                     .read(orderDetailProvider(widget.orderRef).notifier)
                     .refresh(),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -400,10 +401,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                   ? Colors.orange
                   : theme.colorScheme.error;
           final paymentLabel = amountPaid >= order.totalPrice
-              ? VN.paid
+              ? OrdersLabels.paid
               : amountPaid > 0
-                  ? VN.partialPaid
-                  : VN.unpaid;
+                  ? OrdersLabels.partialPaid
+                  : OrdersLabels.unpaid;
 
           return Column(
             children: [

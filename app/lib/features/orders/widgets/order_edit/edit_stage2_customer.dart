@@ -9,8 +9,6 @@ import '../order_wizard.dart';
 import '../section_header.dart';
 import '../stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Stage 2 of the order edit wizard — customer (name, phone, source).
 ///
 /// FR6: grouped two-row source selector mirroring create's
@@ -64,7 +62,7 @@ class EditStage2Customer extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SectionHeader(VN.customer),
+                const SectionHeader(OrdersLabels.customer),
                 OrderCustomerSection(
                   selectedCustomer: selectedCustomer,
                   onSelected: onSelectedCustomer,
@@ -73,7 +71,7 @@ class EditStage2Customer extends ConsumerWidget {
                   phoneCtrl: phoneCtrl,
                 ),
                 const SizedBox(height: 20),
-                const SectionHeader(VN.orderSource),
+                const SectionHeader(OrdersLabels.orderSource),
                 _buildSourceSelector(sourcesAsync),
                 ProductSummaryCard(items: summaryItems),
                 CustomerSummaryCard(

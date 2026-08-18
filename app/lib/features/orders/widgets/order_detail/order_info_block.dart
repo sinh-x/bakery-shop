@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,8 +17,6 @@ import '../order_customer_section.dart';
 import '../order_delivery_section.dart';
 import '../section_header.dart';
 import 'order_info_row.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Order info block: customer, public code, source, due date, delivery
 /// assignment, delivery details, and created-by. Rendered between the status
 /// banner and the items list.
@@ -111,10 +110,10 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 16),
-        const SectionHeader(VN.customer),
+        const SectionHeader(OrdersLabels.customer),
         OrderInfoRow(
           icon: Icons.badge_outlined,
-          label: VN.publicOrderCode,
+          label: OrdersLabels.publicOrderCode,
           value: visualOrderCode(
             orderRef: widget.order.orderRef,
             publicOrderCode: widget.order.publicOrderCode,
@@ -134,13 +133,13 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
         if (widget.order.source.isNotEmpty)
           OrderInfoRow(
             icon: Icons.campaign_outlined,
-            label: VN.orderSource,
+            label: OrdersLabels.orderSource,
             value: widget.order.source,
           ),
         if (widget.order.dueDate != null)
           OrderInfoRow(
             icon: Icons.schedule_outlined,
-            label: VN.dueDate,
+            label: OrdersLabels.dueDate,
             value: widget.formatDueDisplay(
               widget.order.dueDate,
               widget.order.dueTime,
@@ -218,14 +217,14 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
       if (displayName != null) {
         return OrderInfoRow(
           icon: Icons.person_outline,
-          label: VN.deliveryAssignee,
+          label: OrdersLabels.deliveryAssignee,
           value: displayName,
         );
       }
     }
     return OrderInfoRow(
       icon: Icons.person_outline,
-      label: VN.deliveryAssignee,
+      label: OrdersLabels.deliveryAssignee,
       value: OrdersLabels.deliveryUnassigned,
       valueStyle: theme.textTheme.bodyMedium?.copyWith(
         fontStyle: FontStyle.italic,

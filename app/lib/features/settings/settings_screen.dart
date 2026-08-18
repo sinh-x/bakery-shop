@@ -1,4 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects. DG-259 c6-fix (2026-07-19): staff binding section extracted, file now 333 lines.
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,8 +16,9 @@ import 'package:bakery_app/shared/labels/templates.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -38,7 +40,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   // Version info
   String _appVersion = '';
-  String _serverVersion = VN.serverVersionLoading;
+  String _serverVersion = SharedLabels.serverVersionLoading;
 
   @override
   void initState() {
@@ -86,10 +88,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Future<void> _fetchServerVersion(String baseUrl) async {
     if (baseUrl.isEmpty) {
-      setState(() => _serverVersion = VN.serverVersionError);
+      setState(() => _serverVersion = SharedLabels.serverVersionError);
       return;
     }
-    setState(() => _serverVersion = VN.serverVersionLoading);
+    setState(() => _serverVersion = SharedLabels.serverVersionLoading);
     try {
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 5),
@@ -103,7 +105,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _serverVersion = VN.serverVersionError);
+      if (mounted) setState(() => _serverVersion = SharedLabels.serverVersionError);
     }
   }
 
@@ -144,12 +146,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _saveUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      showTopSnackBar(context, VN.urlEmpty);
+      showTopSnackBar(context, SharedLabels.urlEmpty);
       return;
     }
     await ref.read(apiBaseUrlProvider.notifier).setUrl(url);
     if (mounted) {
-      showTopSnackBar(context, VN.urlSaved);
+      showTopSnackBar(context, SharedLabels.urlSaved);
       _fetchServerVersion(url);
     }
   }
@@ -170,20 +172,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.settings),
+        title: const Text(SharedLabels.settings),
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(icon: Icon(Icons.person), text: VN.generalSettings),
+            const Tab(icon: Icon(Icons.person), text: SharedLabels.generalSettings),
             if (_isAdmin)
               const Tab(
                 icon: Icon(Icons.settings),
-                text: VN.technicalSettings,
+                text: SharedLabels.technicalSettings,
               ),
-            const Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
+            const Tab(icon: Icon(Icons.card_giftcard), text: OrdersLabels.extrasSettings),
             const Tab(
               icon: Icon(Icons.label_outline),
-              text: VN.catalogTagEditor,
+              text: ProductsLabels.catalogTagEditor,
             ),
           ],
         ),
@@ -251,24 +253,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               children: [
                 // App version
                 InfoRow(
-                  label: VN.appVersion,
+                  label: SharedLabels.appVersion,
                   value: _appVersion.isEmpty ? '...' : _appVersion,
                 ),
                 const SizedBox(height: 8),
                 // Server version
-                InfoRow(label: VN.serverVersion, value: _serverVersion),
+                InfoRow(label: SharedLabels.serverVersion, value: _serverVersion),
                 const SizedBox(height: 16),
                 // Printer paper mode (DG-183 Phase 2)
                 const PaperModeSection(),
                 const SizedBox(height: 16),
                 // Server URL
                 Text(
-                  VN.apiUrlLabel,
+                  SharedLabels.apiUrlLabel,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  VN.apiUrlHelp,
+                  SharedLabels.apiUrlHelp,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -278,7 +280,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 TextField(
                   controller: _urlController,
                   decoration: const InputDecoration(
-                    hintText: VN.apiUrlHint,
+                    hintText: SharedLabels.apiUrlHint,
                     prefixIcon: Icon(Icons.dns),
                     border: OutlineInputBorder(),
                   ),
@@ -303,7 +305,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.wifi_find),
-                        label: Text(_testing ? VN.testing : VN.testConnection),
+                        label: Text(_testing ? SharedLabels.testing : SharedLabels.testConnection),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -311,7 +313,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       child: FilledButton.icon(
                         onPressed: _saveUrl,
                         icon: const Icon(Icons.save),
-                        label: const Text(VN.save),
+                        label: const Text(SharedLabels.save),
                       ),
                     ),
                   ],
@@ -337,8 +339,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           const SizedBox(width: 12),
                           Text(
                             _testResult!.success
-                                ? VN.connectionSuccess
-                                : VN.connectionFailed,
+                                ? SharedLabels.connectionSuccess
+                                : SharedLabels.connectionFailed,
                             style: TextStyle(
                               color: _testResult!.success
                                   ? Colors.green.shade800
@@ -355,7 +357,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 // Audit log entry (admin-only — this tab is admin-gated).
                 ListTile(
                   leading: const Icon(Icons.history_edu),
-                  title: const Text(VN.openAuditLog),
+                  title: const Text(SharedLabels.openAuditLog),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/audit-log'),
                 ),

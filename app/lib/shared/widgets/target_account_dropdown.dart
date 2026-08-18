@@ -1,7 +1,6 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show paymentTargetAccounts;
 import 'package:flutter/material.dart';
-
-import 'vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/expenses.dart';
 class TargetAccountDropdown extends StatelessWidget {
   const TargetAccountDropdown({
     super.key,
@@ -20,13 +19,13 @@ class TargetAccountDropdown extends StatelessWidget {
       // ignore: deprecated_member_use
       value: value,
       decoration: const InputDecoration(
-        labelText: VN.paymentTargetAccountLabel,
+        labelText: ExpensesLabels.paymentTargetAccountLabel,
         border: OutlineInputBorder(),
       ),
       items: [
         const DropdownMenuItem<String?>(
           value: null,
-          child: Text(VN.paymentNoAccount),
+          child: Text(ExpensesLabels.paymentNoAccount),
         ),
         for (final account in paymentTargetAccounts)
           DropdownMenuItem<String?>(

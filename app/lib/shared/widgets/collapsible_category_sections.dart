@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../utils/category_grouping.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 class CategorySectionExpansionController {
   final Map<String, bool> _expandedByKey = <String, bool>{};
 
@@ -143,7 +142,7 @@ class _SectionHeader extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                VN.categorySectionCount(itemCount),
+                StockLabels.categorySectionCount(itemCount),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(width: 4),

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../labels/orders.dart';
 import '../theme/bakery_theme.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
 
@@ -27,13 +25,13 @@ const activeOrderStatuses = <String>[
 String deliveryTypeLabel(String type) {
   switch (type) {
     case 'bus':
-      return VN.deliveryBus;
+      return OrdersLabels.deliveryBus;
     case 'door':
     case 'delivery':
-      return VN.deliveryDoor;
+      return OrdersLabels.deliveryDoor;
     case 'pickup':
     default:
-      return VN.pickup;
+      return OrdersLabels.pickup;
   }
 }
 

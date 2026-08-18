@@ -1,5 +1,6 @@
 // DG-211 Phase 5: single-state customer model + stage-widget decomposition
 // (coordinator delegates stage bodies to widgets/order_edit/edit_stageN_*).
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,8 +31,8 @@ import 'widgets/order_edit/edit_stage1_product.dart';
 import 'widgets/order_edit/edit_stage2_customer.dart';
 import 'widgets/order_edit/edit_stage3_delivery.dart';
 import 'widgets/order_edit/edit_stage4_review.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class OrderEditScreen extends ConsumerStatefulWidget {
   const OrderEditScreen({super.key, required this.orderRef});
 
@@ -279,7 +280,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
     // FR2: empty customer name defaults to `Khách lẻ` at save time only.
     final effectiveName = _nameCtrl.text.trim().isEmpty
-        ? VN.khachLe
+        ? OrdersLabels.khachLe
         : _nameCtrl.text.trim();
 
     setState(() => _saving = true);
@@ -438,7 +439,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.editOrder),
+        title: const Text(OrdersLabels.editOrder),
         actions: [
           TextButton(
             onPressed: _saving ? null : () => _goToStage(4),
@@ -448,7 +449,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     width: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           AppBarOverflowMenu(
             items: const [
@@ -465,7 +466,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       ),
       body: orderAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => const Center(child: Text(VN.apiError)),
+        error: (e, _) => const Center(child: Text(SharedLabels.apiError)),
         data: (order) {
           _initFrom(order);
           final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));

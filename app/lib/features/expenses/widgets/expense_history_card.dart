@@ -1,8 +1,10 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_photo_strip.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:flutter/material.dart';
 
@@ -36,11 +38,11 @@ class ExpenseHistoryCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               data.isDebt
-                  ? '${data.category} • ${data.paymentMethod} • ${VN.expenseCreditorLabel}: ${data.creditorName}'
+                  ? '${data.category} • ${data.paymentMethod} • ${ExpensesLabels.expenseCreditorLabel}: ${data.creditorName}'
                   : '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
             ),
             Text(
-              '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.displayLoggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
+              '${ExpensesLabels.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.displayLoggedBy : '—'} • ${ExpensesLabels.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
             if (data.isDebt)
@@ -52,36 +54,36 @@ class ExpenseHistoryCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Chip(
-                  label: const Text(VN.reimbursedYes),
+                  label: const Text(ExpensesLabels.reimbursedYes),
                   backgroundColor: Colors.green.shade100,
                   side: BorderSide.none,
                   visualDensity: VisualDensity.compact,
                 ),
               )
             else if (!data.isDebt &&
-                data.paymentSource == VN.paymentSourceStaffAdvance)
+                data.paymentSource == ExpensesLabels.paymentSourceStaffAdvance)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Chip(
-                  label: const Text(VN.reimbursedNo),
+                  label: const Text(ExpensesLabels.reimbursedNo),
                   backgroundColor: Colors.orange.shade100,
                   side: BorderSide.none,
                   visualDensity: VisualDensity.compact,
                 ),
               ),
             if (data.vendor.isNotEmpty)
-              Text('${VN.expenseVendorLabel}: ${data.vendor}'),
+              Text('${ExpensesLabels.expenseVendorLabel}: ${data.vendor}'),
             if (data.note.isNotEmpty)
-              Text('${VN.expenseNoteLabel}: ${data.note}'),
+              Text('${ExpensesLabels.expenseNoteLabel}: ${data.note}'),
             const SizedBox(height: 8),
             ExpenseHistoryPhotoStrip(eventId: event.id),
             const SizedBox(height: 8),
             Row(
               children: [
-                TextButton(onPressed: onEdit, child: const Text(VN.editEvent)),
+                TextButton(onPressed: onEdit, child: const Text(EventsLabels.editEvent)),
                 TextButton(
                   onPressed: onDelete,
-                  child: const Text(VN.deleteEvent),
+                  child: const Text(EventsLabels.deleteEvent),
                 ),
               ],
             ),

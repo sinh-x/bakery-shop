@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/journal_entry.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/accounting.dart';
 /// Card displaying a single journal entry with an expandable line-item table.
 ///
 /// Extracted from journal_tab.dart (DG-189 Phase 1, finding M-2).
@@ -46,7 +46,7 @@ class JournalEntryCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                VN.accountingSourceTypeLabel(entry.sourceType),
+                AccountingLabels.accountingSourceTypeLabel(entry.sourceType),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.grey.shade700,
                 ),
@@ -79,7 +79,7 @@ class JournalEntryCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        VN.accountingFilterAccount,
+                        AccountingLabels.accountingFilterAccount,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.grey,
                         ),
@@ -88,7 +88,7 @@ class JournalEntryCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        VN.accountingDebit,
+                        AccountingLabels.accountingDebit,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.grey,
                         ),
@@ -98,7 +98,7 @@ class JournalEntryCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        VN.accountingCredit,
+                        AccountingLabels.accountingCredit,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.grey,
                         ),

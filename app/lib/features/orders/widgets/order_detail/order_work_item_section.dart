@@ -2,6 +2,7 @@
 // work item groups with inline filtering and navigation wiring that share
 // the section's scroll controller and state context.
 // Reviewed 2026-07-30.
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,8 +16,8 @@ import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
 import 'order_work_item_print_dialog.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Expandable section listing the order's work items (regular + extras),
 /// with per-item status transition and internal-print prompts.
 class OrderWorkItemSection extends ConsumerStatefulWidget {
@@ -58,7 +59,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       // Refresh order detail to pick up server-synced order status
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
-        showTopSnackBar(context, VN.workItemStatusChanged);
+        showTopSnackBar(context, OrdersLabels.workItemStatusChanged);
       }
 
       // Prompt to print internal receipt if confirming and not yet printed
@@ -69,7 +70,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -103,7 +104,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
               children: [
                 Expanded(
                   child: Text(
-                    VN.workItemsSection,
+                    OrdersLabels.workItemsSection,
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
@@ -127,7 +128,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
             error: (e, _) => Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Text(
-                VN.apiError,
+                SharedLabels.apiError,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
@@ -138,7 +139,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                 return Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 4),
                   child: Text(
-                    VN.noWorkItems,
+                    OrdersLabels.noWorkItems,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
@@ -178,7 +179,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        VN.extras,
+                        OrdersLabels.extras,
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: theme.colorScheme.outline,
                         ),

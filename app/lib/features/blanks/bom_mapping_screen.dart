@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +10,6 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/blanks_states.dart';
 import 'widgets/bom_add_sheet.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// BOM mapping screen for a single price_chip product (FR2/AC2).
 ///

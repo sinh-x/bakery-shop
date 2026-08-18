@@ -1,10 +1,10 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/order.dart';
 import '../section_header.dart';
 import 'order_payment_row.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Payment summary container with total, paid, remaining, and a status
 /// badge. Also renders the totals divider and the add-payment button.
 class OrderPaymentSummary extends StatelessWidget {
@@ -36,7 +36,7 @@ class OrderPaymentSummary extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(VN.total, style: theme.textTheme.titleSmall),
+            Text(OrdersLabels.total, style: theme.textTheme.titleSmall),
             Text(
               formatVND(order.totalPrice),
               style: theme.textTheme.titleMedium?.copyWith(
@@ -52,7 +52,7 @@ class OrderPaymentSummary extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${VN.shippingFee}:',
+                '${OrdersLabels.shippingFee}:',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -67,7 +67,7 @@ class OrderPaymentSummary extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 16),
-        const SectionHeader(VN.payment),
+        const SectionHeader(OrdersLabels.payment),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -79,7 +79,7 @@ class OrderPaymentSummary extends StatelessWidget {
             children: [
               if (order.shippingFee > 0) ...[
                 OrderPaymentRow(
-                  label: VN.shippingFee,
+                  label: OrdersLabels.shippingFee,
                   value: formatVND(order.shippingFee),
                   valueStyle: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.outline,
@@ -88,13 +88,13 @@ class OrderPaymentSummary extends StatelessWidget {
                 const SizedBox(height: 4),
               ],
               OrderPaymentRow(
-                label: VN.total,
+                label: OrdersLabels.total,
                 value: formatVND(order.totalPrice),
                 valueStyle: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 6),
               OrderPaymentRow(
-                label: VN.amountPaidLabel,
+                label: OrdersLabels.amountPaidLabel,
                 value: formatVND(amountPaid),
                 valueStyle: theme.textTheme.bodyMedium?.copyWith(
                   color: amountPaid > 0 ? Colors.green : null,
@@ -103,7 +103,7 @@ class OrderPaymentSummary extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               OrderPaymentRow(
-                label: VN.remainingLabel,
+                label: OrdersLabels.remainingLabel,
                 value: formatVND(remaining),
                 valueStyle: theme.textTheme.bodyMedium?.copyWith(
                   color: remaining > 0 ? paymentColor : Colors.green,
@@ -138,7 +138,7 @@ class OrderPaymentSummary extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onAddPayment,
           icon: const Icon(Icons.add, size: 18),
-          label: const Text(VN.addPayment),
+          label: const Text(OrdersLabels.addPayment),
         ),
       ],
     );

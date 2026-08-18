@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, categoryMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,8 +13,7 @@ import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/product_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
 class ProductCatalogScreen extends ConsumerStatefulWidget {
   const ProductCatalogScreen({super.key});
 
@@ -80,7 +80,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     return categoriesAsync.when(
       loading: () => Scaffold(
         appBar: AppBar(
-          title: const Text(VN.tabProducts),
+          title: const Text(SharedLabels.tabProducts),
           actions: const [AppBarOverflowMenu()],
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -127,11 +127,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
       child: Builder(
         builder: (innerContext) => Scaffold(
           appBar: AppBar(
-            title: const Text(VN.tabProducts),
+            title: const Text(SharedLabels.tabProducts),
             actions: [
               IconButton(
                 icon: const Icon(Icons.refresh),
-                tooltip: VN.lamMoi,
+                tooltip: SharedLabels.lamMoi,
                 onPressed: () {
                   ref.invalidate(productsPaginationProvider);
                   ref.invalidate(productsProvider);
@@ -144,11 +144,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   if (ref.watch(authProvider).isAdmin)
                     const PopupMenuItem<String>(
                       value: 'manage_categories',
-                      child: Text(VN.openCategoryManagement),
+                      child: Text(SharedLabels.openCategoryManagement),
                     ),
                   const PopupMenuItem<String>(
                     value: 'browse_catalog',
-                    child: Text(VN.openCatalogBrowse),
+                    child: Text(SharedLabels.openCatalogBrowse),
                   ),
                 ],
               ),
@@ -173,7 +173,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                   const SizedBox(height: 16),
                   Text(
-                    VN.apiError,
+                    SharedLabels.apiError,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
@@ -184,7 +184,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                       ref.invalidate(categoriesProvider);
                     },
                     icon: const Icon(Icons.refresh),
-                    label: const Text(VN.retry),
+                    label: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -279,7 +279,7 @@ class _ProductTabs extends StatelessWidget {
                 ? Icons.visibility_outlined
                 : Icons.visibility_off_outlined,
           ),
-          title: const Text(VN.hiddenProducts),
+          title: const Text(ProductsLabels.hiddenProducts),
         ),
         if (showInactiveProducts)
           inactiveProductsAsync.when(
@@ -290,10 +290,10 @@ class _ProductTabs extends StatelessWidget {
                 children: [
                   const Icon(Icons.cloud_off, size: 18),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text(VN.apiError)),
+                  const Expanded(child: Text(SharedLabels.apiError)),
                   TextButton(
                     onPressed: onRetryInactiveProducts,
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -311,7 +311,7 @@ class _ProductTabs extends StatelessWidget {
               if (items.isEmpty) {
                 return Center(
                   child: Text(
-                    VN.noProducts,
+                    ProductsLabels.noProducts,
                     style: Theme.of(
                       context,
                     ).textTheme.bodyLarge?.copyWith(color: Colors.grey),

@@ -1,8 +1,8 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import 'section_header.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 class OrderPaymentSection extends StatelessWidget {
   const OrderPaymentSection({
     super.key,
@@ -30,15 +30,15 @@ class OrderPaymentSection extends StatelessWidget {
             ? Colors.orange
             : theme.colorScheme.error;
     final paymentLabel = amountPaid >= totalPrice
-        ? VN.paid
+        ? OrdersLabels.paid
         : amountPaid > 0
-            ? VN.partialPaid
-            : VN.unpaid;
+            ? OrdersLabels.partialPaid
+            : OrdersLabels.unpaid;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(VN.payment),
+        const SectionHeader(OrdersLabels.payment),
         Row(
           children: [
             Container(
@@ -65,17 +65,17 @@ class OrderPaymentSection extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                paymentMethod == 'transfer' ? VN.methodTransfer : VN.methodCash,
+                paymentMethod == 'transfer' ? OrdersLabels.methodTransfer : OrdersLabels.methodCash,
                 style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
               ),
             ],
           ],
         ),
         const SizedBox(height: 8),
-        _buildAmountRow(VN.amountPaidLabel, formatVND(amountPaid), theme),
+        _buildAmountRow(OrdersLabels.amountPaidLabel, formatVND(amountPaid), theme),
         const SizedBox(height: 4),
         _buildAmountRow(
-          VN.remainingLabel,
+          OrdersLabels.remainingLabel,
           formatVND(_remaining),
           theme,
           color: _remaining > 0 ? theme.colorScheme.error : Colors.green,
@@ -85,7 +85,7 @@ class OrderPaymentSection extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onAddPayment,
             icon: const Icon(Icons.add, size: 18),
-            label: const Text(VN.payment),
+            label: const Text(OrdersLabels.payment),
           ),
         ],
       ],

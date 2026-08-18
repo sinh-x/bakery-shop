@@ -1,8 +1,8 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/order_draft.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// One-line row for an extra (phu_kien) [DraftOrderItem] in Stage 1.
 ///
 /// Shows: gift/pay badge toggle, product name + unit price, quantity
@@ -46,7 +46,7 @@ class SimpleExtraRow extends StatelessWidget {
                 ),
               ),
               child: Text(
-                item.isGift ? VN.giftBadge : VN.paymentFee,
+                item.isGift ? OrdersLabels.giftBadge : OrdersLabels.paymentFee,
                 style: TextStyle(
                   fontSize: 10,
                   color: item.isGift ? Colors.green : Colors.grey,

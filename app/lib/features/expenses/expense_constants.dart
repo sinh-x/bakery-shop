@@ -1,57 +1,57 @@
 import '../../data/api/expense_category_service.dart';
 import '../../data/models/expense_category.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Hardcoded fallback list of parent expense category names (FR6 backward
 /// compat). Used when the API tree is unavailable so existing screens keep
 /// working. Phase 4 wires the form/filter UI to the API-loaded tree via
 /// [expenseCategoriesProvider].
 const expenseCategories = <String>[
-  VN.expenseCategoryIngredient,
-  VN.expenseCategoryPackaging,
-  VN.expenseCategoryDelivery,
-  VN.expenseCategoryUtilities,
-  VN.expenseCategoryTools,
-  VN.expenseCategoryRepair,
-  VN.expenseCategorySalaryAllowance,
-  VN.expenseCategoryOther,
+  ExpensesLabels.expenseCategoryIngredient,
+  ExpensesLabels.expenseCategoryPackaging,
+  ExpensesLabels.expenseCategoryDelivery,
+  ExpensesLabels.expenseCategoryUtilities,
+  ExpensesLabels.expenseCategoryTools,
+  ExpensesLabels.expenseCategoryRepair,
+  ExpensesLabels.expenseCategorySalaryAllowance,
+  ExpensesLabels.expenseCategoryOther,
 ];
 
 const expensePaymentMethods = <String>[
-  VN.methodCash,
-  VN.methodTransfer,
-  VN.methodDebt,
+  OrdersLabels.methodCash,
+  OrdersLabels.methodTransfer,
+  OrdersLabels.methodDebt,
 ];
 
 const expensePaymentSources = <String>[
-  VN.paymentSourceDrawerCash,
-  VN.paymentSourceOwnerCash,
-  VN.paymentSourcePhuongVCB,
-  VN.paymentSourceAnVCB,
-  VN.paymentSourceStaffAdvance,
+  ExpensesLabels.paymentSourceDrawerCash,
+  ExpensesLabels.paymentSourceOwnerCash,
+  ExpensesLabels.paymentSourcePhuongVCB,
+  ExpensesLabels.paymentSourceAnVCB,
+  ExpensesLabels.paymentSourceStaffAdvance,
 ];
 
 /// Hardcoded fallback subcategory names grouped by parent category (FR6
 /// backward compat). Mirrors the seed data from Phase 1. Phase 4 uses the
 /// API-loaded tree as the primary source; this map is a fallback only.
 const expenseSubcategoriesByParent = <String, List<String>>{
-  VN.expenseCategoryIngredient: [
-    VN.expenseSubcategoryEggs,
-    VN.expenseSubcategoryCream,
-    VN.expenseSubcategoryFlour,
-    VN.expenseSubcategoryOtherAdditives,
-    VN.expenseSubcategoryFruits,
+  ExpensesLabels.expenseCategoryIngredient: [
+    ExpensesLabels.expenseSubcategoryEggs,
+    ExpensesLabels.expenseSubcategoryCream,
+    ExpensesLabels.expenseSubcategoryFlour,
+    ExpensesLabels.expenseSubcategoryOtherAdditives,
+    ExpensesLabels.expenseSubcategoryFruits,
   ],
-  VN.expenseCategoryPackaging: [
-    VN.expenseSubcategoryBoxAndBase,
-    VN.expenseSubcategoryAccessories,
-    VN.expenseSubcategoryWrap,
+  ExpensesLabels.expenseCategoryPackaging: [
+    ExpensesLabels.expenseSubcategoryBoxAndBase,
+    ExpensesLabels.expenseSubcategoryAccessories,
+    ExpensesLabels.expenseSubcategoryWrap,
   ],
 };
 
 /// Placeholder label shown for expenses without a subcategory (FR6 / AC5).
-const expenseSubcategoryNoneLabel = VN.expenseSubcategoryNone;
+const expenseSubcategoryNoneLabel = ExpensesLabels.expenseSubcategoryNone;
 
 /// Riverpod provider that loads the expense category tree from
 /// ``GET /api/expense-categories`` (FR5). Falls back to a synthetic tree
@@ -71,22 +71,22 @@ final expenseCategoriesProvider =
 /// the API is unreachable). Account codes mirror the Phase 1 seed data.
 List<ExpenseCategory> _fallbackTree() {
   const accountCodes = <String, String>{
-    VN.expenseCategoryIngredient: '5100',
-    VN.expenseCategoryPackaging: '5200',
-    VN.expenseCategoryDelivery: '5300',
-    VN.expenseCategoryUtilities: '5400',
-    VN.expenseCategoryTools: '5500',
-    VN.expenseCategoryRepair: '5600',
-    VN.expenseCategorySalaryAllowance: '5700',
-    VN.expenseCategoryOther: '5800',
-    VN.expenseSubcategoryEggs: '5110',
-    VN.expenseSubcategoryCream: '5120',
-    VN.expenseSubcategoryFlour: '5130',
-    VN.expenseSubcategoryOtherAdditives: '5140',
-    VN.expenseSubcategoryFruits: '5150',
-    VN.expenseSubcategoryBoxAndBase: '5210',
-    VN.expenseSubcategoryAccessories: '5220',
-    VN.expenseSubcategoryWrap: '5230',
+    ExpensesLabels.expenseCategoryIngredient: '5100',
+    ExpensesLabels.expenseCategoryPackaging: '5200',
+    ExpensesLabels.expenseCategoryDelivery: '5300',
+    ExpensesLabels.expenseCategoryUtilities: '5400',
+    ExpensesLabels.expenseCategoryTools: '5500',
+    ExpensesLabels.expenseCategoryRepair: '5600',
+    ExpensesLabels.expenseCategorySalaryAllowance: '5700',
+    ExpensesLabels.expenseCategoryOther: '5800',
+    ExpensesLabels.expenseSubcategoryEggs: '5110',
+    ExpensesLabels.expenseSubcategoryCream: '5120',
+    ExpensesLabels.expenseSubcategoryFlour: '5130',
+    ExpensesLabels.expenseSubcategoryOtherAdditives: '5140',
+    ExpensesLabels.expenseSubcategoryFruits: '5150',
+    ExpensesLabels.expenseSubcategoryBoxAndBase: '5210',
+    ExpensesLabels.expenseSubcategoryAccessories: '5220',
+    ExpensesLabels.expenseSubcategoryWrap: '5230',
   };
   var nextId = 1;
   final tree = <ExpenseCategory>[];

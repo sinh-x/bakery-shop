@@ -15,8 +15,7 @@ import 'delivery/workload_summary.dart';
 import 'delivery_day_calendar_view.dart';
 import 'delivery_order_card.dart';
 import 'delivery_week_calendar_view.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Delivery tab content: status-grouped delivery order list with day/week
 /// calendar views, today/all filter, and (DG-304 Phase 4) a staff filter
 /// dropdown + per-staff workload summary.
@@ -131,11 +130,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _onRefresh,
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),

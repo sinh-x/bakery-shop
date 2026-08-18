@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, workItemStatusLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +7,8 @@ import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../../shared/utils/vnd_units.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'cake_detail_blank_section.dart';
 import 'candle_type_radio_group.dart';
 import 'enum_attribute_display.dart';
@@ -273,8 +275,8 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                 const SizedBox(width: 6),
                 Text(
                   widget.item.age != null
-                      ? '${VN.birthdayWithAge} ${widget.item.age} tuổi'
-                      : VN.birthdayWithAge,
+                      ? '${OrdersLabels.birthdayWithAge} ${widget.item.age} tuổi'
+                      : OrdersLabels.birthdayWithAge,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.pink.shade700,
                     fontWeight: FontWeight.w600,
@@ -290,7 +292,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
               widget.item.attributes['candle_type'].toString() != 'khong_nen') ...[
             const SizedBox(height: 6),
             Text(
-              'Nến: ${VN.candleTypeLabel(widget.item.attributes['candle_type'].toString())}',
+              'Nến: ${OrdersLabels.candleTypeLabel(widget.item.attributes['candle_type'].toString())}',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: Colors.pink.shade700,
                 fontWeight: FontWeight.w600,
@@ -308,7 +310,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                 const Text('💵', style: TextStyle(fontSize: 16)),
                 const SizedBox(width: 6),
                 Text(
-                  '${VN.rutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                  '${OrdersLabels.rutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.green.shade700,
                     fontWeight: FontWeight.w600,
@@ -322,7 +324,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
               Padding(
                 padding: const EdgeInsets.only(left: 28, top: 2),
                 child: Text(
-                  '${VN.phiRutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                  '${OrdersLabels.phiRutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: Colors.green.shade700,
                   ),
@@ -421,7 +423,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                   }
                 }),
               ),
-              const Text(VN.isBirthday),
+              const Text(OrdersLabels.isBirthday),
             ],
           ),
 
@@ -432,7 +434,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
               controller: _ageCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: VN.birthdayAge,
+                labelText: OrdersLabels.birthdayAge,
                 hintText: 'VD: 7',
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -443,7 +445,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             // "Không nến" (no candle); selecting a real type persists the
             // value under `attributes['candle_type']` (FR2/AC7).
             const SizedBox(height: 8),
-            const _SectionLabel(VN.candleTypeSectionLabel),
+            const _SectionLabel(OrdersLabels.candleTypeSectionLabel),
             CandleTypeRadioGroup(
               groupValue: _candleType,
               onChanged: (v) => setState(() => _candleType = v),
@@ -463,7 +465,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                   }
                 }),
               ),
-              const Text(VN.rutTien),
+              const Text(OrdersLabels.rutTien),
             ],
           ),
 
@@ -473,7 +475,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             // Cash amount stepper: [-] [amount] [+] with 100k step
             Row(
               children: [
-                const Text('${VN.soTienRut}: '),
+                const Text('${OrdersLabels.soTienRut}: '),
                 IconButton.filled(
                   onPressed: () {
                     final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
@@ -566,7 +568,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('${VN.phiRutTien}: '),
+                const Text('${OrdersLabels.phiRutTien}: '),
                 IconButton.filled(
                   onPressed: () {
                     final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
@@ -618,7 +620,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             controller: _notesCtrl,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: VN.notes,
+              labelText: OrdersLabels.notes,
               hintText: 'Ghi chú cho sản phẩm này...',
               border: OutlineInputBorder(),
               isDense: true,
@@ -638,14 +640,14 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text(VN.save),
+                      : const Text(SharedLabels.save),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
                   onPressed: widget.saving ? null : _cancelEdit,
-                  child: const Text(VN.cancel),
+                  child: const Text(SharedLabels.cancel),
                 ),
               ),
             ],

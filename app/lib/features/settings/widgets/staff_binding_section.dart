@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,8 +7,7 @@ import '../../../data/providers/staff_provider.dart';
 import '../../../data/providers/user_binding_provider.dart';
 import '../../../shared/providers/auth_provider.dart';
 import 'settings_sections.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class StaffBindingSection extends ConsumerStatefulWidget {
   const StaffBindingSection({
     super.key,
@@ -26,14 +26,14 @@ class StaffBindingSection extends ConsumerStatefulWidget {
 class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
   Future<void> _selectStaff(String name) async {
     await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
+    if (mounted) showTopSnackBar(context, SharedLabels.staffSaved);
   }
 
   Future<void> _saveManualName() async {
     final name = widget.manualNameCtrl.text.trim();
     if (name.isEmpty) return;
     await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
+    if (mounted) showTopSnackBar(context, SharedLabels.staffSaved);
   }
 
   Future<void> _selectBinding(int? staffId) async {
@@ -44,12 +44,12 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
       if (newState.hasError) {
         showTopSnackBar(
           context,
-          VN.staffBindingSaveFailed,
+          SharedLabels.staffBindingSaveFailed,
           backgroundColor: Colors.red.shade800,
         );
         ref.invalidate(staffBindingProvider);
       } else {
-        showTopSnackBar(context, VN.staffBindingSaved);
+        showTopSnackBar(context, SharedLabels.staffBindingSaved);
       }
     }
   }
@@ -90,11 +90,11 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
     final staffAsync = ref.watch(staffListProvider);
 
     return [
-      Text(VN.staffBindingTitle,
+      Text(SharedLabels.staffBindingTitle,
           style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: 4),
       Text(
-        VN.staffBindingHelp,
+        SharedLabels.staffBindingHelp,
         style: Theme.of(context)
             .textTheme
             .bodySmall
@@ -105,11 +105,11 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
         data: (binding) => staffAsync.when(
           data: (staffList) => DropdownButtonFormField<int?>(
             initialValue: binding.staffId,
-            hint: const Text(VN.staffBindingNone),
+            hint: const Text(SharedLabels.staffBindingNone),
             items: [
               const DropdownMenuItem<int?>(
                 value: null,
-                child: Text(VN.staffBindingNone),
+                child: Text(SharedLabels.staffBindingNone),
               ),
               ...staffList.map(
                 (s) => DropdownMenuItem<int?>(
@@ -137,7 +137,7 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                VN.staffBindingLoadError,
+                SharedLabels.staffBindingLoadError,
                 style: Theme.of(context)
                     .textTheme
                     .bodyMedium
@@ -157,7 +157,7 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              VN.staffBindingLoadError,
+              SharedLabels.staffBindingLoadError,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -174,7 +174,7 @@ class _StaffBindingSectionState extends ConsumerState<StaffBindingSection> {
     final currentStaff = ref.watch(loggedByProvider);
 
     return [
-      Text(VN.staffPicker,
+      Text(SharedLabels.staffPicker,
           style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: 8),
       staffAsync.when(

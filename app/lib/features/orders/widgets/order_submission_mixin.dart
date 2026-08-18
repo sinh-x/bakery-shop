@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,7 +15,6 @@ import '../../../shared/utils/delivery_helpers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'order_creation_config.dart';
 import 'order_submission_host.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Submission pipeline extracted from the orchestrator state so the
 /// orchestrator file stays under the 400-line threshold (DG-322 / CQ-1).

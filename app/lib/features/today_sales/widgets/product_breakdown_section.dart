@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/product_breakdown.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Product-breakdown section for the Today Sales screen
 /// (DG-386 Phase 7 / FR3 / AC3).

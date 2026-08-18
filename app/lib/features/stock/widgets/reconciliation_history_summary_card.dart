@@ -1,8 +1,8 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show paymentMethodLabel;
 import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Summary card shown at the top of the reconciliation history detail view.
 ///
 /// Renders session metadata (date, staff, payment method, waste reason) and
@@ -37,23 +37,23 @@ class ReconciliationHistorySummaryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${VN.ngayDoiSoat}: ${detail.reconciliationDate}',
+              '${StockLabels.ngayDoiSoat}: ${detail.reconciliationDate}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
-            Text('${VN.nhanVien}: ${detail.staffName}'),
+            Text('${StockLabels.nhanVien}: ${detail.staffName}'),
             Text(
-              '${VN.phuongThucThanhToan}: ${paymentMethodLabel(detail.paymentMethod)}',
+              '${StockLabels.phuongThucThanhToan}: ${paymentMethodLabel(detail.paymentMethod)}',
             ),
             Text(
-              '${VN.lyDoHaoHut}: ${detail.wasteReason.isEmpty ? VN.khongCo : detail.wasteReason}',
+              '${StockLabels.lyDoHaoHut}: ${detail.wasteReason.isEmpty ? StockLabels.khongCo : detail.wasteReason}',
             ),
             _RefRow(
-              label: VN.thamChieuDonHang,
+              label: StockLabels.thamChieuDonHang,
               value: detail.linkedOrderRef,
             ),
             _RefRow(
-              label: VN.thamChieuThanhToan,
+              label: StockLabels.thamChieuThanhToan,
               value: detail.linkedPaymentRef,
             ),
             const SizedBox(height: 10),
@@ -64,31 +64,31 @@ class ReconciliationHistorySummaryCard extends StatelessWidget {
               runSpacing: 6,
               children: [
                 ReconciliationSummaryChip(
-                  label: VN.tongTonDuKien,
+                  label: StockLabels.tongTonDuKien,
                   value: totalExpected,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongTonDaDem,
+                  label: StockLabels.tongTonDaDem,
                   value: totalCounted,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongSoLuongBan,
+                  label: StockLabels.tongSoLuongBan,
                   value: totalSale,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongSoLuongHaoHut,
+                  label: StockLabels.tongSoLuongHaoHut,
                   value: totalWaste,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongChenhLech,
+                  label: StockLabels.tongChenhLech,
                   value: variance,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongSoLuongSanPham,
+                  label: StockLabels.tongSoLuongSanPham,
                   value: productCount,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tongSoDong,
+                  label: StockLabels.tongSoDong,
                   value: lineCount,
                 ),
               ],
@@ -108,7 +108,7 @@ class _RefRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text('$label: ${value ?? VN.khongCo}');
+    return Text('$label: ${value ?? StockLabels.khongCo}');
   }
 }
 

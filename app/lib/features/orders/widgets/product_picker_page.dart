@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,8 +12,9 @@ import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../products/widgets/product_card.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'category_tab_tracker.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class ProductPickerPage extends ConsumerStatefulWidget {
   const ProductPickerPage({
     super.key,
@@ -141,7 +143,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
               return catProducts.isEmpty
                   ? Center(
                       child: Text(
-                        VN.noProducts,
+                        ProductsLabels.noProducts,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.outline,
                         ),
@@ -174,7 +176,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
       title: Text(
         _multiSelectMode && _selectedIds.isNotEmpty
             ? '${_selectedIds.length} đã chọn'
-            : VN.selectProducts,
+            : OrdersLabels.selectProducts,
       ),
       actions: [
         if (_multiSelectMode)
@@ -268,7 +270,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             icon: const Icon(Icons.close),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text(VN.selectProducts),
+          title: const Text(OrdersLabels.selectProducts),
           actions: const [AppBarOverflowMenu()],
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -279,10 +281,10 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             icon: const Icon(Icons.close),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text(VN.selectProducts),
+          title: const Text(OrdersLabels.selectProducts),
           actions: const [AppBarOverflowMenu()],
         ),
-        body: const Center(child: Text(VN.apiError)),
+        body: const Center(child: Text(SharedLabels.apiError)),
       ),
       data: (products) => categoriesAsync.when(
         loading: () =>

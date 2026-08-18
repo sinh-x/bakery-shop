@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../data/api/receipt_service.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Bottom sheet that lets staff pick which receipt type to print for an order.
 class OrderReceiptTypeSelector extends ConsumerWidget {
   const OrderReceiptTypeSelector({super.key, required this.orderRef});
@@ -26,14 +25,14 @@ class OrderReceiptTypeSelector extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              VN.selectReceiptType,
+              SharedLabels.selectReceiptType,
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
           if (mainItems.isNotEmpty)
             ListTile(
               leading: const Icon(Icons.receipt),
-              title: const Text(VN.printWorkTicket),
+              title: const Text(SharedLabels.printWorkTicket),
               onTap: () {
                 Navigator.pop(context);
                 if (mainItems.length == 1) {
@@ -47,7 +46,7 @@ class OrderReceiptTypeSelector extends ConsumerWidget {
             ),
           ListTile(
             leading: const Icon(Icons.person),
-            title: const Text(VN.printCustomerReceipt),
+            title: const Text(SharedLabels.printCustomerReceipt),
             onTap: () {
               Navigator.pop(context);
               context.push(
@@ -58,7 +57,7 @@ class OrderReceiptTypeSelector extends ConsumerWidget {
           if (order?.deliveryType == 'bus')
             ListTile(
               leading: const Icon(Icons.local_shipping),
-              title: const Text(VN.printBusLabel),
+              title: const Text(SharedLabels.printBusLabel),
               onTap: () {
                 Navigator.pop(context);
                 context.push(
@@ -69,7 +68,7 @@ class OrderReceiptTypeSelector extends ConsumerWidget {
           if (order?.deliveryType == 'pickup')
             ListTile(
               leading: const Icon(Icons.store),
-              title: const Text(VN.printShopReceipt),
+              title: const Text(SharedLabels.printShopReceipt),
               onTap: () {
                 Navigator.pop(context);
                 context.push(
@@ -80,7 +79,7 @@ class OrderReceiptTypeSelector extends ConsumerWidget {
           if (order?.deliveryType == 'door')
             ListTile(
               leading: const Icon(Icons.delivery_dining),
-              title: const Text(VN.printDeliveryReceipt),
+              title: const Text(SharedLabels.printDeliveryReceipt),
               onTap: () {
                 Navigator.pop(context);
                 context.push(

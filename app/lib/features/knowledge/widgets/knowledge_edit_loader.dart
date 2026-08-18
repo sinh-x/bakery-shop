@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/knowledge_provider.dart';
 import '../knowledge_form_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Loads a knowledge entry from the API before showing the edit form.
 class KnowledgeEditLoader extends ConsumerWidget {
   const KnowledgeEditLoader({super.key, required this.entryId});
@@ -19,15 +18,15 @@ class KnowledgeEditLoader extends ConsumerWidget {
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (_, stackTrace) {
         return Scaffold(
-          appBar: AppBar(title: const Text(VN.editKnowledge)),
-          body: const Center(child: Text(VN.apiError)),
+          appBar: AppBar(title: const Text(SharedLabels.editKnowledge)),
+          body: const Center(child: Text(SharedLabels.apiError)),
         );
       },
       data: (entry) {
         if (entry == null) {
           return Scaffold(
-            appBar: AppBar(title: const Text(VN.editKnowledge)),
-            body: const Center(child: Text(VN.apiError)),
+            appBar: AppBar(title: const Text(SharedLabels.editKnowledge)),
+            body: const Center(child: Text(SharedLabels.apiError)),
           );
         }
         return KnowledgeFormScreen(entry: entry);

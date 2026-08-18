@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Renders the candle-type line for an order item or work item when the
 /// `candle_type` attribute is present, non-empty, and not `khong_nen`
 /// (DG-371 review cycle 1 / MAJOR-2).
@@ -28,7 +26,7 @@ class CandleTypeLine extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Text(
-        '${VN.packCandles}: ${VN.candleTypeLabel(value)}',
+        '${OrdersLabels.packCandles}: ${OrdersLabels.candleTypeLabel(value)}',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.pink.shade700,
               fontWeight: FontWeight.w500,

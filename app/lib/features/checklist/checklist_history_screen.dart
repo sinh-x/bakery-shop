@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 class ChecklistHistoryScreen extends ConsumerStatefulWidget {
   const ChecklistHistoryScreen({super.key});
 
@@ -120,13 +119,13 @@ class _ChecklistHistoryScreenState
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(VN.apiError),
+                    const Text(SharedLabels.apiError),
                     const SizedBox(height: 8),
                     FilledButton(
                       onPressed: () => ref
                           .read(checklistHistoryProvider.notifier)
                           .fetchRange(_fromDate, _toDate),
-                      child: const Text(VN.retry),
+                      child: const Text(SharedLabels.retry),
                     ),
                   ],
                 ),

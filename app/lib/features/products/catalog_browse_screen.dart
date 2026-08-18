@@ -6,7 +6,9 @@ import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
 import '../../data/providers/catalog_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
     if (kIsWeb) 'services/bulk_download_web.dart'
@@ -150,7 +152,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         if (_selectedPhotoIds.length >= 20) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(VN.toiDa20Anh),
+              content: Text(SharedLabels.toiDa20Anh),
               duration: Duration(seconds: 2),
             ),
           );
@@ -206,8 +208,8 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         appBar: AppBar(
           title: Text(
             _selectMode
-                ? '${_selectedPhotoIds.length} ${VN.daChon}'
-                : VN.browseScreenTitle,
+                ? '${_selectedPhotoIds.length} ${SharedLabels.daChon}'
+                : ProductsLabels.browseScreenTitle,
           ),
           leading: _selectMode
               ? IconButton(
@@ -220,7 +222,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
               IconButton(
                 icon: const Icon(Icons.check_circle),
                 onPressed: _toggleSelectMode,
-                tooltip: VN.chonAnh,
+                tooltip: SharedLabels.chonAnh,
               ),
             if (!_selectMode) const AppBarOverflowMenu(),
             if (_selectMode)
@@ -232,7 +234,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     _selectAll20(photos);
                   }
                 },
-                tooltip: VN.chon20,
+                tooltip: SharedLabels.chon20,
               ),
             if (_selectMode && _bulkInProgress)
               const Padding(
@@ -250,16 +252,16 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   PopupMenuItem<String>(
                     value: 'bulk_share',
                     enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
-                    child: const Text(VN.chiaSe),
+                    child: const Text(ProductsLabels.chiaSe),
                   ),
                   PopupMenuItem<String>(
                     value: 'bulk_download',
                     enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
-                    child: const Text(VN.taiAnh),
+                    child: const Text(ProductsLabels.taiAnh),
                   ),
                   const PopupMenuItem<String>(
                     value: 'cancel_selection',
-                    child: Text(VN.huy),
+                    child: Text(SharedLabels.huy),
                   ),
                 ],
               ),
@@ -279,11 +281,11 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(VN.catalogFilterLoadError),
+                      const Text(ProductsLabels.catalogFilterLoadError),
                       const SizedBox(height: 6),
                       FilledButton.tonal(
                         onPressed: () => ref.invalidate(catalogTagDefsProvider),
-                        child: const Text(VN.taiLai),
+                        child: const Text(OrdersLabels.taiLai),
                       ),
                     ],
                   ),
@@ -338,12 +340,12 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     children: [
                       const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      const Text(VN.apiError),
+                      const Text(SharedLabels.apiError),
                       const SizedBox(height: 8),
                       FilledButton(
                         onPressed: () =>
                             ref.invalidate(catalogBrowseProvider(_filterKey)),
-                        child: const Text(VN.retry),
+                        child: const Text(SharedLabels.retry),
                       ),
                     ],
                   ),
@@ -351,8 +353,8 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 data: (photos) {
                   if (photos.isEmpty) {
                     final msg = _selectedTags.isEmpty
-                        ? VN.noBrowsePhotos
-                        : VN.noBrowsePhotosForFilter;
+                        ? ProductsLabels.noBrowsePhotos
+                        : ProductsLabels.noBrowsePhotosForFilter;
                     return Center(
                       child: Text(
                         msg,
@@ -372,8 +374,8 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                         .read(catalogBrowseProvider(_filterKey).notifier)
                         .refresh(),
                     emptyMessage: _selectedTags.isEmpty
-                        ? VN.noBrowsePhotos
-                        : VN.noBrowsePhotosForFilter,
+                        ? ProductsLabels.noBrowsePhotos
+                        : ProductsLabels.noBrowsePhotosForFilter,
                   );
                 },
               ),

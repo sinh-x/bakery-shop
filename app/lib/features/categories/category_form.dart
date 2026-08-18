@@ -1,11 +1,12 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
 import '../../data/providers/categories_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Curated emoji options for category icons.
 const categoryEmojiOptions = [
   '🎂',
@@ -197,7 +198,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
         Navigator.of(context).pop();
         showTopSnackBar(
           context,
-          _isEditing ? VN.categoryUpdated : VN.categoryCreated,
+          _isEditing ? ProductsLabels.categoryUpdated : ProductsLabels.categoryCreated,
         );
       }
     } catch (e) {
@@ -213,7 +214,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          VN.categoryIcon,
+          ProductsLabels.categoryIcon,
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
         const SizedBox(height: 8),
@@ -275,7 +276,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _isEditing ? VN.editCategory : VN.addCategory,
+                _isEditing ? ProductsLabels.editCategory : ProductsLabels.addCategory,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 20),
@@ -284,11 +285,11 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 autofocus: true,
                 textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
-                  labelText: VN.categoryName,
+                  labelText: ProductsLabels.categoryName,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -299,15 +300,15 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   LengthLimitingTextInputFormatter(4),
                 ],
                 decoration: const InputDecoration(
-                  labelText: VN.codePrefix,
-                  hintText: VN.codePrefixHint,
-                  helperText: VN.codePrefixHelp,
+                  labelText: ProductsLabels.codePrefix,
+                  hintText: ProductsLabels.codePrefixHint,
+                  helperText: ProductsLabels.codePrefixHelp,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return VN.noPrefixError;
+                  if (v == null || v.trim().isEmpty) return ProductsLabels.noPrefixError;
                   if (!RegExp(r'^[A-Z]{2,4}$').hasMatch(v.trim())) {
-                    return VN.prefixFormatError;
+                    return ProductsLabels.prefixFormatError;
                   }
                   return null;
                 },
@@ -317,12 +318,12 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 controller: _slugCtrl,
                 readOnly: _isEditing,
                 decoration: InputDecoration(
-                  labelText: VN.categorySlug,
+                  labelText: ProductsLabels.categorySlug,
                   border: const OutlineInputBorder(),
                   filled: _isEditing,
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 16),
               if (_isEditing) ...[
@@ -333,9 +334,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   ),
                   child: SwitchListTile.adaptive(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    title: const Text(VN.categoryVisibility),
+                    title: const Text(ProductsLabels.categoryVisibility),
                     subtitle: Text(
-                      _isActive ? VN.categoryVisible : VN.categoryHiddenState,
+                      _isActive ? ProductsLabels.categoryVisible : ProductsLabels.categoryHiddenState,
                     ),
                     value: _isActive,
                     onChanged: _saving
@@ -356,7 +357,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                     onPressed: _saving
                         ? null
                         : () => Navigator.of(context).pop(),
-                    child: const Text(VN.cancel),
+                    child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -367,7 +368,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text(VN.save),
+                        : const Text(SharedLabels.save),
                   ),
                 ],
               ),

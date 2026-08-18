@@ -1,9 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:bakery_app/data/api/staff_service.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Result returned by the cash-drawer dialogs.
 ///
 /// `null` means the user cancelled. A non-null value carries the entered
@@ -62,19 +64,19 @@ Future<CashDrawerDialogResult?> showOpenDrawerDialog(
   int? previousCloseCountedAmount,
 }) {
   final helpers = <String>[
-    '${VN.cashDrawerReferenceBalance}: ${formatVND(referenceBalance.toDouble())}',
+    '${CashDrawerLabels.cashDrawerReferenceBalance}: ${formatVND(referenceBalance.toDouble())}',
   ];
   if (previousCloseCountedAmount != null) {
     helpers.add(
-      '${VN.cashDrawerPreviousCloseBalance}: '
+      '${CashDrawerLabels.cashDrawerPreviousCloseBalance}: '
       '${formatVND(previousCloseCountedAmount.toDouble())}',
     );
   }
   return _showAmountDialog(
     context: context,
-    title: VN.cashDrawerOpen,
-    amountLabel: VN.cashDrawerOpeningBalance,
-    confirmLabel: VN.cashDrawerOpen,
+    title: CashDrawerLabels.cashDrawerOpen,
+    amountLabel: CashDrawerLabels.cashDrawerOpeningBalance,
+    confirmLabel: CashDrawerLabels.cashDrawerOpen,
     allowZero: false,
     helper: helpers.join('\n'),
   );
@@ -97,12 +99,12 @@ Future<CarryOverDecision?> showCarryOverConfirmationDialog(
   return showDialog<CarryOverDecision>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text(VN.cashDrawerCarryOverTitle),
+      title: const Text(CashDrawerLabels.cashDrawerCarryOverTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(VN.cashDrawerCarryOverPrompt),
+          const Text(CashDrawerLabels.cashDrawerCarryOverPrompt),
           const SizedBox(height: 4),
           Text(
             formatVND(carryOverAmount.toDouble()),
@@ -111,25 +113,25 @@ Future<CarryOverDecision?> showCarryOverConfirmationDialog(
                 ),
           ),
           const SizedBox(height: 12),
-          const Text(VN.cashDrawerCarryOverQuestion),
+          const Text(CashDrawerLabels.cashDrawerCarryOverQuestion),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton.tonalIcon(
           onPressed: () =>
               Navigator.of(context).pop(CarryOverDecision.decline),
           icon: const Icon(Icons.block),
-          label: const Text(VN.cashDrawerCarryOverDecline),
+          label: const Text(CashDrawerLabels.cashDrawerCarryOverDecline),
         ),
         FilledButton.icon(
           onPressed: () =>
               Navigator.of(context).pop(CarryOverDecision.accept),
           icon: const Icon(Icons.east),
-          label: const Text(VN.cashDrawerCarryOverAccept),
+          label: const Text(CashDrawerLabels.cashDrawerCarryOverAccept),
         ),
       ],
     ),
@@ -162,16 +164,16 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
   bool openFlow = false,
 }) async {
   final String title =
-      openFlow ? VN.cashDrawerOpenSurplusTitle : VN.cashDrawerCloseSurplusTitle;
+      openFlow ? CashDrawerLabels.cashDrawerOpenSurplusTitle : CashDrawerLabels.cashDrawerCloseSurplusTitle;
   final String referenceLabel = openFlow
-      ? VN.cashDrawerOpenSurplusReferenceLabel
+      ? CashDrawerLabels.cashDrawerOpenSurplusReferenceLabel
       : 'Số dư dự kiến';
   final String openingLabel = openFlow
-      ? VN.cashDrawerOpenSurplusOpeningLabel
+      ? CashDrawerLabels.cashDrawerOpenSurplusOpeningLabel
       : 'Số tiền đếm được';
   final String question = openFlow
-      ? VN.cashDrawerOpenSurplusQuestion
-      : VN.cashDrawerCloseSurplusQuestion;
+      ? CashDrawerLabels.cashDrawerOpenSurplusQuestion
+      : CashDrawerLabels.cashDrawerCloseSurplusQuestion;
   return showDialog<CloseSurplusDecision>(
     context: context,
     builder: (context) => AlertDialog(
@@ -197,19 +199,19 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton.tonalIcon(
           onPressed: () =>
               Navigator.of(context).pop(CloseSurplusDecision.unidentifiedSale),
           icon: const Icon(Icons.receipt_long),
-          label: const Text(VN.cashDrawerCloseSurplusUnidentifiedSale),
+          label: const Text(CashDrawerLabels.cashDrawerCloseSurplusUnidentifiedSale),
         ),
         FilledButton.icon(
           onPressed: () =>
               Navigator.of(context).pop(CloseSurplusDecision.ownerCash),
           icon: const Icon(Icons.account_balance_wallet),
-          label: const Text(VN.cashDrawerCloseSurplusOwnerCash),
+          label: const Text(CashDrawerLabels.cashDrawerCloseSurplusOwnerCash),
         ),
       ],
     ),
@@ -242,17 +244,17 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
   bool openFlow = false,
 }) async {
   final String title = openFlow
-      ? VN.cashDrawerOpenShortageTitle
-      : VN.cashDrawerCloseShortageTitle;
+      ? CashDrawerLabels.cashDrawerOpenShortageTitle
+      : CashDrawerLabels.cashDrawerCloseShortageTitle;
   final String referenceLabel = openFlow
-      ? VN.cashDrawerOpenShortageReferenceLabel
+      ? CashDrawerLabels.cashDrawerOpenShortageReferenceLabel
       : 'Số dư dự kiến';
   final String openingLabel = openFlow
-      ? VN.cashDrawerOpenShortageOpeningLabel
+      ? CashDrawerLabels.cashDrawerOpenShortageOpeningLabel
       : 'Số tiền đếm được';
   final String question = openFlow
-      ? VN.cashDrawerOpenShortageQuestion
-      : VN.cashDrawerCloseShortageQuestion;
+      ? CashDrawerLabels.cashDrawerOpenShortageQuestion
+      : CashDrawerLabels.cashDrawerCloseShortageQuestion;
   return showDialog<CloseShortageDecision>(
     context: context,
     builder: (context) => AlertDialog(
@@ -278,19 +280,19 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton.tonalIcon(
           onPressed: () =>
               Navigator.of(context).pop(CloseShortageDecision.equityLoss),
           icon: const Icon(Icons.trending_down),
-          label: const Text(VN.cashDrawerCloseShortageEquityLoss),
+          label: const Text(CashDrawerLabels.cashDrawerCloseShortageEquityLoss),
         ),
         FilledButton.icon(
           onPressed: () =>
               Navigator.of(context).pop(CloseShortageDecision.ownerWithdraw),
           icon: const Icon(Icons.account_balance_wallet),
-          label: const Text(VN.cashDrawerCloseShortageOwnerWithdraw),
+          label: const Text(CashDrawerLabels.cashDrawerCloseShortageOwnerWithdraw),
         ),
       ],
     ),
@@ -313,12 +315,12 @@ Future<CashDrawerDialogResult?> showCashInDialog(
 }) =>
     _showAmountDialog(
       context: context,
-      title: VN.cashDrawerCashIn,
-      amountLabel: VN.cashDrawerAmountLabel,
-      confirmLabel: VN.xacNhan,
+      title: CashDrawerLabels.cashDrawerCashIn,
+      amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
+      confirmLabel: OrdersLabels.xacNhan,
       allowZero: false,
       helper: expectedBalance > 0
-          ? '${VN.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+          ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
           : null,
       selector: _CashDrawerSelector.cashIn(staff),
     );
@@ -337,12 +339,12 @@ Future<CashDrawerDialogResult?> showCashOutDialog(
 }) =>
     _showAmountDialog(
       context: context,
-      title: VN.cashDrawerCashOut,
-      amountLabel: VN.cashDrawerAmountLabel,
-      confirmLabel: VN.xacNhan,
+      title: CashDrawerLabels.cashDrawerCashOut,
+      amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
+      confirmLabel: OrdersLabels.xacNhan,
       allowZero: false,
       helper: expectedBalance > 0
-          ? '${VN.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+          ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
           : null,
       selector: _CashDrawerSelector.cashOut(staff),
     );
@@ -360,18 +362,18 @@ Future<CashDrawerDialogResult?> showCloseDrawerDialog(
   int accountingBalance1101 = 0,
 }) {
   final helpers = <String>[
-    '${VN.cashDrawerExpectedBalance}: ${formatVND(expectedBalance.toDouble())}',
+    '${CashDrawerLabels.cashDrawerExpectedBalance}: ${formatVND(expectedBalance.toDouble())}',
   ];
   if (accountingBalance1101 != 0) {
     helpers.add(
-      '${VN.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
+      '${CashDrawerLabels.cashDrawerReferenceBalance}: ${formatVND(accountingBalance1101.toDouble())}',
     );
   }
   return _showAmountDialog(
     context: context,
-    title: VN.cashDrawerClose,
-    amountLabel: VN.cashDrawerCountedAmount,
-    confirmLabel: VN.cashDrawerClose,
+    title: CashDrawerLabels.cashDrawerClose,
+    amountLabel: CashDrawerLabels.cashDrawerCountedAmount,
+    confirmLabel: CashDrawerLabels.cashDrawerClose,
     allowZero: true,
     helper: helpers.join('\n'),
   );
@@ -425,11 +427,11 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
                   validator: (value) {
                     final raw = (value ?? '').replaceAll(',', '').trim();
                     final parsed = int.tryParse(raw);
-                    if (parsed == null) return VN.cashDrawerAmountLabel;
+                    if (parsed == null) return CashDrawerLabels.cashDrawerAmountLabel;
                     if (!allowZero && parsed <= 0) {
-                      return VN.cashDrawerAmountLabel;
+                      return CashDrawerLabels.cashDrawerAmountLabel;
                     }
-                    if (parsed < 0) return VN.cashDrawerAmountLabel;
+                    if (parsed < 0) return CashDrawerLabels.cashDrawerAmountLabel;
                     return null;
                   },
                 ),
@@ -441,7 +443,7 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
                 TextFormField(
                   controller: noteCtrl,
                   decoration: const InputDecoration(
-                    labelText: VN.cashDrawerNoteLabel,
+                    labelText: CashDrawerLabels.cashDrawerNoteLabel,
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 2,
@@ -453,7 +455,7 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -500,11 +502,11 @@ class _CashDrawerSelector {
         mode: _SelectorMode.cashIn,
         staff: staff,
         options: const [
-          (value: 'owner', label: VN.cashDrawerSourceOwner),
-          (value: 'employee', label: VN.cashDrawerSourceEmployee),
-          (value: 'equity', label: VN.cashDrawerSourceEquity),
+          (value: 'owner', label: CashDrawerLabels.cashDrawerSourceOwner),
+          (value: 'employee', label: CashDrawerLabels.cashDrawerSourceEmployee),
+          (value: 'equity', label: CashDrawerLabels.cashDrawerSourceEquity),
         ],
-        headerLabel: VN.cashDrawerSourceLabel,
+        headerLabel: CashDrawerLabels.cashDrawerSourceLabel,
         selectedValue: 'owner',
       );
 
@@ -513,10 +515,10 @@ class _CashDrawerSelector {
         mode: _SelectorMode.cashOut,
         staff: staff,
         options: const [
-          (value: 'owner', label: VN.cashDrawerDestinationOwner),
-          (value: 'employee', label: VN.cashDrawerDestinationEmployee),
+          (value: 'owner', label: CashDrawerLabels.cashDrawerDestinationOwner),
+          (value: 'employee', label: CashDrawerLabels.cashDrawerDestinationEmployee),
         ],
-        headerLabel: VN.cashDrawerDestinationLabel,
+        headerLabel: CashDrawerLabels.cashDrawerDestinationLabel,
         selectedValue: 'owner',
       );
 
@@ -581,7 +583,7 @@ class _CashDrawerSelector {
           DropdownButtonFormField<String>(
             initialValue: _selectedStaffName,
             decoration: const InputDecoration(
-              labelText: VN.cashDrawerStaffPickerLabel,
+              labelText: CashDrawerLabels.cashDrawerStaffPickerLabel,
               border: OutlineInputBorder(),
               isDense: true,
             ),
@@ -601,7 +603,7 @@ class _CashDrawerSelector {
               if (!_needsStaffPicker()) return null;
               if (_selectedStaffName == null ||
                   _selectedStaffName!.isEmpty) {
-                return VN.cashDrawerStaffRequired;
+                return CashDrawerLabels.cashDrawerStaffRequired;
               }
               return null;
             },

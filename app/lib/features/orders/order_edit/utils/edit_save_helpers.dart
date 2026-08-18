@@ -1,11 +1,11 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 
 import '../../../../data/api/customer_service.dart';
 import '../../../../data/models/customer.dart';
 import '../../../../data/models/order.dart';
 import '../../../../shared/utils/order_helpers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// FR1: auto-create-and-link a customer when name+phone are present but no
 /// customer is linked. Mirrors `order_create_screen.dart:137-151`. No dedup
 /// (matches create behavior per §16). Returns the new customer (and sets
@@ -57,7 +57,7 @@ void showEditSaveResult({
     publicOrderCode: updatedOrder.publicOrderCode,
   );
   if (oldVisualCode != newVisualCode) {
-    showTopSnackBar(context, '${VN.publicCodeChangedNotice} $newVisualCode');
+    showTopSnackBar(context, '${OrdersLabels.publicCodeChangedNotice} $newVisualCode');
   }
-  showTopSnackBar(context, VN.orderEditSaved);
+  showTopSnackBar(context, OrdersLabels.orderEditSaved);
 }

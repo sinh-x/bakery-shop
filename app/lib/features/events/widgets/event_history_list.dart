@@ -6,15 +6,15 @@ import '../../../data/models/event.dart';
 import '../../../data/providers/events_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'event_card_photo_count.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 enum _DateRange { today, week, month, all }
 
 const _kDateRangeLabels = {
-  _DateRange.today: VN.filterToday,
-  _DateRange.week: VN.filterWeek,
-  _DateRange.month: VN.filterMonth,
-  _DateRange.all: VN.filterAll,
+  _DateRange.today: EventsLabels.filterToday,
+  _DateRange.week: EventsLabels.filterWeek,
+  _DateRange.month: EventsLabels.filterMonth,
+  _DateRange.all: EventsLabels.filterAll,
 };
 
 const _kTypeIcons = <String, IconData>{
@@ -28,13 +28,13 @@ const _kTypeIcons = <String, IconData>{
 };
 
 const _kTypeLabels = <String, String>{
-  'note': VN.eventNote,
-  'equipment': VN.typeEquipment,
-  'production': VN.eventProduction,
-  'inventory': VN.eventInventory,
-  'expense': VN.eventExpense,
-  'delivery': VN.eventDelivery,
-  'order': VN.eventOrder,
+  'note': EventsLabels.eventNote,
+  'equipment': EventsLabels.typeEquipment,
+  'production': EventsLabels.eventProduction,
+  'inventory': EventsLabels.eventInventory,
+  'expense': EventsLabels.eventExpense,
+  'delivery': EventsLabels.eventDelivery,
+  'order': EventsLabels.eventOrder,
 };
 
 Color _badgeColor(String type) {
@@ -134,7 +134,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-          child: Text(VN.recentEvents, style: theme.textTheme.titleMedium),
+          child: Text(EventsLabels.recentEvents, style: theme.textTheme.titleMedium),
         ),
         _buildFilterBar(theme),
         const Divider(height: 1),
@@ -146,13 +146,13 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    VN.errorLoading,
+                    SharedLabels.errorLoading,
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 8),
                   FilledButton.tonal(
                     onPressed: _applyFilters,
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -160,7 +160,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
             data: (list) => list.isEmpty
                 ? Center(
                     child: Text(
-                      VN.noEvents,
+                      EventsLabels.noEvents,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -210,13 +210,13 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
             children: [
               DropdownButton<String?>(
                 value: _typeFilter,
-                hint: const Text(VN.filterAll),
+                hint: const Text(EventsLabels.filterAll),
                 underline: const SizedBox.shrink(),
                 isDense: true,
                 items: [
                   const DropdownMenuItem<String?>(
                     value: null,
-                    child: Text(VN.filterAll),
+                    child: Text(EventsLabels.filterAll),
                   ),
                   ..._kTypeLabels.entries.map(
                     (e) => DropdownMenuItem<String?>(
@@ -248,7 +248,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                     autofocus: true,
                     textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
-                      hintText: VN.searchEvents,
+                      hintText: EventsLabels.searchEvents,
                       isDense: true,
                       border: const OutlineInputBorder(),
                       contentPadding: const EdgeInsets.symmetric(
@@ -276,7 +276,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.search),
-                  tooltip: VN.searchEvents,
+                  tooltip: EventsLabels.searchEvents,
                   onPressed: () => setState(() => _searchExpanded = true),
                 ),
               ],

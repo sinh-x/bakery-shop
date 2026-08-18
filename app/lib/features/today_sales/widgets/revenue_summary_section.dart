@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../dashboard/widgets/metric_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Revenue + payment summary for the Today Sales screen (DG-374 Phase 2 /
 /// FR3), extended in DG-378 Phase 3 to add a cash-source breakdown, and in

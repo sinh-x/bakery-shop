@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,8 +9,7 @@ import '../../data/api/receipt_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'receipt_preview_print_stub.dart'
     if (dart.library.io) 'receipt_preview_print_native.dart'
     if (dart.library.js_interop) 'receipt_preview_print_web.dart'
@@ -84,7 +84,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       );
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -96,11 +96,11 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
           'receipt_${widget.orderRef}_${widget.receiptType.value}_${DateTime.now().millisecondsSinceEpoch}.png';
       await platform.saveToFile(_imageBytes!, fileName);
       if (mounted) {
-        showTopSnackBar(context, VN.receiptSaved);
+        showTopSnackBar(context, SharedLabels.receiptSaved);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -125,7 +125,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         printedBy: printedBy,
       );
       if (!mounted) return;
-      showTopSnackBar(context, VN.printSuccess);
+      showTopSnackBar(context, SharedLabels.printSuccess);
 
       // Flow B: auto-confirm order after successful work ticket print
       if (isFlowB) {
@@ -133,12 +133,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
             .read(orderDetailProvider(widget.orderRef).notifier)
             .transitionTo('confirmed');
         if (mounted) {
-          showTopSnackBar(context, VN.orderAutoConfirmed);
+          showTopSnackBar(context, SharedLabels.orderAutoConfirmed);
         }
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _printing = false);
@@ -167,7 +167,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             Text(
               _error!,
@@ -183,7 +183,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
                 });
                 _fetchReceipt();
               },
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
@@ -191,7 +191,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
 
     if (_imageBytes == null) {
-      return const Center(child: Text(VN.errorLoading));
+      return const Center(child: Text(SharedLabels.errorLoading));
     }
 
     return Center(
@@ -217,7 +217,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
               child: OutlinedButton.icon(
                 onPressed: _saveImage,
                 icon: const Icon(Icons.save_alt),
-                label: const Text(VN.saveToGallery),
+                label: const Text(SharedLabels.saveToGallery),
               ),
             ),
             const SizedBox(width: 8),
@@ -242,7 +242,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
                         ),
                       )
                     : const Icon(Icons.print),
-                label: Text(_printing ? 'Đang in...' : VN.print),
+                label: Text(_printing ? 'Đang in...' : SharedLabels.print),
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.secondary,
                 ),

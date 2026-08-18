@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,8 +15,8 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/xfile_utils.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/knowledge_photo_gallery.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class KnowledgeDetailScreen extends ConsumerWidget {
   const KnowledgeDetailScreen({super.key, required this.entryId});
 
@@ -36,12 +37,12 @@ class KnowledgeDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () =>
                     ref.invalidate(knowledgeEntryDetailProvider(entryId)),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -51,11 +52,11 @@ class KnowledgeDetailScreen extends ConsumerWidget {
         if (entry == null) {
           return Scaffold(
             appBar: AppBar(actions: const [AppBarOverflowMenu()]),
-            body: const Center(child: Text(VN.apiError)),
+            body: const Center(child: Text(SharedLabels.apiError)),
           );
         }
 
-        final typeLabel = VN.knowledgeTypes[entry.type] ?? entry.type;
+        final typeLabel = SharedLabels.knowledgeTypes[entry.type] ?? entry.type;
         final theme = Theme.of(context);
 
         return Scaffold(
@@ -65,7 +66,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               _ShareEntryButton(entry: entry),
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
-                tooltip: VN.editKnowledge,
+                tooltip: SharedLabels.editKnowledge,
                 onPressed: () => context.push('/knowledge/${entry.id}/edit'),
               ),
               AppBarOverflowMenu(
@@ -74,18 +75,18 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text(VN.confirmDeleteKnowledge),
+                        title: const Text(SharedLabels.confirmDeleteKnowledge),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.of(ctx).pop(false),
-                            child: const Text(VN.cancel),
+                            child: const Text(SharedLabels.cancel),
                           ),
                           FilledButton(
                             onPressed: () => Navigator.of(ctx).pop(true),
                             style: FilledButton.styleFrom(
                               backgroundColor: theme.colorScheme.error,
                             ),
-                            child: const Text(VN.deleteKnowledge),
+                            child: const Text(SharedLabels.deleteKnowledge),
                           ),
                         ],
                       ),
@@ -95,7 +96,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                           .read(knowledgeEntriesProvider.notifier)
                           .deleteEntry(entry.id);
                       if (context.mounted) {
-                        showTopSnackBar(context, VN.knowledgeDeleted);
+                        showTopSnackBar(context, SharedLabels.knowledgeDeleted);
                         context.pop();
                       }
                     }
@@ -112,7 +113,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          VN.deleteKnowledge,
+                          SharedLabels.deleteKnowledge,
                           style: TextStyle(color: theme.colorScheme.error),
                         ),
                       ],
@@ -284,7 +285,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
           await _downloadPhotosFallback(text, entry.photos, baseUrl);
         }
       } else {
-        showTopSnackBar(context, VN.khongTheChiaSe);
+        showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
       }
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -320,9 +321,9 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     final copied = await WebShareFallbackHelpers.copyText(text);
     if (!mounted) return;
     if (copied) {
-      showTopSnackBar(context, VN.daSaoChepNoiDung);
+      showTopSnackBar(context, ProductsLabels.daSaoChepNoiDung);
     } else {
-      showTopSnackBar(context, VN.saoChepNoiDungThatBai);
+      showTopSnackBar(context, ProductsLabels.saoChepNoiDungThatBai);
     }
   }
 
@@ -344,7 +345,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     if (mounted) {
       showTopSnackBar(
         context,
-        VN.taiNAnh.replaceFirst(
+        ProductsLabels.taiNAnh.replaceFirst(
           '{count}',
           '${fallbackResult.successCount}/${photos.length}',
         ),
@@ -435,7 +436,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.share),
-      tooltip: VN.share,
+      tooltip: SharedLabels.share,
       onPressed: _sharing ? null : _share,
     );
   }

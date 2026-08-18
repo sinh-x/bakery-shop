@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../providers/order_providers.dart';
 import 'work_item_edit_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class WorkItemsSection extends ConsumerWidget {
   const WorkItemsSection({super.key, required this.orderRef, required this.onAddTap});
 
@@ -18,7 +18,7 @@ class WorkItemsSection extends ConsumerWidget {
 
     return workItemsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Text('${VN.apiError}: $e'),
+      error: (e, _) => Text('${SharedLabels.apiError}: $e'),
       data: (items) {
         final regularItems = items.where((i) => !i.isExtra).toList();
         return Column(
@@ -31,7 +31,7 @@ class WorkItemsSection extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  VN.noWorkItems,
+                  OrdersLabels.noWorkItems,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
                   ),
@@ -41,7 +41,7 @@ class WorkItemsSection extends ConsumerWidget {
             OutlinedButton.icon(
               onPressed: onAddTap,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text(VN.addProduct),
+              label: const Text(OrdersLabels.addProduct),
             ),
           ],
         );

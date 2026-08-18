@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/payment_transaction.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Shared status-rank maps and helpers extracted from `order_detail_screen.dart`
 /// (DG-308 Phase 4.2 / FR-FL-1).
@@ -55,12 +56,12 @@ Future<String?> showReasonDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
-          title: Text(isCancel ? VN.cancelOrderTitle : VN.statusReasonTitle),
+          title: Text(isCancel ? OrdersLabels.cancelOrderTitle : OrdersLabels.statusReasonTitle),
           content: TextField(
             controller: ctrl,
             decoration: const InputDecoration(
-              labelText: VN.statusReasonLabel,
-              hintText: VN.statusReasonHint,
+              labelText: OrdersLabels.statusReasonLabel,
+              hintText: OrdersLabels.statusReasonHint,
               border: OutlineInputBorder(),
             ),
             maxLines: 2,
@@ -70,7 +71,7 @@ Future<String?> showReasonDialog(
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text(VN.cancel),
+              child: const Text(SharedLabels.cancel),
             ),
             FilledButton(
               style: isCancel
@@ -82,7 +83,7 @@ Future<String?> showReasonDialog(
                   ? null
                   : () => Navigator.pop(ctx, ctrl.text.trim()),
               child: Text(
-                isCancel ? VN.confirmCancelAction : VN.confirmStatusChange,
+                isCancel ? OrdersLabels.confirmCancelAction : OrdersLabels.confirmStatusChange,
               ),
             ),
           ],

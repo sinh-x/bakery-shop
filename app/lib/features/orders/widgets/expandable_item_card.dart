@@ -1,4 +1,5 @@
 // EXEMPT: 200-line threshold exceeded because DG-150 blocker: safe extraction of shell/collapsed/expanded sections risks cross-field validation regressions in active order draft wiring. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,7 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 import 'candle_type_radio_group.dart';
 import 'rut_tien_editor.dart';
 
@@ -135,7 +137,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       final clamped = selling < assigned ? assigned : selling;
       widget.item.customUnitPrice = clamped;
       setState(() {
-        _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+        _floorWarning = selling < assigned ? OrdersLabels.markupFloorWarning : null;
       });
     } else {
       widget.item.customUnitPrice =
@@ -157,10 +159,10 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     final selectedChip = product.priceChips
         .where((chip) => chip.id == selectedChipId)
         .firstOrNull;
-    if (selectedChip == null) return VN.stockUnknown;
+    if (selectedChip == null) return StockLabels.stockUnknown;
     final displayQty = chipDisplayStockQty(product, selectedChip);
-    if (displayQty <= 0) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $displayQty';
+    if (displayQty <= 0) return StockLabels.stockUnknown;
+    return '${StockLabels.stockRemaining}: $displayQty';
   }
 
   @override
@@ -290,7 +292,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        '${VN.giaGoc}: ${formatVND(widget.item.assignedPrice ?? widget.item.product.basePrice)}',
+                        '${OrdersLabels.giaGoc}: ${formatVND(widget.item.assignedPrice ?? widget.item.product.basePrice)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -300,8 +302,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.giaBan,
-                        helperText: VN.markupThousandsHint,
+                        labelText: OrdersLabels.giaBan,
+                        helperText: OrdersLabels.markupThousandsHint,
                         border: OutlineInputBorder(),
                         suffixText: ',000đ',
                         isDense: true,
@@ -323,7 +325,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.itemPrice,
+                        labelText: OrdersLabels.itemPrice,
                         border: OutlineInputBorder(),
                         suffixText: 'đ',
                         isDense: true,
@@ -345,7 +347,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         });
                         widget.onStateChanged();
                       },
-                      title: const Text(VN.useInventory),
+                      title: const Text(StockLabels.useInventory),
                       subtitle: _useInventory ? Text(_stockInlineText) : null,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -392,7 +394,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                   TextFormField(
                     controller: _notesCtrl,
                     decoration: const InputDecoration(
-                      labelText: VN.notes,
+                      labelText: OrdersLabels.notes,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -419,7 +421,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         }
                       });
                     },
-                    title: const Text(VN.isBirthday),
+                    title: const Text(OrdersLabels.isBirthday),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -428,7 +430,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _ageCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.birthdayAge,
+                        labelText: OrdersLabels.birthdayAge,
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -449,7 +451,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 2),
                       child: Text(
-                        VN.candleTypeSectionLabel,
+                        OrdersLabels.candleTypeSectionLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Theme.of(context).colorScheme.outline,
                             ),
@@ -546,7 +548,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       Icons.add_photo_alternate_outlined,
                       size: 16,
                     ),
-                    label: const Text(VN.addOrderPhoto),
+                    label: const Text(OrdersLabels.addOrderPhoto),
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),

@@ -5,8 +5,8 @@ import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/api/config_service.dart';
 import '../../../data/providers/catalog_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   await showDialog<bool>(
@@ -34,12 +34,12 @@ Future<void> showDeleteDialog(
         await showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text(VN.tagCannotDelete),
-            content: Text(VN.tagInUse(usage.count)),
+            title: const Text(ProductsLabels.tagCannotDelete),
+            content: Text(ProductsLabels.tagInUse(usage.count)),
             actions: [
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(VN.save),
+                child: const Text(SharedLabels.save),
               ),
             ],
           ),
@@ -50,16 +50,16 @@ Future<void> showDeleteDialog(
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text(VN.tagDeleteConfirm(tag.label)),
+          title: Text(ProductsLabels.tagDeleteConfirm(tag.label)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(VN.cancel),
+              child: const Text(SharedLabels.cancel),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(VN.remove),
+              child: const Text(SharedLabels.remove),
             ),
           ],
         ),
@@ -75,14 +75,14 @@ Future<void> showDeleteDialog(
           ref.invalidate(catalogBrowseProvider);
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text(VN.tagDeleted)),
+              const SnackBar(content: Text(ProductsLabels.tagDeleted)),
             );
           }
         } catch (e) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('${VN.tagGenericError}$e'),
+                content: Text('${ProductsLabels.tagGenericError}$e'),
                 backgroundColor: Colors.red,
               ),
             );
@@ -94,7 +94,7 @@ Future<void> showDeleteDialog(
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${VN.tagUsageCheckError}$e'),
+          content: Text('${ProductsLabels.tagUsageCheckError}$e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -117,9 +117,9 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
   final _labelCtrl = TextEditingController();
   String? _selectedCategory;
   static final _categories = [
-    VN.tagCategoriesDoiTuong,
-    VN.tagCategoriesDip,
-    VN.tagCategoriesPhongCach,
+    ProductsLabels.tagCategoriesDoiTuong,
+    ProductsLabels.tagCategoriesDip,
+    ProductsLabels.tagCategoriesPhongCach,
   ];
 
   @override
@@ -142,14 +142,14 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
       if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.tagAdded)),
+          const SnackBar(content: Text(ProductsLabels.tagAdded)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${VN.tagGenericError}$e'),
+            content: Text('${ProductsLabels.tagGenericError}$e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -160,7 +160,7 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text(VN.addCatalogTag),
+      title: const Text(ProductsLabels.addCatalogTag),
       content: Form(
         key: _formKey,
         child: Column(
@@ -169,7 +169,7 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
             DropdownButtonFormField<String>(
               initialValue: _selectedCategory,
               decoration: const InputDecoration(
-                labelText: VN.tagCategory,
+                labelText: ProductsLabels.tagCategory,
                 border: OutlineInputBorder(),
               ),
               items: _categories.map((category) {
@@ -183,23 +183,23 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
                   _selectedCategory = value;
                 });
               },
-              validator: (value) => value == null ? VN.fieldRequired : null,
+              validator: (value) => value == null ? SharedLabels.fieldRequired : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _keyCtrl,
               decoration: const InputDecoration(
-                labelText: VN.tagKey,
-                hintText: VN.tagKeyHint,
+                labelText: ProductsLabels.tagKey,
+                hintText: ProductsLabels.tagKeyHint,
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return VN.fieldRequired;
+                  return SharedLabels.fieldRequired;
                 }
-                final regex = RegExp(VN.tagKeyRegexPattern);
+                final regex = RegExp(ProductsLabels.tagKeyRegexPattern);
                 if (!regex.hasMatch(value)) {
-                  return VN.tagKeyInvalid;
+                  return ProductsLabels.tagKeyInvalid;
                 }
                 return null;
               },
@@ -208,18 +208,18 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
             TextFormField(
               controller: _labelCtrl,
               decoration: const InputDecoration(
-                labelText: VN.tagLabel,
+                labelText: ProductsLabels.tagLabel,
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return VN.tagLabelEmpty;
+                  return ProductsLabels.tagLabelEmpty;
                 }
                 if (value.length > 40) {
-                  return VN.tagLabelTooLong;
+                  return ProductsLabels.tagLabelTooLong;
                 }
                 if (value.contains(':')) {
-                  return VN.tagLabelNoColon;
+                  return ProductsLabels.tagLabelNoColon;
                 }
                 return null;
               },
@@ -230,11 +230,11 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: _save,
-          child: const Text(VN.save),
+          child: const Text(SharedLabels.save),
         ),
       ],
     );
@@ -278,14 +278,14 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
       if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.tagUpdated)),
+          const SnackBar(content: Text(ProductsLabels.tagUpdated)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${VN.tagGenericError}$e'),
+            content: Text('${ProductsLabels.tagGenericError}$e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -296,7 +296,7 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text(VN.editCatalogTag),
+      title: const Text(ProductsLabels.editCatalogTag),
       content: Form(
         key: _formKey,
         child: Column(
@@ -304,7 +304,7 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
           children: [
             InputDecorator(
               decoration: const InputDecoration(
-                labelText: VN.tagCategory,
+                labelText: ProductsLabels.tagCategory,
                 border: OutlineInputBorder(),
               ),
               child: Text(getCategoryLabel(widget.tag.category)),
@@ -313,17 +313,17 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
             TextFormField(
               controller: _keyCtrl,
               decoration: const InputDecoration(
-                labelText: VN.tagKey,
-                hintText: VN.tagKeyHint,
+                labelText: ProductsLabels.tagKey,
+                hintText: ProductsLabels.tagKeyHint,
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return VN.fieldRequired;
+                  return SharedLabels.fieldRequired;
                 }
-                final regex = RegExp(VN.tagKeyRegexPattern);
+                final regex = RegExp(ProductsLabels.tagKeyRegexPattern);
                 if (!regex.hasMatch(value)) {
-                  return VN.tagKeyInvalid;
+                  return ProductsLabels.tagKeyInvalid;
                 }
                 return null;
               },
@@ -332,18 +332,18 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
             TextFormField(
               controller: _labelCtrl,
               decoration: const InputDecoration(
-                labelText: VN.tagLabel,
+                labelText: ProductsLabels.tagLabel,
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return VN.tagLabelEmpty;
+                  return ProductsLabels.tagLabelEmpty;
                 }
                 if (value.length > 40) {
-                  return VN.tagLabelTooLong;
+                  return ProductsLabels.tagLabelTooLong;
                 }
                 if (value.contains(':')) {
-                  return VN.tagLabelNoColon;
+                  return ProductsLabels.tagLabelNoColon;
                 }
                 return null;
               },
@@ -354,11 +354,11 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
           onPressed: _save,
-          child: const Text(VN.save),
+          child: const Text(SharedLabels.save),
         ),
       ],
     );

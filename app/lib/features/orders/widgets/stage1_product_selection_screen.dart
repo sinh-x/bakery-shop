@@ -11,8 +11,6 @@ import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
 import 'stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Stage 1 of the order creation wizard — product selection.
 ///
 /// Two-step flow (DG-214):
@@ -158,7 +156,7 @@ class _Stage1ProductSelectionScreenState
             child: OutlinedButton.icon(
               onPressed: _onAddProduct,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text(VN.addProduct),
+              label: const Text(OrdersLabels.addProduct),
             ),
           ),
         ),
@@ -208,7 +206,7 @@ class _ExtrasHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 6),
       child: Text(
-        VN.addExtra,
+        OrdersLabels.addExtra,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: Theme.of(context).colorScheme.primary,
             ),

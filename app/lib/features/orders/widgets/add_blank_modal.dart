@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../shared/labels/blanks.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Result of the add/edit blank modal (DG-294 FR3-FR5).
 ///
 /// Carries the user-entered values back to [CakeDetailScreen] which then
@@ -144,7 +144,7 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
                 error: (e, _) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Text(
-                    '${VN.apiError}: $e',
+                    '${SharedLabels.apiError}: $e',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -246,14 +246,14 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
         Expanded(
           child: TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: FilledButton(
             onPressed: _submit,
-            child: const Text(VN.xacNhan),
+            child: const Text(OrdersLabels.xacNhan),
           ),
         ),
       ],

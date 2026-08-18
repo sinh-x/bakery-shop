@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bakery_app/shared/widgets/phone_text_field.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/customers.dart';
 /// A single editable phone row (controller + primary flag).
 ///
 /// Extracted from `customer_form.dart` (DG-205 review-auto Mn-1) to keep the
@@ -46,14 +45,14 @@ class PhoneEntryRow extends StatelessWidget {
           Expanded(
             child: PhoneTextField(
               controller: entry.controller,
-              labelText: VN.customerPhoneField,
+              labelText: CustomersLabels.customerPhoneField,
               textInputAction: TextInputAction.next,
             ),
           ),
           const SizedBox(width: 8),
           // Primary radio toggle. Selecting this row deselects all others.
           Tooltip(
-            message: VN.customerPrimaryPhone,
+            message: CustomersLabels.customerPrimaryPhone,
             child: IconButton(
               onPressed: onSetPrimary,
               icon: Icon(
@@ -66,7 +65,7 @@ class PhoneEntryRow extends StatelessWidget {
           ),
           IconButton(
             onPressed: canRemove ? onRemove : null,
-            tooltip: VN.customerRemovePhone,
+            tooltip: CustomersLabels.customerRemovePhone,
             icon: const Icon(Icons.remove_circle_outline),
           ),
         ],

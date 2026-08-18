@@ -1,8 +1,10 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, showTopSnackBar;
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,8 +58,8 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
-  String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceDrawerCash;
+  String _paymentMethod = OrdersLabels.methodCash;
+  String _paymentSource = ExpensesLabels.paymentSourceDrawerCash;
   bool _loading = false;
   bool _submitting = false;
   String? _loadError;
@@ -113,8 +115,8 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
       if (!mounted) return;
       setState(() {
         _loadError = e is DioException
-            ? (e.message ?? VN.debtSettlementFailure)
-            : VN.debtSettlementFailure;
+            ? (e.message ?? ExpensesLabels.debtSettlementFailure)
+            : ExpensesLabels.debtSettlementFailure;
         _loading = false;
       });
     }
@@ -154,15 +156,15 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             );
       }
       if (!mounted) return;
-      showTopSnackBar(context, VN.debtSettlementSuccess);
+      showTopSnackBar(context, ExpensesLabels.debtSettlementSuccess);
       context.pop(true);
     } catch (e) {
       if (!mounted) return;
       showTopSnackBar(
         context,
         e is DioException
-            ? (e.message ?? VN.debtSettlementFailure)
-            : VN.debtSettlementFailure,
+            ? (e.message ?? ExpensesLabels.debtSettlementFailure)
+            : ExpensesLabels.debtSettlementFailure,
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -173,7 +175,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.debtSettlementTitle)),
+      appBar: AppBar(title: const Text(ExpensesLabels.debtSettlementTitle)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
@@ -200,12 +202,12 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(VN.debtSettlementSummary, style: theme.textTheme.titleMedium),
+                  Text(ExpensesLabels.debtSettlementSummary, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 6),
-                  Text('${VN.debtSettlementCreditor}: $creditor'),
-                  Text('${VN.debtSettlementTotalDebt}: ${formatVND(_totalDebt.toDouble())}'),
-                  Text('${VN.debtSettlementSettledSoFar}: ${formatVND(_settledSoFar.toDouble())}'),
-                  Text('${VN.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementCreditor}: $creditor'),
+                  Text('${ExpensesLabels.debtSettlementTotalDebt}: ${formatVND(_totalDebt.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementSettledSoFar}: ${formatVND(_settledSoFar.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}'),
                 ],
               ),
             ),
@@ -215,19 +217,19 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             controller: _amountCtrl,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementAmountLabel,
-              hintText: VN.debtSettlementAmountHint,
+              labelText: ExpensesLabels.debtSettlementAmountLabel,
+              hintText: ExpensesLabels.debtSettlementAmountHint,
               border: OutlineInputBorder(),
             ),
             validator: (value) {
               final raw = value?.trim() ?? '';
-              if (raw.isEmpty) return VN.debtSettlementAmountRequired;
+              if (raw.isEmpty) return ExpensesLabels.debtSettlementAmountRequired;
               final parsed = int.tryParse(raw);
               if (parsed == null || parsed <= 0) {
-                return VN.debtSettlementAmountInvalid;
+                return ExpensesLabels.debtSettlementAmountInvalid;
               }
               if (parsed > remaining) {
-                return VN.debtSettlementAmountExceedsRemaining;
+                return ExpensesLabels.debtSettlementAmountExceedsRemaining;
               }
               return null;
             },
@@ -236,24 +238,24 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
           DropdownButtonFormField<String>(
             initialValue: _paymentMethod,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementPaymentMethodLabel,
+              labelText: ExpensesLabels.debtSettlementPaymentMethodLabel,
               border: OutlineInputBorder(),
             ),
             items: const [
-              DropdownMenuItem(value: VN.methodCash, child: Text(VN.methodCash)),
+              DropdownMenuItem(value: OrdersLabels.methodCash, child: Text(OrdersLabels.methodCash)),
               DropdownMenuItem(
-                value: VN.methodTransfer,
-                child: Text(VN.methodTransfer),
+                value: OrdersLabels.methodTransfer,
+                child: Text(OrdersLabels.methodTransfer),
               ),
             ],
             onChanged: (value) =>
-                setState(() => _paymentMethod = value ?? VN.methodCash),
+                setState(() => _paymentMethod = value ?? OrdersLabels.methodCash),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _paymentSource,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementPaymentSourceLabel,
+              labelText: ExpensesLabels.debtSettlementPaymentSourceLabel,
               border: OutlineInputBorder(),
             ),
             items: [
@@ -262,18 +264,18 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             ],
             validator: (value) =>
                 (value == null || value.isEmpty)
-                    ? VN.debtSettlementPaymentSourceRequired
+                    ? ExpensesLabels.debtSettlementPaymentSourceRequired
                     : null,
             onChanged: (value) =>
-                setState(() => _paymentSource = value ?? VN.paymentSourceDrawerCash),
+                setState(() => _paymentSource = value ?? ExpensesLabels.paymentSourceDrawerCash),
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _noteCtrl,
             maxLines: 2,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementNoteLabel,
-              hintText: VN.debtSettlementNoteHint,
+              labelText: ExpensesLabels.debtSettlementNoteLabel,
+              hintText: ExpensesLabels.debtSettlementNoteHint,
               border: OutlineInputBorder(),
             ),
           ),
@@ -286,7 +288,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.debtSettlementSaveAction),
+                : const Text(ExpensesLabels.debtSettlementSaveAction),
           ),
         ],
       ),

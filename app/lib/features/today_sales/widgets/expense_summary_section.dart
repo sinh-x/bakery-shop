@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/expense_summary.dart';
 import '../../../shared/labels/shared.dart';
 import '../../../shared/widgets/section_title.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Expense-summary section for the Today Sales screen
 /// (DG-386 Phase 8 / FR4 / AC4).

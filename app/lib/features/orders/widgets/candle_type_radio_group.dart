@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../../../shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Shared radio group for the cake item candle type selection (DG-340).
 ///
 /// Extracted from `cake_detail_body.dart`, `expandable_item_card.dart`, and
@@ -64,10 +62,10 @@ class CandleTypeRadioGroup extends StatelessWidget {
         spacing: 8,
         runSpacing: 4,
         children: [
-          _option(context, 'nen_so', VN.candleTypeNenSo),
-          _option(context, 'nen_xoan', VN.candleTypeNenXoan),
-          _option(context, 'nen_nho', VN.candleTypeNenNho),
-          _option(context, 'khong_nen', VN.candleTypeKhongNen),
+          _option(context, 'nen_so', OrdersLabels.candleTypeNenSo),
+          _option(context, 'nen_xoan', OrdersLabels.candleTypeNenXoan),
+          _option(context, 'nen_nho', OrdersLabels.candleTypeNenNho),
+          _option(context, 'khong_nen', OrdersLabels.candleTypeKhongNen),
         ],
       ),
     );

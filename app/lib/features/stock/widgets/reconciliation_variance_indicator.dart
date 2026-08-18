@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 class ReconciliationVarianceIndicator extends StatelessWidget {
   const ReconciliationVarianceIndicator({required this.variance, super.key});
 
@@ -11,7 +9,7 @@ class ReconciliationVarianceIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = variance == 0 ? Colors.green[700]! : Colors.red[700]!;
     return Text(
-      '${VN.soLuongChenhLech}: ${_formatVariance(variance)}',
+      '${StockLabels.soLuongChenhLech}: ${_formatVariance(variance)}',
       style: Theme.of(
         context,
       ).textTheme.bodyMedium?.copyWith(color: color, fontWeight: FontWeight.w600),

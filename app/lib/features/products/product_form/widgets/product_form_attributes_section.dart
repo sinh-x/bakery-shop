@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 class ProductFormAttributesSection extends StatelessWidget {
   const ProductFormAttributesSection({
     super.key,
@@ -33,14 +32,14 @@ class ProductFormAttributesSection extends StatelessWidget {
         enumOptionsSection,
         TextFormField(
           controller: notesController,
-          decoration: const InputDecoration(labelText: VN.productNotes),
+          decoration: const InputDecoration(labelText: ProductsLabels.productNotes),
           maxLines: 3,
         ),
         const SizedBox(height: 16),
         SwitchListTile(
           value: rutTien,
           onChanged: onRutTienChanged,
-          title: const Text(VN.rutTienToggle),
+          title: const Text(OrdersLabels.rutTienToggle),
           contentPadding: EdgeInsets.zero,
           dense: true,
         ),
@@ -48,7 +47,7 @@ class ProductFormAttributesSection extends StatelessWidget {
         SwitchListTile(
           value: trungBay,
           onChanged: isEditing ? onTrungBayChanged : null,
-          title: const Text(VN.trungBay),
+          title: const Text(ProductsLabels.trungBay),
           contentPadding: EdgeInsets.zero,
           dense: true,
         ),
@@ -56,7 +55,7 @@ class ProductFormAttributesSection extends StatelessWidget {
         SwitchListTile(
           value: tangKem,
           onChanged: isEditing ? onTangKemChanged : null,
-          title: const Text(VN.tangKem),
+          title: const Text(ProductsLabels.tangKem),
           contentPadding: EdgeInsets.zero,
           dense: true,
         ),

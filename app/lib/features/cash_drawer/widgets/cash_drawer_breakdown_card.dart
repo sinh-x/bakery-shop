@@ -21,7 +21,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../../data/models/cash_drawer_transaction.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'cash_drawer_breakdown_inflow_group.dart';
 import 'cash_drawer_breakdown_outflow_group.dart';
 import 'cash_drawer_breakdown_row.dart';
@@ -102,21 +102,21 @@ CashDrawerBreakdownCategory _categoryForType(
 String labelForCategory(CashDrawerBreakdownCategory c) {
   switch (c) {
     case CashDrawerBreakdownCategory.sale:
-      return VN.cashDrawerTxnTypeSale;
+      return CashDrawerLabels.cashDrawerTxnTypeSale;
     case CashDrawerBreakdownCategory.refund:
-      return VN.cashDrawerTxnTypeRefund;
+      return CashDrawerLabels.cashDrawerTxnTypeRefund;
     case CashDrawerBreakdownCategory.expense:
-      return VN.cashDrawerTxnTypeExpense;
+      return CashDrawerLabels.cashDrawerTxnTypeExpense;
     case CashDrawerBreakdownCategory.cashIn:
-      return VN.cashDrawerTxnTypeCashIn;
+      return CashDrawerLabels.cashDrawerTxnTypeCashIn;
     case CashDrawerBreakdownCategory.cashOut:
-      return VN.cashDrawerTxnTypeCashOut;
+      return CashDrawerLabels.cashDrawerTxnTypeCashOut;
     case CashDrawerBreakdownCategory.open:
-      return VN.cashDrawerTxnTypeOpen;
+      return CashDrawerLabels.cashDrawerTxnTypeOpen;
     case CashDrawerBreakdownCategory.close:
-      return VN.cashDrawerTxnTypeClose;
+      return CashDrawerLabels.cashDrawerTxnTypeClose;
     case CashDrawerBreakdownCategory.busShipping:
-      return VN.cashDrawerTxnTypeBusShipping;
+      return CashDrawerLabels.cashDrawerTxnTypeBusShipping;
   }
 }
 
@@ -284,7 +284,7 @@ class CashDrawerBreakdownCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          VN.cashDrawerBreakdownTitle,
+          CashDrawerLabels.cashDrawerBreakdownTitle,
           style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),

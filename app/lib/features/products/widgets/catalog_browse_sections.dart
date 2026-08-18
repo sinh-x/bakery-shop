@@ -5,7 +5,8 @@ import '../../../data/models/catalog_browse_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/models/category.dart' as models;
 import '../../../data/providers/categories_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'catalog_photo_browse_card.dart';
 
 class CatalogBrowseBulkActions extends StatelessWidget {
@@ -37,7 +38,7 @@ class CatalogBrowseBulkActions extends StatelessWidget {
         IconButton(
           icon: const Icon(Icons.check_circle),
           onPressed: onEnterSelectMode,
-          tooltip: VN.chonAnh,
+          tooltip: SharedLabels.chonAnh,
         ),
       ].first;
     }
@@ -47,7 +48,7 @@ class CatalogBrowseBulkActions extends StatelessWidget {
         IconButton(
           icon: const Icon(Icons.select_all),
           onPressed: onSelectAll,
-          tooltip: VN.chon20,
+          tooltip: SharedLabels.chon20,
         ),
         if (bulkInProgress)
           const Padding(
@@ -71,7 +72,7 @@ class CatalogBrowseBulkActions extends StatelessWidget {
         IconButton(
           icon: const Icon(Icons.close),
           onPressed: onClearSelection,
-          tooltip: VN.huy,
+          tooltip: SharedLabels.huy,
         ),
       ],
     );
@@ -173,7 +174,7 @@ class CatalogBrowseFilterBar extends ConsumerWidget {
                 ..sort((a, b) => a.position.compareTo(b.position));
               if (active.isEmpty) return const SizedBox.shrink();
               return _CatalogFilterRow(
-                label: VN.danhMuc,
+                label: ProductsLabels.danhMuc,
                 categories: active,
                 selectedCategories: selectedCategories,
                 onCategoryToggle: onCategoryToggle,
@@ -181,19 +182,19 @@ class CatalogBrowseFilterBar extends ConsumerWidget {
             },
           ),
           _CatalogFilterRow(
-            label: VN.doiTuong,
+            label: ProductsLabels.doiTuong,
             tagDefs: audience,
             selectedTags: selectedTags,
             onTagToggle: onTagToggle,
           ),
           _CatalogFilterRow(
-            label: VN.dip,
+            label: ProductsLabels.dip,
             tagDefs: occasion,
             selectedTags: selectedTags,
             onTagToggle: onTagToggle,
           ),
           _CatalogFilterRow(
-            label: VN.phongCach,
+            label: ProductsLabels.phongCach,
             tagDefs: style,
             selectedTags: selectedTags,
             onTagToggle: onTagToggle,
@@ -292,7 +293,7 @@ class _CatalogFilterRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: FilterChip(
-                label: const Text(VN.xoaLoc, style: TextStyle(fontSize: 12)),
+                label: const Text(ProductsLabels.xoaLoc, style: TextStyle(fontSize: 12)),
                 onSelected: (_) => onClearAll!(),
                 visualDensity: VisualDensity.compact,
               ),

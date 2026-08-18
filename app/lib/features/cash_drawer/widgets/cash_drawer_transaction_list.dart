@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,7 +9,8 @@ import '../../../data/api/cash_drawer_service.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../data/providers/cash_drawer_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'cash_drawer_edit_dialog.dart';
 
 /// Cash-drawer transaction list with infinite-scroll pagination (DG-343
@@ -262,7 +264,7 @@ class _CashDrawerTransactionListState
     if (widget.reconciled) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(VN.cashDrawerEditLockedReconciled)),
+        const SnackBar(content: Text(CashDrawerLabels.cashDrawerEditLockedReconciled)),
       );
       return;
     }
@@ -274,7 +276,7 @@ class _CashDrawerTransactionListState
       context,
       currentAmount: currentAmount,
       currentNotes: transaction.note,
-      txnTypeLabel: VN.cashDrawerTxnTypeLabel(transaction.type),
+      txnTypeLabel: CashDrawerLabels.cashDrawerTxnTypeLabel(transaction.type),
     );
     if (result == null || !context.mounted) return;
     try {
@@ -286,14 +288,14 @@ class _CashDrawerTransactionListState
           );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(VN.cashDrawerEditTxnSaved)),
+        const SnackBar(content: Text(CashDrawerLabels.cashDrawerEditTxnSaved)),
       );
       // AC7: auto-refresh the transaction list after a successful edit.
       _resetAndRefresh();
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${VN.apiError}: $e')),
+        SnackBar(content: Text('${SharedLabels.apiError}: $e')),
       );
     }
   }
@@ -308,11 +310,11 @@ class _CashDrawerTransactionListState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _resetAndRefresh,
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
@@ -323,7 +325,7 @@ class _CashDrawerTransactionListState
         padding: const EdgeInsets.all(24),
         child: Center(
           child: Text(
-            VN.cashDrawerTransactionsTab,
+            CashDrawerLabels.cashDrawerTransactionsTab,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -361,7 +363,7 @@ class _CashDrawerTransactionListState
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
               child: Text(
-                VN.cashDrawerHistory,
+                CashDrawerLabels.cashDrawerHistory,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -463,7 +465,7 @@ class _TransactionCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            VN.cashDrawerTxnTypeLabel(transaction.type),
+                            CashDrawerLabels.cashDrawerTxnTypeLabel(transaction.type),
                             style: theme.textTheme.titleSmall,
                           ),
                         ),
@@ -556,11 +558,11 @@ class _RetryRow extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: onRetry,
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),

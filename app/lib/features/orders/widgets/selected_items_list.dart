@@ -7,8 +7,6 @@ import 'expandable_item_card.dart';
 import 'section_header.dart';
 import 'simple_extra_row.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 typedef OrderStateProvider = NotifierProvider<OrderCreateStateNotifier, OrderCreateState>;
 
 /// Renders the selected regular items and extras as `ExpandableItemCard`s.
@@ -61,7 +59,7 @@ class SelectedItemsList extends ConsumerWidget {
           ),
           if (extraItems.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const SectionHeader(VN.extras),
+            const SectionHeader(OrdersLabels.extras),
             ...extraItems.map(
               (item) => SimpleExtraRow(
                 item: item,
