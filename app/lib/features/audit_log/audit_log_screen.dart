@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/audit_log_service.dart';
 import '../../data/providers/audit_log_provider.dart';
 import '../../shared/labels/audit_log.dart';
+import 'widgets/audit_log_empty_view.dart';
+import 'widgets/audit_log_error_view.dart';
 import 'widgets/audit_log_filter_panel.dart';
-import 'widgets/audit_log_tile.dart';
+import 'widgets/audit_log_list.dart';
 
 /// Admin-only audit log screen (FR24/AC20).
 ///
@@ -98,111 +100,22 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   Widget _body(AsyncValue<AuditLogState> asyncValue) {
     return asyncValue.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _ErrorView(
+      error: (error, _) => AuditLogErrorView(
         message: AuditLogLabels.errorLoad,
         onRetry: () => ref.read(auditLogProvider.notifier).refresh(),
       ),
       data: (state) {
         if (state.items.isEmpty) {
-          return _EmptyView(onRefresh: () =>
+          return AuditLogEmptyView(onRefresh: () =>
               ref.read(auditLogProvider.notifier).refresh());
         }
-        return _AuditLogList(
+        return AuditLogList(
           scrollController: _scrollController,
           state: state,
           onLoadMore: () =>
               ref.read(auditLogProvider.notifier).loadMore(),
         );
       },
-    );
-  }
-}
-
-/// ListView of audit log entries with a trailing "load more" indicator when
-/// [AuditLogState.hasMore] is true.
-class _AuditLogList extends StatelessWidget {
-  const _AuditLogList({
-    required this.scrollController,
-    required this.state,
-    required this.onLoadMore,
-  });
-
-  final ScrollController scrollController;
-  final AuditLogState state;
-  final VoidCallback onLoadMore;
-
-  @override
-  Widget build(BuildContext context) {
-    final itemCount = state.items.length + (state.hasMore ? 1 : 0);
-    return ListView.builder(
-      controller: scrollController,
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        if (index == state.items.length) {
-          // Footer indicator while more pages are available.
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: OutlinedButton(
-                onPressed: onLoadMore,
-                child: const Text(AuditLogLabels.loadMore),
-              ),
-            ),
-          );
-        }
-        return AuditLogTile(entry: state.items[index]);
-      },
-    );
-  }
-}
-
-class _EmptyView extends StatelessWidget {
-  const _EmptyView({required this.onRefresh});
-
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.history, size: 56, color: Colors.grey),
-          const SizedBox(height: 12),
-          const Text(AuditLogLabels.empty),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onRefresh,
-            child: const Text(AuditLogLabels.retry),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.error_outline, size: 56, color: Colors.red),
-          const SizedBox(height: 12),
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text(AuditLogLabels.retry),
-          ),
-        ],
-      ),
     );
   }
 }
