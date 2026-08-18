@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/api_client.dart';
-import 'package:bakery_app/features/auth/auth_provider.dart';
-import 'package:bakery_app/features/auth/token_storage.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
+import 'package:bakery_app/shared/providers/token_storage.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

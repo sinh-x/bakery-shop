@@ -7,7 +7,7 @@ import '../../data/api/order_service.dart';
 import '../../data/models/order.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../providers/order_providers.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:bakery_app/shared/utils/api_error.dart';

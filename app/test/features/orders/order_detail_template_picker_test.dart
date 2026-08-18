@@ -2,7 +2,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/features/orders/order_detail_screen.dart';
 import 'package:bakery_app/features/templates/widgets/template_picker_modal.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

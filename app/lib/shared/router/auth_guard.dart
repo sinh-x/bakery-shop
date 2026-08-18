@@ -1,6 +1,6 @@
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 
 /// Auth-redirect guard (FR14/FR15, AC8/AC9, DG-319 Phase 5 force-change AC7).
 ///

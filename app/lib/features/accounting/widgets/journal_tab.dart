@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
-import '../../../providers/accounting_provider.dart';
+import '../../../data/providers/accounting_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import '../providers/journal_pagination_notifier.dart';

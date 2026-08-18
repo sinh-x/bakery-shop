@@ -3,7 +3,7 @@ import 'package:bakery_app/data/models/catalog_tag.dart';
 import 'package:bakery_app/features/settings/catalog_tags_settings_tab.dart';
 import 'package:bakery_app/features/settings/widgets/tag_group.dart';
 import 'package:bakery_app/features/settings/widgets/tag_row.dart';
-import 'package:bakery_app/providers/catalog_provider.dart';
+import 'package:bakery_app/data/providers/catalog_provider.dart';
 import 'package:bakery_app/data/api/config_service.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';

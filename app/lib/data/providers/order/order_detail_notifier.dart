@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/order_service.dart';
-import '../../data/models/order.dart';
-import '../../shared/services/session_cache.dart';
-import '../events_provider.dart';
+import '../../api/order_service.dart';
+import '../../models/order.dart';
+import '../../../shared/services/session_cache.dart';
+import '../../../shared/providers/logged_by_provider.dart';
 import 'order_list_providers.dart';
 
 class OrderDetailNotifier extends AsyncNotifier<Order> {

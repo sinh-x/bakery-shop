@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/address.dart';
-import '../../../providers/address/missing_links_provider.dart';
+import '../../../data/providers/missing_links_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import '../../../shared/utils/launch_external_url.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/api/reconciliation_models.dart';
-import '../../../data/providers/reconciliation_provider.dart';
+import '../../../providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
 
 Future<bool> showSubmitReviewDialog({

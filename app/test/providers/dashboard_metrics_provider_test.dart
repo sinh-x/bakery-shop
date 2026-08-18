@@ -7,7 +7,7 @@ import 'package:bakery_app/data/api/report_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/today_summary.dart';
-import 'package:bakery_app/providers/dashboard/dashboard_metrics_provider.dart';
+import 'package:bakery_app/data/providers/dashboard_metrics_provider.dart';
 
 Order _order({
   required String ref,

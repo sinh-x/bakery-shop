@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/customer_service.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/order/order_draft_provider.dart';
 import '../../shared/labels/templates.dart';

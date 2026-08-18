@@ -8,7 +8,7 @@ import 'package:bakery_app/data/models/expense_summary.dart';
 import 'package:bakery_app/data/models/order_breakdown.dart';
 import 'package:bakery_app/data/models/period_summary.dart';
 import 'package:bakery_app/data/models/product_breakdown.dart';
-import 'package:bakery_app/providers/dashboard/period_summary_providers.dart';
+import 'package:bakery_app/data/providers/period_summary_providers.dart';
 
 /// Fake [ReportService] recording each endpoint call and returning canned
 /// payloads. Mirrors the pattern in

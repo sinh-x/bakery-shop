@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/receipt_service.dart';
 import '../../../data/services/printer_service.dart';
-import '../../../providers/events_provider.dart';
+import '../../../shared/providers/logged_by_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/printer_provider.dart';
 import '../../../shared/labels/shared.dart';

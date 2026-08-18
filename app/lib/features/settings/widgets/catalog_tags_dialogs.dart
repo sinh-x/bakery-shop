@@ -5,7 +5,7 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/api/config_service.dart';
-import '../../../providers/catalog_provider.dart';
+import '../../../data/providers/catalog_provider.dart';
 
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;

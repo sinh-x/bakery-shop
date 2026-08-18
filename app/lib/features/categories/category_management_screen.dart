@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
-import '../../providers/categories_provider.dart';
+import '../../data/providers/categories_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'category_form.dart';

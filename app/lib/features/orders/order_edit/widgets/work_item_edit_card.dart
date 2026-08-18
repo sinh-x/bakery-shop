@@ -6,7 +6,7 @@ import '../../../../data/api/api_client.dart';
 import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import '../../../../providers/products_provider.dart';
+import '../../../../data/providers/products_provider.dart';
 import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';

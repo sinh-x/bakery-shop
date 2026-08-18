@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/order_draft.dart';
 import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
-import '../../../../providers/config_provider.dart';
+import '../../../../data/providers/config_provider.dart';
 import '../../../../shared/utils/config_parsers.dart';
 import '../../../../shared/utils/date_formatting.dart';
 

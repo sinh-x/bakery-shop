@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
-import '../../providers/order/order_list_providers.dart';
+import '../../data/providers/order/order_list_providers.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';

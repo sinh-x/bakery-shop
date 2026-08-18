@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/product.dart';
-import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/shared/services/image_cache_service.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

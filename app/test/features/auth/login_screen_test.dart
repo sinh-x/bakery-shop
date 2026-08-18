@@ -1,5 +1,5 @@
 import 'package:bakery_app/data/api/api_client.dart';
-import 'package:bakery_app/features/auth/auth_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
 import 'package:bakery_app/features/auth/login_screen.dart';
 import 'package:bakery_app/features/settings/pre_login_settings_screen.dart';
 import 'package:bakery_app/shared/labels/auth.dart';

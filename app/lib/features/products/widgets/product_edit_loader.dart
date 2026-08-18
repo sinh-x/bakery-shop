@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../providers/products_provider.dart';
+import '../../../data/providers/products_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import '../product_form_screen.dart';
 

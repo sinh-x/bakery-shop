@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/event.dart';
-import '../../../providers/events_provider.dart';
+import '../../../data/providers/events_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
 import 'event_card_photo_count.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';

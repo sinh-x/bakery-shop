@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/models/product.dart';
-import '../providers/products_provider.dart';
+import '../data/providers/products_provider.dart';
 import '../shared/gift_config.dart';
 
 /// A single item in the POS cart.

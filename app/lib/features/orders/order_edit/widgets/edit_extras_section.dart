@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import '../../../../providers/products_provider.dart';
+import '../../../../data/providers/products_provider.dart';
 import '../../widgets/section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 

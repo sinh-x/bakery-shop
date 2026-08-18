@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import '../../../data/providers/reconciliation_provider.dart';
+import '../../../providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
 import 'reconciliation_sell_waste_modal.dart';
 import 'reconciliation_shared_widgets.dart';

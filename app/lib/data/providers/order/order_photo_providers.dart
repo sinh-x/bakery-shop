@@ -1,8 +1,8 @@
 import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/order_service.dart';
-import '../../data/models/order_photo.dart';
+import '../../api/order_service.dart';
+import '../../models/order_photo.dart';
 
 class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
   final String orderRef;

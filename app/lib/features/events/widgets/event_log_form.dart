@@ -9,8 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../data/api/event_service.dart';
-import '../../../providers/events_provider.dart';
+import '../../../data/providers/events_provider.dart';
 import '../../../providers/photo_upload_provider.dart';
+import '../../../shared/providers/logged_by_provider.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'quick_log_photo_picker.dart';

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
-import '../../providers/categories_provider.dart';
+import '../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 /// Curated emoji options for category icons.

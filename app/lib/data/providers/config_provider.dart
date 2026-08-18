@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/config_service.dart';
+import '../api/config_service.dart';
 
 class ConfigValuesNotifier extends AsyncNotifier<List<String>> {
   final String configKey;

@@ -4,7 +4,7 @@ import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/data/models/order_photo.dart';
 import 'package:bakery_app/features/orders/widgets/order_card.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_detail_customer_tab.dart';
-import 'package:bakery_app/providers/order/order_photo_providers.dart';
+import 'package:bakery_app/data/providers/order/order_photo_providers.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

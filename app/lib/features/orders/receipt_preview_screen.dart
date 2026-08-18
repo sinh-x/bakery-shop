@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';

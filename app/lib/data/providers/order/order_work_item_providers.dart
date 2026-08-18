@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/work_item_service.dart';
-import '../../data/models/work_item.dart';
+import '../../api/work_item_service.dart';
+import '../../models/work_item.dart';
 import 'order_detail_notifier.dart';
 
 class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {

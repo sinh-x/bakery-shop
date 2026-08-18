@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
-import '../../../providers/catalog_provider.dart';
+import '../../../data/providers/catalog_provider.dart';
 import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';

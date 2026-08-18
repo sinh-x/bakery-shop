@@ -23,11 +23,11 @@ import 'package:bakery_app/features/orders/widgets/stage1_product_selection_scre
 import 'package:bakery_app/features/orders/widgets/stage2_customer_info_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
-import 'package:bakery_app/providers/categories_provider.dart';
-import 'package:bakery_app/providers/config_provider.dart';
-import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/data/providers/categories_provider.dart';
+import 'package:bakery_app/data/providers/config_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
-import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {

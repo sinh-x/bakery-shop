@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../shared/labels/auth.dart';
 import '../../shared/labels/technical_settings.dart';
-import 'auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 
 /// Login screen (FR14).
 ///

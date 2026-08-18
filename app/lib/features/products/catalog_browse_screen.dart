@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
-import '../../providers/catalog_provider.dart';
+import '../../data/providers/catalog_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'services/bulk_share_service.dart';

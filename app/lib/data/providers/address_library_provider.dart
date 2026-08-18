@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/address_service.dart';
-import '../../data/models/address.dart';
+import '../api/address_service.dart';
+import '../models/address.dart';
 
 /// Address-library CRUD state for the Phase 5 management screen
 /// (DG-385 Phase 5 / FR6/FR8/AC6).

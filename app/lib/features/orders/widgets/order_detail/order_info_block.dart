@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/staff_service.dart';
 import '../../../../data/models/order.dart';
-import '../../../../providers/order/order_detail_notifier.dart';
-import '../../../../providers/staff_provider.dart';
+import '../../../../data/providers/order/order_detail_notifier.dart';
+import '../../../../data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/utils/launch_external_url.dart';
 import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/utils/delivery_helpers.dart';

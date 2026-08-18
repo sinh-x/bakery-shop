@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/auth.dart';
-import '../auth_provider.dart';
+import '../../../shared/providers/auth_provider.dart';
 
 /// Reusable password-change form (DG-319 Phase 5 / FR5).
 ///

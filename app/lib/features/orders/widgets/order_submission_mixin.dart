@@ -5,7 +5,7 @@ import '../../../data/api/order_service.dart';
 import '../../../data/api/work_item_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
-import '../../../providers/order/order_list_providers.dart';
+import '../../../data/providers/order/order_list_providers.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/api_error.dart';

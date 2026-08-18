@@ -10,7 +10,7 @@ import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/features/orders/providers/delivery_claim_providers.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/delivery_claim_inline_actions.dart';
 import 'package:bakery_app/features/orders/widgets/order_detail/order_info_block.dart';
-import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 

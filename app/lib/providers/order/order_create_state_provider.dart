@@ -7,7 +7,7 @@ import '../../data/models/product.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../shared/gift_config.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../products_provider.dart';
+import '../../data/providers/products_provider.dart';
 
 class OrderCreateState {
   final List<DraftOrderItem> items;

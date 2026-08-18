@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/accounting_service.dart';
-import '../data/models/account.dart';
-import '../data/models/account_balance.dart';
-import '../data/models/journal_entry.dart';
+import '../api/accounting_service.dart';
+import '../models/account.dart';
+import '../models/account_balance.dart';
+import '../models/journal_entry.dart';
 
 /// Filter parameters for the journal entries query.
 class JournalFilter {

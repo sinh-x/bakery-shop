@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/api/address_service.dart';
-import '../../data/models/address.dart';
+import '../api/address_service.dart';
+import '../models/address.dart';
 
 /// Missing-links list state for the Phase 3 missing-links screen
 /// (DG-388 Phase 3 / FR1/FR2/FR6/AC1/AC2/AC5).
