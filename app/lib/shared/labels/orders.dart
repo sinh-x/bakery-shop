@@ -352,6 +352,11 @@ class OrdersLabels {
   static const customerPhone = 'Số điện thoại';
   static const selectProducts = 'Chọn sản phẩm';
   static const addProduct = 'Thêm sản phẩm';
+
+  /// "Đổi sản phẩm" — change-product action on an existing order item
+  /// (DG-414 Phase 4.3 / FR6/FR7). Opens `ProductPickerPage` (single-select,
+  /// active products only) and applies the chosen `productId`/`productName`.
+  static const changeProduct = 'Đổi sản phẩm';
   static const dueDate = 'Hạn giao';
   static const deliveryType = 'Hình thức nhận hàng';
   static const pickup = 'Lấy tại tiệm';
