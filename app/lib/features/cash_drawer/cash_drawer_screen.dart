@@ -1,4 +1,3 @@
-import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,16 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/cash_drawer_service.dart';
 import '../../data/api/staff_service.dart';
 import '../../data/models/cash_drawer.dart';
-import '../../data/models/cash_drawer_transaction.dart';
 import '../../data/providers/cash_drawer_provider.dart';
 import '../../data/providers/staff_provider.dart';
-import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
-import 'widgets/cash_drawer_history_list.dart';
-import 'widgets/cash_drawer_status_card.dart';
+import 'widgets/cash_drawer_active_tab.dart';
+import 'widgets/cash_drawer_disabled_transactions_placeholder.dart';
+import 'widgets/cash_drawer_drawer_transactions_screen.dart';
+import 'widgets/cash_drawer_history_tab.dart';
 import 'widgets/cash_drawer_transaction_list.dart';
 
 /// Tracks whether a cash-drawer mutation (open / cash-in / cash-out / close)
@@ -250,7 +249,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _ActiveTab(
+          CashDrawerActiveTab(
             statusAsync: statusAsync,
             transactionsResponseAsync: transactionsResponseAsync,
             mutating: mutating,
@@ -261,7 +260,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
             onCashOut: () => _handleCashOut(context),
             onClose: () => _handleClose(context),
           ),
-          _HistoryTab(
+          CashDrawerHistoryTab(
             historyAsync: historyAsync,
             onTapClosedDrawer: _navigateToDrawerTransactions,
           ),
@@ -271,7 +270,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
           // still show a placeholder so the TabBarView has 3 children
           // (required by the TabController length).
           activeDrawerId == null
-              ? const _DisabledTransactionsPlaceholder()
+              ? const CashDrawerDisabledTransactionsPlaceholder()
               : CashDrawerTransactionList(
                   drawerId: activeDrawerId,
                   poll: true,
@@ -291,7 +290,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     if (id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _DrawerTransactionsScreen(drawer: drawer, drawerId: id),
+        builder: (_) => CashDrawerDrawerTransactionsScreen(drawer: drawer, drawerId: id),
       ),
     );
   }
@@ -548,333 +547,5 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         return;
       }
     }
-  }
-}
-
-class _ActiveTab extends StatelessWidget {
-  const _ActiveTab({
-    required this.statusAsync,
-    required this.transactionsResponseAsync,
-    required this.mutating,
-    required this.accountingBalance1101Async,
-    required this.previousCloseAsync,
-    required this.onOpen,
-    required this.onCashIn,
-    required this.onCashOut,
-    required this.onClose,
-  });
-
-  final AsyncValue<CashDrawer?> statusAsync;
-
-  /// DG-359 Phase 2: transactions for the active drawer, used to render the
-  /// breakdown card inside [CashDrawerStatusCard]. Resolved from
-  /// `cashDrawerTransactionsProvider` (first page) in
-  /// `_CashDrawerScreenState.build`. `null` when no drawer is open.
-  final AsyncValue<CashDrawerTransactionResponse>? transactionsResponseAsync;
-
-  final bool mutating;
-  final AsyncValue<int> accountingBalance1101Async;
-  final AsyncValue<int?> previousCloseAsync;
-  final Future<void> Function() onOpen;
-  final Future<void> Function() onCashIn;
-  final Future<void> Function() onCashOut;
-  final Future<void> Function() onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return statusAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(SharedLabels.apiError),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: onOpen,
-              child: const Text(SharedLabels.retry),
-            ),
-          ],
-        ),
-      ),
-      data: (drawer) {
-        if (drawer == null) {
-          return _EmptyActiveView(
-            onOpen: onOpen,
-            mutating: mutating,
-            accountingBalance1101Async: accountingBalance1101Async,
-            previousCloseAsync: previousCloseAsync,
-          );
-        }
-        // DG-359 Phase 2 FR5/AC4: when transactions have not loaded yet,
-        // pass an empty list so the breakdown renders an all-zero table
-        // rather than crashing. Once data resolves, the card rebuilds via
-        // Riverpod's watch with the real transaction list.
-        final transactions =
-            transactionsResponseAsync?.value?.items ?? const <CashDrawerTransaction>[];
-        return ListView(
-          children: [
-            CashDrawerStatusCard(
-              drawer: drawer,
-              transactions: transactions,
-            ),
-            const SizedBox(height: 8),
-            _ActionBar(
-              isOpen: drawer.isOpen,
-              mutating: mutating,
-              onOpen: onOpen,
-              onCashIn: onCashIn,
-              onCashOut: onCashOut,
-              onClose: onClose,
-            ),
-            const SizedBox(height: 16),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _EmptyActiveView extends StatelessWidget {
-  const _EmptyActiveView({
-    required this.onOpen,
-    required this.mutating,
-    required this.accountingBalance1101Async,
-    required this.previousCloseAsync,
-  });
-
-  final Future<void> Function() onOpen;
-  final bool mutating;
-  final AsyncValue<int> accountingBalance1101Async;
-  final AsyncValue<int?> previousCloseAsync;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock_open_outlined, size: 48),
-            const SizedBox(height: 12),
-            const Text(CashDrawerLabels.cashDrawerNoActive),
-            // FR1/AC1: render the 1101 reference balance line at any value
-            // (negative, zero, or positive) — DG-360 Phase 2 removed the old
-            // `<= 0` guard so an over-drawn 1101 balance is surfaced too.
-            // While loading, show a small inline placeholder so the line does
-            // not silently disappear on slow networks (PWA bug root cause).
-            // On error, the line is omitted rather than crashing the whole
-            // screen. NFR1: negative values render in `colorScheme.error`
-            // following the `_BalanceRow` pattern.
-            accountingBalance1101Async.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-              error: (_, _) => const SizedBox.shrink(),
-              data: (balance1101) {
-                final isNegative = balance1101 < 0;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    '${CashDrawerLabels.cashDrawerReferenceBalance}: ${formatVND(balance1101.toDouble())}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: isNegative
-                              ? Theme.of(context).colorScheme.error
-                              : null,
-                        ),
-                  ),
-                );
-              },
-            ),
-            previousCloseAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-              error: (_, _) => const SizedBox.shrink(),
-              data: (previousClose) {
-                if (previousClose == null) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '${CashDrawerLabels.cashDrawerPreviousCloseBalance}: ${formatVND(previousClose.toDouble())}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: mutating ? null : onOpen,
-              icon: const Icon(Icons.lock_open),
-              label: const Text(CashDrawerLabels.cashDrawerOpen),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionBar extends StatelessWidget {
-  const _ActionBar({
-    required this.isOpen,
-    required this.mutating,
-    required this.onOpen,
-    required this.onCashIn,
-    required this.onCashOut,
-    required this.onClose,
-  });
-
-  final bool isOpen;
-  final bool mutating;
-  final Future<void> Function() onOpen;
-  final Future<void> Function() onCashIn;
-  final Future<void> Function() onCashOut;
-  final Future<void> Function() onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          FilledButton.icon(
-            onPressed: mutating ? null : onCashIn,
-            icon: const Icon(Icons.south_west),
-            label: const Text(CashDrawerLabels.cashDrawerCashIn),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: mutating ? null : onCashOut,
-            icon: const Icon(Icons.north_east),
-            label: const Text(CashDrawerLabels.cashDrawerCashOut),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: mutating ? null : onClose,
-            icon: const Icon(Icons.lock_outline),
-            label: const Text(CashDrawerLabels.cashDrawerClose),
-          ),
-          if (!isOpen)
-            FilledButton.icon(
-              onPressed: mutating ? null : onOpen,
-              icon: const Icon(Icons.lock_open),
-              label: const Text(CashDrawerLabels.cashDrawerOpen),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HistoryTab extends StatelessWidget {
-  const _HistoryTab({required this.historyAsync, this.onTapClosedDrawer});
-
-  final AsyncValue<CashDrawerHistoryResponse> historyAsync;
-
-  /// DG-343 Phase 3 FR4/AC2: invoked when the user taps a closed drawer row.
-  /// The screen pushes a transaction-detail route for that drawer.
-  final void Function(CashDrawer drawer)? onTapClosedDrawer;
-
-  @override
-  Widget build(BuildContext context) {
-    return historyAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(SharedLabels.apiError),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () {},
-              child: const Text(SharedLabels.retry),
-            ),
-          ],
-        ),
-      ),
-      data: (resp) => SingleChildScrollView(
-        child: CashDrawerHistoryList(
-          items: resp.items,
-          onTapClosedDrawer: onTapClosedDrawer,
-        ),
-      ),
-    );
-  }
-}
-
-/// DG-343 Phase 3 FR3: placeholder shown in the "Chi tiết giao dịch" tab
-/// body when no drawer is open. The tab itself is disabled (snap-back to the
-/// status tab via the [TabController] listener in [_CashDrawerScreenState]),
-/// so this widget is rendered but not interactive — it exists solely so the
-/// [TabBarView] has 3 children matching the [TabController] length.
-class _DisabledTransactionsPlaceholder extends StatelessWidget {
-  const _DisabledTransactionsPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.receipt_long,
-              size: 48,
-              color: Theme.of(context).disabledColor,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              CashDrawerLabels.cashDrawerNoActive,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).disabledColor,
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// DG-343 Phase 3 FR4/AC2: full-screen transaction detail view for a closed
-/// drawer. Pushed by [_CashDrawerScreenState._navigateToDrawerTransactions]
-/// when the user taps a closed drawer in the History tab. Reuses
-/// [CashDrawerTransactionList] with `poll: false` (closed drawers don't
-/// change) and infinite-scroll pagination.
-class _DrawerTransactionsScreen extends StatelessWidget {
-  const _DrawerTransactionsScreen({
-    required this.drawer,
-    required this.drawerId,
-  });
-
-  final CashDrawer drawer;
-  final int drawerId;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = '${CashDrawerLabels.cashDrawerTransactionsTab} — ${formatDisplayDate(drawer.openedAt)}';
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-      ),
-      body: CashDrawerTransactionList(
-        drawerId: drawerId,
-        poll: false,
-        reconciled: drawer.reconciled,
-      ),
-    );
   }
 }
