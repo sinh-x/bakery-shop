@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/address.dart';
 import '../../../data/providers/address_library_provider.dart';
 import '../../../shared/labels/address_labels.dart';
-import '../../../shared/utils/launch_external_url.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'widgets/address_library_empty_view.dart';
+import 'widgets/address_library_error_view.dart';
+import 'widgets/address_library_row.dart';
 /// Address-library management screen (DG-385 Phase 5 / FR6/FR8/AC6).
 ///
 /// A full-screen management surface accessible from Settings. It lists
@@ -153,9 +155,9 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
       ),
       body: libraryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _AddressLibraryErrorView(error: e),
+        error: (e, _) => AddressLibraryErrorView(error: e),
         data: (entries) => entries.isEmpty
-            ? _AddressLibraryEmptyView(
+            ? AddressLibraryEmptyView(
                 hasSearch: _searchController.text.isNotEmpty,
               )
             : ListView.separated(
@@ -165,7 +167,7 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
                     const Divider(height: 0, indent: 56),
                 itemBuilder: (context, i) {
                   final entry = entries[i];
-                  return _AddressLibraryRow(
+                  return AddressLibraryRow(
                     entry: entry,
                     onEdit: () => _openEditor(entry: entry),
                     onDelete: () => _confirmDelete(entry),
@@ -177,139 +179,6 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
         tooltip: AddressLabels.libraryAddTooltip,
         onPressed: _openEditor,
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-}
-
-/// One row of the address library list (FR6/AC6).
-///
-/// Renders the address as the title and an optional map-link icon +
-/// truncated link as subtitle when [AddressLibraryEntry.googleMapsUrl]
-/// is non-null. Edit and delete affordances are exposed via a trailing
-/// row of icon buttons. When the entry has a stored Google Maps link,
-/// an "Open in Google Maps" shortcut button (DG-388 Phase 5.6-c5 / FB-2)
-/// launches the link via [launchExternalUrl], mirroring the
-/// missing-links screen pattern.
-class _AddressLibraryRow extends StatelessWidget {
-  const _AddressLibraryRow({
-    required this.entry,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final AddressLibraryEntry entry;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hasLink = entry.googleMapsUrl != null &&
-        entry.googleMapsUrl!.trim().isNotEmpty;
-    return ListTile(
-      leading: const Icon(Icons.location_on_outlined),
-      title: Text(entry.displayAddress),
-      subtitle: hasLink
-          ? Row(
-              children: [
-                Icon(Icons.map_outlined,
-                    size: 14, color: theme.colorScheme.primary),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    entry.googleMapsUrl!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              ],
-            )
-          : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (hasLink)
-            IconButton(
-              icon: const Icon(Icons.open_in_new),
-              tooltip: AddressLabels.libraryOpenMapTooltip,
-              onPressed: () =>
-                  launchExternalUrl(context, entry.googleMapsUrl),
-            ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: AddressLabels.libraryEditTooltip,
-            onPressed: onEdit,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: AddressLabels.libraryDeleteTooltip,
-            onPressed: onDelete,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Empty-state view shown when the library has no entries (or no
-/// matches for the current search). Distinguishes "no entries" from
-/// "no matches" via [hasSearch] so the user knows whether to clear the
-/// search or add a new entry.
-class _AddressLibraryEmptyView extends StatelessWidget {
-  const _AddressLibraryEmptyView({required this.hasSearch});
-
-  final bool hasSearch;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.location_on_outlined, size: 40, color: Colors.grey),
-            const SizedBox(height: 8),
-            Text(
-              hasSearch
-                  ? AddressLabels.libraryNoMatches
-                  : AddressLabels.libraryEmpty,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Error view for the management screen. Offers a retry button that
-/// re-fetches the library.
-class _AddressLibraryErrorView extends ConsumerWidget {
-  const _AddressLibraryErrorView({required this.error});
-
-  final Object error;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text('${SharedLabels.apiError}: $error', textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: () => ref.read(addressLibraryProvider.notifier).refresh(),
-            icon: const Icon(Icons.refresh),
-            label: const Text(SharedLabels.retry),
-          ),
-        ],
       ),
     );
   }

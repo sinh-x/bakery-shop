@@ -7,6 +7,9 @@ import '../../data/models/category.dart';
 import '../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'widgets/icon_cell.dart';
+import 'widgets/upper_case_formatter.dart';
+
 /// Curated emoji options for category icons.
 const categoryEmojiOptions = [
   '🎂',
@@ -230,7 +233,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             itemBuilder: (context, index) {
               if (index == 0) {
                 final selected = _selectedIcon.isEmpty;
-                return _IconCell(
+                return IconCell(
                   selected: selected,
                   colorScheme: colorScheme,
                   onTap: () => setState(() => _selectedIcon = ''),
@@ -245,7 +248,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
               }
               final emoji = categoryEmojiOptions[index - 1];
               final selected = _selectedIcon == emoji;
-              return _IconCell(
+              return IconCell(
                 selected: selected,
                 colorScheme: colorScheme,
                 onTap: () => setState(() => _selectedIcon = emoji),
@@ -296,7 +299,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 controller: _codePrefixCtrl,
                 textCapitalization: TextCapitalization.characters,
                 inputFormatters: [
-                  _UpperCaseFormatter(),
+                  UpperCaseFormatter(),
                   LengthLimitingTextInputFormatter(4),
                 ],
                 decoration: const InputDecoration(
@@ -377,48 +380,5 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
         ),
       ),
     );
-  }
-}
-
-class _IconCell extends StatelessWidget {
-  const _IconCell({
-    required this.selected,
-    required this.colorScheme,
-    required this.onTap,
-    required this.child,
-  });
-
-  final bool selected;
-  final ColorScheme colorScheme;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? colorScheme.primary : Colors.grey.shade300,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Center(child: child),
-      ),
-    );
-  }
-}
-
-class _UpperCaseFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }

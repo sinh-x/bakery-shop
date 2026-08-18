@@ -1,9 +1,8 @@
 import 'package:bakery_app/shared/utils.dart' show formatVND;
-import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
-import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
+import 'package:bakery_app/features/expenses/widgets/creditor_group_card.dart';
+import 'package:bakery_app/features/expenses/widgets/debt_status_filter_strip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/data/providers/events_provider.dart';
-import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -107,7 +106,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _StatusFilterStrip(status: _status, onChanged: _setStatus),
+          DebtStatusFilterStrip(status: _status, onChanged: _setStatus),
           const SizedBox(height: 8),
           if (_loading)
             const Card(
@@ -143,7 +142,7 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
             ),
             const SizedBox(height: 8),
             for (final creditor in creditors)
-              _CreditorGroupCard(
+              CreditorGroupCard(
                 creditor: creditor as Map<String, dynamic>,
                 onOpenSettlement: _openSettlement,
               ),
@@ -151,148 +150,5 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
         ],
       ),
     );
-  }
-}
-
-class _StatusFilterStrip extends StatelessWidget {
-  const _StatusFilterStrip({required this.status, required this.onChanged});
-
-  final ExpenseDebtStatusFilter status;
-  final ValueChanged<ExpenseDebtStatusFilter> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 42,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 6, top: 9),
-            child: Text(
-              ExpensesLabels.debtListFilterStatusLabel,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          for (final value in ExpenseDebtStatusFilter.values)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(expenseDebtStatusFilterLabel(value)),
-                selected: status == value,
-                onSelected: (_) => onChanged(value),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CreditorGroupCard extends StatelessWidget {
-  const _CreditorGroupCard({
-    required this.creditor,
-    required this.onOpenSettlement,
-  });
-
-  final Map<String, dynamic> creditor;
-  final void Function(int eventId) onOpenSettlement;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = '${creditor['creditor'] ?? ''}';
-    final debts = (creditor['debts'] as List?) ?? const <dynamic>[];
-    final totalOwed = (creditor['total_owed'] as num?)?.toDouble() ?? 0.0;
-    final count = (creditor['count'] as num?)?.toInt() ?? debts.length;
-    final theme = Theme.of(context);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(name, style: theme.textTheme.titleMedium),
-            Text(
-              '${ExpensesLabels.debtListCreditorTotal}: ${formatVND(totalOwed)} • ${ExpensesLabels.debtListDebtCount}: $count',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            for (final debt in debts)
-              _DebtRow(debt: debt as Map<String, dynamic>, onTap: onOpenSettlement),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DebtRow extends StatelessWidget {
-  const _DebtRow({required this.debt, required this.onTap});
-
-  final Map<String, dynamic> debt;
-  final void Function(int eventId) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final eventId = (debt['event_id'] as num?)?.toInt() ?? 0;
-    final amount = (debt['amount_vnd'] as num?)?.toDouble() ?? 0.0;
-    final settled = (debt['settled_amount'] as num?)?.toDouble() ?? 0.0;
-    final remaining = (debt['remaining'] as num?)?.toDouble() ?? 0.0;
-    final status = _parseDebtStatus('${debt['status'] ?? ''}');
-    final timestamp = debt['timestamp'] as String?;
-    final summary = '${debt['summary'] ?? ''}';
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (summary.isNotEmpty) Text(summary, style: theme.textTheme.bodyMedium),
-                Text('${ExpensesLabels.debtListItemAmount}: ${formatVND(amount)}'),
-                Text('${ExpensesLabels.debtListItemSettled}: ${formatVND(settled)}'),
-                Text('${ExpensesLabels.debtListItemRemaining}: ${formatVND(remaining)}'),
-                if (timestamp != null)
-                  Text(formatDisplay(parseApiDateTime(timestamp))),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              DebtStatusChip(status: status),
-              const SizedBox(height: 4),
-              if (remaining > 0)
-                FilledButton.tonal(
-                  onPressed: eventId > 0 ? () => onTap(eventId) : null,
-                  child: const Text(ExpensesLabels.debtListOpenSettlement),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-ExpenseDebtStatus _parseDebtStatus(String value) {
-  switch (value) {
-    case 'paid':
-      return ExpenseDebtStatus.paid;
-    case 'partial':
-      return ExpenseDebtStatus.partial;
-    case 'unpaid':
-      return ExpenseDebtStatus.unpaid;
-    default:
-      return ExpenseDebtStatus.none;
   }
 }

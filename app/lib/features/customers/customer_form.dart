@@ -8,7 +8,9 @@ import '../../data/providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
+import 'widgets/duplicate_warning_dialog.dart';
 import 'widgets/phone_entry_row.dart';
+import 'widgets/shared_phone_banner.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Show the add/edit customer bottom sheet.
 ///
@@ -293,13 +295,13 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   /// choice. Returns `null` when cancelled, otherwise a record indicating
   /// either a chosen existing customer (`useExisting`) or a request to
   /// proceed with the create (`createAnyway`).
-  Future<_DuplicateChoice?> _showDuplicateWarningDialog(
+  Future<DuplicateChoice?> _showDuplicateWarningDialog(
     List<Customer> matches,
   ) {
-    return showDialog<_DuplicateChoice>(
+    return showDialog<DuplicateChoice>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _DuplicateWarningDialog(matches: matches),
+      builder: (ctx) => DuplicateWarningDialog(matches: matches),
     );
   }
 
@@ -355,7 +357,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
               ),
               if (_sharedPhone.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                _SharedPhoneBanner(customers: _sharedPhone),
+                SharedPhoneBanner(customers: _sharedPhone),
               ],
               const SizedBox(height: 24),
               Row(
@@ -383,128 +385,6 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Choice returned by the duplicate-warning dialog (FR8/AC6).
-///
-/// Either [useExisting] is set (the user picked an existing customer) or
-/// [createAnyway] is true (the user chose to proceed with the new create).
-typedef _DuplicateChoice =
-    ({Customer? useExisting, bool createAnyway});
-
-/// Duplicate-warning dialog shown before a manual customer create when the
-/// typed name or any phone matches an existing customer (DG-252 Phase 6 —
-/// FR8/AC6). Lists each match with name + primary phone and offers three
-/// actions: "use existing" (selects a match), "create anyway" (proceeds
-/// with the create), or cancel.
-class _DuplicateWarningDialog extends StatelessWidget {
-  const _DuplicateWarningDialog({required this.matches});
-
-  final List<Customer> matches;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text(CustomersLabels.duplicateWarningTitle),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(CustomersLabels.duplicateWarningHint),
-            const SizedBox(height: 12),
-            for (final c in matches)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.person_outline),
-                title: Text(c.name),
-                subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
-                onTap: () => Navigator.of(context).pop<_DuplicateChoice>(
-                  (useExisting: c, createAnyway: false),
-                ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text(CustomersLabels.duplicateWarningCancel),
-        ),
-        FilledButton.tonal(
-          onPressed: matches.isEmpty
-              ? null
-              : () => Navigator.of(context).pop<_DuplicateChoice>(
-                    (useExisting: matches.first, createAnyway: false),
-                  ),
-          child: const Text(CustomersLabels.duplicateWarningUseExisting),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop<_DuplicateChoice>(
-            const (useExisting: null, createAnyway: true),
-          ),
-          child: const Text(CustomersLabels.duplicateWarningCreateAnyway),
-        ),
-      ],
-    );
-  }
-}
-
-/// Surfaces other customers sharing the same phone number (FR2a/AC6/AC8).
-class _SharedPhoneBanner extends StatelessWidget {
-  const _SharedPhoneBanner({required this.customers});
-
-  final List<Customer> customers;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSecondaryContainer),
-              const SizedBox(width: 6),
-              Text(
-                CustomersLabels.customerSharedPhoneTitle,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSecondaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            CustomersLabels.customerSharedPhoneHint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSecondaryContainer,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final c in customers)
-                Chip(
-                  label: Text(c.name),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-            ],
-          ),
-        ],
       ),
     );
   }
