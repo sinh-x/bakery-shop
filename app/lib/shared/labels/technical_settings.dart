@@ -5,8 +5,9 @@
 /// all user-facing copy for the pre-login technical settings screen lives in
 /// this domain file rather than as inline Vietnamese strings or appended to
 /// the monolithic `VN` class. Wording mirrors the existing settings labels
-/// (`VN.apiUrlLabel`, `VN.testConnection`, etc.) so the pre-login screen stays
-/// consistent with the post-login Settings > Technical tab.
+/// (such as `SharedLabels.apiUrlLabel` and `SharedLabels.testConnection`) so
+/// the pre-login screen stays consistent with the post-login Settings >
+/// Technical tab.
 class TechnicalSettingsLabels {
   TechnicalSettingsLabels._();
 

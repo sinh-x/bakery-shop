@@ -6,8 +6,7 @@ import 'package:bakery_app/shared/labels/accounting.dart';
 /// docs/flutter-coding-standards.md, user-facing copy for the daily cash
 /// drawer feature lives in its own domain file rather than being appended to
 /// the monolithic `VN` class. Consumers import this file and use
-/// `CashDrawerLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via the per-domain label files.
+/// `CashDrawerLabels.*` for cash-drawer-domain strings.
 class CashDrawerLabels {
   CashDrawerLabels._();
 

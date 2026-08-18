@@ -4,7 +4,7 @@
 /// hint, and the customer-prioritized badge lives here per the VN Label
 /// Policy in CLAUDE.md and §5 of docs/flutter-coding-standards.md.
 /// Consumers import this file and use `AddressLabels.*` for address-domain
-/// strings, or `VN.*` for legacy labels re-exported above.
+/// strings.
 class AddressLabels {
   AddressLabels._();
 

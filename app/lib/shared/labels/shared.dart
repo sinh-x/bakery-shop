@@ -3,8 +3,8 @@
 /// Per the VN Label Policy in CLAUDE.md and §5 of
 /// docs/flutter-coding-standards.md, new user-facing copy that spans multiple
 /// domains lives in this file rather than being appended to the monolithic
-/// `VN` class. Consumers import this file and use `SharedLabels.*` for new
-/// labels or `VN.*` for legacy labels re-exported above.
+/// `VN` class. Consumers import this file and use `SharedLabels.*` for
+/// shared/common strings.
 class SharedLabels {
   SharedLabels._();
 
@@ -264,8 +264,9 @@ class SharedLabels {
   // `cashTotal`), owner/employee capital injections (`cashInTotal`), owner
   // draws (`cashOutTotal`), and the resulting net cash
   // (`cashTotal + cashInTotal - cashOutTotal`). Labels are intentionally
-  // distinct from `VN.cashDrawerTxnTypeCashIn/CashOut` because the breakdown
-  // is a summary context, not a per-transaction chip.
+  // distinct from `CashDrawerLabels.cashDrawerTxnTypeCashIn`/
+  // `cashDrawerTxnTypeCashOut` because the breakdown is a summary context,
+  // not a per-transaction chip.
   static const todaySalesCashSourceSection = 'Nguồn tiền mặt';
   static const todaySalesCashSourceSalesCash = 'Tiền bán hàng';
   static const todaySalesCashSourceCashIn = 'Nạp vào quầy';
@@ -413,7 +414,5 @@ class SharedLabels {
   static const knowledgeTagsField = 'Nhãn';
   static const knowledgePhotosField = 'Ảnh';
   static const knowledgeNoPhotos = 'Chưa có ảnh';
-
-  // Expenses
 
 }

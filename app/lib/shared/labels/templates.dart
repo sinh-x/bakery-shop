@@ -3,8 +3,7 @@
 /// All user-facing copy for the template picker modal and integration points
 /// lives here per the VN Label Policy in CLAUDE.md and §5 of
 /// docs/flutter-coding-standards.md. Consumers import this file and use
-/// `TemplatesLabels.*` for template-domain strings, or `VN.*` for legacy
-/// labels re-exported above.
+/// `TemplatesLabels.*` for template-domain strings.
 class TemplatesLabels {
   TemplatesLabels._();
 

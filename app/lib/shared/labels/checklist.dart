@@ -4,8 +4,7 @@
 /// docs/flutter-coding-standards.md, user-facing copy for the checklist
 /// feature lives in its own domain file rather than being appended to the
 /// monolithic `VN` class. Consumers import this file and use
-/// `ChecklistLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via the per-domain label files.
+/// `ChecklistLabels.*` for checklist-domain strings.
 class ChecklistLabels {
   ChecklistLabels._();
 

@@ -176,8 +176,9 @@ class OrdersLabels {
   static String deliveryTabWithCount(int count) => 'Giao hàng ($count)';
 
   // Date filter labels for order list (DG-193 Phase 1).
-  // "Hôm nay" and "Tất cả" reuse VN.filterToday and VN.filterAll respectively
-  // (see orders.dart) — only the two new options live here.
+  // "Hôm nay" and "Tất cả" reuse `EventsLabels.filterToday` and
+  // `EventsLabels.filterAll` respectively (see events.dart) — only the two
+  // new options live here.
   static const dateFilterTomorrow = 'Ngày mai';
   static const dateFilterTodayTomorrow = 'Nay + Mai';
 
@@ -771,7 +772,5 @@ class OrdersLabels {
       'Phụ kiện trả phí mới được quản lý từ Danh mục sản phẩm (nhóm phu_kien). Mục này chỉ giữ lại để hướng dẫn và không còn tạo/sửa dữ liệu order_extra.';
   static const extrasSettingsDeprecatedAction =
       'Vào Danh mục sản phẩm để thêm/sửa phụ kiện và mức giá.';
-
-  // Catalog browse
 
 }

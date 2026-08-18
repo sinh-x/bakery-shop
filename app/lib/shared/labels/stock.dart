@@ -4,8 +4,7 @@
 /// docs/flutter-coding-standards.md, user-facing copy for the stock
 /// management feature lives in its own domain file rather than being
 /// appended to the monolithic `VN` class. Consumers import this file and use
-/// `StockLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via the per-domain label files.
+/// `StockLabels.*` for stock-domain strings.
 class StockLabels {
   StockLabels._();
 

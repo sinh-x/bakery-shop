@@ -3,8 +3,7 @@
 /// Per the VN Label Policy in CLAUDE.md and §5 of docs/flutter-coding-standards.md,
 /// new user-facing copy for the blanks feature lives in its own domain file
 /// rather than being appended to the monolithic `VN` class. Consumers import
-/// this file and use `BlanksLabels.*` for new labels or `VN.*` for legacy
-/// labels re-exported above.
+/// this file and use `BlanksLabels.*` for blanks-domain strings.
 class BlanksLabels {
   BlanksLabels._();
 

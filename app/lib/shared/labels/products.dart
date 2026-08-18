@@ -3,9 +3,8 @@
 /// Per the VN Label Policy in CLAUDE.md and §5 of
 /// docs/flutter-coding-standards.md, user-facing copy for the products feature
 /// lives in its own domain file rather than being appended to the monolithic
-/// `VN` class. Consumers import this file and use `ProductsLabels.*` for new
-/// labels or `VN.*` for legacy labels still re-exported via
-/// the per-domain label files.
+/// `VN` class. Consumers import this file and use `ProductsLabels.*` for
+/// products-domain strings.
 class ProductsLabels {
   ProductsLabels._();
 

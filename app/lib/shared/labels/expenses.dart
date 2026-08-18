@@ -4,8 +4,7 @@
 /// docs/flutter-coding-standards.md, user-facing copy for the expenses
 /// feature lives in its own domain file rather than being appended to the
 /// monolithic `VN` class. Consumers import this file and use
-/// `ExpensesLabels.*` for new labels or `VN.*` for legacy labels still
-/// re-exported via the per-domain label files.
+/// `ExpensesLabels.*` for expenses-domain strings.
 class ExpensesLabels {
   ExpensesLabels._();
 
