@@ -57,6 +57,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   Future<WorkItem> edit(
     String itemId, {
     String? productName,
+    String? productId,
     int? quantity,
     double? unitPrice,
     String? notes,
@@ -73,6 +74,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       orderRef,
       itemId,
       productName: productName,
+      productId: productId,
       quantity: quantity,
       unitPrice: unitPrice,
       notes: notes,
