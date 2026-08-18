@@ -89,6 +89,7 @@ class WorkItemCreate(BaseModel):
 
 
 class WorkItemUpdate(BaseModel):
+    productId: Optional[str] = None
     productName: Optional[str] = None
     quantity: Optional[int] = None
     unitPrice: Optional[float] = None
@@ -359,7 +360,23 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
 
+        # FR5 (DG-414 Phase 4.1): reject product swap when the item is in a
+        # terminal status (delivered or cancelled). The swap would change
+        # which product the item represents, which is meaningless once the
+        # item has been delivered or cancelled. Non-swap PATCHes (e.g. notes,
+        # quantity) remain allowed on terminal items for backward compat.
+        if (
+            "productId" in data
+            and row["status"]
+            in (WorkItemStatus.DELIVERED.value, WorkItemStatus.CANCELLED.value)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể đổi sản phẩm khi công việc đã giao hoặc đã hủy",
+            )
+
         field_map = {
+            "productId": "product_id",
             "productName": "product_name",
             "quantity": "quantity",
             "unitPrice": "unit_price",
