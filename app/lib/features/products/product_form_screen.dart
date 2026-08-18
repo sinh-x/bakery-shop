@@ -1,6 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -10,22 +9,21 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/product_service.dart';
-import '../../data/models/catalog_photo.dart';
 import '../../data/models/enum_attribute.dart';
 import '../../data/models/price_chip.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
-import '../../data/providers/catalog_provider.dart';
 import '../../data/providers/categories_provider.dart';
-import '../../providers/photo_upload_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import '../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'widgets/catalog_photo_viewer.dart';
-import 'widgets/catalog_tag_chips.dart';
-import 'widgets/catalog_tag_edit_sheet.dart';
+import 'widgets/catalog_gallery_section.dart';
+import 'widgets/enum_attribute_form_section.dart';
+import 'widgets/enum_option_form_row.dart';
+import 'widgets/photo_section.dart';
+import 'widgets/price_chip_form_row.dart';
+import 'widgets/price_chip_validation_errors.dart';
 import 'product_form/widgets/product_form_attributes_section.dart';
 import 'product_form/widgets/product_form_basic_info_section.dart';
 import 'product_form/widgets/product_form_catalog_integration_section.dart';
@@ -55,8 +53,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
   late final List<PriceChip> _originalPriceChips;
-  late final List<_PriceChipFormRow> _priceChipRows;
-  late final List<_EnumAttributeFormSection> _enumSections;
+  late final List<PriceChipFormRow> _priceChipRows;
+  late final List<EnumAttributeFormSection> _enumSections;
   late String _category;
   late bool _rutTien;
   late bool _trungBay;
@@ -92,7 +90,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     _priceChipRows = _originalPriceChips
         .map(
-          (chip) => _PriceChipFormRow(
+          (chip) => PriceChipFormRow(
             id: chip.id,
             label: chip.label,
             price: chip.price.toInt().toString(),
@@ -100,7 +98,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         )
         .toList();
     _enumSections = (p?.enumAttributes ?? const <EnumAttribute>[])
-        .map(_EnumAttributeFormSection.fromAttribute)
+        .map(EnumAttributeFormSection.fromAttribute)
         .toList();
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
@@ -129,7 +127,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   void _addPriceChip() {
     if (_priceChipRows.length >= _maxPriceChips) return;
     setState(() {
-      _priceChipRows.add(_PriceChipFormRow());
+      _priceChipRows.add(PriceChipFormRow());
     });
   }
 
@@ -178,8 +176,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return double.tryParse(value);
   }
 
-  Map<int, _PriceChipValidationErrors> _validatePriceChipRows() {
-    final errors = <int, _PriceChipValidationErrors>{};
+  Map<int, PriceChipValidationErrors> _validatePriceChipRows() {
+    final errors = <int, PriceChipValidationErrors>{};
 
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
@@ -187,7 +185,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final priceText = row.priceController.text.trim();
       final parsedPrice = _parseChipPrice(priceText);
 
-      final rowErrors = _PriceChipValidationErrors(
+      final rowErrors = PriceChipValidationErrors(
         labelError: label.isEmpty ? ProductsLabels.priceChipLabelRequired : null,
         priceError: parsedPrice == null || parsedPrice < 0
             ? ProductsLabels.priceChipPriceInvalid
@@ -204,11 +202,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return errors;
   }
 
-  bool _applyPriceChipRowErrors(Map<int, _PriceChipValidationErrors> errors) {
+  bool _applyPriceChipRowErrors(Map<int, PriceChipValidationErrors> errors) {
     var changed = false;
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
-      final rowErrors = errors[index] ?? const _PriceChipValidationErrors();
+      final rowErrors = errors[index] ?? const PriceChipValidationErrors();
       changed = row.clearErrors() || changed;
       changed =
           row.updateErrors(
@@ -426,13 +424,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   // ----- Enum attribute options editor (DG-092 Phase 4.5) -----
 
-  void _addEnumOption(_EnumAttributeFormSection section) {
+  void _addEnumOption(EnumAttributeFormSection section) {
     setState(() {
-      section.rows.add(_EnumOptionFormRow(sortOrder: section.rows.length));
+      section.rows.add(EnumOptionFormRow(sortOrder: section.rows.length));
     });
   }
 
-  void _toggleRemoveEnumOption(_EnumAttributeFormSection section, int index) {
+  void _toggleRemoveEnumOption(EnumAttributeFormSection section, int index) {
     final row = section.rows[index];
     setState(() {
       if (row.id == null) {
@@ -447,7 +445,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     });
   }
 
-  void _setEnumDefault(_EnumAttributeFormSection section, int index) {
+  void _setEnumDefault(EnumAttributeFormSection section, int index) {
     setState(() {
       for (var i = 0; i < section.rows.length; i++) {
         section.rows[i].isDefault = i == index;
@@ -456,7 +454,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 
   void _reorderEnumOptions(
-    _EnumAttributeFormSection section,
+    EnumAttributeFormSection section,
     int oldIndex,
     int newIndex,
   ) {
@@ -587,7 +585,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
   }
 
-  Widget _buildEnumSection(_EnumAttributeFormSection section) {
+  Widget _buildEnumSection(EnumAttributeFormSection section) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1012,7 +1010,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               categoriesAsync: categoriesAsync,
               category: _category,
               onCategoryChanged: (v) => setState(() => _category = v),
-              photoSection: _PhotoSection(
+              photoSection: PhotoSection(
                 productId: widget.product?.id,
                 pickedPhoto: _pickedPhoto,
                 baseUrl: baseUrl,
@@ -1055,721 +1053,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ProductFormCatalogIntegrationSection(
               isEditing: _isEditing,
               catalogGallery: _isEditing
-                  ? _CatalogGallerySection(productId: widget.product!.id)
+                  ? CatalogGallerySection(productId: widget.product!.id)
                   : const SizedBox.shrink(),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PriceChipFormRow {
-  _PriceChipFormRow({this.id, String label = '', String price = ''})
-    : labelController = TextEditingController(text: label),
-      priceController = TextEditingController(text: price);
-
-  int? id;
-  final TextEditingController labelController;
-  final TextEditingController priceController;
-  String? _labelError;
-  String? _priceError;
-
-  String? get labelError => _labelError;
-  String? get priceError => _priceError;
-
-  bool clearErrors() {
-    if (_labelError == null && _priceError == null) {
-      return false;
-    }
-    _labelError = null;
-    _priceError = null;
-    return true;
-  }
-
-  bool updateErrors({String? labelError, String? priceError}) {
-    if (_labelError == labelError && _priceError == priceError) {
-      return false;
-    }
-    _labelError = labelError;
-    _priceError = priceError;
-    return true;
-  }
-
-  void dispose() {
-    labelController.dispose();
-    priceController.dispose();
-  }
-}
-
-class _PriceChipValidationErrors {
-  const _PriceChipValidationErrors({this.labelError, this.priceError});
-
-  final String? labelError;
-  final String? priceError;
-
-  bool get hasError => labelError != null || priceError != null;
-}
-
-/// Mutable per-row state for an enum attribute option in the product form.
-class _EnumOptionFormRow {
-  _EnumOptionFormRow({
-    this.id,
-    String valueVi = '',
-    this.sortOrder = 0,
-    this.active = 1,
-    this.isDefault = false,
-  }) : valueController = TextEditingController(text: valueVi);
-
-  int? id;
-  final TextEditingController valueController;
-  int sortOrder;
-  int active;
-  bool isDefault;
-  bool removed = false;
-  String? _valueError;
-
-  String? get valueError => _valueError;
-
-  bool setValueError(String? error) {
-    if (_valueError == error) return false;
-    _valueError = error;
-    return true;
-  }
-
-  void dispose() {
-    valueController.dispose();
-  }
-}
-
-/// Per-attribute editor state. Mirrors `_originalPriceChips` / `_priceChipRows`
-/// but for one enum attribute (e.g. `nhan_banh`).
-class _EnumAttributeFormSection {
-  _EnumAttributeFormSection({
-    required this.attribute,
-    required List<EnumOption> originalOptions,
-    required this.originalDefaultId,
-  }) : _originalOptions = List<EnumOption>.of(originalOptions),
-       rows = originalOptions
-           .map(
-             (opt) => _EnumOptionFormRow(
-               id: opt.id,
-               valueVi: opt.valueVi,
-               sortOrder: opt.sortOrder,
-               active: opt.active,
-               isDefault: opt.id == originalDefaultId,
-             ),
-           )
-           .toList();
-
-  factory _EnumAttributeFormSection.fromAttribute(EnumAttribute attribute) {
-    return _EnumAttributeFormSection(
-      attribute: attribute,
-      originalOptions: attribute.options,
-      originalDefaultId: attribute.defaultOptionId,
-    );
-  }
-
-  final EnumAttribute attribute;
-  final List<_EnumOptionFormRow> rows;
-  List<EnumOption> _originalOptions;
-  int? originalDefaultId;
-  String? _error;
-
-  String? get error => _error;
-
-  Map<int, EnumOption> get originalById => {
-    for (final opt in _originalOptions) opt.id: opt,
-  };
-
-  bool clearError() {
-    if (_error == null) return false;
-    _error = null;
-    return true;
-  }
-
-  bool setError(String? error) {
-    if (_error == error) return false;
-    _error = error;
-    return true;
-  }
-
-  bool hasChanges() {
-    final originalMap = originalById;
-    final liveRows = rows.where((r) => !r.removed).toList();
-
-    if (rows.any((r) => r.id != null && r.removed)) return true;
-    if (rows.any((r) => r.id == null && !r.removed)) return true;
-    if (liveRows.length != _originalOptions.length) return true;
-
-    int? selectedDefaultId;
-    for (final r in liveRows) {
-      if (r.isDefault) {
-        selectedDefaultId = r.id;
-        break;
-      }
-    }
-    if (selectedDefaultId != originalDefaultId) return true;
-
-    for (var i = 0; i < liveRows.length; i++) {
-      final row = liveRows[i];
-      final original = originalMap[row.id];
-      if (original == null) return true;
-      if (original.valueVi != row.valueController.text.trim()) return true;
-      if (_originalOptions[i].id != row.id) return true;
-    }
-    return false;
-  }
-
-  void applySaved() {
-    rows.removeWhere((r) {
-      if (r.removed) {
-        r.dispose();
-        return true;
-      }
-      return false;
-    });
-    _originalOptions = [
-      for (var i = 0; i < rows.length; i++)
-        EnumOption(
-          id: rows[i].id ?? -1,
-          valueVi: rows[i].valueController.text.trim(),
-          sortOrder: i,
-          active: rows[i].active,
-          isDefault: rows[i].isDefault,
-        ),
-    ];
-    for (var i = 0; i < rows.length; i++) {
-      rows[i].sortOrder = i;
-    }
-  }
-
-  void dispose() {
-    for (final row in rows) {
-      row.dispose();
-    }
-  }
-}
-
-class _PhotoSection extends StatelessWidget {
-  const _PhotoSection({
-    required this.productId,
-    required this.pickedPhoto,
-    required this.baseUrl,
-    required this.onPickPhoto,
-    this.cacheBuster,
-  });
-
-  final int? productId;
-  final XFile? pickedPhoto;
-  final String baseUrl;
-  final VoidCallback onPickPhoto;
-  final String? cacheBuster;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return GestureDetector(
-      onTap: onPickPhoto,
-      child: Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: _buildContent(),
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    // Show picked photo (not yet uploaded)
-    if (pickedPhoto != null) {
-      return FutureBuilder<Uint8List>(
-        future: pickedPhoto!.readAsBytes(),
-        builder: (ctx, snap) {
-          if (!snap.hasData) return _placeholder();
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.memory(
-                snap.data!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, e, s) => _placeholder(),
-              ),
-              _overlayButton(),
-            ],
-          );
-        },
-      );
-    }
-
-    // Show existing photo from API (always try if product exists)
-    if (productId != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(
-            '$baseUrl/api/products/$productId/photo${cacheBuster != null ? '?v=$cacheBuster' : ''}',
-            fit: BoxFit.cover,
-            errorBuilder: (_, e, s) => _placeholder(),
-          ),
-          _overlayButton(),
-        ],
-      );
-    }
-
-    return _placeholder();
-  }
-
-  Widget _placeholder() {
-    return const Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
-        SizedBox(height: 8),
-        Text(ProductsLabels.choosePhoto, style: TextStyle(color: Colors.grey)),
-      ],
-    );
-  }
-
-  Widget _overlayButton() {
-    return Positioned(
-      right: 8,
-      bottom: 8,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: const BoxDecoration(
-          color: Colors.black54,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.edit, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Catalog gallery section
-// ---------------------------------------------------------------------------
-
-class _CatalogGallerySection extends ConsumerStatefulWidget {
-  const _CatalogGallerySection({required this.productId});
-
-  final int productId;
-
-  @override
-  ConsumerState<_CatalogGallerySection> createState() =>
-      _CatalogGallerySectionState();
-}
-
-class _CatalogGallerySectionState
-    extends ConsumerState<_CatalogGallerySection> {
-  bool _promoting = false;
-
-  Future<void> _pickAndUpload() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text(ProductsLabels.takePhoto),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text(ProductsLabels.fromGallery),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null) return;
-
-    final picker = ImagePicker();
-    final catalogNotifier = ref.read(
-      catalogProvider(widget.productId).notifier,
-    );
-    final upload = ref.read(photoUploadNotifierProvider.notifier);
-    upload.reset();
-
-    if (source == ImageSource.gallery) {
-      // Multi-select from gallery
-      final files = await picker.pickMultiImage();
-      if (files.isEmpty) return;
-
-      await upload.uploadAll(
-        files,
-        catalogNotifier.addPhoto,
-      );
-      if (!mounted) return;
-      final batch = ref.read(photoUploadNotifierProvider);
-      final added = batch.completedCount;
-      final failed = batch.failedCount;
-      showTopSnackBar(
-        context,
-        failed == 0
-            ? (added == 1 ? ProductsLabels.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
-            : 'Đã thêm $added ảnh, $failed ảnh lỗi',
-      );
-    } else {
-      // Camera: single photo only
-      final file = await picker.pickImage(source: source);
-      if (file == null) return;
-
-      await upload.uploadAll(
-        [file],
-        catalogNotifier.addPhoto,
-      );
-      if (!mounted) return;
-      final batch = ref.read(photoUploadNotifierProvider);
-      if (batch.hasErrors) {
-        final err = batch.items.firstWhere(
-          (i) => i.state.status == PhotoUploadStatus.error,
-          orElse: () => batch.items.first,
-        );
-        showTopSnackBar(context, err.state.errorMessage ?? SharedLabels.apiError);
-      } else {
-        showTopSnackBar(context, ProductsLabels.catalogPhotoAdded);
-      }
-    }
-  }
-
-  Future<void> _confirmDelete(CatalogPhoto photo) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(ProductsLabels.deleteCatalogPhoto),
-        content: const Text(ProductsLabels.deleteCatalogConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(SharedLabels.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(SharedLabels.remove),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .deletePhoto(photo.id);
-      if (mounted) {
-        showTopSnackBar(context, ProductsLabels.catalogPhotoDeleted);
-      }
-    } on DioException catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
-      }
-    }
-  }
-
-  Future<void> _promotePhoto(CatalogPhoto photo) async {
-    setState(() => _promoting = true);
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .promotePhotoToProductMain(photo.id);
-      if (mounted) {
-        showTopSnackBar(context, ProductsLabels.productPhotoSetFromCatalog);
-      }
-    } on DioException catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _promoting = false);
-      }
-    }
-  }
-
-  void _openFullScreen(
-    List<CatalogPhoto> photos,
-    int initialIndex,
-    String baseUrl,
-  ) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (ctx) => CatalogPhotoViewer(
-          photos: photos,
-          initialIndex: initialIndex,
-          productId: widget.productId,
-          baseUrl: baseUrl,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final catalogAsync = ref.watch(catalogProvider(widget.productId));
-    final baseUrl = ref.watch(apiBaseUrlProvider);
-    final theme = Theme.of(context);
-    final uploadState = ref.watch(photoUploadNotifierProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Text(ProductsLabels.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_promoting) ...[
-                const SizedBox(width: 12),
-                const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ],
-            ],
-          ),
-        ),
-        UploadProgressIndicator(states: uploadState.states),
-        catalogAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Text(
-            SharedLabels.errorLoading,
-            style: TextStyle(color: theme.colorScheme.error),
-          ),
-          data: (photos) => Column(
-            children: [
-              if (photos.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    ProductsLabels.noCatalogPhotos,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: photos.length + 1,
-                itemBuilder: (ctx, index) {
-                  if (index == photos.length) {
-                    return _AddPhotoCard(
-                      uploading: uploadState.isUploading,
-                      onTap: _pickAndUpload,
-                    );
-                  }
-                  final photo = photos[index];
-                  final url =
-                      '$baseUrl/api/products/${widget.productId}/catalog/${photo.id}/photo';
-                  return _CatalogPhotoCard(
-                    photo: photo,
-                    productId: widget.productId,
-                    url: url,
-                    onTap: () => _openFullScreen(photos, index, baseUrl),
-                    onDelete: () => _confirmDelete(photo),
-                    onPromote: () => _promotePhoto(photo),
-                    promoting: _promoting,
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AddPhotoCard extends StatelessWidget {
-  const _AddPhotoCard({required this.uploading, required this.onTap});
-
-  final bool uploading;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: uploading ? null : onTap,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              uploading
-                  ? const CircularProgressIndicator()
-                  : const Icon(Icons.add_photo_alternate_outlined, size: 36),
-              const SizedBox(height: 8),
-              Text(
-                ProductsLabels.addCatalogPhoto,
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CatalogPhotoCard extends StatelessWidget {
-  const _CatalogPhotoCard({
-    required this.photo,
-    required this.productId,
-    required this.url,
-    required this.onTap,
-    required this.onDelete,
-    required this.onPromote,
-    required this.promoting,
-  });
-
-  final CatalogPhoto photo;
-  final int productId;
-  final String url;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-  final VoidCallback onPromote;
-  final bool promoting;
-
-  void _openEditSheet(BuildContext context) {
-    showEditCatalogTagsSheet(
-      context: context,
-      photo: photo,
-      productId: productId,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onDelete,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, e, s) => Container(
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
-                    ),
-                  ),
-                  // Label edit button
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: GestureDetector(
-                      onTap: () => _openEditSheet(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Icon(
-                          Icons.label_outline,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Delete button
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: GestureDetector(
-                      onTap: onDelete,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 4,
-                    bottom: 4,
-                    child: Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: promoting ? null : onPromote,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.star_outline,
-                                color: Colors.white,
-                                size: 12,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                ProductsLabels.setAsProductPhoto,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Tag chips row (max 3)
-          if (photo.tags.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            CatalogTagChips(tags: photo.tags, maxChips: 3),
-          ],
-        ],
       ),
     );
   }

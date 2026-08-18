@@ -5,15 +5,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/category.dart';
-import '../../data/models/product.dart';
 import '../../shared/providers/auth_provider.dart';
 import '../../data/providers/categories_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'widgets/product_card.dart';
-import 'package:bakery_app/shared/labels/products.dart';
+import 'widgets/product_grid_skeleton.dart';
+import 'widgets/product_tabs.dart';
 class ProductCatalogScreen extends ConsumerStatefulWidget {
   const ProductCatalogScreen({super.key});
 
@@ -165,7 +164,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
             ),
           ),
           body: productsAsync.when(
-            loading: () => const _ProductGridSkeleton(),
+            loading: () => const ProductGridSkeleton(),
             error: (error, _) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -189,7 +188,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                 ],
               ),
             ),
-            data: (state) => _ProductTabs(
+            data: (state) => ProductTabs(
               state: state,
               inactiveProductsAsync: inactiveProductsAsync,
               categories: categories,
@@ -215,241 +214,6 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
               innerContext.push('/products/new?category=$slug');
             },
             child: const Icon(Icons.add),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductTabs extends StatelessWidget {
-  const _ProductTabs({
-    required this.state,
-    required this.inactiveProductsAsync,
-    required this.categories,
-    required this.baseUrl,
-    required this.cacheBuster,
-    required this.showInactiveProducts,
-    required this.onShowInactiveProductsChanged,
-    required this.onRetryInactiveProducts,
-    required this.onLoadMore,
-  });
-
-  final ProductPaginationState state;
-  final AsyncValue<List<Product>> inactiveProductsAsync;
-  final List<Category> categories;
-  final String baseUrl;
-  final String cacheBuster;
-  final bool showInactiveProducts;
-  final ValueChanged<bool> onShowInactiveProductsChanged;
-  final VoidCallback onRetryInactiveProducts;
-  final Future<void> Function() onLoadMore;
-
-  @override
-  Widget build(BuildContext context) {
-    final products = state.loaded;
-    final grouped = <String, List<Product>>{};
-    for (final cat in categories) {
-      grouped[cat.slug] = products
-          .where((p) => p.category == cat.slug)
-          .toList();
-    }
-
-    final inactiveGrouped = inactiveProductsAsync.maybeWhen(
-      data: (inactiveProducts) {
-        final grouped = <String, List<Product>>{};
-        for (final cat in categories) {
-          grouped[cat.slug] = inactiveProducts
-              .where((p) => p.category == cat.slug)
-              .toList();
-        }
-        return grouped;
-      },
-      orElse: () => <String, List<Product>>{},
-    );
-
-    return Column(
-      children: [
-        SwitchListTile(
-          dense: true,
-          value: showInactiveProducts,
-          onChanged: onShowInactiveProductsChanged,
-          secondary: Icon(
-            showInactiveProducts
-                ? Icons.visibility_outlined
-                : Icons.visibility_off_outlined,
-          ),
-          title: const Text(ProductsLabels.hiddenProducts),
-        ),
-        if (showInactiveProducts)
-          inactiveProductsAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (error, _) => Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud_off, size: 18),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text(SharedLabels.apiError)),
-                  TextButton(
-                    onPressed: onRetryInactiveProducts,
-                    child: const Text(SharedLabels.retry),
-                  ),
-                ],
-              ),
-            ),
-            data: (_) => const SizedBox.shrink(),
-          ),
-        Expanded(
-          child: TabBarView(
-            children: categories.map((cat) {
-              final items = [
-                ...(grouped[cat.slug] ?? const <Product>[]),
-                if (showInactiveProducts)
-                  ...(inactiveGrouped[cat.slug] ?? const <Product>[]),
-              ];
-              if (items.isEmpty) {
-                return Center(
-                  child: Text(
-                    ProductsLabels.noProducts,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
-                  ),
-                );
-              }
-              return _ProductGrid(
-                items: items,
-                baseUrl: baseUrl,
-                cacheBuster: cacheBuster,
-                paginationState: state,
-                onLoadMore: onLoadMore,
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProductGrid extends ConsumerWidget {
-  const _ProductGrid({
-    required this.items,
-    required this.baseUrl,
-    required this.cacheBuster,
-    required this.paginationState,
-    required this.onLoadMore,
-  });
-
-  final List<Product> items;
-  final String baseUrl;
-  final String cacheBuster;
-  final ProductPaginationState paginationState;
-  final Future<void> Function() onLoadMore;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // DG-409 Phase 4: infinite-scroll — trigger load-more when near the
-    // bottom of the grid. The global pagination state drives the next-page
-    // fetch (more products across ALL categories), so the active tab fills
-    // up as pages arrive.
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(productsPaginationProvider);
-        ref.invalidate(productsProvider);
-        ref.invalidate(categoriesProvider);
-        ref.invalidate(inactiveProductsProvider);
-      },
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is ScrollEndNotification &&
-              notification.metrics.pixels >=
-                  notification.metrics.maxScrollExtent - 300 &&
-              paginationState.hasMore &&
-              !paginationState.isLoadingMore) {
-            onLoadMore();
-          }
-          return false;
-        },
-        child: GridView.builder(
-          padding: const EdgeInsets.all(12),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 1.0,
-          ),
-          itemCount: items.length + (paginationState.hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index == items.length) {
-              // CQ-9 (review-auto): explicit tap-to-load footer. The
-              // perpetual spinner dead-end is replaced by a tappable
-              // "Tải thêm" cell that shows a spinner ONLY while
-              // `isLoadingMore`. Tapping triggers `onLoadMore` (still also
-              // fired by the scroll-end listener above for infinite-scroll
-              // parity).
-              if (paginationState.isLoadingMore) {
-                return const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                  ),
-                );
-              }
-              return InkWell(
-                onTap: onLoadMore,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(12),
-                  child: const Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.expand_more, size: 28),
-                      SizedBox(height: 4),
-                      Text(SharedLabels.loadMore),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return ProductCard(
-              product: items[index],
-              photoBaseUrl: baseUrl,
-              cacheBuster: cacheBuster,
-              onTap: () => context.push('/products/${items[index].id}/edit'),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-/// Loading skeleton shown while the first product page loads (DG-409
-/// Phase 4 / loading indicators).
-class _ProductGridSkeleton extends StatelessWidget {
-  const _ProductGridSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: 6,
-      itemBuilder: (context, _) => const Card(
-        child: Center(
-          child: SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2.5),
           ),
         ),
       ),
