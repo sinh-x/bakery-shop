@@ -22,12 +22,21 @@ class ProductPickerPage extends ConsumerStatefulWidget {
     required this.onChanged,
     this.initialCategorySlug,
     this.onCategorySelected,
+    this.singleSelect = false,
   });
 
   final List<DraftOrderItem> selectedItems;
   final VoidCallback onChanged;
   final String? initialCategorySlug;
   final void Function(String? slug)? onCategorySelected;
+
+  /// When `true`, the picker runs in single-select mode and disables the
+  /// long-press multi-select entry point. Used by callers that consume only
+  /// the first picked item (e.g. DG-414 product swap, `_changeProduct`) so a
+  /// long-press cannot silently enter multi-select and discard extras.
+  /// Defaults to `false` to preserve the established multi-select behavior
+  /// for the order-create flow (DG-414 review UI-2).
+  final bool singleSelect;
 
   @override
   ConsumerState<ProductPickerPage> createState() => _ProductPickerPageState();
@@ -230,7 +239,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
               onTap: _multiSelectMode
                   ? () => _toggleProduct(product)
                   : () => _selectSingleProduct(product),
-              onLongPress: _multiSelectMode
+              onLongPress: _multiSelectMode || widget.singleSelect
                   ? null
                   : () => _enterMultiSelectMode(product),
             ),

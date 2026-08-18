@@ -449,6 +449,42 @@ void main() {
             reason: 'CQ-1: swap failure must surface user-visible feedback');
       },
     );
+
+    testWidgets(
+      'UI-2 (DG-414 review cycle1): swap picker does not enter multi-select on long-press',
+      (tester) async {
+        final container = await _buildContainer(_SwapInterceptor());
+        await _pumpCard(tester, _richItem(), container);
+
+        // Open the swap picker (ProductPickerPage pushed via _changeProduct).
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.swap_horiz));
+        await tester.pumpAndSettle();
+        expect(find.byType(ProductPickerPage), findsOneWidget);
+
+        // Long-press a product — in single-select mode this must NOT enter
+        // multi-select (UI-2 fix: long-press entry point disabled when
+        // singleSelect: true is passed from _changeProduct).
+        await tester.longPress(find.text('Bánh mới'));
+        await tester.pumpAndSettle();
+
+        // The multi-select confirm action (check IconButton in the app bar)
+        // is only rendered when _multiSelectMode is true. Since long-press
+        // is disabled, the check action must remain absent.
+        final checkActions = find.descendant(
+          of: find.byType(AppBar),
+          matching: find.widgetWithIcon(IconButton, Icons.check),
+        );
+        expect(checkActions, findsNothing,
+            reason: 'UI-2: long-press must not enable multi-select in the '
+                'swap picker (singleSelect: true)');
+
+        // The app bar title also reflects multi-select mode via the
+        // "N đã chọn" string; assert it never appears.
+        expect(find.textContaining('đã chọn'), findsNothing,
+            reason: 'UI-2: multi-select count title must not appear in '
+                'single-select swap picker');
+      },
+    );
   });
 }
 

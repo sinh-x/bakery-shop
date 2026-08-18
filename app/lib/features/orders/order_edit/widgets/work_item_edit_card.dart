@@ -262,6 +262,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
         builder: (_) => ProductPickerPage(
           selectedItems: picked,
           onChanged: () {},
+          singleSelect: true,
         ),
       ),
     );
