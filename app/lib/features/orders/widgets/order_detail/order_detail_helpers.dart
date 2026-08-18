@@ -30,15 +30,6 @@ const workItemStatusRank = {
   'cancelled': 5,
 };
 
-const workItemStatusColors = {
-  'pending': Colors.grey,
-  'confirmed': Colors.blue,
-  'working': Colors.orange,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'cancelled': Colors.red,
-};
-
 bool isBackward(String current, String target, Map<String, int> ranks) =>
     (ranks[target] ?? 0) < (ranks[current] ?? 0);
 

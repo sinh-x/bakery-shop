@@ -2,7 +2,8 @@
 // photo thumbnails, attribute chips, and status badges in a tightly coupled
 // layout that does not decompose into reusable sub-widgets.
 // Reviewed 2026-07-30.
-import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel;
+import 'package:bakery_app/shared/utils.dart'
+    show formatVND, workItemStatusLabel, workItemStatusColors;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/enum_attribute.dart';
@@ -11,7 +12,6 @@ import '../../../../data/models/work_item.dart';
 import 'candle_type_line.dart';
 import '../enum_attribute_display.dart';
 import '../order_item_markup_line.dart';
-import 'order_detail_helpers.dart';
 import 'order_work_item_photo_strip.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
