@@ -1,7 +1,8 @@
 import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/features/categories/category_management_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -88,17 +89,17 @@ void main() {
     await tester.tap(find.text('Banh kem'));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.categoryVisibility), findsOneWidget);
-    expect(find.text(VN.categoryVisible), findsOneWidget);
+    expect(find.text(ProductsLabels.categoryVisibility), findsOneWidget);
+    expect(find.text(ProductsLabels.categoryVisible), findsOneWidget);
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
-    final saveButton = find.widgetWithText(FilledButton, VN.save);
+    final saveButton = find.widgetWithText(FilledButton, SharedLabels.save);
     await tester.ensureVisible(saveButton);
     await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.hiddenCategories), findsOneWidget);
+    expect(find.text(ProductsLabels.hiddenCategories), findsOneWidget);
     expect(find.text('Banh kem'), findsOneWidget);
     expect(find.byIcon(Icons.visibility), findsOneWidget);
   });
@@ -118,16 +119,16 @@ void main() {
     await tester.tap(find.text('Banh kem'));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.categoryHiddenState), findsOneWidget);
+    expect(find.text(ProductsLabels.categoryHiddenState), findsOneWidget);
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
-    final saveButton = find.widgetWithText(FilledButton, VN.save);
+    final saveButton = find.widgetWithText(FilledButton, SharedLabels.save);
     await tester.ensureVisible(saveButton);
     await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.hiddenCategories), findsNothing);
+    expect(find.text(ProductsLabels.hiddenCategories), findsNothing);
     expect(find.text('Banh kem'), findsOneWidget);
     expect(find.byIcon(Icons.visibility), findsNothing);
   });

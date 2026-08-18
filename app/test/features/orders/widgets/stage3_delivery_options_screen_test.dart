@@ -16,7 +16,7 @@ import 'package:bakery_app/data/providers/config_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FixedStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;
@@ -222,8 +222,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.errorLoading), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.errorLoading), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('AC-3: tablet width centers content via responsive wrapper',
@@ -272,7 +272,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.deliveryBus));
+    await tester.tap(find.text(OrdersLabels.deliveryBus));
     await tester.pumpAndSettle();
 
     expect(deliveryPhoneText(tester), '0987654321');
@@ -292,7 +292,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.deliveryDoor));
+    await tester.tap(find.text(OrdersLabels.deliveryDoor));
     await tester.pumpAndSettle();
 
     expect(deliveryPhoneText(tester), '0912000111');
@@ -333,7 +333,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.deliveryBus));
+    await tester.tap(find.text(OrdersLabels.deliveryBus));
     await tester.pumpAndSettle();
 
     expect(deliveryPhoneText(tester), '');

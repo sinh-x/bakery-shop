@@ -3,7 +3,7 @@ import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dar
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 void main() {
   group('Stage1ResponsiveContent (DG-214 Phase 6, NFR-1)', () {
@@ -78,9 +78,9 @@ void main() {
 
       expect(find.text(OrdersLabels.stage1ExtrasLoadError), findsOneWidget);
       expect(find.byIcon(Icons.error_outline), findsOneWidget);
-      expect(find.text(VN.retry), findsOneWidget);
+      expect(find.text(SharedLabels.retry), findsOneWidget);
 
-      await tester.tap(find.text(VN.retry));
+      await tester.tap(find.text(SharedLabels.retry));
       await tester.pump();
       expect(retries, 1);
     });

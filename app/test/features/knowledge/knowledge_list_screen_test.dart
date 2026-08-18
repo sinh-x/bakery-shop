@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/knowledge_service.dart';
 import 'package:bakery_app/features/knowledge/knowledge_list_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,13 +111,13 @@ Future<void> _pump(
 void main() {
   testWidgets('renders app bar with knowledge title and FAB', (tester) async {
     await _pump(tester, interceptor: _KnowledgeInterceptor(const []));
-    expect(find.text(VN.knowledgeTitle), findsOneWidget);
+    expect(find.text(SharedLabels.knowledgeTitle), findsOneWidget);
     expect(find.byIcon(Icons.add), findsOneWidget);
   });
 
   testWidgets('shows empty state when no entries', (tester) async {
     await _pump(tester, interceptor: _KnowledgeInterceptor(const []));
-    expect(find.text(VN.noKnowledgeEntries), findsOneWidget);
+    expect(find.text(SharedLabels.noKnowledgeEntries), findsOneWidget);
     expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
   });
 
@@ -129,10 +129,10 @@ void main() {
     await _pump(tester, interceptor: _KnowledgeInterceptor(entries));
     expect(find.text('Công thức bánh kem'), findsOneWidget);
     expect(find.text('Quy trình nhào bột'), findsOneWidget);
-    // Type label from VN.knowledgeTypes — appears once as the type badge.
+    // Type label from SharedLabels.knowledgeTypes — appears once as the type badge.
     // (The filter chip also shows "Công thức"/"Quy trình" so total is 2 each.)
-    expect(find.text(VN.knowledgeTypes['recipe']!), findsNWidgets(2));
-    expect(find.text(VN.knowledgeTypes['procedure']!), findsNWidgets(2));
+    expect(find.text(SharedLabels.knowledgeTypes['recipe']!), findsNWidgets(2));
+    expect(find.text(SharedLabels.knowledgeTypes['procedure']!), findsNWidgets(2));
   });
 
   testWidgets('renders pinned section header for pinned entries',
@@ -173,8 +173,8 @@ void main() {
   testWidgets('renders error state with retry button when API fails',
       (tester) async {
     await _pump(tester, interceptor: _KnowledgeInterceptor(const [], fail: true));
-    expect(find.text(VN.apiError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('type filter chips filter entries by type', (tester) async {

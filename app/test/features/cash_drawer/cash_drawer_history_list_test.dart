@@ -3,7 +3,7 @@ import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_ca
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_snapshot.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_history_list.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,19 +64,19 @@ void main() {
       await tester.pumpAndSettle();
 
       // The breakdown card title renders (snapshot mode).
-      expect(find.text(VN.cashDrawerBreakdownTitle), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownTitle), findsOneWidget);
       // All 8 category labels render from the snapshot.
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeRefund), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeExpense), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashIn), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeBusShipping), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeRefund), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeExpense), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashIn), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashOut), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeClose), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeBusShipping), findsOneWidget);
       // Both group headers render.
-      expect(find.text(VN.cashDrawerBreakdownInflowGroup), findsOneWidget);
-      expect(find.text(VN.cashDrawerBreakdownOutflowGroup), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownInflowGroup), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownOutflowGroup), findsOneWidget);
     });
 
     testWidgets(
@@ -89,10 +89,10 @@ void main() {
           _closedDrawer().openedAt)));
       await tester.pumpAndSettle();
 
-      final saleRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeSale);
+      final saleRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeSale);
       expect(find.descendant(of: saleRow, matching: find.text('+200.000đ')),
           findsOneWidget);
-      final refundRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeRefund);
+      final refundRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeRefund);
       expect(find.descendant(of: refundRow, matching: find.text('-25.000đ')),
           findsOneWidget);
     });
@@ -108,12 +108,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // N/A label renders.
-      expect(find.text(VN.cashDrawerBreakdownSnapshotNa), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownSnapshotNa), findsOneWidget);
       // Breakdown group headers do NOT render (no card).
-      expect(find.text(VN.cashDrawerBreakdownInflowGroup), findsNothing);
-      expect(find.text(VN.cashDrawerBreakdownOutflowGroup), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownInflowGroup), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownOutflowGroup), findsNothing);
       // No per-category labels render.
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsNothing);
     });
 
     testWidgets(
@@ -132,7 +132,7 @@ void main() {
       await tester.tap(find.text(formatDisplayDate(drawer.openedAt)));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.cashDrawerBreakdownSnapshotNa), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownSnapshotNa), findsOneWidget);
     });
 
     testWidgets(
@@ -146,9 +146,9 @@ void main() {
 
       // Neither the breakdown card nor the N/A placeholder render for an
       // open drawer.
-      expect(find.text(VN.cashDrawerBreakdownTitle), findsNothing);
-      expect(find.text(VN.cashDrawerBreakdownSnapshotNa), findsNothing);
-      expect(find.text(VN.cashDrawerBreakdownInflowGroup), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownTitle), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownSnapshotNa), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownInflowGroup), findsNothing);
     });
   });
 

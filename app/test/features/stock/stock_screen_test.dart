@@ -11,7 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 
 class _FakeStockService extends StockService {
   _FakeStockService(this._items) : super(Dio());
@@ -147,9 +148,9 @@ void main() {
     await tester.tap(find.text('Phụ kiện'));
     await tester.pumpAndSettle();
     expect(find.text('Nến số'), findsOneWidget);
-    expect(find.text(VN.nhapHang), findsOneWidget);
-    expect(find.text(VN.haoHut), findsOneWidget);
-    expect(find.text(VN.dieuChinh), findsOneWidget);
+    expect(find.text(StockLabels.nhapHang), findsOneWidget);
+    expect(find.text(StockLabels.haoHut), findsOneWidget);
+    expect(find.text(StockLabels.dieuChinh), findsOneWidget);
     expect(find.byIcon(Icons.add), findsWidgets);
     expect(find.byIcon(Icons.remove), findsWidgets);
     expect(find.byIcon(Icons.edit), findsWidgets);
@@ -207,7 +208,7 @@ void main() {
     // Quantity text shows the negative number (minus sign).
     expect(find.text('-5'), findsOneWidget);
     // Negative-aware VN label "Âm 5".
-    expect(find.text(VN.negativeStockLabel(-5)), findsOneWidget);
+    expect(find.text(StockLabels.negativeStockLabel(-5)), findsOneWidget);
     // Per-chip line reflects the negative net position.
     expect(find.textContaining('Giá gốc (100000): -5'), findsOneWidget);
   });
@@ -303,7 +304,7 @@ void main() {
       // Restock sheet (StockActionSheet) is now presented.
       expect(find.byType(StockActionSheet), findsOneWidget);
       // Price dropdown present (perChip is non-empty).
-      expect(find.text(VN.tuyChonGia), findsOneWidget);
+      expect(find.text(StockLabels.tuyChonGia), findsOneWidget);
 
       // The tapped price (35000) should be the selected dropdown value. The
       // DropdownMenuItem child text is "$displayLabel - $priceText ($qty)".
@@ -311,9 +312,9 @@ void main() {
       // pre-selected dropdown item is visible.
       expect(find.textContaining('Khuyến mãi - 35,000đ (2)'), findsOneWidget);
 
-      // Quantity field is auto-focused: the TextFormField with VN.soLuong
+      // Quantity field is auto-focused: the TextFormField with OrdersLabels.soLuong
       // label is rendered and has autofocus: true. Verify the field exists.
-      expect(find.text(VN.soLuong), findsOneWidget);
+      expect(find.text(OrdersLabels.soLuong), findsOneWidget);
 
       // No restock call yet — sheet is open but not submitted.
       expect(stockService.restockCalls, isEmpty);
@@ -337,7 +338,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Submit via the FilledButton inside the action sheet (it shows
-      // VN.xacNhanNhapHang == "Nhập hàng", which is ambiguous on the screen
+      // StockLabels.xacNhanNhapHang == "Nhập hàng", which is ambiguous on the screen
       // because the restock button uses the same label — so target the
       // button inside the sheet).
       final submitButton = find.descendant(

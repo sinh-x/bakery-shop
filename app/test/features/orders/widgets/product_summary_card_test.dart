@@ -5,7 +5,9 @@ import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/product_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
+import 'package:bakery_app/shared/utils.dart';
 
 Product _product({Map<String, String> attributes = const {}}) {
   return Product(
@@ -46,10 +48,10 @@ void main() {
         ),
       );
 
-      expect(find.text(VN.useInventory), findsOneWidget);
+      expect(find.text(StockLabels.useInventory), findsOneWidget);
       // No ": true" suffix anywhere in the rendered tree.
       expect(
-        find.textContaining('${VN.useInventory}: true'),
+        find.textContaining('${StockLabels.useInventory}: true'),
         findsNothing,
         reason: 'FR-7: the inventory line must not append ": true"',
       );
@@ -72,7 +74,7 @@ void main() {
         ),
       );
 
-      expect(find.text(VN.useInventory), findsNothing,
+      expect(find.text(StockLabels.useInventory), findsNothing,
           reason: 'AC6: when the item does not use inventory, no line is shown');
     });
 
@@ -86,7 +88,7 @@ void main() {
         ),
       );
 
-      expect(find.text(VN.useInventory), findsNothing);
+      expect(find.text(StockLabels.useInventory), findsNothing);
     });
 
     testWidgets('renders other attribute lines (notes, birthday) correctly',
@@ -104,9 +106,9 @@ void main() {
         ),
       );
 
-      expect(find.textContaining(VN.notes), findsOneWidget);
-      expect(find.textContaining(VN.birthdayWithAge), findsOneWidget);
-      expect(find.text(VN.useInventory), findsOneWidget);
+      expect(find.textContaining(OrdersLabels.notes), findsOneWidget);
+      expect(find.textContaining(OrdersLabels.birthdayWithAge), findsOneWidget);
+      expect(find.text(StockLabels.useInventory), findsOneWidget);
     });
   });
 
@@ -129,7 +131,7 @@ void main() {
         ),
       );
 
-      expect(find.textContaining(VN.rutTien), findsOneWidget);
+      expect(find.textContaining(OrdersLabels.rutTien), findsOneWidget);
       expect(find.textContaining(formatVND(20000)), findsWidgets);
     });
   });
@@ -190,7 +192,7 @@ void main() {
       );
 
       expect(find.text(formatVND(205000)), findsOneWidget);
-      expect(find.textContaining(VN.tangKem), findsOneWidget);
+      expect(find.textContaining(ProductsLabels.tangKem), findsOneWidget);
     });
 
     testWidgets('order without extras shows no extras section (AC6)',
@@ -209,7 +211,7 @@ void main() {
       );
 
       expect(find.text(formatVND(200000)), findsOneWidget);
-      expect(find.text(VN.extras), findsNothing);
+      expect(find.text(OrdersLabels.extras), findsNothing);
       expect(find.text(OrdersLabels.productCount(1)), findsOneWidget);
     });
   });

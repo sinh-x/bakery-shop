@@ -4,7 +4,8 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/events/event_form_screen.dart';
 import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,7 +103,7 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.createEvent), findsOneWidget);
+    expect(find.text(EventsLabels.createEvent), findsOneWidget);
   });
 
   testWidgets('edit mode renders edit-event title and prefilled summary',
@@ -120,7 +121,7 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container, event: event);
-    expect(find.text(VN.editEvent), findsOneWidget);
+    expect(find.text(EventsLabels.editEvent), findsOneWidget);
     expect(find.text('Sửa lò'), findsOneWidget);
   });
 
@@ -129,7 +130,7 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container, orderId: 42, orderRef: 'ORD-42');
-    expect(find.text(VN.addOrderIncident), findsOneWidget);
+    expect(find.text(EventsLabels.addOrderIncident), findsOneWidget);
     expect(find.textContaining('ORD-42'), findsOneWidget);
   });
 
@@ -137,22 +138,22 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.eventNote), findsOneWidget);
-    expect(find.text(VN.typeEquipment), findsOneWidget);
-    expect(find.text(VN.eventProduction), findsOneWidget);
-    expect(find.text(VN.eventInventory), findsOneWidget);
-    expect(find.text(VN.eventExpense), findsOneWidget);
-    expect(find.text(VN.eventDelivery), findsOneWidget);
-    expect(find.text(VN.eventOrder), findsOneWidget);
+    expect(find.text(EventsLabels.eventNote), findsOneWidget);
+    expect(find.text(EventsLabels.typeEquipment), findsOneWidget);
+    expect(find.text(EventsLabels.eventProduction), findsOneWidget);
+    expect(find.text(EventsLabels.eventInventory), findsOneWidget);
+    expect(find.text(EventsLabels.eventExpense), findsOneWidget);
+    expect(find.text(EventsLabels.eventDelivery), findsOneWidget);
+    expect(find.text(EventsLabels.eventOrder), findsOneWidget);
   });
 
   testWidgets('renders standard tag chips', (tester) async {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.tagIncident), findsOneWidget);
-    expect(find.text(VN.tagMaintenance), findsOneWidget);
-    expect(find.text(VN.tagStaff), findsOneWidget);
+    expect(find.text(EventsLabels.tagIncident), findsOneWidget);
+    expect(find.text(EventsLabels.tagMaintenance), findsOneWidget);
+    expect(find.text(EventsLabels.tagStaff), findsOneWidget);
   });
 
   testWidgets('summary field is empty in create mode', (tester) async {
@@ -160,7 +161,7 @@ void main() {
     addTearDown(container.dispose);
     await _pump(tester, container);
     final textField = tester.widget<TextField>(
-      find.widgetWithText(TextField, VN.eventSummary).first,
+      find.widgetWithText(TextField, EventsLabels.eventSummary).first,
     );
     expect(textField.controller?.text, '');
   });
@@ -169,7 +170,7 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.logEvent, skipOffstage: false), findsOneWidget);
+    expect(find.text(EventsLabels.logEvent, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('save button is present in edit mode', (tester) async {
@@ -186,21 +187,21 @@ void main() {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container, event: event);
-    expect(find.text(VN.save, skipOffstage: false), findsOneWidget);
+    expect(find.text(SharedLabels.save, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('change-logger button is present', (tester) async {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.changeLogger, skipOffstage: false), findsOneWidget);
+    expect(find.text(EventsLabels.changeLogger, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('add-tag action chip is present', (tester) async {
     final container = await _buildContainer(_EventsInterceptor());
     addTearDown(container.dispose);
     await _pump(tester, container);
-    expect(find.text(VN.addTag, skipOffstage: false), findsOneWidget);
+    expect(find.text(EventsLabels.addTag, skipOffstage: false), findsOneWidget);
   });
 
   // DG-333 Phase 5.6-c1-fix (M3): photo-upload integration. When the shared
@@ -245,7 +246,7 @@ void main() {
       // indicator lives below the fold in the form's ListView.
       expect(find.byType(UploadProgressIndicator, skipOffstage: false),
           findsOneWidget);
-      expect(find.text(VN.photoUploadComplete(2), skipOffstage: false),
+      expect(find.text(SharedLabels.photoUploadComplete(2), skipOffstage: false),
           findsOneWidget);
     },
   );

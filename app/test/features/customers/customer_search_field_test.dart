@@ -5,7 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeCustomerService extends CustomerService {
   _FakeCustomerService(this._customers) : super(Dio());
@@ -107,7 +108,7 @@ void main() {
     expect(selected, isNotNull);
     expect(selected!.id, 1);
     expect(
-      find.textContaining(VN.customerSearchLinked.replaceAll('{name}', 'Sinh')),
+      find.textContaining(CustomersLabels.customerSearchLinked.replaceAll('{name}', 'Sinh')),
       findsOneWidget,
     );
   });
@@ -132,7 +133,7 @@ void main() {
     expect(selected, isNotNull);
     expect(selected!.id, 1);
     expect(
-      find.textContaining(VN.customerSearchLinked.replaceAll('{name}', 'Sinh')),
+      find.textContaining(CustomersLabels.customerSearchLinked.replaceAll('{name}', 'Sinh')),
       findsOneWidget,
     );
   });
@@ -188,7 +189,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'zzz');
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.customerSearchNoMatch), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchNoMatch), findsOneWidget);
   });
 
   testWidgets('search by secondary phone surfaces customer', (tester) async {
@@ -254,13 +255,13 @@ void main() {
     final service = _ThrowingCustomerService();
     await _pumpField(tester, service);
 
-    expect(find.text(VN.customerSearchError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
 
-    await tester.tap(find.text(VN.retry));
+    await tester.tap(find.text(SharedLabels.retry));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchError), findsOneWidget);
     expect(service.callCount, greaterThanOrEqualTo(2),
         reason: 'retry must trigger another listCustomers call');
   });
@@ -274,15 +275,15 @@ void main() {
       initial: const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
     );
 
-    expect(find.text(VN.customerSearchError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
 
-    await tester.tap(find.text(VN.retry));
+    await tester.tap(find.text(SharedLabels.retry));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.customerSearchError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
-    expect(find.text(VN.customerSearchNoMatch), findsNothing);
+    expect(find.text(CustomersLabels.customerSearchError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchNoMatch), findsNothing);
   });
 
   testWidgets('server-mode caps results at 20 rows (AC-3)', (tester) async {
@@ -323,7 +324,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.customerSearchRefineHint), findsOneWidget);
+    expect(find.text(CustomersLabels.customerSearchRefineHint), findsOneWidget);
   });
 }
 

@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeCustomerService extends CustomerService {
   _FakeCustomerService(this._customers, {this.searchResults = const {}})
@@ -97,7 +97,7 @@ Future<void> _pumpScreen(
 void main() {
   testWidgets('renders customers and shows empty state', (tester) async {
     await _pumpScreen(tester, _FakeCustomerService(const []));
-    expect(find.text(VN.noCustomers), findsOneWidget);
+    expect(find.text(CustomersLabels.noCustomers), findsOneWidget);
   });
 
   testWidgets('lists customers with name and phone', (tester) async {
@@ -198,7 +198,7 @@ void main() {
     // duplicate-warning dialog.
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);

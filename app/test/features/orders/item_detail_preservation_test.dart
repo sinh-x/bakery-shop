@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 const _nhanBanhAttribute = EnumAttribute(
   attributeType: 'nhan_banh',
@@ -125,13 +125,13 @@ void main() {
       final item = DraftOrderItem(product: _product());
       await _pumpCard(tester, item);
 
-      await tester.tap(find.text(VN.isBirthday));
+      await tester.tap(find.text(OrdersLabels.isBirthday));
       await tester.pump();
 
       expect(item.isBirthday, isTrue);
 
       await tester.enterText(
-        find.ancestor(of: find.text(VN.birthdayAge), matching: find.byType(TextFormField)),
+        find.ancestor(of: find.text(OrdersLabels.birthdayAge), matching: find.byType(TextFormField)),
         '5',
       );
       await tester.pump();
@@ -161,7 +161,7 @@ void main() {
       final item = DraftOrderItem(product: product);
       await _pumpCard(tester, item);
 
-      await tester.tap(find.text(VN.rutTien));
+      await tester.tap(find.text(OrdersLabels.rutTien));
       await tester.pump();
 
       expect(item.attributes['rut_tien'], 'true');

@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Fake [AddressService] with an in-memory store for the management
 /// screen. Mirrors the template management screen test pattern
@@ -164,7 +164,7 @@ void main() {
       expect(find.text(AddressLabels.libraryDeleteConfirmTitle),
           findsOneWidget);
       expect(find.textContaining('123 Lê Lợi'), findsWidgets);
-      await tester.tap(find.widgetWithText(TextButton, VN.cancel));
+      await tester.tap(find.widgetWithText(TextButton, SharedLabels.cancel));
       await tester.pumpAndSettle();
       expect(find.text('123 Lê Lợi'), findsOneWidget);
     });
@@ -191,7 +191,7 @@ void main() {
         '78 Hai Bà Trưng',
       );
       await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, VN.save));
+      await tester.tap(find.widgetWithText(FilledButton, SharedLabels.save));
       await tester.pumpAndSettle();
       expect(find.text('78 Hai Bà Trưng'), findsOneWidget);
     });
@@ -201,7 +201,7 @@ void main() {
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
       // Try to save without entering an address.
-      await tester.tap(find.widgetWithText(FilledButton, VN.save));
+      await tester.tap(find.widgetWithText(FilledButton, SharedLabels.save));
       await tester.pumpAndSettle();
       expect(find.text(AddressLabels.editorAddressRequired), findsOneWidget);
       // Dialog still open.

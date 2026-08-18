@@ -11,7 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
+import 'package:bakery_app/shared/utils.dart';
 
 class _TestCategoriesNotifier extends CategoriesNotifier {
   _TestCategoriesNotifier(this._categories);
@@ -230,7 +232,7 @@ void main() {
     await tester.pumpWidget(buildScreen());
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.showOutOfStockProducts), findsOneWidget);
+    expect(find.text(StockLabels.showOutOfStockProducts), findsOneWidget);
     expect(find.byType(Switch), findsOneWidget);
   });
 
@@ -279,9 +281,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('130 · ${formatVND(130000)}'), findsOneWidget);
-    expect(find.text(VN.availableStock(8)), findsOneWidget);
+    expect(find.text(StockLabels.availableStock(8)), findsOneWidget);
     expect(find.text('140 · ${formatVND(140000)}'), findsOneWidget);
-    expect(find.text(VN.lowStock(2)), findsOneWidget);
+    expect(find.text(StockLabels.lowStock(2)), findsOneWidget);
   });
 
   testWidgets('chip picker hides out-of-stock chips by default', (
@@ -297,16 +299,16 @@ void main() {
     await tester.tap(find.text('Banh kem base option'));
     await tester.pumpAndSettle();
 
-    expect(find.text('${VN.giaCoSo} · ${formatVND(120000)}'), findsOneWidget);
-    expect(find.text(VN.lowStock(1)), findsOneWidget);
+    expect(find.text('${StockLabels.giaCoSo} · ${formatVND(120000)}'), findsOneWidget);
+    expect(find.text(StockLabels.lowStock(1)), findsOneWidget);
     expect(find.text('130 · ${formatVND(130000)}'), findsNothing);
     expect(find.text('140 · ${formatVND(140000)}'), findsOneWidget);
-    expect(find.text(VN.lowStock(2)), findsOneWidget);
+    expect(find.text(StockLabels.lowStock(2)), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Thêm'));
     await tester.pumpAndSettle();
     expect(find.text(formatVND(120000)), findsWidgets);
-    expect(find.text(VN.sanPhamHetHang), findsNothing);
+    expect(find.text(OrdersLabels.sanPhamHetHang), findsNothing);
   });
 
   testWidgets('chip picker shows out-of-stock chips when switch is enabled', (
@@ -325,6 +327,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('130 · ${formatVND(130000)}'), findsOneWidget);
-    expect(find.text(VN.outOfStock), findsWidgets);
+    expect(find.text(StockLabels.outOfStock), findsWidgets);
   });
 }

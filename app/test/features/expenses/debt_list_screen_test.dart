@@ -1,6 +1,6 @@
 import 'package:bakery_app/features/expenses/debt_list_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,7 +67,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtListEmpty), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtListEmpty), findsOneWidget);
     },
   );
 
@@ -119,17 +119,17 @@ void main() {
       await tester.pumpAndSettle();
 
       // Grand total owed = 500000 + 100000 + 0 = 600000.
-      expect(find.textContaining(VN.debtListTotalOwed), findsOneWidget);
+      expect(find.textContaining(ExpensesLabels.debtListTotalOwed), findsOneWidget);
       expect(find.text('Nhà cung cấp A'), findsOneWidget);
       expect(find.text('Nhà cung cấp B'), findsOneWidget);
       // Two "Thanh toán" buttons for the two non-zero remaining debts.
-      expect(find.text(VN.debtListOpenSettlement), findsNWidgets(2));
+      expect(find.text(ExpensesLabels.debtListOpenSettlement), findsNWidgets(2));
       // Status chips on the debt rows (FilterChip is the strip; Chip is the
       // row status indicator). Disambiguate from the filter strip's
       // FilterChip labels by widget type.
-      expect(find.widgetWithText(Chip, VN.debtStatusUnpaid), findsOneWidget);
-      expect(find.widgetWithText(Chip, VN.debtStatusPartial), findsOneWidget);
-      expect(find.widgetWithText(Chip, VN.debtStatusPaid), findsOneWidget);
+      expect(find.widgetWithText(Chip, ExpensesLabels.debtStatusUnpaid), findsOneWidget);
+      expect(find.widgetWithText(Chip, ExpensesLabels.debtStatusPartial), findsOneWidget);
+      expect(find.widgetWithText(Chip, ExpensesLabels.debtStatusPaid), findsOneWidget);
     },
   );
 
@@ -162,7 +162,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(VN.debtListOpenSettlement));
+      await tester.tap(find.text(ExpensesLabels.debtListOpenSettlement));
       await tester.pumpAndSettle();
 
       expect(openedId, 42);
@@ -191,7 +191,7 @@ void main() {
       expect(capturedStatus, isNull);
 
       // Tap the "Chưa trả" filter chip.
-      await tester.tap(find.text(VN.debtStatusUnpaid).last);
+      await tester.tap(find.text(ExpensesLabels.debtStatusUnpaid).last);
       await tester.pumpAndSettle();
 
       expect(capturedStatus, 'unpaid');
@@ -210,7 +210,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtListLoadError), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtListLoadError), findsOneWidget);
     },
   );
 
@@ -241,19 +241,19 @@ void main() {
     () {
       expect(
         expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter.all),
-        VN.debtListFilterAll,
+        ExpensesLabels.debtListFilterAll,
       );
       expect(
         expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter.unpaid),
-        VN.debtStatusUnpaid,
+        ExpensesLabels.debtStatusUnpaid,
       );
       expect(
         expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter.partial),
-        VN.debtStatusPartial,
+        ExpensesLabels.debtStatusPartial,
       );
       expect(
         expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter.paid),
-        VN.debtStatusPaid,
+        ExpensesLabels.debtStatusPaid,
       );
     },
   );

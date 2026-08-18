@@ -1,6 +1,7 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_transaction_list.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,9 +115,9 @@ void main() {
       );
 
       // AC3: short type labels are rendered.
-      expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashOut), findsOneWidget);
       // AC1: timestamps rendered via formatDisplay (dd/MM/yyyy HH:mm).
       expect(find.textContaining('01/08/2026'), findsNWidgets(3));
       // AC1: notes render when present.
@@ -194,9 +195,9 @@ void main() {
       // hit offset 0.
       expect(interceptor.requests.length, 1);
       expect(interceptor.requests.last['offset'], 0);
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsWidgets);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsWidgets);
       // No expense-type rows yet (second page not loaded).
-      expect(find.text(VN.cashDrawerTxnTypeExpense), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeExpense), findsNothing);
 
       // Scroll to the bottom to trigger infinite-scroll load of page 2.
       await tester.drag(
@@ -206,7 +207,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Second page loaded — expense rows now appear.
-      expect(find.text(VN.cashDrawerTxnTypeExpense), findsWidgets);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeExpense), findsWidgets);
       expect(interceptor.requests.length, greaterThanOrEqualTo(2));
       // The second request used offset=50.
       expect(interceptor.requests.last['offset'], 50);
@@ -226,7 +227,7 @@ void main() {
       );
 
       // Empty state surfaces the tab label as a hint.
-      expect(find.text(VN.cashDrawerTransactionsTab), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTransactionsTab), findsOneWidget);
     });
   });
 
@@ -342,12 +343,12 @@ void main() {
       // The edit icon is rendered on the open transaction row.
       expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
       // Tap the open transaction card to open the edit dialog.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen));
       await tester.pumpAndSettle();
 
       // The dialog title includes the edit label + transaction type.
       expect(
-        find.textContaining(VN.cashDrawerEditTxnTitle),
+        find.textContaining(CashDrawerLabels.cashDrawerEditTxnTitle),
         findsOneWidget,
       );
       // The amount field is pre-filled with the current amount (formatted).
@@ -382,12 +383,12 @@ void main() {
       );
 
       // Tap to open the edit dialog.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen));
       await tester.pumpAndSettle();
       // Change the notes field (clear + enter new text).
       await tester.enterText(find.byType(TextFormField).last, 'ghi chú mới');
       // Tap Save.
-      await tester.tap(find.text(VN.save));
+      await tester.tap(find.text(SharedLabels.save));
       await tester.pumpAndSettle();
 
       // A PATCH request was recorded against the edit endpoint.
@@ -398,7 +399,7 @@ void main() {
       );
       expect(interceptor.patchRequests.last.body, {'notes': 'ghi chú mới'});
       // The success snackbar is shown.
-      expect(find.text(VN.cashDrawerEditTxnSaved), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerEditTxnSaved), findsOneWidget);
     });
 
     testWidgets(
@@ -430,12 +431,12 @@ void main() {
       // No edit icon on a reconciled drawer (AC5).
       expect(find.byIcon(Icons.edit_outlined), findsNothing);
       // Tap the open transaction card (the type label is unique to the row).
-      await tester.tap(find.text(VN.cashDrawerTxnTypeOpen));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen));
       await tester.pumpAndSettle();
 
       // The lock-notice snackbar is shown, not the edit dialog.
-      expect(find.text(VN.cashDrawerEditLockedReconciled), findsOneWidget);
-      expect(find.text(VN.save), findsNothing);
+      expect(find.text(CashDrawerLabels.cashDrawerEditLockedReconciled), findsOneWidget);
+      expect(find.text(SharedLabels.save), findsNothing);
       // No PATCH request was sent.
       expect(interceptor.patchRequests, isEmpty);
     });
@@ -469,9 +470,9 @@ void main() {
       // No edit icon on non-editable rows.
       expect(find.byIcon(Icons.edit_outlined), findsNothing);
       // Tapping the sale row does not open the edit dialog.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeSale));
       await tester.pumpAndSettle();
-      expect(find.text(VN.save), findsNothing);
+      expect(find.text(SharedLabels.save), findsNothing);
     });
   });
 
@@ -537,7 +538,7 @@ void main() {
       // The chevron is shown on the navigable sale row (FR1 affordance).
       expect(find.byIcon(Icons.chevron_right), findsOneWidget);
       // Tap the sale row.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeSale));
       await tester.pumpAndSettle();
 
       // Navigation landed on the order detail route with the order ref.
@@ -567,7 +568,7 @@ void main() {
       // No chevron on a sale row with an empty reference (FR4).
       expect(find.byIcon(Icons.chevron_right), findsNothing);
       // Tapping the row does not navigate.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeSale));
       await tester.pumpAndSettle();
       expect(find.textContaining('order-detail-'), findsNothing);
     });
@@ -671,7 +672,7 @@ void main() {
       expect(find.byIcon(Icons.edit_outlined), findsNothing);
       expect(find.byIcon(Icons.chevron_right), findsOneWidget);
       // Tapping the sale row navigates despite the reconciled state.
-      await tester.tap(find.text(VN.cashDrawerTxnTypeSale));
+      await tester.tap(find.text(CashDrawerLabels.cashDrawerTxnTypeSale));
       await tester.pumpAndSettle();
       expect(find.text('order-detail-BKS-16-001'), findsOneWidget);
     });

@@ -8,7 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Interceptor serving the order-detail endpoint and related sub-resources.
 class _OrderDetailInterceptor extends Interceptor {
@@ -209,7 +210,7 @@ Future<void> _pump(
 void main() {
   testWidgets('renders app bar with order-detail title', (tester) async {
     await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
-    expect(find.text(VN.orderDetail), findsOneWidget);
+    expect(find.text(OrdersLabels.orderDetail), findsOneWidget);
   });
 
   testWidgets('renders edit and print app bar actions when data loaded',
@@ -225,8 +226,8 @@ void main() {
       tester,
       interceptor: _OrderDetailInterceptor(null, fail: true),
     );
-    expect(find.text(VN.apiError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('overflow menu shows add-incident and google-maps items',
@@ -234,7 +235,7 @@ void main() {
     await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
-    expect(find.text(VN.addOrderIncident), findsOneWidget);
+    expect(find.text(EventsLabels.addOrderIncident), findsOneWidget);
     expect(find.text(OrdersLabels.googleMapsContextMenuLabel), findsOneWidget);
   });
 
@@ -261,7 +262,7 @@ void main() {
       interceptor: _OrderDetailInterceptor(_orderJson(status: 'confirmed')),
     );
     // The status banner shows the Vietnamese status label.
-    expect(find.text(VN.statusConfirmed, skipOffstage: false), findsAtLeast(1));
+    expect(find.text(OrdersLabels.statusConfirmed, skipOffstage: false), findsAtLeast(1));
   });
 
   testWidgets('renders 4 tabs in the TabBar (Phase 5)', (tester) async {
@@ -284,7 +285,7 @@ void main() {
       Offset(tabBarBox.left + tabBarBox.width * 7 / 8, tabBarBox.center.dy),
     );
     await tester.pumpAndSettle();
-    expect(find.text(VN.orderDetailCustomerEmpty), findsOneWidget);
+    expect(find.text(OrdersLabels.orderDetailCustomerEmpty), findsOneWidget);
     expect(find.byIcon(Icons.person_off_outlined), findsOneWidget);
   });
 

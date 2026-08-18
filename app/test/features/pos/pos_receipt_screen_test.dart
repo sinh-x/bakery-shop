@@ -10,7 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeReceiptService extends ReceiptService {
   _FakeReceiptService() : super(Dio());
@@ -168,10 +168,10 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(OutlinedButton, VN.share),
+        find.widgetWithText(OutlinedButton, SharedLabels.share),
         findsOneWidget,
       );
-      expect(find.text(VN.editOrder), findsNothing);
+      expect(find.text(OrdersLabels.editOrder), findsNothing);
     });
 
     testWidgets('print action uses existing receipt print service', (
@@ -193,7 +193,7 @@ void main() {
       final fakeReceiptService = _FakeReceiptService();
       await _pumpReceiptApp(tester, receiptService: fakeReceiptService);
 
-      await tester.tap(find.widgetWithText(OutlinedButton, VN.share));
+      await tester.tap(find.widgetWithText(OutlinedButton, SharedLabels.share));
       await tester.pumpAndSettle();
 
       // Smoke test: no crash, receipt fetch still happened, print was not called

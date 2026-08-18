@@ -6,7 +6,7 @@ import 'package:bakery_app/app.dart';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'features/auth/login_screen_test_helpers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 void main() {
   testWidgets('App launches with bakery title', (tester) async {
@@ -23,7 +23,7 @@ void main() {
     expect(find.text(SharedLabels.tabManagement), findsWidgets);
     expect(find.byIcon(Icons.storefront_outlined), findsOneWidget);
 
-    await tester.tap(find.text(VN.banHang).first);
+    await tester.tap(find.text(OrdersLabels.banHang).first);
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.storefront), findsOneWidget);

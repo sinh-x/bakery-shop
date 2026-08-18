@@ -1,7 +1,7 @@
 import 'package:bakery_app/features/stock/stock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 
 void main() {
   group('stockStatusColor', () {
@@ -29,13 +29,13 @@ void main() {
 
   group('stockStatusLabel', () {
     test('negative quantity returns VN "Âm N" label with absolute value', () {
-      expect(stockStatusLabel(-1), VN.negativeStockLabel(-1));
+      expect(stockStatusLabel(-1), StockLabels.negativeStockLabel(-1));
       expect(stockStatusLabel(-1), 'Âm 1');
       expect(stockStatusLabel(-7), 'Âm 7');
     });
 
     test('zero returns "Hết hàng"', () {
-      expect(stockStatusLabel(0), VN.outOfStock);
+      expect(stockStatusLabel(0), StockLabels.outOfStock);
       expect(stockStatusLabel(0), 'Hết hàng');
     });
 
@@ -50,10 +50,10 @@ void main() {
     });
   });
 
-  group('VN.negativeStockLabel', () {
+  group('StockLabels.negativeStockLabel', () {
     test('formats absolute quantity with "Âm " prefix', () {
-      expect(VN.negativeStockLabel(-3), 'Âm 3');
-      expect(VN.negativeStockLabel(-12), 'Âm 12');
+      expect(StockLabels.negativeStockLabel(-3), 'Âm 3');
+      expect(StockLabels.negativeStockLabel(-12), 'Âm 12');
     });
   });
 }

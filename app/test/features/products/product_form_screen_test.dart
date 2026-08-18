@@ -9,7 +9,7 @@ import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_form_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -262,49 +262,49 @@ void main() {
 
   testWidgets('create mode renders create-product title', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.createProduct), findsOneWidget);
+    expect(find.text(ProductsLabels.createProduct), findsOneWidget);
   });
 
   testWidgets('edit mode renders edit-product title and prefilled fields',
       (tester) async {
     await pumpForm(tester, product: _testProduct());
-    expect(find.text(VN.editProduct), findsOneWidget);
+    expect(find.text(ProductsLabels.editProduct), findsOneWidget);
     expect(find.text('Bánh kem 20cm'), findsOneWidget);
   });
 
   testWidgets('renders product name field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productName), findsOneWidget);
+    expect(find.text(ProductsLabels.productName), findsOneWidget);
   });
 
   testWidgets('renders product category field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productCategory), findsOneWidget);
+    expect(find.text(ProductsLabels.productCategory), findsOneWidget);
   });
 
   testWidgets('renders product price field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productPrice), findsOneWidget);
+    expect(find.text(ProductsLabels.productPrice), findsOneWidget);
   });
 
   testWidgets('renders product cost field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productCost), findsOneWidget);
+    expect(find.text(ProductsLabels.productCost), findsOneWidget);
   });
 
   testWidgets('renders product code field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productCode), findsOneWidget);
+    expect(find.text(ProductsLabels.productCode), findsOneWidget);
   });
 
   testWidgets('renders recipe notes field', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.productNotes), findsOneWidget);
+    expect(find.text(ProductsLabels.productNotes), findsOneWidget);
   });
 
   testWidgets('renders price chips section', (tester) async {
     await pumpForm(tester);
-    expect(find.text(VN.priceChips), findsOneWidget);
+    expect(find.text(ProductsLabels.priceChips), findsOneWidget);
   });
 
   testWidgets('renders save button', (tester) async {
@@ -316,7 +316,7 @@ void main() {
   testWidgets('create mode has empty name field', (tester) async {
     await pumpForm(tester);
     final nameField = tester.widget<TextFormField>(
-      find.widgetWithText(TextFormField, VN.productName),
+      find.widgetWithText(TextFormField, ProductsLabels.productName),
     );
     expect(nameField.controller?.text, '');
   });
@@ -324,7 +324,7 @@ void main() {
   testWidgets('edit mode prefills name field', (tester) async {
     await pumpForm(tester, product: _testProduct());
     final nameField = tester.widget<TextFormField>(
-      find.widgetWithText(TextFormField, VN.productName),
+      find.widgetWithText(TextFormField, ProductsLabels.productName),
     );
     expect(nameField.controller?.text, 'Bánh kem 20cm');
   });
@@ -332,7 +332,7 @@ void main() {
   testWidgets('edit mode prefills price field', (tester) async {
     await pumpForm(tester, product: _testProduct());
     final priceField = tester.widget<TextFormField>(
-      find.widgetWithText(TextFormField, VN.productPrice),
+      find.widgetWithText(TextFormField, ProductsLabels.productPrice),
     );
     expect(priceField.controller?.text, '200000');
   });

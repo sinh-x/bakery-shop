@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/features/orders/widgets/order_customer_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
 
 void main() {
   testWidgets('OrderCustomerSection readOnly renders customer name and phone info rows',
@@ -77,8 +77,8 @@ void main() {
     expect(find.byType(OrderCustomerSection), findsOneWidget);
     // The search entry is now a button, not an inline text field.
     expect(find.text(OrdersLabels.customerSearchButton), findsOneWidget);
-    expect(find.text(VN.customerName), findsOneWidget);
-    expect(find.text(VN.customerPhone), findsOneWidget);
+    expect(find.text(OrdersLabels.customerName), findsOneWidget);
+    expect(find.text(OrdersLabels.customerPhone), findsOneWidget);
     expect(find.text('Lê Minh C'), findsOneWidget);
     expect(find.text('0912345678'), findsOneWidget);
     expect(picked, isNull);
@@ -122,7 +122,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.text(VN.customerName),
+        matching: find.text(OrdersLabels.customerName),
       ),
       findsNothing,
       reason: 'AC7: name/phone fields should remain outside the search modal',
@@ -155,9 +155,9 @@ void main() {
       ),
     );
 
-    expect(find.byTooltip(VN.customerSearchClear), findsOneWidget);
+    expect(find.byTooltip(CustomersLabels.customerSearchClear), findsOneWidget);
 
-    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.tap(find.byTooltip(CustomersLabels.customerSearchClear));
     await tester.pumpAndSettle();
 
     expect(cleared, isTrue);
@@ -188,7 +188,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.tap(find.byTooltip(CustomersLabels.customerSearchClear));
     await tester.pumpAndSettle();
 
     expect(nameCtrl.text, '');

@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 
 class _FakeBlankService extends BlankService {
   _FakeBlankService([List<Blank> initial = const []])
@@ -117,7 +117,7 @@ void main() {
     // categoryMap fallback; open the dropdown and pick the first item.
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('${VN.emojiBanhMi} ${VN.catBanhMi}').first);
+    await tester.tap(find.text('${ProductsLabels.emojiBanhMi} ${ProductsLabels.catBanhMi}').first);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextFormField, BlanksLabels.fieldUnit),

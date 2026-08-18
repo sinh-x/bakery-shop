@@ -6,7 +6,7 @@ import 'package:bakery_app/features/orders/widgets/order_detail/order_photo_thum
 import 'package:bakery_app/data/models/order.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Order _order({double totalPrice = 500000, double shippingFee = 0}) =>
     Order.fromJson({
@@ -87,11 +87,11 @@ void main() {
       remaining: 300000,
     );
 
-    expect(find.text(VN.total), findsOneWidget);
+    expect(find.text(OrdersLabels.total), findsOneWidget);
     expect(find.text('500.000đ'), findsOneWidget);
-    expect(find.text(VN.amountPaidLabel), findsOneWidget);
+    expect(find.text(OrdersLabels.amountPaidLabel), findsOneWidget);
     expect(find.text('200.000đ'), findsOneWidget);
-    expect(find.text(VN.remainingLabel), findsOneWidget);
+    expect(find.text(OrdersLabels.remainingLabel), findsOneWidget);
     expect(find.text('300.000đ'), findsOneWidget);
   });
 
@@ -107,7 +107,7 @@ void main() {
       onAddPayment: () => tapped++,
     );
 
-    final button = find.text(VN.orderDetailAddTransaction);
+    final button = find.text(OrdersLabels.orderDetailAddTransaction);
     expect(button, findsOneWidget);
     await tester.tap(button);
     await tester.pump();
@@ -171,7 +171,7 @@ void main() {
     );
 
     // Section header.
-    expect(find.text(VN.transferPhotosSection), findsOneWidget);
+    expect(find.text(OrdersLabels.transferPhotosSection), findsOneWidget);
     // Two thumbnails rendered.
     expect(find.byType(OrderPhotoThumbnail), findsNWidgets(2));
     // The "Chuyển khoản" tag chip label (from kOrderPhotoTags) is rendered
@@ -190,8 +190,8 @@ void main() {
       transferPhotos: const [],
     );
 
-    expect(find.text(VN.transferPhotosSection), findsOneWidget);
-    expect(find.text(VN.noTransferPhotos), findsOneWidget);
+    expect(find.text(OrdersLabels.transferPhotosSection), findsOneWidget);
+    expect(find.text(OrdersLabels.noTransferPhotos), findsOneWidget);
     expect(find.byType(OrderPhotoThumbnail), findsNothing);
   });
 }

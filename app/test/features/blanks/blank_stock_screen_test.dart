@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeBlankService extends BlankService {
   _FakeBlankService({
@@ -91,7 +91,7 @@ void main() {
       (tester) async {
     await _pump(tester, _FakeBlankService(stock: _stock, throwOnGetStock: true));
     expect(find.byIcon(Icons.cloud_off), findsOneWidget);
-    expect(find.text(VN.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
   });
 
   testWidgets('shows empty state when no blanks have stock', (tester) async {

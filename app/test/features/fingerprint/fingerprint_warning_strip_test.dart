@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../auth/login_screen_test_helpers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 void main() {
   testWidgets('shows top warning strip when fingerprints mismatch', (
@@ -30,7 +30,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.fingerprintMismatchWarning), findsOneWidget);
+    expect(find.textContaining(SharedLabels.fingerprintMismatchWarning), findsOneWidget);
     expect(find.textContaining('abc1234/def5678'), findsOneWidget);
   });
 
@@ -53,9 +53,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+    expect(find.textContaining(SharedLabels.fingerprintMismatchWarning), findsNothing);
     expect(
-      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      find.textContaining(SharedLabels.serverFingerprintUnavailableWarning),
       findsNothing,
     );
   });
@@ -82,7 +82,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      find.textContaining(SharedLabels.serverFingerprintUnavailableWarning),
       findsOneWidget,
     );
   });
@@ -130,12 +130,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.fingerprintMismatchWarning), findsOneWidget);
+    expect(find.textContaining(SharedLabels.fingerprintMismatchWarning), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+    expect(find.textContaining(SharedLabels.fingerprintMismatchWarning), findsNothing);
   });
 
   testWidgets('dismisses warning strip on X tap for serverUnknown state', (
@@ -165,7 +165,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      find.textContaining(SharedLabels.serverFingerprintUnavailableWarning),
       findsNothing,
     );
   });
@@ -191,9 +191,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+    expect(find.textContaining(SharedLabels.fingerprintMismatchWarning), findsNothing);
     expect(
-      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      find.textContaining(SharedLabels.serverFingerprintUnavailableWarning),
       findsNothing,
     );
   });

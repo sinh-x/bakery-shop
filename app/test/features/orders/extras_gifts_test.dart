@@ -9,7 +9,8 @@ import 'package:bakery_app/shared/gift_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 
 class _FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;
@@ -90,7 +91,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.addExtra), findsOneWidget);
+      expect(find.text(OrdersLabels.addExtra), findsOneWidget);
       expect(find.byType(ActionChip), findsNWidgets(2));
       expect(find.text('Nến (5.000đ)'), findsOneWidget);
       expect(find.text('Đĩa muỗng (10.000đ)'), findsOneWidget);
@@ -140,9 +141,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(CatalogExtraPriceDialog), findsOneWidget);
-      expect(find.textContaining(VN.giaCoSo), findsOneWidget);
+      expect(find.textContaining(StockLabels.giaCoSo), findsOneWidget);
 
-      await tester.tap(find.text(VN.xacNhan));
+      await tester.tap(find.text(OrdersLabels.xacNhan));
       await tester.pumpAndSettle();
 
       final items = container.read(orderCreateStateProvider).items;
@@ -205,7 +206,7 @@ void main() {
         matching: find.text('Nến (5.000đ)'),
       ));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.xacNhan));
+      await tester.tap(find.text(OrdersLabels.xacNhan));
       await tester.pumpAndSettle();
 
       final extras = container

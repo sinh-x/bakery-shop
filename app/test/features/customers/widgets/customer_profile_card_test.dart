@@ -3,7 +3,6 @@ import 'package:bakery_app/features/customers/widgets/customer_profile_card.dart
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
@@ -26,7 +25,7 @@ void main() {
     expect(find.text('Sinh'), findsOneWidget);
     expect(find.textContaining('0901234567'), findsOneWidget);
     expect(find.textContaining('0909876543'), findsOneWidget);
-    expect(find.textContaining(VN.customerPrimaryPhone), findsOneWidget);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsOneWidget);
     // Order count line: "5 đơn/năm"
     expect(find.text('5 ${CustomersLabels.orderCountThisYearSuffix}'), findsOneWidget);
   });
@@ -65,7 +64,7 @@ void main() {
     const customer = Customer(id: 1, name: 'Sinh', phone: '0901234567');
     await tester.pumpWidget(wrap(const CustomerProfileCard(customer: customer)));
     expect(find.textContaining('0901234567'), findsOneWidget);
-    expect(find.textContaining(VN.customerPrimaryPhone), findsNothing);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsNothing);
   });
 
   testWidgets('full mode shows no phone line when customer has none', (tester) async {

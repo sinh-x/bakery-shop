@@ -2,7 +2,7 @@ import 'package:bakery_app/shared/widgets/app_bar_overflow_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 Widget _buildApp({
   List<PopupMenuEntry<String>> items = const [],
@@ -35,7 +35,7 @@ void main() {
   testWidgets('shows settings-only overflow menu', (tester) async {
     await tester.pumpWidget(_buildApp());
 
-    await tester.tap(find.byTooltip(VN.moreActions));
+    await tester.tap(find.byTooltip(SharedLabels.moreActions));
     await tester.pumpAndSettle();
 
     final menuItems = tester.widgetList<PopupMenuItem<String>>(
@@ -45,7 +45,7 @@ void main() {
       AppBarOverflowMenu.settingsValue,
     ]);
 
-    await tester.tap(find.text(VN.openSettings));
+    await tester.tap(find.text(SharedLabels.openSettings));
     await tester.pumpAndSettle();
 
     expect(find.text('settings-screen'), findsOneWidget);
@@ -63,7 +63,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip(VN.moreActions));
+    await tester.tap(find.byTooltip(SharedLabels.moreActions));
     await tester.pumpAndSettle();
 
     final menuItems = tester.widgetList<PopupMenuItem<String>>(

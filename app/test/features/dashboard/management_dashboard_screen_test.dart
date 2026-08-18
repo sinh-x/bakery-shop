@@ -14,7 +14,7 @@ import 'package:bakery_app/data/models/today_summary.dart';
 import 'package:bakery_app/features/dashboard/management_dashboard_screen.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Order _order({
   required String ref,
@@ -348,11 +348,11 @@ void main() {
       const Offset(0, -500),
     );
     // Section title renders.
-    expect(find.text(VN.todayOrders), findsOneWidget);
+    expect(find.text(SharedLabels.todayOrders), findsOneWidget);
     // Status group headers (some may be off-screen, so use findWidgets).
-    expect(find.text(VN.statusNew), findsWidgets);
-    expect(find.text(VN.statusCompleted), findsWidgets);
-    expect(find.text(VN.statusCancelled), findsWidgets);
+    expect(find.text(OrdersLabels.statusNew), findsWidgets);
+    expect(find.text(OrdersLabels.statusCompleted), findsWidgets);
+    expect(find.text(OrdersLabels.statusCancelled), findsWidgets);
     // Order rows render.
     expect(find.text('An'), findsOneWidget);
     expect(find.text('Bình'), findsOneWidget);
@@ -365,12 +365,12 @@ void main() {
   ) async {
     await _pump(tester, summary: _summary(orderCount: 0), orders: const []);
     await tester.dragUntilVisible(
-      find.text(VN.khongCoDonHomNay),
+      find.text(SharedLabels.khongCoDonHomNay),
       find.byType(Scrollable).first,
       const Offset(0, -400),
     );
-    expect(find.text(VN.todayOrders), findsOneWidget);
-    expect(find.text(VN.khongCoDonHomNay), findsOneWidget);
+    expect(find.text(SharedLabels.todayOrders), findsOneWidget);
+    expect(find.text(SharedLabels.khongCoDonHomNay), findsOneWidget);
   });
 
   // CQ-1: the order rows must render from the separate dueDateOrdersProvider

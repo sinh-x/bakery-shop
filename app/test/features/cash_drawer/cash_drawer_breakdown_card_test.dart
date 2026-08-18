@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/models/cash_drawer_transaction.dart';
 import 'package:bakery_app/features/cash_drawer/widgets/cash_drawer_breakdown_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -53,30 +53,30 @@ void main() {
       )));
 
       // FR1: all 8 category labels render.
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeRefund), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeExpense), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashIn), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeBusShipping), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeRefund), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeExpense), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashIn), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashOut), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeClose), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeBusShipping), findsOneWidget);
 
       // FR1: 2 group headers render.
-      expect(find.text(VN.cashDrawerBreakdownInflowGroup), findsOneWidget);
-      expect(find.text(VN.cashDrawerBreakdownOutflowGroup), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownInflowGroup), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownOutflowGroup), findsOneWidget);
 
       // FR2: inflow sale row renders "+" in green. Sale total = 50.000 +
       // 170.000 (200.000 - 30.000 shipping split) = 220.000.
       final saleAmount = tester.widget<Text>(find.descendant(
-        of: find.widgetWithText(Row, VN.cashDrawerTxnTypeSale),
+        of: find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeSale),
         matching: find.text('+220.000đ'),
       ));
       expect(saleAmount.style?.color, Colors.green.shade700);
 
       // FR2: outflow expense row renders "-" in red.
       final expenseAmount = tester.widget<Text>(find.descendant(
-        of: find.widgetWithText(Row, VN.cashDrawerTxnTypeExpense),
+        of: find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeExpense),
         matching: find.text('-30.000đ'),
       ));
       expect(
@@ -93,14 +93,14 @@ void main() {
           _wrap(const CashDrawerBreakdownCard(transactions: [])));
 
       // All 8 labels present (no blank table).
-      expect(find.text(VN.cashDrawerTxnTypeSale), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeRefund), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeExpense), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashIn), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeCashOut), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeOpen), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeClose), findsOneWidget);
-      expect(find.text(VN.cashDrawerTxnTypeBusShipping), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeSale), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeRefund), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeExpense), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashIn), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeCashOut), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeOpen), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeClose), findsOneWidget);
+      expect(find.text(CashDrawerLabels.cashDrawerTxnTypeBusShipping), findsOneWidget);
 
       // 8 count "0" entries — one per category row.
       expect(find.text('0'), findsNWidgets(8));
@@ -110,7 +110,7 @@ void main() {
       expect(find.text('0đ'), findsNWidgets(11));
 
       // Count column header renders once per group (2 groups).
-      expect(find.text(VN.cashDrawerBreakdownCount), findsNWidgets(2));
+      expect(find.text(CashDrawerLabels.cashDrawerBreakdownCount), findsNWidgets(2));
     });
 
     testWidgets(
@@ -126,17 +126,17 @@ void main() {
       )));
 
       // Rút tiền row aggregates the auto-transfer outflow.
-      final cashOutRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeCashOut);
+      final cashOutRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeCashOut);
       expect(find.descendant(
           of: cashOutRow, matching: find.text('-150.000đ')), findsOneWidget);
 
       // Bán hàng row aggregates the unidentified_sale inflow.
-      final saleRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeSale);
+      final saleRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeSale);
       expect(find.descendant(
           of: saleRow, matching: find.text('+75.000đ')), findsOneWidget);
 
       // Nạp tiền row aggregates the owner_capital inflow.
-      final cashInRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeCashIn);
+      final cashInRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeCashIn);
       expect(find.descendant(
           of: cashInRow, matching: find.text('+500.000đ')), findsOneWidget);
     });
@@ -195,7 +195,7 @@ void main() {
       )));
 
       final refundRow =
-          find.widgetWithText(Row, VN.cashDrawerTxnTypeRefund);
+          find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeRefund);
       expect(
           find.descendant(
               of: refundRow, matching: find.text('-25.000đ')),
@@ -221,7 +221,7 @@ void main() {
       )));
 
       // Sale row keeps 200.000 - 30.000 = 170.000 (green inflow).
-      final saleRow = find.widgetWithText(Row, VN.cashDrawerTxnTypeSale);
+      final saleRow = find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeSale);
       expect(
           find.descendant(
               of: saleRow, matching: find.text('+170.000đ')),
@@ -231,7 +231,7 @@ void main() {
       // earmarked for the bus company; displayed in the "Tiền ra" group but
       // counts toward the inflow total for reconciliation).
       final busRow =
-          find.widgetWithText(Row, VN.cashDrawerTxnTypeBusShipping);
+          find.widgetWithText(Row, CashDrawerLabels.cashDrawerTxnTypeBusShipping);
       expect(
           find.descendant(
               of: busRow, matching: find.text('+30.000đ')),

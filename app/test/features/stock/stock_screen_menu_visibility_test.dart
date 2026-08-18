@@ -11,7 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/login_screen_test_helpers.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeStockService extends StockService {
   _FakeStockService(this._items) : super(Dio());
@@ -117,11 +117,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip(VN.moreActions));
+        await tester.tap(find.byTooltip(SharedLabels.moreActions));
         await tester.pumpAndSettle();
 
-        expect(find.text(VN.openStockReconciliation), findsOneWidget);
-        expect(find.text(VN.openStockReconciliationHistory), findsOneWidget);
+        expect(find.text(SharedLabels.openStockReconciliation), findsOneWidget);
+        expect(find.text(SharedLabels.openStockReconciliationHistory), findsOneWidget);
       },
     );
 
@@ -141,11 +141,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip(VN.moreActions));
+        await tester.tap(find.byTooltip(SharedLabels.moreActions));
         await tester.pumpAndSettle();
 
-        expect(find.text(VN.openStockReconciliation), findsOneWidget);
-        expect(find.text(VN.openStockReconciliationHistory), findsOneWidget);
+        expect(find.text(SharedLabels.openStockReconciliation), findsOneWidget);
+        expect(find.text(SharedLabels.openStockReconciliationHistory), findsOneWidget);
       },
     );
 
@@ -165,10 +165,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip(VN.moreActions));
+        await tester.tap(find.byTooltip(SharedLabels.moreActions));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text(VN.openStockReconciliation));
+        await tester.tap(find.text(SharedLabels.openStockReconciliation));
         await tester.pumpAndSettle();
 
         expect(find.text('reconciliation-route'), findsOneWidget);
@@ -191,10 +191,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip(VN.moreActions));
+        await tester.tap(find.byTooltip(SharedLabels.moreActions));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text(VN.openStockReconciliationHistory));
+        await tester.tap(find.text(SharedLabels.openStockReconciliationHistory));
         await tester.pumpAndSettle();
 
         expect(find.text('reconciliation-history-route'), findsOneWidget);
