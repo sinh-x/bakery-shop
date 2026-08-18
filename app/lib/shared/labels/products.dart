@@ -137,7 +137,6 @@ class ProductsLabels {
   static const danhMuc = 'Danh mục';
 
   // Catalog photo viewer
-  // Catalog photo viewer
   static const daLuuAnh = 'Đã lưu ảnh';
   static const taiAnh = 'Tải ảnh';
   static const chiaSe = 'Chia sẻ';

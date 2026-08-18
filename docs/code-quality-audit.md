@@ -25,7 +25,7 @@
 | # | File | Lines | Severity |
 |---|------|-------|----------|
 | 1 | `app/lib/features/products/product_form_screen.dart` | 1,774 | High |
-| 2 | `app/lib/shared/widgets/vietnamese_labels.dart` | 1,686 | High |
+| 2 | `app/lib/shared/widgets/vietnamese_labels.dart` | 1,686 | High (historical — file was split into per-domain `labels/` files by DG-418 VN labels migration; this row is retained as a pre-migration record and is no longer authoritative for the current tree) |
 | 3 | `app/lib/features/orders/order_list_screen.dart` | 981 | High |
 | 4 | `app/lib/features/stock/widgets/reconciliation_product_card.dart` | 881 | High |
 | 5 | `app/lib/features/cash_drawer/cash_drawer_screen.dart` | 877 | High |

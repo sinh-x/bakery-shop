@@ -328,7 +328,6 @@ class SharedLabels {
   static const overdueOrders = 'Quá hạn';
   static const recentActivity = 'Sự kiện gần đây';
   // Today's order list empty state (DG-376 Phase 5 — FR6/AC6).
-  // Today's order list empty state (DG-376 Phase 5 — FR6/AC6).
   static const khongCoDonHomNay = 'Không có đơn hàng hôm nay';
 
   // Packing items
@@ -340,8 +339,6 @@ class SharedLabels {
 
   /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
   /// DG-333 Phase 1.
-  /// "X/N đã tải lên (Y lỗi)" — count summary shown when any photo has failed.
-  /// DG-333 Phase 1.
   static String uploadedPhotosCountWithErrors(
     int done,
     int failed,
@@ -351,18 +348,13 @@ class SharedLabels {
   /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
   /// localized status words returned by [photoUploadStatusLabel]. DG-333
   /// Phase 1.
-  /// Per-photo status line. [index] is 1-based. [statusLabel] is one of the
-  /// localized status words returned by [photoUploadStatusLabel]. DG-333
-  /// Phase 1.
   static String photoUploadStatus(int index, String statusLabel) =>
       'Ảnh $index: $statusLabel';
 
   /// Per-photo error line: "Ảnh N: Lỗi — `message`". DG-333 Phase 1.
-  /// Per-photo error line: "Ảnh N: Lỗi — `message`". DG-333 Phase 1.
   static String photoUploadFailed(int index, String message) =>
       'Ảnh $index: Lỗi — $message';
 
-  /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
   /// Localized status word for a [PhotoUploadStatus]. DG-333 Phase 1.
   static const photoUploadStatusLabels = <String, String>{
     'pending': 'Đang xử lý',
@@ -373,13 +365,9 @@ class SharedLabels {
 
   /// "Đã tải lên xong — N/N ảnh" — terminal success summary shown when every
   /// photo in the batch uploaded without errors (AC6). DG-333 Phase 6.
-  /// "Đã tải lên xong — N/N ảnh" — terminal success summary shown when every
-  /// photo in the batch uploaded without errors (AC6). DG-333 Phase 6.
   static String photoUploadComplete(int total) =>
       'Đã tải lên xong — $total/$total ảnh';
 
-  /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
-  /// batch finished but some photos failed (AC6). DG-333 Phase 6.
   /// "Đã tải lên xong — X/N ảnh (Y lỗi)" — terminal summary shown when the
   /// batch finished but some photos failed (AC6). DG-333 Phase 6.
   static String photoUploadCompleteWithErrors(

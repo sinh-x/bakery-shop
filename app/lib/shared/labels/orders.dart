@@ -340,7 +340,6 @@ class OrdersLabels {
   static const statusCancelled = 'Đã hủy';
 
   // Status actions (transition buttons)
-  // Status actions (transition buttons)
   static const actionConfirm = 'Xác nhận';
   static const actionStart = 'Bắt đầu làm';
   static const actionReady = 'Sẵn sàng';
@@ -362,11 +361,9 @@ class OrdersLabels {
   static const submitOrder = 'TẠO ĐƠN HÀNG';
 
   // Order detail
-  // Order detail
   static const orderDetail = 'Chi tiết đơn hàng';
   static const editOrder = 'Sửa đơn hàng';
 
-  // Order detail tabs (DG-334 Phase 1 — FR1, AC1)
   // Order detail tabs (DG-334 Phase 1 — FR1, AC1)
   static const orderDetailTabGeneral = 'Tổng quan';
   static const orderDetailTabWorkItems = 'Sản xuất';
@@ -376,22 +373,14 @@ class OrdersLabels {
   // Order detail — Customer tab (DG-371 Phase 1 — FR8/FR9/FR10, AC7/AC8)
   /// 4th tab title on the order detail screen. Reuses [customer] wording so
   /// the tab label stays consistent with the customer list/management copy.
-  // Order detail — Customer tab (DG-371 Phase 1 — FR8/FR9/FR10, AC7/AC8)
-  /// 4th tab title on the order detail screen. Reuses [customer] wording so
-  /// the tab label stays consistent with the customer list/management copy.
   static const orderDetailTabCustomer = 'Khách hàng';
 
-  /// Section header above the customer profile card (name, phone, created).
   /// Section header above the customer profile card (name, phone, created).
   static const orderDetailCustomerInfoTitle = 'Thông tin khách hàng';
 
   /// Empty state shown when an order has no linked `customerId` (FR10/AC8).
-  /// Empty state shown when an order has no linked `customerId` (FR10/AC8).
   static const orderDetailCustomerEmpty = 'Chưa có khách hàng';
 
-  // Order detail — Transactions tab (DG-371 Phase 3 — FR5/FR6, AC4/AC5)
-  /// Add-transaction button shown at the top of the transactions tab. Opens
-  /// the existing [OrderRecordPaymentSheet] to record a new transaction.
   // Order detail — Transactions tab (DG-371 Phase 3 — FR5/FR6, AC4/AC5)
   /// Add-transaction button shown at the top of the transactions tab. Opens
   /// the existing [OrderRecordPaymentSheet] to record a new transaction.
@@ -456,7 +445,6 @@ class OrdersLabels {
   static const deliveryDoor = 'Giao tận nơi';
 
   // Order create form extras
-  // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
   static const deliveryAssignee = 'Nhân viên giao hàng';
   static const walkInCustomer = 'Khách Vãng Lai';
@@ -469,20 +457,12 @@ class OrdersLabels {
   /// checked. Values persist under `order_items.attributes['candle_type']`.
   /// `khong_nen` represents the explicit "no candle" choice; an absent
   /// `candle_type` key also means no candle (AC7).
-  // Candle type selection (DG-340 Phase 1)
-  /// Radio button group shown on cake item edit screens when is_birthday is
-  /// checked. Values persist under `order_items.attributes['candle_type']`.
-  /// `khong_nen` represents the explicit "no candle" choice; an absent
-  /// `candle_type` key also means no candle (AC7).
   static const candleTypeSectionLabel = 'Loại nến';
   static const candleTypeNenSo = 'Nến số';
   static const candleTypeNenXoan = 'Nến xoắn';
   static const candleTypeNenNho = 'Nến nhỏ';
   static const candleTypeKhongNen = 'Không nến';
 
-  /// Map a stored `candle_type` value to its Vietnamese display label.
-  /// Falls back to the raw `value` so unknown keys remain visible rather
-  /// than blank.
   /// Map a stored `candle_type` value to its Vietnamese display label.
   /// Falls back to the raw `value` so unknown keys remain visible rather
   /// than blank.
@@ -508,7 +488,6 @@ class OrdersLabels {
   static const timeSlotEvening = 'Tối';
 
   // Order photos
-  // Order photos
   static const orderPhotos = 'Ảnh đơn hàng';
   static const addOrderPhoto = 'Thêm ảnh';
   static const noOrderPhotos = 'Chưa có ảnh';
@@ -530,19 +509,14 @@ class OrdersLabels {
   static const giaGoc = 'Giá gốc';
 
   /// "Giá bán" — the editable selling price field (markup). DG-296 Phase 3.
-  /// "Giá bán" — the editable selling price field (markup). DG-296 Phase 3.
   static const giaBan = 'Giá bán';
 
-  /// Price floor warning: selling price cannot be below the assigned price.
   /// Price floor warning: selling price cannot be below the assigned price.
   static const markupFloorWarning = 'Giá bán không được thấp hơn giá gốc';
 
   /// Helper text for the markup price field (thousands of đ).
-  /// Helper text for the markup price field (thousands of đ).
   static const markupThousandsHint = 'Nhập nghìn đồng (VD: 250 = 250.000đ)';
 
-  /// "Phần cộng thêm" — the markup amount (unitPrice − assignedPrice) shown
-  /// on trưng bày order line items in the order detail view. DG-296 Phase 5.
   /// "Phần cộng thêm" — the markup amount (unitPrice − assignedPrice) shown
   /// on trưng bày order line items in the order detail view. DG-296 Phase 5.
   static const markupAmount = 'Phần cộng thêm';
@@ -575,7 +549,6 @@ class OrdersLabels {
   static const txnType = 'Loại thanh toán';
 
   // Payment transaction invalidation (DG-196)
-  // Payment transaction invalidation (DG-196)
   static const txnInvalidatedBadge = 'Đã hủy';
   static const txnInvalidatedAtLabel = 'Ngày hủy';
   static const txnInvalidatedByLabel = 'Người hủy';
@@ -594,7 +567,6 @@ class OrdersLabels {
   static const invalidateReasonHint = 'Nhập lý do hủy giao dịch...';
 
   // Work item statuses
-  // Work item statuses
   static const workItemPending = 'Chờ xử lý';
   static const workItemConfirmed = 'Đã xác nhận';
   static const workItemWorking = 'Đang làm';
@@ -602,7 +574,6 @@ class OrdersLabels {
   static const workItemDelivered = 'Đã giao';
   static const workItemCancelled = 'Đã hủy';
 
-  // Work items section
   // Work items section
   static const workItemsSection = 'Chi tiết sản xuất';
   static const noWorkItems = 'Chưa có chi tiết sản xuất';
@@ -616,7 +587,6 @@ class OrdersLabels {
   static const autoSyncOrderStatus = 'Đã đồng bộ trạng thái đơn hàng';
 
   // General tab summary overview (Phase 3 — DG-334 / FR4 / AC4)
-  // General tab summary overview (Phase 3 — DG-334 / FR4 / AC4)
   static const workItemSummaryTitle = 'Tóm tắt công việc';
   static const paymentStatusSummaryTitle = 'Tóm tắt thanh toán';
   static const workItemSummaryUnit = 'công việc';
@@ -624,11 +594,9 @@ class OrdersLabels {
   static const workItemSummaryEmpty = 'Chưa có công việc';
 
   /// Renders "N công việc" for the work item summary count.
-  /// Renders "N công việc" for the work item summary count.
   static String workItemSummaryCount(int count) =>
       '$count $workItemSummaryUnit';
 
-  // Cake queue & cake detail
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
   static const deliveryTab = 'Giao hàng';
@@ -644,99 +612,68 @@ class OrdersLabels {
 
   /// Header for the chuyen-khoan tagged photo section shown in the
   /// Transactions tab of OrderDetailScreen. DG-364 Phase 4.2.
-  /// Header for the chuyen-khoan tagged photo section shown in the
-  /// Transactions tab of OrderDetailScreen. DG-364 Phase 4.2.
   static const transferPhotosSection = 'Ảnh chuyển khoản';
 
-  /// Empty-state hint shown when an order has no chuyen-khoan tagged photos
-  /// in the Transactions tab. DG-364 Phase 4.2.
   /// Empty-state hint shown when an order has no chuyen-khoan tagged photos
   /// in the Transactions tab. DG-364 Phase 4.2.
   static const noTransferPhotos = 'Chưa có ảnh chuyển khoản';
 
   /// Tooltip for the photo attachment button shown in the record-payment sheet
   /// when method = transfer. DG-364 Phase 4.3 / FR2.
-  /// Tooltip for the photo attachment button shown in the record-payment sheet
-  /// when method = transfer. DG-364 Phase 4.3 / FR2.
   static const attachTransferPhotoTooltip = 'Đính kèm ảnh chuyển khoản';
 
-  /// Label for the photo attachment button shown in the record-payment sheet
-  /// when method = transfer. DG-364 Phase 4.3 / FR2.
   /// Label for the photo attachment button shown in the record-payment sheet
   /// when method = transfer. DG-364 Phase 4.3 / FR2.
   static const attachTransferPhoto = 'Ảnh chuyển khoản';
 
   /// Caption shown next to the selected transfer photo file name in the
   /// record-payment sheet. DG-364 Phase 4.3 / FR2.
-  /// Caption shown next to the selected transfer photo file name in the
-  /// record-payment sheet. DG-364 Phase 4.3 / FR2.
   static const transferPhotoSelected = 'Đã chọn ảnh';
 
-  /// SnackBar shown when the transfer photo is uploaded after the payment
-  /// is recorded. DG-364 Phase 4.3 / FR3.
   /// SnackBar shown when the transfer photo is uploaded after the payment
   /// is recorded. DG-364 Phase 4.3 / FR3.
   static const transferPhotoUploaded = 'Đã tải lên ảnh chuyển khoản';
 
   /// SnackBar shown when the transfer photo upload fails after the payment
   /// is recorded. DG-364 Phase 4.3 / FR3.
-  /// SnackBar shown when the transfer photo upload fails after the payment
-  /// is recorded. DG-364 Phase 4.3 / FR3.
   static const transferPhotoUploadFailed = 'Không tải được ảnh chuyển khoản';
 
-  // ── Per-transaction photo (DG-410 Phase 4) ─────────────────────────────
-  /// Section header above the transaction's attached photo in the detail sheet.
   // ── Per-transaction photo (DG-410 Phase 4) ─────────────────────────────
   /// Section header above the transaction's attached photo in the detail sheet.
   static const txnPhotoSection = 'Ảnh giao dịch';
 
   /// Empty-state hint shown when a transaction has no attached photo.
-  /// Empty-state hint shown when a transaction has no attached photo.
   static const txnPhotoEmpty = 'Chưa có ảnh giao dịch';
 
-  /// Button label for attaching a photo to a transaction (add).
   /// Button label for attaching a photo to a transaction (add).
   static const txnPhotoAttach = 'Đính kèm ảnh';
 
   /// Button label for replacing a transaction's attached photo.
-  /// Button label for replacing a transaction's attached photo.
   static const txnPhotoReplace = 'Đổi ảnh';
 
-  /// Button label for removing a transaction's attached photo.
   /// Button label for removing a transaction's attached photo.
   static const txnPhotoRemove = 'Gỡ ảnh';
 
   /// Confirmation dialog title for removing a transaction's attached photo.
-  /// Confirmation dialog title for removing a transaction's attached photo.
   static const txnPhotoRemoveConfirm = 'Gỡ ảnh khỏi giao dịch này?';
 
-  /// Tooltip for the transaction photo thumbnail (tap to enlarge).
   /// Tooltip for the transaction photo thumbnail (tap to enlarge).
   static const txnPhotoTapToEnlarge = 'Chạm để xem ảnh lớn';
 
   /// SnackBar shown when a transaction photo is attached/replaced.
-  /// SnackBar shown when a transaction photo is attached/replaced.
   static const txnPhotoSaved = 'Đã lưu ảnh giao dịch';
 
   /// SnackBar shown when a transaction photo is removed.
-  /// SnackBar shown when a transaction photo is removed.
   static const txnPhotoRemoved = 'Đã gỡ ảnh giao dịch';
 
-  /// SnackBar shown when attaching/replacing/removing a transaction photo
-  /// fails.
   /// SnackBar shown when attaching/replacing/removing a transaction photo
   /// fails.
   static const txnPhotoSaveFailed = 'Không lưu được ảnh giao dịch';
 
   /// SnackBar shown when the record sheet links the just-uploaded photo to
   /// the new transaction. DG-410 Phase 4 / FR2 / AC1.
-  /// SnackBar shown when the record sheet links the just-uploaded photo to
-  /// the new transaction. DG-410 Phase 4 / FR2 / AC1.
   static const txnPhotoLinked = 'Đã gắn ảnh vào giao dịch';
 
-  /// SnackBar shown when the record sheet fails to link the just-uploaded
-  /// photo to the new transaction. The payment itself remains recorded.
-  /// DG-410 Phase 4 / FR2.
   /// SnackBar shown when the record sheet fails to link the just-uploaded
   /// photo to the new transaction. The payment itself remains recorded.
   /// DG-410 Phase 4 / FR2.
@@ -814,7 +751,6 @@ class OrdersLabels {
   static const toggleGift = 'Tặng/Trả phí';
   static const giftToggleTooltip = 'Bấm để chuyển giữa tặng và trả phí';
 
-  // Extras management
   // Extras management
   static const extrasSettings = 'Phụ kiện đi kèm';
   static const addExtra = 'Thêm phụ kiện';

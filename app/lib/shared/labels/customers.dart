@@ -153,7 +153,6 @@ class CustomersLabels {
   static const customerCreatedAt = 'Ngày tạo';
 
   // Customer search in order flows (DG-182 Phase 4)
-  // Customer search in order flows (DG-182 Phase 4)
   static const customerSearchHint = 'Tìm khách theo tên hoặc SĐT...';
   static const customerSearchLinked = 'Đã chọn: {name}';
   static const customerSearchChange = 'Đổi khách';
@@ -163,7 +162,6 @@ class CustomersLabels {
   static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
   static const customerSearchRefineHint = 'Nhập thêm để thu hẹp kết quả';
 
-  // Customer form multi-phone (DG-205 Phase 5)
   // Customer form multi-phone (DG-205 Phase 5)
   static const customerAddPhone = 'Thêm số điện thoại';
   static const customerRemovePhone = 'Xóa số này';
