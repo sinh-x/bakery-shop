@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../../shared/labels/auth.dart';
 import '../../shared/labels/technical_settings.dart';
 import '../../shared/providers/auth_provider.dart';
+import 'widgets/error_banner.dart';
+import 'widgets/password_field.dart';
+import 'widgets/username_field.dart';
 
 /// Login screen (FR14).
 ///
@@ -102,9 +105,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
-                    _UsernameField(controller: _usernameCtrl),
+                    UsernameField(controller: _usernameCtrl),
                     const SizedBox(height: 16),
-                    _PasswordField(
+                    PasswordField(
                       controller: _passwordCtrl,
                       obscure: _obscurePassword,
                       onToggleObscure: () => setState(
@@ -113,7 +116,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 12),
-                      _ErrorBanner(message: _errorMessage!),
+                      ErrorBanner(message: _errorMessage!),
                     ],
                     const SizedBox(height: 24),
                     FilledButton(
@@ -135,93 +138,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _UsernameField extends StatelessWidget {
-  const _UsernameField({required this.controller});
-
-  final TextEditingController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      decoration: const InputDecoration(
-        labelText: AuthLabels.usernameLabel,
-        hintText: AuthLabels.usernameHint,
-        border: OutlineInputBorder(),
-        prefixIcon: Icon(Icons.person_outline),
-      ),
-      textInputAction: TextInputAction.next,
-      validator: (value) =>
-          (value == null || value.trim().isEmpty) ? AuthLabels.usernameLabel : null,
-    );
-  }
-}
-
-class _PasswordField extends StatelessWidget {
-  const _PasswordField({
-    required this.controller,
-    required this.obscure,
-    required this.onToggleObscure,
-  });
-
-  final TextEditingController controller;
-  final bool obscure;
-  final VoidCallback onToggleObscure;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: AuthLabels.passwordLabel,
-        hintText: AuthLabels.passwordHint,
-        border: const OutlineInputBorder(),
-        prefixIcon: const Icon(Icons.lock_outline),
-        suffixIcon: IconButton(
-          icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-          onPressed: onToggleObscure,
-        ),
-      ),
-      textInputAction: TextInputAction.done,
-      validator: (value) =>
-          (value == null || value.isEmpty) ? AuthLabels.passwordLabel : null,
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, size: 20, color: theme.colorScheme.onErrorContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
