@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_item.dart';
 import '../../shared/utils/date_formatting.dart';
-import '../../shared/widgets/vietnamese_labels.dart' show formatVND;
+import '../../shared/utils.dart' show formatVND;
 import '../../shared/utils/order_helpers.dart' show deliveryTypeLabel;
 
 /// Resolved placeholder values for a message template (DG-375 Phase 4.3 / FR4).

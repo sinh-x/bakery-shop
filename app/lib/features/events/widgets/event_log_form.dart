@@ -4,7 +4,7 @@
 // Pre-existing at 295 lines before DG-333 Phase 5; race-condition fix added
 // the _uploadPhotos helper + UploadProgressIndicator and grew it to 342.
 // Reviewed 2026-08-02.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';

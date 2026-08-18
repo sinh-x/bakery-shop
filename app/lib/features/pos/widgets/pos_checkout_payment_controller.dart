@@ -3,7 +3,7 @@
 // threshold (NFR4). Owns the stage-5 payment state (method, amount, tien_rut,
 // target account, transfer photo, skipPayment flag) and the pay-now /
 // pay-later submit paths that drive the shared orchestrator's submitOrder.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

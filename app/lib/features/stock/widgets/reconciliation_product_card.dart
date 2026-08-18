@@ -1,6 +1,6 @@
 // EXEMPT: This widget remains above local file-size thresholds while DG-138
 // tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, paymentMethodLabel;
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

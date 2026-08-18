@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

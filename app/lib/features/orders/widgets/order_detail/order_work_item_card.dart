@@ -2,7 +2,7 @@
 // photo thumbnails, attribute chips, and status badges in a tightly coupled
 // layout that does not decompose into reusable sub-widgets.
 // Reviewed 2026-07-30.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, workItemStatusLabel;
+import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel;
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/enum_attribute.dart';

@@ -1,6 +1,6 @@
 // DG-211 Phase 5: single-state customer model + stage-widget decomposition
 // (coordinator delegates stage bodies to widgets/order_edit/edit_stageN_*).
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

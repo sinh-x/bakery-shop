@@ -1,5 +1,5 @@
 // EXEMPT: 300-line threshold exceeded — pre-existing oversized file (was 436 lines before DG-333 Phase 8). Splitting form fields (title/content/type/tags/photos/pin) into sub-widgets now would duplicate controller ownership and save-flow wiring across widget boundaries. Phase 8 only replaced the inline upload loop with the shared notifier + indicator (+13 net). Reviewed 2026-08-02.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;

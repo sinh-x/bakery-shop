@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show statusMap;
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/bakery_theme.dart';

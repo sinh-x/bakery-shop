@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';

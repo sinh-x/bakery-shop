@@ -1,5 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';

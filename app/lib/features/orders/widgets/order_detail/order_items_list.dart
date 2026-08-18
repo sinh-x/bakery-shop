@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND;
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 

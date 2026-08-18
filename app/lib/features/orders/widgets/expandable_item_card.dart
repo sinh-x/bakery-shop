@@ -1,5 +1,5 @@
 // EXEMPT: 200-line threshold exceeded because DG-150 blocker: safe extraction of shell/collapsed/expanded sections risks cross-field validation regressions in active order draft wiring. Reviewed 2026-05-29.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, formatVND;
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';

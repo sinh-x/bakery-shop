@@ -1,5 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects. DG-259 c6-fix (2026-07-19): staff binding section extracted, file now 333 lines.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

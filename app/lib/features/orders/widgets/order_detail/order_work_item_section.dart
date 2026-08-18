@@ -2,7 +2,7 @@
 // work item groups with inline filtering and navigation wiring that share
 // the section's scroll controller and state context.
 // Reviewed 2026-07-30.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

@@ -2,7 +2,7 @@
 // renders payment, deposit, and refund sections with per-row formatting that
 // does not split cleanly into independent widgets without duplicating state.
 // Reviewed 2026-07-30.
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, paymentMethodLabel, showTopSnackBar, txnTypeLabel;
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel, showTopSnackBar, txnTypeLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

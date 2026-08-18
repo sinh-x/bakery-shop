@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show categoryEmojiMap, showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

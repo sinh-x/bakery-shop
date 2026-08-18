@@ -1,4 +1,4 @@
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart' show formatVND, paymentMethodLabel;
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
