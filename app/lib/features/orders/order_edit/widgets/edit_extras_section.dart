@@ -1,15 +1,15 @@
-import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../data/models/product.dart';
-import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
 import '../../widgets/section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/labels/stock.dart';
+import 'edit_catalog_extra_price_dialog.dart';
+import 'edit_catalog_extra_selection.dart';
+import 'extra_edit_row.dart';
+
 class EditExtrasSection extends ConsumerWidget {
   const EditExtrasSection({super.key, required this.orderRef});
 
@@ -48,7 +48,7 @@ class EditExtrasSection extends ConsumerWidget {
                   )
                 else
                   ...extras.map(
-                    (extra) => _ExtraEditRow(
+                    (extra) => ExtraEditRow(
                       item: extra,
                       onIncrement: () async {
                         await notifier.edit(
@@ -87,11 +87,11 @@ class EditExtrasSection extends ConsumerWidget {
                         ),
                         onPressed: () async {
                           final selection = await showDialog<
-                            _EditCatalogExtraSelection
+                            EditCatalogExtraSelection
                           >(
                             context: context,
                             builder: (_) =>
-                                _EditCatalogExtraPriceDialog(product: product),
+                                EditCatalogExtraPriceDialog(product: product),
                           );
                           if (selection == null) return;
 
@@ -129,201 +129,6 @@ class EditExtrasSection extends ConsumerWidget {
           },
         );
       },
-    );
-  }
-}
-
-class _EditCatalogExtraSelection {
-  const _EditCatalogExtraSelection({this.priceChipId, this.customUnitPrice});
-
-  final int? priceChipId;
-  final double? customUnitPrice;
-}
-
-class _EditCatalogExtraPriceDialog extends StatefulWidget {
-  const _EditCatalogExtraPriceDialog({required this.product});
-
-  final Product product;
-
-  @override
-  State<_EditCatalogExtraPriceDialog> createState() =>
-      _EditCatalogExtraPriceDialogState();
-}
-
-class _EditCatalogExtraPriceDialogState
-    extends State<_EditCatalogExtraPriceDialog> {
-  static const int _manualOptionId = -999;
-  final TextEditingController _manualCtrl = TextEditingController();
-  late int _selectedOptionId;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedOptionId = 0;
-  }
-
-  @override
-  void dispose() {
-    _manualCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final options = <(int id, String label, double price, int? chipId)>[
-      (0, StockLabels.giaCoSo, widget.product.basePrice, null),
-      ...widget.product.priceChips.map(
-        (chip) => (chip.id, chip.label, chip.price, chip.id),
-      ),
-      (_manualOptionId, StockLabels.donGiaNhapTay, widget.product.basePrice, null),
-    ];
-
-    return AlertDialog(
-      title: Text(widget.product.name),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: options.map((option) {
-              final selected = _selectedOptionId == option.$1;
-              return ChoiceChip(
-                label: Text('${option.$2} (${formatVND(option.$3)})'),
-                selected: selected,
-                onSelected: (_) => setState(() => _selectedOptionId = option.$1),
-              );
-            }).toList(),
-          ),
-          if (_selectedOptionId == _manualOptionId) ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _manualCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: OrdersLabels.itemPrice,
-                suffixText: 'đ',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(SharedLabels.cancel),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (_selectedOptionId == _manualOptionId) {
-              final manualPrice = double.tryParse(_manualCtrl.text.trim());
-              if (manualPrice == null || manualPrice < 0) {
-                showTopSnackBar(context, SharedLabels.invalidPrice);
-                return;
-              }
-              Navigator.pop(
-                context,
-                _EditCatalogExtraSelection(customUnitPrice: manualPrice),
-              );
-              return;
-            }
-
-            final selected = options.firstWhere((o) => o.$1 == _selectedOptionId);
-            if (selected.$4 == null) {
-              Navigator.pop(
-                context,
-                const _EditCatalogExtraSelection(customUnitPrice: null),
-              );
-            } else {
-              Navigator.pop(
-                context,
-                _EditCatalogExtraSelection(priceChipId: selected.$4),
-              );
-            }
-          },
-          child: const Text(OrdersLabels.xacNhan),
-        ),
-      ],
-    );
-  }
-}
-
-class _ExtraEditRow extends StatelessWidget {
-  const _ExtraEditRow({
-    required this.item,
-    required this.onIncrement,
-    required this.onDecrement,
-    required this.onToggleGift,
-    required this.onRemove,
-  });
-
-  final WorkItem item;
-  final VoidCallback onIncrement;
-  final VoidCallback onDecrement;
-  final VoidCallback onToggleGift;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: onToggleGift,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: item.isGift
-                    ? Colors.green.withValues(alpha: 0.2)
-                    : Colors.grey.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: item.isGift ? Colors.green : Colors.grey.shade300,
-                ),
-              ),
-              child: Text(
-                item.isGift ? OrdersLabels.giftBadge : OrdersLabels.paymentFee,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: item.isGift ? Colors.green : Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '${item.productName} (${formatVND(item.unitPrice)})',
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.remove, size: 18),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: onDecrement,
-          ),
-          Text('${item.quantity}', style: theme.textTheme.bodyMedium),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: onIncrement,
-          ),
-          IconButton(
-            icon: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            onPressed: onRemove,
-          ),
-        ],
-      ),
     );
   }
 }
