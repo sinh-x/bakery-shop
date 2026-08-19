@@ -267,20 +267,23 @@ final counterProvider = NotifierProvider<CounterNotifier, int>(CounterNotifier.n
 
 In all three cases, the `setState` scope must be confined to the single widget's local animation/text state. Business logic state must still use Riverpod.
 
-### Live Status (audit 2026-08-17)
+### Live Status (audit 2026-08-19, post-DG-404 migration)
 
 | Metric | Count |
 |--------|-------|
-| Files containing `setState(` | 93 |
-| Total `setState()` call sites | 423 |
-| Files using `setState(` inside `ConsumerState`/`ConsumerStatefulWidget` (prohibited-context subset) | 79 |
-| Of those 79, files whose `setState` body contains business-logic signals (counter / list / bool / selected / expanded / filter / isLoading) — the **prohibited** subset | 66 |
+| Files containing `setState(` | 19 |
+| Total `setState()` call sites | 43 |
+| Files using `setState(` inside `ConsumerState`/`ConsumerStatefulWidget` (prohibited-context subset) | 7 |
+| Of those 7, files whose `setState` body contains business-logic signals (counter / list / bool / selected / expanded / filter / isLoading) — the **prohibited** subset | 0 |
 
 **Prohibited vs acceptable distinction (live):**
 
-- **Prohibited (66 files):** `setState` inside `ConsumerState`/`ConsumerStatefulWidget` that mutates business-logic state (counters, lists, booleans, selection, expansion, filter, loading flags). These must migrate to Riverpod `Notifier`/`AsyncNotifier`. Tracked by DG-404.
-- **Acceptable (13 of the 79 prohibited-context files):** `setState` confined to `AnimationController` lifecycle, `TextEditingController` listener callbacks, or third-party widget integration (`GoogleMap`, `WebView`, etc.) per the rule above.
-- **Outside `ConsumerState`/`ConsumerStatefulWidget` (14 files of the 93):** `setState` in plain `StatefulWidget`s not consumed via Riverpod — acceptable by the rule above, scoped to local widget state.
+- **Prohibited (0 files):** `setState` inside `ConsumerState`/`ConsumerStatefulWidget` that mutates business-logic state (counters, lists, booleans, selection, expansion, filter, loading flags). The prohibited subset is now **zero** — DG-404 is complete; all 76 prohibited files from the pre-migration baseline have been migrated to Riverpod `Notifier`/`AsyncNotifier`.
+- **Acceptable (7 of the 7 prohibited-context files):** All 7 remaining `ConsumerState`/`ConsumerStatefulWidget` `setState` usages are classified as acceptable/out-of-scope per the rule above (animation/text/third-party or comment-only). Breakdown:
+  - 5 comment-only (no real call): `orders/widgets/address_autocomplete_field.dart`, `orders/widgets/google_maps_modal.dart`, `orders/order_list_screen.dart`, `pos/pos_checkout_screen.dart`, `today_sales/today_sales_screen.dart`.
+  - 1 acceptable-use: `pos/widgets/pos_payment_step.dart` (2 `setState` inside `TextEditingController` listeners).
+  - 1 mixed: `orders/widgets/order_photo_section.dart` (its only `setState` is in the plain-`StatefulWidget` `OrderPhotoViewer`, not in a `ConsumerState`).
+- **Outside `ConsumerState`/`ConsumerStatefulWidget` (12 files of the 19):** `setState` in plain `StatefulWidget`s not consumed via Riverpod — acceptable by the rule above, scoped to local widget state.
 
 Reproduce:
 
@@ -288,21 +291,21 @@ Reproduce:
 # Files using setState
 grep -rlE "setState\(" app/lib --include='*.dart' 2>/dev/null \
   | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
-# → 93
+# → 19
 
 # Total setState call sites
 grep -rE "setState\(" app/lib --include='*.dart' 2>/dev/null \
   | grep -v '.g.dart' | grep -v '.freezed.dart' | wc -l
-# → 423
+# → 43
 
 # Files using setState inside ConsumerState/ConsumerStatefulWidget
 grep -rlE "ConsumerState|ConsumerStatefulWidget" app/lib --include='*.dart' 2>/dev/null \
   | grep -v '.g.dart' | grep -v '.freezed.dart' \
   | xargs grep -lE "setState\(" 2>/dev/null | wc -l
-# → 79
+# → 7
 ```
 
-The 66-file prohibited subset is a heuristic lower bound: a `setState` body was flagged when it references any of the business-logic signals above. Final per-file classification still requires manual review against the acceptable-use rule (animation/text/third-party), tracked by DG-404.
+The prohibited subset is **0**: every remaining `setState` call site in `ConsumerState`/`ConsumerStatefulWidget` has been manually classified as acceptable-use (animation/text/third-party) or comment-only per the rule above. All real `setState` call sites now live in plain `StatefulWidget`s (out of scope per the Non-Goals) or acceptable-use cases. DG-404 migration is complete.
 
 ---
 
