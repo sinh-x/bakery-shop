@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/providers/catalog_provider.dart';
+import '../providers/catalog_tag_edit_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Shared bottom sheet for editing a catalog photo's caption and tags.
@@ -29,18 +30,19 @@ class EditCatalogTagsSheet extends ConsumerStatefulWidget {
 class _EditCatalogTagsSheetState
     extends ConsumerState<EditCatalogTagsSheet> {
   late final TextEditingController _captionCtrl;
-  final Set<String> _selectedTags = {};
-  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(text: widget.photo.caption);
-    if (widget.photo.tags.isNotEmpty) {
-      _selectedTags.addAll(
-        widget.photo.tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty),
-      );
-    }
+    // Seed the notifier with the photo's existing tags so the chip
+    // selector reflects the initial selection without setState. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(catalogTagEditProvider.notifier).seed(widget.photo);
+    });
   }
 
   @override
@@ -50,14 +52,15 @@ class _EditCatalogTagsSheetState
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    final notifier = ref.read(catalogTagEditProvider.notifier);
+    notifier.setSaving(true);
     try {
       await ref
           .read(catalogProvider(widget.productId).notifier)
           .updatePhoto(
             widget.photo.id,
             caption: _captionCtrl.text.trim(),
-            tags: _selectedTags.join(','),
+            tags: ref.read(catalogTagEditProvider).selectedTags.join(','),
           );
       if (mounted) {
         Navigator.pop(context);
@@ -68,13 +71,15 @@ class _EditCatalogTagsSheetState
         showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) notifier.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
+    final tagState = ref.watch(catalogTagEditProvider);
+    final notifier = ref.read(catalogTagEditProvider.notifier);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -121,22 +126,14 @@ class _EditCatalogTagsSheetState
             ),
             data: (tagDefs) => TagChipSelector(
               tagDefs: tagDefs,
-              selectedTags: _selectedTags,
-              onToggle: (tag) {
-                setState(() {
-                  if (_selectedTags.contains(tag)) {
-                    _selectedTags.remove(tag);
-                  } else {
-                    _selectedTags.add(tag);
-                  }
-                });
-              },
+              selectedTags: tagState.selectedTags,
+              onToggle: notifier.toggleTag,
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
+            onPressed: tagState.saving ? null : _save,
+            child: tagState.saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,

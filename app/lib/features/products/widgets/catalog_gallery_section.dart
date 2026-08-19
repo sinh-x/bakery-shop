@@ -11,6 +11,7 @@ import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../providers/catalog_gallery_notifier.dart';
 import 'add_photo_card.dart';
 import 'catalog_photo_card.dart';
 import 'catalog_photo_viewer.dart';
@@ -35,8 +36,6 @@ class CatalogGallerySection extends ConsumerStatefulWidget {
 }
 
 class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
-  bool _promoting = false;
-
   Future<void> _pickAndUpload() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -144,7 +143,9 @@ class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
   }
 
   Future<void> _promotePhoto(CatalogPhoto photo) async {
-    setState(() => _promoting = true);
+    final galleryNotifier =
+        ref.read(catalogGalleryProvider(widget.productId).notifier);
+    galleryNotifier.setPromoting(true);
     try {
       await ref
           .read(catalogProvider(widget.productId).notifier)
@@ -158,7 +159,7 @@ class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
       }
     } finally {
       if (mounted) {
-        setState(() => _promoting = false);
+        galleryNotifier.setPromoting(false);
       }
     }
   }
@@ -186,6 +187,7 @@ class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final theme = Theme.of(context);
     final uploadState = ref.watch(photoUploadNotifierProvider);
+    final galleryState = ref.watch(catalogGalleryProvider(widget.productId));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +198,7 @@ class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
           child: Row(
             children: [
               Text(ProductsLabels.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_promoting) ...[
+              if (galleryState.promoting) ...[
                 const SizedBox(width: 12),
                 const SizedBox(
                   height: 16,
@@ -252,7 +254,7 @@ class _CatalogGallerySectionState extends ConsumerState<CatalogGallerySection> {
                     onTap: () => _openFullScreen(photos, index, baseUrl),
                     onDelete: () => _confirmDelete(photo),
                     onPromote: () => _promotePhoto(photo),
-                    promoting: _promoting,
+                    promoting: galleryState.promoting,
                   );
                 },
               ),
