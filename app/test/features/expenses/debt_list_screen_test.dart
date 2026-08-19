@@ -2,6 +2,7 @@ import 'package:bakery_app/features/expenses/debt_list_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Map<String, dynamic> _debtsResponse({required List<Map<String, dynamic>> creditors}) {
@@ -59,9 +60,11 @@ void main() {
     'debt list renders empty state when creditors list is empty',
     (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtListScreen(
-            loadDebts: ({status}) async => _debtsResponse(creditors: const []),
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtListScreen(
+              loadDebts: ({status}) async => _debtsResponse(creditors: const []),
+            ),
           ),
         ),
       );
@@ -112,8 +115,10 @@ void main() {
       ]);
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtListScreen(loadDebts: ({status}) async => response),
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtListScreen(loadDebts: ({status}) async => response),
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -153,10 +158,12 @@ void main() {
       ]);
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtListScreen(
-            loadDebts: ({status}) async => response,
-            onOpenSettlement: (id) => openedId = id,
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtListScreen(
+              loadDebts: ({status}) async => response,
+              onOpenSettlement: (id) => openedId = id,
+            ),
           ),
         ),
       );
@@ -176,12 +183,14 @@ void main() {
       final response = _debtsResponse(creditors: const []);
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtListScreen(
-            loadDebts: ({status}) async {
-              capturedStatus = status;
-              return response;
-            },
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtListScreen(
+              loadDebts: ({status}) async {
+                capturedStatus = status;
+                return response;
+              },
+            ),
           ),
         ),
       );
@@ -202,9 +211,11 @@ void main() {
     'debt list shows error card when loadDebts throws',
     (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtListScreen(
-            loadDebts: ({status}) async => throw Exception('boom'),
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtListScreen(
+              loadDebts: ({status}) async => throw Exception('boom'),
+            ),
           ),
         ),
       );
