@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
-import '../../data/models/event_photo.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/event_detail_photo_notifier.dart';
 import 'widgets/event_detail_photo_section.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/labels/products.dart';
@@ -83,14 +83,13 @@ class EventDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
-  List<EventPhoto> _photos = const [];
-  bool _photosLoading = true;
-  String? _photosError;
-
   @override
   void initState() {
     super.initState();
-    _loadPhotos();
+    // Defer provider-affecting work to a post-frame callback because
+    // Riverpod disallows provider mutation during widget life-cycle hooks
+    // (initState/build).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPhotos());
   }
 
   Future<void> _loadPhotos() async {
@@ -98,17 +97,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(widget.event.id);
       if (mounted) {
-        setState(() {
-          _photos = photos;
-          _photosLoading = false;
-        });
+        ref.read(eventDetailPhotoProvider.notifier).setPhotos(photos);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _photosError = e.toString();
-          _photosLoading = false;
-        });
+        ref.read(eventDetailPhotoProvider.notifier).setError(e.toString());
       }
     }
   }
@@ -119,6 +112,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     final event = widget.event;
     final typeLabel = _kTypeLabels[event.type] ?? event.type;
     final typeIcon = _kTypeIcons[event.type] ?? Icons.event_note;
+    final photoState = ref.watch(eventDetailPhotoProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -227,9 +221,9 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           Text(EventsLabels.eventPhotos, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           EventDetailPhotoSection(
-            photos: _photos,
-            loading: _photosLoading,
-            error: _photosError,
+            photos: photoState.photos,
+            loading: photoState.loading,
+            error: photoState.error,
           ),
         ],
       ),

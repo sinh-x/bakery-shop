@@ -2,6 +2,7 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/events/event_detail_screen.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
@@ -43,7 +44,9 @@ GoRouter _router(BakeryEvent event) => GoRouter(
 
 Future<void> _pump(WidgetTester tester, BakeryEvent event) async {
   await tester.pumpWidget(
-    MaterialApp.router(routerConfig: _router(event)),
+    ProviderScope(
+      child: MaterialApp.router(routerConfig: _router(event)),
+    ),
   );
   await tester.pumpAndSettle();
 }

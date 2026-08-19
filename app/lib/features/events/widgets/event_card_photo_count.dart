@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/event_service.dart' show eventServiceProvider;
+import '../providers/event_card_photo_count_notifier.dart';
 
 /// Photo count indicator badge for event history cards (FR8).
 ///
@@ -20,8 +21,6 @@ class EventCardPhotoCount extends ConsumerStatefulWidget {
 }
 
 class _EventCardPhotoCountState extends ConsumerState<EventCardPhotoCount> {
-  int _count = 0;
-  bool _loaded = false;
   int? _lastFetchedEventId;
 
   @override
@@ -40,30 +39,33 @@ class _EventCardPhotoCountState extends ConsumerState<EventCardPhotoCount> {
 
   Future<void> _loadCount() async {
     final eventId = widget.eventId;
+    final notifier =
+        ref.read(eventCardPhotoCountProvider(eventId).notifier);
     if (eventId <= 0) {
-      if (mounted) setState(() => _loaded = true);
+      notifier.markLoaded();
       return;
     }
-    if (_lastFetchedEventId == eventId && _loaded) return;
+    if (_lastFetchedEventId == eventId &&
+        ref.read(eventCardPhotoCountProvider(eventId)).loaded) {
+      return;
+    }
     try {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
       if (mounted) {
-        setState(() {
-          _count = photos.length;
-          _loaded = true;
-          _lastFetchedEventId = eventId;
-        });
+        _lastFetchedEventId = eventId;
+        notifier.setCount(photos.length);
       }
     } catch (e) {
       debugPrint('EventCardPhotoCount._loadCount failed: $e');
-      if (mounted) setState(() => _loaded = true);
+      if (mounted) notifier.markLoaded();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded || _count == 0) return const SizedBox.shrink();
+    final state = ref.watch(eventCardPhotoCountProvider(widget.eventId));
+    if (!state.loaded || state.count == 0) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -81,7 +83,7 @@ class _EventCardPhotoCountState extends ConsumerState<EventCardPhotoCount> {
           ),
           const SizedBox(width: 3),
           Text(
-            '$_count',
+            '${state.count}',
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
