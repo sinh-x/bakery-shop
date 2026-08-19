@@ -12,6 +12,7 @@ import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
+import '../../widgets/product_picker_page.dart';
 import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -237,6 +238,49 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
 
   void _toggleGift() {
     _editItem(isGift: !widget.item.isGift);
+  }
+
+  /// Opens `ProductPickerPage` (single-select, active products only) and
+  /// applies the chosen product's `productId`/`productName` to the current
+  /// work item (DG-414 Phase 4.3 / FR6). All other item fields (quantity,
+  /// notes, attributes, blanks, price) are preserved — only `productId`
+  /// and `productName` are sent in the PATCH (FR2/AC1/AC5).
+  ///
+  /// FR5 (DG-414 review UI-1): the swap button is gated by
+  /// `_isSwapAllowed`, which is false for terminal statuses
+  /// (delivered/cancelled) since the backend rejects those with 422.
+  bool get _isSwapAllowed {
+    final s = widget.item.status;
+    return s != 'delivered' && s != 'cancelled';
+  }
+
+  Future<void> _changeProduct() async {
+    final picked = <DraftOrderItem>[];
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ProductPickerPage(
+          selectedItems: picked,
+          onChanged: () {},
+          singleSelect: true,
+        ),
+      ),
+    );
+    if (!mounted || picked.isEmpty) return;
+    final draft = picked.first;
+    try {
+      await ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .edit(
+            widget.item.id,
+            productId: draft.product.productCode,
+            productName: draft.product.name,
+          );
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, normalizeApiError(e).message);
+      }
+    }
   }
 
   Future<void> _confirmRemove() async {
@@ -466,6 +510,17 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     ),
                   ),
                 ],
+                IconButton(
+                  icon: const Icon(Icons.swap_horiz, size: 18),
+                  tooltip: OrdersLabels.changeProduct,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  // FR5 (DG-414 review UI-1): the backend rejects product swaps on
+                  // terminal items (delivered/cancelled) with 422. Disable the
+                  // button in that case so the user does not hit a guaranteed
+                  // failure path.
+                  onPressed: _isSwapAllowed ? _changeProduct : null,
+                ),
                 IconButton(
                   icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 20),
                   onPressed: () => setState(() => _expanded = !_expanded),

@@ -57,6 +57,7 @@ class WorkItemService {
     String orderRef,
     String itemId, {
     String? productName,
+    String? productId,
     int? quantity,
     double? unitPrice,
     String? notes,
@@ -70,6 +71,7 @@ class WorkItemService {
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
+    if (productId != null) body['productId'] = productId;
     if (quantity != null) body['quantity'] = quantity;
     if (unitPrice != null) body['unitPrice'] = unitPrice;
     if (notes != null) body['notes'] = notes;

@@ -760,3 +760,380 @@ def test_candle_type_absent_means_no_candle_round_trip(api_client):
     list_resp = api_client.get(f"/api/orders/{ref}/items")
     fetched = next(i for i in list_resp.json() if i["id"] == item_id)
     assert "candle_type" not in fetched["attributes"]
+
+
+# --- Product swap on work item (DG-414 Phase 4.1) ---------------------------
+# FR1/FR2/FR3/FR5, AC1 (partial)/AC2/AC4: PATCH accepts productId to swap the
+# product on an order item in place. Only product_id/product_name change;
+# unitPrice/assignedPrice and all other columns are preserved unless
+# explicitly sent. Swap is rejected (422) when the item status is delivered or
+# cancelled.
+
+
+def test_update_work_item_swap_product_id_and_name(api_client):
+    """FR1/AC1: PATCH with productId+productName updates the product in place."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        unitPrice=200000.0,
+        quantity=2,
+        notes="Ghi chú",
+        isBirthday=True,
+        age=5,
+    )
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productId"] == "BKS-20"
+    assert updated["productName"] == "Bánh kem 20cm"
+    # AC1: all other fields preserved
+    assert updated["quantity"] == 2
+    assert updated["unitPrice"] == 200000.0
+    assert updated["notes"] == "Ghi chú"
+    assert updated["isBirthday"] is True
+    assert updated["age"] == 5
+
+
+def test_update_work_item_swap_preserves_unit_and_assigned_price(api_client):
+    """FR3/AC2: swap with only productId+productName leaves prices unchanged.
+
+    Note: WorkItemCreate clamps unitPrice up to assignedPrice when below
+    floor, so we pick unitPrice > assignedPrice to avoid the clamp and keep
+    both values distinct/observable.
+    """
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        unitPrice=250000.0,
+        assignedPrice=200000.0,
+    )
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["unitPrice"] == 250000.0
+    assert updated["assignedPrice"] == 200000.0
+
+
+def test_update_work_item_swap_product_id_only_keeps_name(api_client):
+    """FR2: sending productId alone updates only product_id; product_name
+    is untouched (PATCH uses exclude_unset)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16", productName="Bánh kem 16cm")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productId"] == "BKS-20"
+    assert updated["productName"] == "Bánh kem 16cm"
+
+
+def test_update_work_item_swap_only_name_keeps_product_id(api_client):
+    """FR2/NFR1: sending productName alone keeps productId (backward compat)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16", productName="Bánh kem 16cm")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productName": "Bánh kem đặc biệt"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productName"] == "Bánh kem đặc biệt"
+    assert updated["productId"] == "BKS-16"
+
+
+def test_update_work_item_swap_preserves_blanks(api_client):
+    """AC5: swap does not touch order_item_blanks junction rows."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    # Create a blank via the blanks API so blankId exists
+    blank_resp = api_client.post(
+        "/api/blanks", json={"name": "Cốt bánh", "category": "cot", "unit": "cai"}
+    )
+    assert blank_resp.status_code == 201
+    blank_id = blank_resp.json()["id"]
+
+    # Assign the blank via the junction-table endpoint
+    assign_resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/blanks",
+        json={"blankId": blank_id, "quantity": 2.0, "notes": "phôi A"},
+    )
+    assert assign_resp.status_code == 201
+
+    # Swap product
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productId"] == "BKS-20"
+    # Blanks preserved
+    assert len(updated["blanks"]) == 1
+    assert updated["blanks"][0]["blankId"] == blank_id
+    assert updated["blanks"][0]["quantity"] == 2.0
+
+    # Confirm DB row untouched
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM order_item_blanks WHERE order_item_id = ?",
+            (int(item_id),),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["blank_id"] == blank_id
+
+
+def test_update_work_item_swap_rejects_when_delivered(api_client):
+    """FR5/AC4: swap rejected (422) when item status is delivered; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    # Move item to delivered
+    for status in ["working", "ready", "delivered"]:
+        api_client.post(
+            f"/api/orders/{ref}/items/{item_id}/status",
+            json={"status": status, "reason": ""},
+        )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 422
+    assert "đã giao" in resp.json()["detail"]
+
+    # Confirm product_id unchanged in DB
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_rejects_when_cancelled(api_client):
+    """FR5/AC4: swap rejected (422) when item status is cancelled; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    # Cancel the item
+    api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 422
+    assert "đã hủy" in resp.json()["detail"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_non_swap_patch_allowed_when_delivered(api_client):
+    """NFR1: non-swap PATCHes (e.g. notes) remain allowed on delivered items."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16", notes="old")
+    item_id = item["id"]
+
+    for status in ["working", "ready", "delivered"]:
+        api_client.post(
+            f"/api/orders/{ref}/items/{item_id}/status",
+            json={"status": status, "reason": ""},
+        )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"notes": "ghi chú sau giao"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "ghi chú sau giao"
+    # productId unchanged
+    assert resp.json()["productId"] == "BKS-16"
+
+
+def test_update_work_item_swap_syncs_order_items_json(api_client):
+    """FR4: after swap, orders.items JSON reflects the new productId/name."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16", unitPrice=200000.0, quantity=1)
+    item_id = item["id"]
+
+    api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.status_code == 200
+    order_data = order_resp.json()
+    assert len(order_data["items"]) == 1
+    synced = order_data["items"][0]
+    assert synced["productId"] == "BKS-20"
+    assert synced["productName"] == "Bánh kem 20cm"
+
+
+def test_update_work_item_without_product_id_backward_compatible(api_client):
+    """NFR1: existing PATCH payloads without productId still work."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"quantity": 5, "unitPrice": 300000.0},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["quantity"] == 5
+    assert updated["unitPrice"] == 300000.0
+    assert updated["productId"] == "BKS-16"
+
+
+# --- SEC-1 (DG-414 review): productId validation on swap ---------------------
+
+
+def test_update_work_item_swap_rejects_unknown_product_id(api_client):
+    """SEC-1: PATCH with a productId that does not resolve to an existing
+    active product is rejected with 422; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "NOPE-99", "productName": "Sản phẩm ảo"},
+    )
+    assert resp.status_code == 422
+    assert "không tồn tại" in resp.json()["detail"]
+
+    # product_id unchanged in DB
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_rejects_inactive_product_id(api_client):
+    """SEC-1: PATCH with a productId that resolves to an inactive product
+    is rejected with 422; no DB change."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    # Deactivate BKS-20 (seeded) via the products API.
+    prod = api_client.get("/api/products/code/BKS-20").json()
+    pid = prod["id"]
+    deact = api_client.patch(f"/api/products/{pid}", json={"active": 0})
+    assert deact.status_code == 200
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+    assert resp.status_code == 422
+    assert "không tồn tại hoặc đã ngừng" in resp.json()["detail"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_rejects_null_product_id(api_client):
+    """SEC-1: an explicit JSON null productId is rejected with 422 (would
+    otherwise bypass the swap guard and attempt SET product_id = NULL)."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": None, "productName": "Bánh không mã"},
+    )
+    assert resp.status_code == 422
+    assert "null" in resp.json()["detail"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT product_id FROM order_items WHERE id = ?",
+            (int(item_id),),
+        ).fetchone()
+    assert row["product_id"] == "BKS-16"
+
+
+def test_update_work_item_swap_allows_empty_product_id_sentinel(api_client):
+    """SEC-1 backward compat: an explicit empty-string productId is still
+    accepted as the no-catalog sentinel (matches historical create flow and
+    rows that legitimately use product_id = '')."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, productId="BKS-16")
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "", "productName": "Sản phẩm tự do"},
+    )
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["productId"] == ""
+    assert updated["productName"] == "Sản phẩm tự do"
