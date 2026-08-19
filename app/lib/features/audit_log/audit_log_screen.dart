@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/audit_log_service.dart';
 import '../../data/providers/audit_log_provider.dart';
 import '../../shared/labels/audit_log.dart';
+import 'providers/audit_log_screen_notifier.dart';
 import 'widgets/audit_log_empty_view.dart';
 import 'widgets/audit_log_error_view.dart';
 import 'widgets/audit_log_filter_panel.dart';
@@ -26,7 +27,6 @@ class AuditLogScreen extends ConsumerStatefulWidget {
 
 class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   final ScrollController _scrollController = ScrollController();
-  bool _filtersVisible = true;
 
   @override
   void initState() {
@@ -62,6 +62,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   @override
   Widget build(BuildContext context) {
     final asyncValue = ref.watch(auditLogProvider);
+    final screenState = ref.watch(auditLogScreenProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -69,11 +70,14 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              _filtersVisible ? Icons.filter_alt : Icons.filter_alt_off,
+              screenState.filtersVisible
+                  ? Icons.filter_alt
+                  : Icons.filter_alt_off,
             ),
             tooltip: AuditLogLabels.applyFilters,
-            onPressed: () =>
-                setState(() => _filtersVisible = !_filtersVisible),
+            onPressed: () => ref
+                .read(auditLogScreenProvider.notifier)
+                .toggleFiltersVisible(),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -83,7 +87,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
       ),
       body: Column(
         children: [
-          if (_filtersVisible)
+          if (screenState.filtersVisible)
             AuditLogFilterPanel(
               current: asyncValue.value?.filters ?? const AuditLogFilters(),
               onApply: (filters) =>

@@ -5,6 +5,7 @@ import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
 import '../../../shared/utils.dart' show showTopSnackBar;
+import 'providers/template_management_notifier.dart';
 import 'widgets/management_error_view.dart';
 import 'widgets/template_editor_screen.dart';
 import 'widgets/template_grouped_list.dart';
@@ -47,18 +48,24 @@ class _TemplateManagementScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_syncTabIndex);
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_syncTabIndex);
     _tabController.dispose();
     super.dispose();
   }
 
-  bool get _isSystemTab => _tabController.index == 0;
+  void _syncTabIndex() {
+    if (!_tabController.indexIsChanging) return;
+    ref.read(templateManagementProvider.notifier).setTabIndex(_tabController.index);
+  }
 
   Future<void> _openEditor({MessageTemplate? template}) async {
-    final isSystem = template?.isSystem ?? _isSystemTab;
+    final mgmt = ref.read(templateManagementProvider);
+    final isSystem = template?.isSystem ?? mgmt.isSystemTab;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TemplateEditorScreen(
@@ -116,7 +123,9 @@ class _TemplateManagementScreenState
         title: const Text(TemplatesLabels.managementTitle),
         bottom: TabBar(
           controller: _tabController,
-          onTap: (_) => setState(() {}),
+          onTap: (_) => ref
+              .read(templateManagementProvider.notifier)
+              .setTabIndex(_tabController.index),
           tabs: const [
             Tab(text: TemplatesLabels.managementSystemTab),
             Tab(text: TemplatesLabels.managementPersonalTab),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/date_formatting.dart';
+import '../providers/day_card_notifier.dart';
 import 'period_section.dart';
 
 /// Expandable day card for the checklist history list.
@@ -8,23 +10,30 @@ import 'period_section.dart';
 /// Renders a tappable header showing the formatted weekday/date and a
 /// "completed/total" counter. When expanded it shows the day's entries grouped
 /// by template period (opening "Mở cửa" / closing "Đóng cửa"). The expand
-/// toggle is local UI state, which is an acceptable use of `setState` per
-/// §4 animation/widget-toggle exception.
-class DayCard extends StatefulWidget {
+/// toggle is owned by [dayCardProvider] (DG-404 Phase 4.7); no `setState` is
+/// required.
+class DayCard extends ConsumerStatefulWidget {
   const DayCard({super.key, required this.dayData});
 
   final Map<String, dynamic> dayData;
 
   @override
-  State<DayCard> createState() => _DayCardState();
+  ConsumerState<DayCard> createState() => _DayCardState();
 }
 
-class _DayCardState extends State<DayCard> {
-  bool _expanded = true;
+class _DayCardState extends ConsumerState<DayCard> {
+  late final String _dayKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _dayKey = widget.dayData['date'] as String? ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = widget.dayData['date'] as String? ?? '';
+    final expanded = ref.watch(dayCardProvider(_dayKey)).expanded;
+    final dateStr = _dayKey;
     final entriesRaw = widget.dayData['entries'] as List? ?? [];
     final entries = entriesRaw.cast<Map<String, dynamic>>();
 
@@ -50,7 +59,8 @@ class _DayCardState extends State<DayCard> {
         children: [
           // Day header — tappable to expand/collapse
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () =>
+                ref.read(dayCardProvider(_dayKey).notifier).toggle(),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -74,7 +84,7 @@ class _DayCardState extends State<DayCard> {
                   ),
                   const SizedBox(width: 8),
                   Icon(
-                    _expanded
+                    expanded
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
                     size: 20,
@@ -84,7 +94,7 @@ class _DayCardState extends State<DayCard> {
             ),
           ),
           // Expanded content
-          if (_expanded) ...[
+          if (expanded) ...[
             const Divider(height: 1),
             if (entries.isEmpty)
               const Padding(

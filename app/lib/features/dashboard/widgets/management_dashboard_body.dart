@@ -13,6 +13,7 @@ import '../../../shared/labels/shared.dart';
 import '../../../shared/utils.dart' show formatVND;
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/section_title.dart';
+import '../providers/management_dashboard_body_notifier.dart';
 import 'alert_section.dart';
 import 'shortcut_grid.dart';
 import 'today_orders_section.dart';
@@ -31,17 +32,16 @@ class ManagementDashboardBody extends ConsumerStatefulWidget {
 
 class ManagementDashboardBodyState
     extends ConsumerState<ManagementDashboardBody> {
-  /// Set when the most recent pull-to-refresh failed; cleared on the next
-  /// successful refresh. Surfaced via a [SnackBar] so the user knows the
-  /// displayed values may be stale (DG-374 cycle-3 C3-3 — the previous
-  /// `catchError` fallbacks silently swallowed API errors).
-  bool _refreshError = false;
-
   void _handleShortcutTap(BuildContext context, String route) =>
       context.push(route);
 
   @override
   Widget build(BuildContext context) {
+    // The refresh-error flag lives in [managementDashboardBodyProvider]
+    // (DG-404 Phase 4.7); set/cleared from the pull-to-refresh callback
+    // below.
+    final refreshError =
+        ref.watch(managementDashboardBodyProvider).refreshError;
     // NFR1: orders fetch fires first. NFR2: revenue + order count + low-stock
     // run in parallel via dashboardRevenueStockProvider (today-summary API +
     // stock overview). The TodayOrderList section now fetches its own rows
@@ -104,16 +104,17 @@ class ManagementDashboardBodyState
           }),
         ]);
         if (!mounted) return;
+        final notifier = ref.read(managementDashboardBodyProvider.notifier);
         if (failed) {
-          setState(() => _refreshError = true);
+          notifier.setRefreshError(true);
           messenger?.showSnackBar(
             const SnackBar(
               content: Text(SharedLabels.refreshFailed),
               behavior: SnackBarBehavior.floating,
             ),
           );
-        } else if (_refreshError) {
-          setState(() => _refreshError = false);
+        } else if (refreshError) {
+          notifier.setRefreshError(false);
         }
       },
       child: ListView(
@@ -121,7 +122,7 @@ class ManagementDashboardBodyState
         children: [
           const SectionTitle(title: SharedLabels.dashboardSectionMetrics),
           const SizedBox(height: 8),
-          if (_refreshError)
+          if (refreshError)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(

@@ -1,7 +1,9 @@
 import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
+import '../providers/reconciliation_history_line_card_notifier.dart';
 import 'reconciliation_history_sale_rows.dart';
 import 'reconciliation_history_summary_card.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
@@ -11,24 +13,23 @@ import 'package:bakery_app/shared/labels/stock.dart';
 /// sale, waste). Expanded: shows full details (price option, chip labels,
 /// waste reason, manual unit price, linked references) and a collapsible
 /// sale-rows section.
-class ReconciliationHistoryLineCard extends StatefulWidget {
+class ReconciliationHistoryLineCard extends ConsumerStatefulWidget {
   const ReconciliationHistoryLineCard({required this.line, super.key});
 
   final ReconciliationHistoryLine line;
 
   @override
-  State<ReconciliationHistoryLineCard> createState() =>
+  ConsumerState<ReconciliationHistoryLineCard> createState() =>
       _ReconciliationHistoryLineCardState();
 }
 
 class _ReconciliationHistoryLineCardState
-    extends State<ReconciliationHistoryLineCard> {
-  bool _isExpanded = false;
-  bool _saleRowsExpanded = false;
-
+    extends ConsumerState<ReconciliationHistoryLineCard> {
   @override
   Widget build(BuildContext context) {
     final line = widget.line;
+    final cardState =
+        ref.watch(reconciliationHistoryLineCardProvider(line.id));
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -37,7 +38,10 @@ class _ReconciliationHistoryLineCardState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
-              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              onTap: () => ref
+                  .read(reconciliationHistoryLineCardProvider(line.id)
+                      .notifier)
+                  .toggleExpanded(),
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -50,7 +54,7 @@ class _ReconciliationHistoryLineCardState
                       ),
                     ),
                     Icon(
-                      _isExpanded
+                      cardState.isExpanded
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
                     ),
@@ -81,16 +85,17 @@ class _ReconciliationHistoryLineCardState
                 ),
               ],
             ),
-            if (_isExpanded) ...[
+            if (cardState.isExpanded) ...[
               const SizedBox(height: 10),
               _ExpandedDetails(line: line),
               if (line.saleRows.isNotEmpty)
                 ReconciliationHistorySaleRowsSection(
                   saleRows: line.saleRows,
-                  expanded: _saleRowsExpanded,
-                  onToggle: () => setState(
-                    () => _saleRowsExpanded = !_saleRowsExpanded,
-                  ),
+                  expanded: cardState.saleRowsExpanded,
+                  onToggle: () => ref
+                      .read(reconciliationHistoryLineCardProvider(line.id)
+                          .notifier)
+                      .toggleSaleRowsExpanded(),
                 ),
             ],
           ],

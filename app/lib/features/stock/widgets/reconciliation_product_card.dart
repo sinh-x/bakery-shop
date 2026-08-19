@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
 import '../../../providers/reconciliation_provider.dart';
+import '../providers/reconciliation_product_card_notifier.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
 import 'reconciliation_option_editor.dart';
 import 'reconciliation_option_inventory_section.dart';
@@ -23,8 +24,6 @@ class ReconciliationProductCard extends ConsumerStatefulWidget {
 class _ReconciliationProductCardState
     extends ConsumerState<ReconciliationProductCard> {
   final Map<String, TextEditingController> _countedControllers = {};
-  final Set<String> _expandedOptionKeys = {};
-  bool _isExpanded = false;
 
   @override
   void initState() {
@@ -53,6 +52,9 @@ class _ReconciliationProductCardState
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
+    final cardState = ref.watch(
+      reconciliationProductCardProvider(widget.product.productId),
+    );
     final visibleOptions = widget.product.options
         .where((option) => option.expectedQty != 0)
         .toList();
@@ -120,7 +122,11 @@ class _ReconciliationProductCardState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
-              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              onTap: () => ref
+                  .read(reconciliationProductCardProvider(
+                          widget.product.productId)
+                      .notifier)
+                  .toggleExpanded(),
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -133,7 +139,7 @@ class _ReconciliationProductCardState
                       ),
                     ),
                     Icon(
-                      _isExpanded
+                      cardState.isExpanded
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
                     ),
@@ -156,7 +162,7 @@ class _ReconciliationProductCardState
                 StatusChip(hasError: hasAnyError),
               ],
             ),
-            if (!_isExpanded) ...[
+            if (!cardState.isExpanded) ...[
               const SizedBox(height: 6),
               Text(
                 '${StockLabels.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
@@ -168,7 +174,7 @@ class _ReconciliationProductCardState
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
             ],
-            if (_isExpanded) ...[
+            if (cardState.isExpanded) ...[
               const SizedBox(height: 10),
               for (final option in visibleOptions) ...[
                 _buildOptionSection(
@@ -196,13 +202,10 @@ class _ReconciliationProductCardState
 
   void _toggleOption(ReconciliationDraftOption option) {
     final optionKey = _optionKey(option);
-    setState(() {
-      if (_expandedOptionKeys.contains(optionKey)) {
-        _expandedOptionKeys.remove(optionKey);
-      } else {
-        _expandedOptionKeys.add(optionKey);
-      }
-    });
+    ref
+        .read(reconciliationProductCardProvider(widget.product.productId)
+            .notifier)
+        .toggleOption(optionKey);
   }
 
   Widget _buildOptionSection(
@@ -212,6 +215,9 @@ class _ReconciliationProductCardState
     required bool canCollapse,
   }) {
     final optionKey = _optionKey(option);
+    final cardState = ref.watch(
+      reconciliationProductCardProvider(widget.product.productId),
+    );
     final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
     final saleRows =
         state.saleRowsByOption[optionKey] ??
@@ -250,7 +256,8 @@ class _ReconciliationProductCardState
       surplus: surplus,
       hasError: hasError,
       canCollapse: canCollapse,
-      isExpanded: !canCollapse || _expandedOptionKeys.contains(optionKey),
+      isExpanded: !canCollapse ||
+          cardState.expandedOptionKeys.contains(optionKey),
       onToggle: () => _toggleOption(option),
       child: ReconciliationOptionEditor(
         product: widget.product,

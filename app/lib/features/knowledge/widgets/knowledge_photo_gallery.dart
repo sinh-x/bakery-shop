@@ -11,9 +11,10 @@ import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
 import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
+import '../providers/knowledge_photo_gallery_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
-class KnowledgePhotoGallery extends StatefulWidget {
+class KnowledgePhotoGallery extends ConsumerStatefulWidget {
   const KnowledgePhotoGallery({
     super.key,
     required this.photos,
@@ -24,17 +25,16 @@ class KnowledgePhotoGallery extends StatefulWidget {
   final String baseUrl;
 
   @override
-  State<KnowledgePhotoGallery> createState() => _KnowledgePhotoGalleryState();
+  ConsumerState<KnowledgePhotoGallery> createState() =>
+      _KnowledgePhotoGalleryState();
 }
 
-class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
+class _KnowledgePhotoGalleryState extends ConsumerState<KnowledgePhotoGallery> {
   late final PageController _pageController;
-  late int _currentIndex;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = 0;
     _pageController = PageController();
   }
 
@@ -57,6 +57,8 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
 
   @override
   Widget build(BuildContext context) {
+    final galleryState = ref.watch(knowledgePhotoGalleryProvider);
+    final currentIndex = galleryState.currentIndex;
     if (widget.photos.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -68,7 +70,9 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             controller: _pageController,
             itemCount: widget.photos.length,
             onPageChanged: (index) {
-              setState(() => _currentIndex = index);
+              ref
+                  .read(knowledgePhotoGalleryProvider.notifier)
+                  .setCurrentIndex(index);
             },
             itemBuilder: (ctx, index) {
               final photo = widget.photos[index];
@@ -106,7 +110,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: index == _currentIndex
+                  color: index == currentIndex
                       ? Theme.of(context).colorScheme.primary
                       : Colors.grey.shade400,
                 ),
@@ -115,10 +119,10 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
           ),
         // Caption
         if (widget.photos.isNotEmpty &&
-            widget.photos[_currentIndex].caption.isNotEmpty) ...[
+            widget.photos[currentIndex].caption.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
-            widget.photos[_currentIndex].caption,
+            widget.photos[currentIndex].caption,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -149,13 +153,10 @@ class _FullScreenViewer extends ConsumerStatefulWidget {
 
 class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
   late final PageController _pageController;
-  late int _currentIndex;
-  bool _sharing = false;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
   }
 
@@ -166,9 +167,16 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
   }
 
   Future<void> _shareCurrentPhoto() async {
-    if (_sharing || _currentIndex >= widget.photos.length) return;
-    setState(() => _sharing = true);
-    final photo = widget.photos[_currentIndex];
+    final viewerState =
+        ref.watch(knowledgeFullScreenPhotoProvider(widget.initialIndex));
+    if (viewerState.sharing ||
+        viewerState.currentIndex >= widget.photos.length) {
+      return;
+    }
+    ref
+        .read(knowledgeFullScreenPhotoProvider(widget.initialIndex).notifier)
+        .setSharing(true);
+    final photo = widget.photos[viewerState.currentIndex];
     final dio = ref.read(dioProvider);
     final url = '${widget.baseUrl}${photo.url}';
     try {
@@ -199,7 +207,12 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
       }
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) {
+        ref
+            .read(
+                knowledgeFullScreenPhotoProvider(widget.initialIndex).notifier)
+            .setSharing(false);
+      }
     }
   }
 
@@ -250,18 +263,22 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
 
   @override
   Widget build(BuildContext context) {
+    final viewerState =
+        ref.watch(knowledgeFullScreenPhotoProvider(widget.initialIndex));
+    final currentIndex = viewerState.currentIndex;
+    final sharing = viewerState.sharing;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
-          '${_currentIndex + 1} / ${widget.photos.length}',
+          '${currentIndex + 1} / ${widget.photos.length}',
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
           IconButton(
-            icon: _sharing
+            icon: sharing
                 ? const SizedBox(
                     height: 20,
                     width: 20,
@@ -272,7 +289,7 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
                   )
                 : const Icon(Icons.share, color: Colors.white),
             tooltip: ProductsLabels.chiaSe,
-            onPressed: _sharing ? null : _shareCurrentPhoto,
+            onPressed: sharing ? null : _shareCurrentPhoto,
           ),
           const AppBarOverflowMenu(),
         ],
@@ -281,7 +298,10 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         controller: _pageController,
         itemCount: widget.photos.length,
         onPageChanged: (index) {
-          setState(() => _currentIndex = index);
+          ref
+              .read(
+                  knowledgeFullScreenPhotoProvider(widget.initialIndex).notifier)
+              .setCurrentIndex(index);
         },
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];

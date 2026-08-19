@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
+import '../providers/reconciliation_sell_waste_modal_notifier.dart';
 import 'reconciliation_shared_widgets.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
@@ -132,8 +133,6 @@ class _ReconciliationSaleModalContentState
   late final TextEditingController _qtyController;
   late final TextEditingController _priceController;
   final FocusNode _priceFocusNode = FocusNode();
-  String? _paymentMethod;
-  bool _paymentMethodError = false;
 
   @override
   void initState() {
@@ -142,7 +141,15 @@ class _ReconciliationSaleModalContentState
     _priceController = TextEditingController(
       text: reconciliationPriceToText(widget.initialUnitPrice),
     );
-    _paymentMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
+    final seedMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .seedPaymentMethod(seedMethod);
+    });
   }
 
   @override
@@ -162,13 +169,19 @@ class _ReconciliationSaleModalContentState
 
   void _submit() {
     final editingIndex = widget.editingRowIndex;
+    final modalState =
+        ref.read(reconciliationSellWasteModalProvider(widget.optionKey));
+    final paymentMethod = modalState.paymentMethod;
     if (editingIndex == null) {
       if (_qty <= 0) {
         Navigator.of(context).pop(true);
         return;
       }
-      if (_qty > 0 && _paymentMethod == null) {
-        setState(() => _paymentMethodError = true);
+      if (_qty > 0 && paymentMethod == null) {
+        ref
+            .read(reconciliationSellWasteModalProvider(widget.optionKey)
+                .notifier)
+            .setPaymentMethodError(true);
         return;
       }
       widget.notifier.addSaleRow(
@@ -190,7 +203,7 @@ class _ReconciliationSaleModalContentState
         widget.notifier.setSaleRowPaymentMethod(
           widget.optionKey,
           rowIndex,
-          _paymentMethod,
+          paymentMethod,
         );
       }
     } else {
@@ -203,7 +216,7 @@ class _ReconciliationSaleModalContentState
       widget.notifier.setSaleRowPaymentMethod(
         widget.optionKey,
         editingIndex,
-        _paymentMethod,
+        paymentMethod,
       );
     }
     Navigator.of(context).pop(true);
@@ -349,6 +362,8 @@ class _ReconciliationSaleModalContentState
   }
 
   Widget _buildSaleForm(BuildContext context) {
+    final modalState =
+        ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -389,18 +404,18 @@ class _ReconciliationSaleModalContentState
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            initialValue: _paymentMethod,
+            initialValue: modalState.paymentMethod,
             decoration: InputDecoration(
               labelText: StockLabels.phuongThucThanhToan,
               border: const OutlineInputBorder(),
               isDense: true,
-              errorText: _paymentMethodError ? StockLabels.chonPhuongThucThanhToan : null,
+              errorText: modalState.paymentMethodError ? StockLabels.chonPhuongThucThanhToan : null,
             ),
             items: kReconciliationPaymentMethodItems,
-            onChanged: (value) => setState(() {
-              _paymentMethod = value;
-              _paymentMethodError = false;
-            }),
+            onChanged: (value) => ref
+                .read(reconciliationSellWasteModalProvider(widget.optionKey)
+                    .notifier)
+                .setPaymentMethod(value),
           ),
         ],
       ),
@@ -438,7 +453,6 @@ class _ReconciliationWasteModalContentState
     extends ConsumerState<_ReconciliationWasteModalContent> {
   late final TextEditingController _wasteController;
   late final TextEditingController _wasteReasonController;
-  bool _wasteReasonError = false;
 
   @override
   void initState() {
@@ -452,7 +466,9 @@ class _ReconciliationWasteModalContentState
 
   void _onWasteQtyChanged() {
     if (mounted) {
-      setState(() {});
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .rebuild();
     }
   }
 
@@ -468,7 +484,9 @@ class _ReconciliationWasteModalContentState
 
   void _submit() {
     if (_qty > 0 && _wasteReasonController.text.trim().isEmpty) {
-      setState(() => _wasteReasonError = true);
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .setWasteReasonError(true);
       return;
     }
     widget.notifier.setWasteQty(widget.optionKey, _qty);
@@ -482,6 +500,10 @@ class _ReconciliationWasteModalContentState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
+    // Watch the modal form state so rebuilds triggered by the
+    // waste-qty controller listener (via `rebuild()`) refresh the
+    // conditional reason field, and so `wasteReasonError` updates.
+    ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
     final counted =
         state.countedQtyByOption[widget.optionKey] ?? widget.initialCounted;
     final saleRows =
@@ -603,12 +625,24 @@ class _ReconciliationWasteModalContentState
               decoration: InputDecoration(
                 labelText: StockLabels.lyDoHaoHut,
                 border: const OutlineInputBorder(),
-                errorText: _wasteReasonError ? StockLabels.lyDoRequired : null,
+                errorText: ref
+                            .watch(reconciliationSellWasteModalProvider(
+                                widget.optionKey))
+                            .wasteReasonError
+                        ? StockLabels.lyDoRequired
+                        : null,
               ),
               controller: _wasteReasonController,
               onChanged: (_) {
-                if (_wasteReasonError) {
-                  setState(() => _wasteReasonError = false);
+                if (ref
+                    .read(reconciliationSellWasteModalProvider(
+                        widget.optionKey))
+                    .wasteReasonError) {
+                  ref
+                      .read(reconciliationSellWasteModalProvider(
+                              widget.optionKey)
+                          .notifier)
+                      .clearWasteReasonError();
                 }
               },
             ),

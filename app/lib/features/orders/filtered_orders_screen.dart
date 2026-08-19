@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
+import 'providers/order_list_filter_notifier.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
@@ -80,7 +81,6 @@ class FilteredOrdersScreen extends ConsumerStatefulWidget {
 
 class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
   final _searchController = TextEditingController();
-  String _searchQuery = '';
 
   bool get _isIncomplete => widget.filter == 'incomplete';
 
@@ -99,9 +99,9 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
       ? OrdersLabels.incompleteFilterEmpty
       : OrdersLabels.combinedUrgencyFilterEmpty;
 
-  List<Order> _applySearch(List<Order> orders) {
-    if (_searchQuery.trim().isEmpty) return orders;
-    final q = _searchQuery.trim().toLowerCase();
+  List<Order> _applySearch(List<Order> orders, String searchQuery) {
+    if (searchQuery.trim().isEmpty) return orders;
+    final q = searchQuery.trim().toLowerCase();
     return orders.where((o) {
       return o.customerName.toLowerCase().contains(q) ||
           o.customerPhone.contains(q) ||
@@ -113,6 +113,7 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
     final notifier = ref.read(orderListProvider.notifier);
+    final searchQuery = ref.watch(filteredOrdersSearchProvider);
 
     List<Order> applyFilter(List<Order> orders) {
       if (_isIncomplete) {
@@ -134,11 +135,13 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
               decoration: InputDecoration(
                 hintText: OrdersLabels.lichSuDonHangTimKiem,
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
+                suffixIcon: searchQuery.isNotEmpty
                     ? IconButton(
                         onPressed: () {
                           _searchController.clear();
-                          setState(() => _searchQuery = '');
+                          ref
+                              .read(filteredOrdersSearchProvider.notifier)
+                              .clearQuery();
                         },
                         icon: const Icon(Icons.clear),
                       )
@@ -148,7 +151,8 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                 ),
                 isDense: true,
               ),
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: (value) =>
+                  ref.read(filteredOrdersSearchProvider.notifier).setQuery(value),
             ),
           ),
           Expanded(
@@ -182,7 +186,7 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                   );
                 }
 
-                final searched = _applySearch(filtered);
+                final searched = _applySearch(filtered, searchQuery);
                 if (searched.isEmpty) {
                   return const Center(
                     child: Text(OrdersLabels.lichSuDonHangKhongTimThay),

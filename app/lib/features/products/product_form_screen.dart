@@ -16,6 +16,7 @@ import '../../data/models/product.dart';
 import '../../data/providers/categories_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/product_form_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/catalog_gallery_section.dart';
@@ -55,12 +56,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final List<PriceChip> _originalPriceChips;
   late final List<PriceChipFormRow> _priceChipRows;
   late final List<EnumAttributeFormSection> _enumSections;
-  late String _category;
-  late bool _rutTien;
-  late bool _trungBay;
-  late bool _tangKem;
-  XFile? _pickedPhoto;
-  bool _saving = false;
 
   bool get _isEditing => widget.product != null;
 
@@ -102,10 +97,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         .toList();
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
-    _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
-    _rutTien = p?.attributes['rut_tien']?.toString() == 'true';
-    _trungBay = p?.attributes['trung_bay']?.toString() == 'true';
-    _tangKem = p?.attributes['tang_kem']?.toString() == 'true';
+    // Seed the notifier with the initial form values derived from the
+    // product (or defaults for new products). All subsequent mutations
+    // go through the notifier; no setState is required.
+    final initialCategory = widget.initialCategory ?? p?.category ?? 'banh_kem';
+    final initialRutTien = p?.attributes['rut_tien']?.toString() == 'true';
+    final initialTrungBay = p?.attributes['trung_bay']?.toString() == 'true';
+    final initialTangKem = p?.attributes['tang_kem']?.toString() == 'true';
+    // Defer provider mutation to a microtask because Riverpod disallows
+    // provider mutation during widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(productFormProvider.notifier).seed(
+            initialCategory: initialCategory,
+            rutTien: initialRutTien,
+            trungBay: initialTrungBay,
+            tangKem: initialTangKem,
+          );
+    });
   }
 
   @override
@@ -126,9 +135,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _addPriceChip() {
     if (_priceChipRows.length >= _maxPriceChips) return;
-    setState(() {
-      _priceChipRows.add(PriceChipFormRow());
-    });
+    _priceChipRows.add(PriceChipFormRow());
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   Future<void> _removePriceChip(int index) async {
@@ -156,18 +164,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (confirm != true) return;
     }
 
-    setState(() {
-      row.dispose();
-      _priceChipRows.removeAt(index);
-    });
+    row.dispose();
+    _priceChipRows.removeAt(index);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _reorderPriceChips(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex -= 1;
-    setState(() {
-      final row = _priceChipRows.removeAt(oldIndex);
-      _priceChipRows.insert(newIndex, row);
-    });
+    final row = _priceChipRows.removeAt(oldIndex);
+    _priceChipRows.insert(newIndex, row);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   double? _parseChipPrice(String text) {
@@ -198,7 +204,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
 
     final changed = _applyPriceChipRowErrors(errors);
-    if (changed) setState(() {});
+    if (changed) ref.read(productFormProvider.notifier).rebuild();
     return errors;
   }
 
@@ -357,12 +363,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       ),
                       onChanged: (_) {
                         if (row.labelError != null) {
-                          setState(() {
-                            row.updateErrors(
-                              labelError: null,
-                              priceError: row.priceError,
-                            );
-                          });
+                          row.updateErrors(
+                            labelError: null,
+                            priceError: row.priceError,
+                          );
+                          ref.read(productFormProvider.notifier).rebuild();
                         }
                       },
                     ),
@@ -379,12 +384,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       keyboardType: TextInputType.number,
                       onChanged: (_) {
                         if (row.priceError != null) {
-                          setState(() {
-                            row.updateErrors(
-                              labelError: row.labelError,
-                              priceError: null,
-                            );
-                          });
+                          row.updateErrors(
+                            labelError: row.labelError,
+                            priceError: null,
+                          );
+                          ref.read(productFormProvider.notifier).rebuild();
                         }
                       },
                     ),
@@ -425,32 +429,29 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   // ----- Enum attribute options editor (DG-092 Phase 4.5) -----
 
   void _addEnumOption(EnumAttributeFormSection section) {
-    setState(() {
-      section.rows.add(EnumOptionFormRow(sortOrder: section.rows.length));
-    });
+    section.rows.add(EnumOptionFormRow(sortOrder: section.rows.length));
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _toggleRemoveEnumOption(EnumAttributeFormSection section, int index) {
     final row = section.rows[index];
-    setState(() {
-      if (row.id == null) {
-        row.dispose();
-        section.rows.removeAt(index);
-      } else {
-        row.removed = !row.removed;
-        if (row.removed && row.isDefault) {
-          row.isDefault = false;
-        }
+    if (row.id == null) {
+      row.dispose();
+      section.rows.removeAt(index);
+    } else {
+      row.removed = !row.removed;
+      if (row.removed && row.isDefault) {
+        row.isDefault = false;
       }
-    });
+    }
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _setEnumDefault(EnumAttributeFormSection section, int index) {
-    setState(() {
-      for (var i = 0; i < section.rows.length; i++) {
-        section.rows[i].isDefault = i == index;
-      }
-    });
+    for (var i = 0; i < section.rows.length; i++) {
+      section.rows[i].isDefault = i == index;
+    }
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _reorderEnumOptions(
@@ -459,10 +460,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     int newIndex,
   ) {
     if (newIndex > oldIndex) newIndex -= 1;
-    setState(() {
-      final row = section.rows.removeAt(oldIndex);
-      section.rows.insert(newIndex, row);
-    });
+    final row = section.rows.removeAt(oldIndex);
+    section.rows.insert(newIndex, row);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   /// Returns true if all enum sections validate (every section with at least
@@ -493,7 +493,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
       changed = changed || sectionChanged;
     }
-    if (changed) setState(() {});
+    if (changed) ref.read(productFormProvider.notifier).rebuild();
     return ok;
   }
 
@@ -646,7 +646,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         ),
                         onChanged: (_) {
                           if (row.valueError != null) {
-                            setState(() => row.setValueError(null));
+                            row.setValueError(null);
+                            ref.read(productFormProvider.notifier).rebuild();
                           }
                         },
                       ),
@@ -713,7 +714,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source);
     if (file != null) {
-      setState(() => _pickedPhoto = file);
+      ref.read(productFormProvider.notifier).setPickedPhoto(file);
     }
   }
 
@@ -721,7 +722,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_validatePriceChipRows().isNotEmpty) return;
     if (!_validateEnumOptions()) return;
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    final formState = ref.read(productFormProvider);
+    formNotifier.setSaving(true);
 
     try {
       final notifier = ref.read(productsProvider.notifier);
@@ -736,7 +739,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final prefix =
           cats
               ?.firstWhere(
-                (c) => c.slug == _category,
+                (c) => c.slug == formState.category,
                 orElse: () => const Category(
                   id: 0,
                   slug: '',
@@ -761,24 +764,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final hasEnumOptionChanges = _hasEnumOptionChanges();
         final hasChanges =
             newName != orig.name ||
-            _category != orig.category ||
+            formState.category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
-            _pickedPhoto != null ||
+            formState.pickedPhoto != null ||
             hasPriceChipChanges ||
             hasEnumOptionChanges ||
-            _rutTien != origRutTien ||
-            _trungBay != origTrungBay ||
-            _tangKem != origTangKem;
+            formState.rutTien != origRutTien ||
+            formState.trungBay != origTrungBay ||
+            formState.tangKem != origTangKem;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
         }
         final hasFieldChanges =
             newName != orig.name ||
-            _category != orig.category ||
+            formState.category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
@@ -787,7 +790,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           saved = await notifier.updateProduct(
             orig.id,
             name: newName != orig.name ? newName : null,
-            category: _category != orig.category ? _category : null,
+            category: formState.category != orig.category
+                ? formState.category
+                : null,
             basePrice: price != orig.basePrice ? price : null,
             cost: cost != orig.cost ? cost : null,
             recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
@@ -798,9 +803,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
 
         // Sync rut_tien attribute if changed
-        if (_rutTien != origRutTien) {
+        if (formState.rutTien != origRutTien) {
           final productSvc = ref.read(productServiceProvider);
-          if (_rutTien) {
+          if (formState.rutTien) {
             await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'rut_tien');
@@ -808,9 +813,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await notifier.refresh();
         }
         // Sync trung_bay attribute if changed
-        if (_trungBay != origTrungBay) {
+        if (formState.trungBay != origTrungBay) {
           final productSvc = ref.read(productServiceProvider);
-          if (_trungBay) {
+          if (formState.trungBay) {
             await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'trung_bay');
@@ -818,9 +823,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await notifier.refresh();
         }
         // Sync tang_kem attribute if changed
-        if (_tangKem != origTangKem) {
+        if (formState.tangKem != origTangKem) {
           final productSvc = ref.read(productServiceProvider);
-          if (_tangKem) {
+          if (formState.tangKem) {
             await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'tang_kem');
@@ -830,26 +835,26 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
-          category: _category,
+          category: formState.category,
           basePrice: price,
           cost: cost,
           recipeNotes: _notesCtrl.text.trim(),
           productCode: code.isNotEmpty ? code : null,
         );
         // Sync rut_tien attribute for new products
-        if (_rutTien) {
+        if (formState.rutTien) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           await notifier.refresh();
         }
         // Sync trung_bay attribute for new products
-        if (_trungBay) {
+        if (formState.trungBay) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           await notifier.refresh();
         }
         // Sync tang_kem attribute for new products
-        if (_tangKem) {
+        if (formState.tangKem) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
@@ -865,8 +870,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         await ref.read(productsProvider.notifier).refresh();
       }
 
-      if (_pickedPhoto != null) {
-        await notifier.uploadPhoto(saved.id, _pickedPhoto!);
+      if (formState.pickedPhoto != null) {
+        await notifier.uploadPhoto(saved.id, formState.pickedPhoto!);
       }
 
       ref.invalidate(phuKienProductsProvider);
@@ -886,7 +891,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         showTopSnackBar(context, detail ?? e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -910,7 +915,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     if (confirmed != true) return;
 
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    formNotifier.setSaving(true);
     try {
       await ref
           .read(productsProvider.notifier)
@@ -924,12 +930,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
   Future<void> _reactivate() async {
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    formNotifier.setSaving(true);
     try {
       await ref
           .read(productsProvider.notifier)
@@ -943,7 +950,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -952,12 +959,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
+    final formState = ref.watch(productFormProvider);
+    final formNotifier = ref.read(productFormProvider.notifier);
 
     // Compute the read-only prefix for the current category.
     final currentPrefix = categoriesAsync.maybeWhen(
       data: (cats) => cats
           .firstWhere(
-            (c) => c.slug == _category,
+            (c) => c.slug == formState.category,
             orElse: () => const Category(
               id: 0,
               slug: '',
@@ -984,7 +993,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     ? Icons.visibility_outlined
                     : Icons.delete_outline,
               ),
-              onPressed: _saving
+              onPressed: formState.saving
                   ? null
                   : widget.product!.active == 0
                   ? _reactivate
@@ -1000,7 +1009,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           children: [
             ProductFormBasicInfoSection(
               productId: widget.product?.id,
-              pickedPhoto: _pickedPhoto,
+              pickedPhoto: formState.pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
               cacheBuster: photoRefreshTick.toString(),
@@ -1008,11 +1017,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               codeController: _codeCtrl,
               currentPrefix: currentPrefix,
               categoriesAsync: categoriesAsync,
-              category: _category,
-              onCategoryChanged: (v) => setState(() => _category = v),
+              category: formState.category,
+              onCategoryChanged: formNotifier.setCategory,
               photoSection: PhotoSection(
                 productId: widget.product?.id,
-                pickedPhoto: _pickedPhoto,
+                pickedPhoto: formState.pickedPhoto,
                 baseUrl: baseUrl,
                 onPickPhoto: _pickPhoto,
                 cacheBuster: photoRefreshTick.toString(),
@@ -1028,20 +1037,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ProductFormAttributesSection(
               enumOptionsSection: _buildEnumOptionsSection(),
               notesController: _notesCtrl,
-              rutTien: _rutTien,
-              trungBay: _trungBay,
-              tangKem: _tangKem,
+              rutTien: formState.rutTien,
+              trungBay: formState.trungBay,
+              tangKem: formState.tangKem,
               isEditing: _isEditing,
-              onRutTienChanged: (v) => setState(() => _rutTien = v),
-              onTrungBayChanged: (v) => setState(() => _trungBay = v),
-              onTangKemChanged: (v) => setState(() => _tangKem = v),
+              onRutTienChanged: formNotifier.setRutTien,
+              onTrungBayChanged: formNotifier.setTrungBay,
+              onTangKemChanged: formNotifier.setTangKem,
             ),
             const SizedBox(height: 16),
 
             // Save button
             FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
+              onPressed: formState.saving ? null : _save,
+              child: formState.saving
                   ? const SizedBox(
                       height: 20,
                       width: 20,

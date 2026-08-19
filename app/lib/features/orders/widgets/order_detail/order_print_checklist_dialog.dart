@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
+import '../../providers/order_print_dialog_notifiers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Print checklist dialog shown after the new → confirmed transition
 /// (Flow A). Lets staff pick which receipts to print immediately.
@@ -20,22 +21,18 @@ class OrderPrintChecklistDialog extends ConsumerStatefulWidget {
 
 class _OrderPrintChecklistDialogState
     extends ConsumerState<OrderPrintChecklistDialog> {
-  bool _printInternal = true;
-  bool _printCustomer = true;
-  bool _printing = false;
-  String _statusText = '';
-
   Future<void> _printSelected() async {
-    if (!_printInternal && !_printCustomer) return;
+    final s = ref.read(orderPrintChecklistProvider);
+    if (!s.printInternal && !s.printCustomer) return;
 
-    setState(() => _printing = true);
+    ref.read(orderPrintChecklistProvider.notifier).startPrinting();
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
       final printedBy = ref.read(loggedByProvider);
 
       // Print internal receipt — one per main work item (via server USB printer)
-      if (_printInternal) {
+      if (s.printInternal) {
         final items =
             ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
         final mainItemIds = items
@@ -45,7 +42,9 @@ class _OrderPrintChecklistDialogState
             .toList();
 
         for (final itemId in mainItemIds) {
-          setState(() => _statusText = SharedLabels.printingInternalReceipt);
+          ref
+              .read(orderPrintChecklistProvider.notifier)
+              .setStatusText(SharedLabels.printingInternalReceipt);
           await receiptService.printReceipt(
             orderRef: widget.orderRef,
             type: ReceiptType.workTicket,
@@ -62,8 +61,10 @@ class _OrderPrintChecklistDialogState
       }
 
       // Print customer receipt (via server USB printer)
-      if (_printCustomer) {
-        setState(() => _statusText = SharedLabels.printingCustomerReceipt);
+      if (s.printCustomer) {
+        ref
+            .read(orderPrintChecklistProvider.notifier)
+            .setStatusText(SharedLabels.printingCustomerReceipt);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.customer,
@@ -81,7 +82,7 @@ class _OrderPrintChecklistDialogState
       }
     } finally {
       if (mounted) {
-        setState(() => _printing = false);
+        ref.read(orderPrintChecklistProvider.notifier).finishPrinting();
       }
     }
   }
@@ -91,17 +92,23 @@ class _OrderPrintChecklistDialogState
     final items =
         ref.watch(orderWorkItemsProvider(widget.orderRef)).value ?? [];
     final hasMainItems = items.any((i) => !i.isExtra && !i.isGift);
+    final state = ref.watch(orderPrintChecklistProvider);
 
-    // If no main items, auto-disable internal receipt
-    if (!hasMainItems && _printInternal) {
-      _printInternal = false;
+    // If no main items, auto-disable internal receipt (deferred to a
+    // post-frame callback so state is not mutated during build).
+    if (!hasMainItems && state.printInternal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(orderPrintChecklistProvider.notifier)
+            .autoDisableInternalIfNoMainItems(hasMainItems);
+      });
     }
 
-    final hasSelection = _printInternal || _printCustomer;
+    final hasSelection = state.printInternal || state.printCustomer;
 
     return AlertDialog(
       title: const Text(SharedLabels.printChecklistTitle),
-      content: _printing
+      content: state.printing
           ? SizedBox(
               height: 80,
               child: Column(
@@ -110,7 +117,7 @@ class _OrderPrintChecklistDialogState
                   const CircularProgressIndicator(),
                   const SizedBox(height: 12),
                   Text(
-                    _statusText,
+                    state.statusText,
                     style: Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -122,16 +129,19 @@ class _OrderPrintChecklistDialogState
               children: [
                 if (hasMainItems)
                   CheckboxListTile(
-                    value: _printInternal,
-                    onChanged: (v) =>
-                        setState(() => _printInternal = v ?? false),
+                    value: state.printInternal,
+                    onChanged: (v) => ref
+                        .read(orderPrintChecklistProvider.notifier)
+                        .setPrintInternal(v ?? false),
                     title: const Text(SharedLabels.printWorkTicket),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                   ),
                 CheckboxListTile(
-                  value: _printCustomer,
-                  onChanged: (v) => setState(() => _printCustomer = v ?? false),
+                  value: state.printCustomer,
+                  onChanged: (v) => ref
+                      .read(orderPrintChecklistProvider.notifier)
+                      .setPrintCustomer(v ?? false),
                   title: const Text(SharedLabels.printCustomerReceipt),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
@@ -140,10 +150,10 @@ class _OrderPrintChecklistDialogState
             ),
       actions: [
         TextButton(
-          onPressed: _printing ? null : () => Navigator.pop(context),
+          onPressed: state.printing ? null : () => Navigator.pop(context),
           child: const Text(SharedLabels.printSkip),
         ),
-        if (!_printing)
+        if (!state.printing)
           FilledButton(
             onPressed: hasSelection ? _printSelected : null,
             child: const Text(SharedLabels.print),

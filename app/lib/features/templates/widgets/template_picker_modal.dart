@@ -7,6 +7,7 @@ import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
 import '../../orders/widgets/section_header.dart';
 import '../message_template_resolver.dart';
+import '../providers/template_picker_notifier.dart';
 import '../template_context.dart';
 import '../template_management_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -74,9 +75,6 @@ class TemplatePickerModal extends ConsumerStatefulWidget {
 }
 
 class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
-  int? _expandedId;
-  bool _copied = false;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -210,6 +208,7 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
   }
 
   Widget _buildList(ThemeData theme, List<MessageTemplate> templates) {
+    final picker = ref.watch(templatePickerProvider);
     // Group by scenario preserving the backend's scenario, sort_order, id
     // ordering. Linked-iteration preserves insertion order.
     final grouped = <String, List<MessageTemplate>>{};
@@ -235,12 +234,11 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
             _TemplateTile(
               template: template,
               templateContext: widget.context,
-              expanded: _expandedId == template.id,
-              copied: _copied && _expandedId == template.id,
-              onTap: () => setState(() {
-                _expandedId = _expandedId == template.id ? null : template.id;
-                _copied = false;
-              }),
+              expanded: picker.isExpanded(template.id),
+              copied: picker.isCopied(template.id),
+              onTap: () => ref
+                  .read(templatePickerProvider.notifier)
+                  .toggleExpanded(template.id),
               onCopy: () => _copyTemplate(template),
             ),
         ],
@@ -252,7 +250,7 @@ class _TemplatePickerModalState extends ConsumerState<TemplatePickerModal> {
     final filled = MessageTemplateResolver(widget.context).resolveBody(template.body);
     await Clipboard.setData(ClipboardData(text: filled));
     if (!mounted) return;
-    setState(() => _copied = true);
+    ref.read(templatePickerProvider.notifier).markCopied(template.id);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(TemplatesLabels.copiedSnack),

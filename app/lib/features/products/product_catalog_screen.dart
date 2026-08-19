@@ -11,6 +11,7 @@ import '../../data/providers/products_provider.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/product_catalog_screen_notifier.dart';
 import 'widgets/product_grid_skeleton.dart';
 import 'widgets/product_tabs.dart';
 class ProductCatalogScreen extends ConsumerStatefulWidget {
@@ -23,8 +24,6 @@ class ProductCatalogScreen extends ConsumerStatefulWidget {
 
 class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
-  bool _showInactiveProducts = false;
-
   @override
   String screenRoutePath() => '/products';
 
@@ -188,22 +187,26 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                 ],
               ),
             ),
-            data: (state) => ProductTabs(
-              state: state,
-              inactiveProductsAsync: inactiveProductsAsync,
-              categories: categories,
-              baseUrl: baseUrl,
-              cacheBuster: photoRefreshTick.toString(),
-              showInactiveProducts: _showInactiveProducts,
-              onShowInactiveProductsChanged: (value) {
-                setState(() => _showInactiveProducts = value);
-              },
-              onRetryInactiveProducts: () {
-                ref.invalidate(inactiveProductsProvider);
-              },
-              onLoadMore: () =>
-                  ref.read(productsPaginationProvider.notifier).loadMore(),
-            ),
+            data: (state) {
+              final catalogState = ref.watch(productCatalogScreenProvider);
+              final catalogNotifier =
+                  ref.read(productCatalogScreenProvider.notifier);
+              return ProductTabs(
+                state: state,
+                inactiveProductsAsync: inactiveProductsAsync,
+                categories: categories,
+                baseUrl: baseUrl,
+                cacheBuster: photoRefreshTick.toString(),
+                showInactiveProducts: catalogState.showInactiveProducts,
+                onShowInactiveProductsChanged:
+                    catalogNotifier.setShowInactiveProducts,
+                onRetryInactiveProducts: () {
+                  ref.invalidate(inactiveProductsProvider);
+                },
+                onLoadMore: () =>
+                    ref.read(productsPaginationProvider.notifier).loadMore(),
+              );
+            },
           ),
           floatingActionButton: FloatingActionButton(
             onPressed: () {

@@ -10,6 +10,7 @@ import 'package:bakery_app/shared/utils/diacritics.dart';
 import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
+import 'providers/duplicate_finder_screen_notifier.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Returns `true` if any member of [group] matches [query]
@@ -56,10 +57,6 @@ class DuplicateFinderScreen extends ConsumerStatefulWidget {
 }
 
 class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
-  /// Group key currently in flight (DG-252 review Mn7 — in-flight guard
-  /// against double merge taps). `null` when no merge is running.
-  String? _mergingKey;
-
   final _searchController = TextEditingController();
 
   @override
@@ -89,7 +86,9 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
               DuplicateMergeDialog(keep: keep, mergeFrom: mergeFrom),
         );
     if (choice == null) return;
-    setState(() => _mergingKey = group.key);
+    ref
+        .read(duplicateFinderScreenProvider.notifier)
+        .setMergingKey(group.key);
     try {
       await ref.read(customerServiceProvider).mergeCustomers(
             targetId: choice.keep.id,
@@ -112,7 +111,9 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _mergingKey = null);
+        ref
+            .read(duplicateFinderScreenProvider.notifier)
+            .setMergingKey(null);
       }
     }
   }
@@ -131,7 +132,9 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
           ),
         );
     if (choice == null) return;
-    setState(() => _mergingKey = group.key);
+    ref
+        .read(duplicateFinderScreenProvider.notifier)
+        .setMergingKey(group.key);
     try {
       await ref.read(customerServiceProvider).batchMergeCustomers(
             targetId: choice.primary.id,
@@ -156,7 +159,9 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _mergingKey = null);
+        ref
+            .read(duplicateFinderScreenProvider.notifier)
+            .setMergingKey(null);
       }
     }
   }
@@ -165,6 +170,7 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(duplicateGroupsProvider);
     final search = ref.watch(duplicateFinderSearchProvider);
+    final mergingKey = ref.watch(duplicateFinderScreenProvider).mergingKey;
     return Scaffold(
       appBar: AppBar(
         title: const Text(CustomersLabels.duplicateFinderTitle),
@@ -262,7 +268,7 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
                     final group = filtered[index];
                     return DuplicateGroupTile(
                       group: group,
-                      merging: _mergingKey == group.key,
+                      merging: mergingKey == group.key,
                       onMerge: (keep, mergeFrom) =>
                           _onMerge(group, keep, mergeFrom),
                       onBatchMerge: (primary, sources) =>

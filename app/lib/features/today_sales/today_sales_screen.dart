@@ -7,6 +7,7 @@ import '../../data/providers/period_summary_providers.dart';
 import '../../shared/labels/shared.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/today_sales_screen_notifier.dart';
 import 'widgets/day_tab_body.dart';
 import 'widgets/period_tab_body.dart';
 /// Today Sales screen (DG-374 Phase 2 / FR3, FR4 / AC5, AC6), refactored in
@@ -26,6 +27,12 @@ import 'widgets/period_tab_body.dart';
 /// lines, each widget file ≤ 300 lines). The product breakdown, expense
 /// summary, and cashflow summary section widgets are implemented and wired
 /// into [PeriodTabBody] (DG-386 Phases 7–11 / FR1).
+///
+/// The selected date / week anchor / month anchor live in
+/// [todaySalesScreenProvider] (DG-404 Phase 4.7); the `TabController`
+/// lifecycle (creation/dispose/listener wiring) stays on the widget as
+/// acceptable-use per DG-404 guardrails, but its listener bumps the
+/// notifier's `tabRebuildTick` instead of issuing an empty `setState`.
 class TodaySalesScreen extends ConsumerStatefulWidget {
   const TodaySalesScreen({super.key});
 
@@ -40,16 +47,6 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     vsync: this,
   );
 
-  /// Selected date for the Ngày tab (defaults to today). The date picker in
-  /// the AppBar updates this and is only shown when the Ngày tab is active.
-  String _selectedDate = formatApiDate(DateTime.now());
-
-  /// Anchor date for the Tuần tab (week navigation).
-  String _weekAnchor = formatApiDate(DateTime.now());
-
-  /// Anchor date for the Tháng tab (month navigation).
-  String _monthAnchor = formatApiDate(DateTime.now());
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -58,19 +55,26 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (picked != null && mounted) {
-      setState(() => _selectedDate = formatApiDate(picked));
+      ref
+          .read(todaySalesScreenProvider.notifier)
+          .setSelectedDate(formatApiDate(picked));
     }
   }
 
   void _navigateWeek(DateTime newAnchor) {
-    setState(() => _weekAnchor = formatApiDate(newAnchor));
+    ref.read(todaySalesScreenProvider.notifier).setWeekAnchor(
+          formatApiDate(newAnchor),
+        );
   }
 
   void _navigateMonth(DateTime newAnchor) {
-    setState(() => _monthAnchor = formatApiDate(newAnchor));
+    ref.read(todaySalesScreenProvider.notifier).setMonthAnchor(
+          formatApiDate(newAnchor),
+        );
   }
 
   void _refreshAll() {
+    final screenState = ref.read(todaySalesScreenProvider);
     ref.invalidate(todaySummaryProvider);
     ref.invalidate(dateSummaryProvider);
     // Invalidate the four period source families directly for each active
@@ -82,9 +86,11 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     // source families instead propagates correctly to
     // `periodReportDataProvider`. This mirrors the pull-to-refresh pattern in
     // `day_tab_body.dart`, extended to the week/month queries.
-    final dayQuery = PeriodQuery(period: 'day', date: _selectedDate);
-    final weekQuery = PeriodQuery(period: 'week', date: _weekAnchor);
-    final monthQuery = PeriodQuery(period: 'month', date: _monthAnchor);
+    final dayQuery = PeriodQuery(period: 'day', date: screenState.selectedDate);
+    final weekQuery =
+        PeriodQuery(period: 'week', date: screenState.weekAnchor);
+    final monthQuery =
+        PeriodQuery(period: 'month', date: screenState.monthAnchor);
     for (final query in [dayQuery, weekQuery, monthQuery]) {
       ref.invalidate(periodSummaryProvider(query));
       ref.invalidate(productBreakdownProvider(query));
@@ -98,13 +104,21 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
     super.initState();
     // Tab changes drive `isDayTab` and the AppBar title, so rebuild on every
     // tab transition (Mn-4). Removed in `dispose` to avoid leaking the
-    // listener once the controller is disposed.
+    // listener once the controller is disposed. Previously an empty
+    // `setState(() {})`; now a counter bump the AppBar watches (DG-404
+    // Phase 4.7).
     _tabController.addListener(_onTabChanged);
   }
 
   void _onTabChanged() {
     if (mounted) {
-      setState(() {});
+      // Deferred to a microtask so the tab-controller listener doesn't
+      // mutate a provider during the widget-tree build phase (DG-404
+      // Phase 4.7).
+      Future.microtask(() {
+        if (!mounted) return;
+        ref.read(todaySalesScreenProvider.notifier).bumpTabRebuild();
+      });
     }
   }
 
@@ -117,7 +131,12 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isToday = _selectedDate == formatApiDate(DateTime.now());
+    // Watch the rebuild tick so the AppBar title / calendar action refresh
+    // on tab transitions (DG-404 Phase 4.7).
+    ref.watch(todaySalesScreenProvider.select((s) => s.tabRebuildTick));
+    final screenState = ref.watch(todaySalesScreenProvider);
+    final selectedDate = screenState.selectedDate;
+    final isToday = selectedDate == formatApiDate(DateTime.now());
     final isDayTab = _tabController.index == 0;
 
     return Scaffold(
@@ -131,7 +150,7 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
         title: Text(
           isToday
               ? SharedLabels.todaySalesTitle
-              : formatDisplayDate(parseApiDate(_selectedDate)),
+              : formatDisplayDate(parseApiDate(selectedDate)),
         ),
         actions: [
           if (isDayTab)
@@ -160,13 +179,14 @@ class _TodaySalesScreenState extends ConsumerState<TodaySalesScreen>
         child: TabBarView(
           controller: _tabController,
           children: [
-            DayTabBody(selectedDate: _selectedDate, isToday: isToday),
+            DayTabBody(selectedDate: selectedDate, isToday: isToday),
             PeriodTabBody(
-              query: PeriodQuery(period: 'week', date: _weekAnchor),
+              query: PeriodQuery(period: 'week', date: screenState.weekAnchor),
               onNavigate: _navigateWeek,
             ),
             PeriodTabBody(
-              query: PeriodQuery(period: 'month', date: _monthAnchor),
+              query:
+                  PeriodQuery(period: 'month', date: screenState.monthAnchor),
               onNavigate: _navigateMonth,
             ),
           ],

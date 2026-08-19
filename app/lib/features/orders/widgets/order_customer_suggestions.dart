@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/customer_service.dart';
 import '../../../data/models/customer.dart';
+import '../providers/order_customer_suggestions_notifier.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 
 /// Inline customer suggestions shown while typing a name or phone in the
@@ -52,11 +53,6 @@ class OrderCustomerSuggestions extends ConsumerStatefulWidget {
 class _OrderCustomerSuggestionsState
     extends ConsumerState<OrderCustomerSuggestions> {
   Timer? _debounce;
-  List<Customer> _results = const [];
-  bool _loading = false;
-  bool _searched = false;
-  String? _error;
-  bool _showRefineHint = false;
 
   @override
   void initState() {
@@ -114,56 +110,29 @@ class _OrderCustomerSuggestionsState
 
   void _clearResults() {
     if (!mounted) return;
-    setState(() {
-      _results = const [];
-      _loading = false;
-      _searched = false;
-      _error = null;
-      _showRefineHint = false;
-    });
+    ref.read(orderCustomerSuggestionsProvider.notifier).clear();
   }
 
   Future<void> _search(String query) async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final service = ref.read(customerServiceProvider);
-      final results = await service.listCustomers(search: query);
-      if (!mounted) return;
-      const cap = CustomersLabels.orderSuggestionsCap;
-      final capped = results.take(cap).toList();
-      setState(() {
-        _results = capped;
-        _showRefineHint = results.length > cap;
-        _loading = false;
-        _searched = true;
-      });
-    } catch (e) {
-      debugPrint('[OrderCustomerSuggestions] search failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _results = const [];
-        _loading = false;
-        _error = CustomersLabels.orderSuggestionsError;
-        _showRefineHint = false;
-      });
-    }
+    final service = ref.read(customerServiceProvider);
+    await ref
+        .read(orderCustomerSuggestionsProvider.notifier)
+        .search(query, service);
   }
 
   @override
   Widget build(BuildContext context) {
     final query = _effectiveQuery();
+    final state = ref.watch(orderCustomerSuggestionsProvider);
     if (query.isEmpty) {
       _debounce?.cancel();
       return const SizedBox.shrink();
     }
-    if (_error != null) {
-      return _errorView(context);
+    if (state.error != null) {
+      return _errorView(context, state.error!);
     }
-    if (_loading) {
+    if (state.loading) {
       return Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Row(
@@ -182,10 +151,10 @@ class _OrderCustomerSuggestionsState
         ),
       );
     }
-    if (_results.isEmpty) {
+    if (state.results.isEmpty) {
       // Only surface the no-match label after a search has actually run,
       // so the widget does not flash "no match" before the first debounce.
-      if (!_searched) {
+      if (!state.searched) {
         return const SizedBox.shrink();
       }
       return Padding(
@@ -204,10 +173,10 @@ class _OrderCustomerSuggestionsState
         ),
       );
     }
-    return _resultsList(context);
+    return _resultsList(context, state.results, state.showRefineHint);
   }
 
-  Widget _errorView(BuildContext context) {
+  Widget _errorView(BuildContext context, String error) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -217,7 +186,7 @@ class _OrderCustomerSuggestionsState
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              _error!,
+              error,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.error),
             ),
@@ -232,7 +201,8 @@ class _OrderCustomerSuggestionsState
     );
   }
 
-  Widget _resultsList(BuildContext context) {
+  Widget _resultsList(
+      BuildContext context, List<Customer> results, bool showRefineHint) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -254,7 +224,7 @@ class _OrderCustomerSuggestionsState
             ),
             child: Column(
               children: [
-                for (final c in _results)
+                for (final c in results)
                   ListTile(
                     dense: true,
                     title: Text(c.name),
@@ -268,7 +238,7 @@ class _OrderCustomerSuggestionsState
               ],
             ),
           ),
-          if (_showRefineHint)
+          if (showRefineHint)
             Padding(
               padding: const EdgeInsets.only(top: 4, left: 4),
               child: Text(

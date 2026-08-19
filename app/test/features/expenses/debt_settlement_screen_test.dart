@@ -50,10 +50,12 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtSettlementScreen(
-            eventId: 7,
-            loadEvent: (id, ref) async => event,
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtSettlementScreen(
+              eventId: 7,
+              loadEvent: (id, ref) async => event,
+            ),
           ),
         ),
       );

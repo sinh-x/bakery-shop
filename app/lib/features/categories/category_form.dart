@@ -7,6 +7,7 @@ import '../../data/models/category.dart';
 import '../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/category_form_notifier.dart';
 import 'widgets/icon_cell.dart';
 import 'widgets/upper_case_formatter.dart';
 
@@ -60,9 +61,6 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codePrefixCtrl;
   late final TextEditingController _slugCtrl;
-  late String _selectedIcon;
-  late bool _isActive;
-  bool _saving = false;
 
   bool get _isEditing => widget.category != null;
 
@@ -73,8 +71,19 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     _nameCtrl = TextEditingController(text: c?.name ?? '');
     _codePrefixCtrl = TextEditingController(text: c?.codePrefix ?? '');
     _slugCtrl = TextEditingController(text: c?.slug ?? '');
-    _selectedIcon = c?.icon ?? '';
-    _isActive = (c?.active ?? 1) == 1;
+    final seedId = c?.id;
+    final seedIcon = c?.icon;
+    final seedActive = (c?.active ?? 1) == 1;
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(categoryFormProvider.notifier).seed(
+            editingId: seedId,
+            icon: seedIcon,
+            active: seedActive,
+          );
+    });
     if (!_isEditing) {
       _nameCtrl.addListener(_onNameChanged);
     }
@@ -178,7 +187,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    final formNotifier = ref.read(categoryFormProvider.notifier);
+    final formState = ref.read(categoryFormProvider);
+    formNotifier.setSaving(true);
     try {
       final notifier = ref.read(categoriesProvider.notifier);
       if (_isEditing) {
@@ -186,15 +197,15 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           widget.category!.id,
           name: _nameCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
-          active: _isActive ? 1 : 0,
-          icon: _selectedIcon,
+          active: formState.isActive ? 1 : 0,
+          icon: formState.selectedIcon,
         );
       } else {
         await notifier.createCategory(
           name: _nameCtrl.text.trim(),
           slug: _slugCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
-          icon: _selectedIcon,
+          icon: formState.selectedIcon,
         );
       }
       if (mounted) {
@@ -205,7 +216,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
         );
       }
     } catch (e) {
-      setState(() => _saving = false);
+      formNotifier.setSaving(false);
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
@@ -213,6 +224,8 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   }
 
   Widget _buildIconPicker(ColorScheme colorScheme) {
+    final selectedIcon = ref.watch(categoryFormProvider).selectedIcon;
+    final formNotifier = ref.read(categoryFormProvider.notifier);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -232,11 +245,11 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             itemCount: categoryEmojiOptions.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
-                final selected = _selectedIcon.isEmpty;
+                final selected = selectedIcon.isEmpty;
                 return IconCell(
                   selected: selected,
                   colorScheme: colorScheme,
-                  onTap: () => setState(() => _selectedIcon = ''),
+                  onTap: () => formNotifier.setSelectedIcon(''),
                   child: Icon(
                     Icons.close,
                     size: 20,
@@ -247,11 +260,11 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 );
               }
               final emoji = categoryEmojiOptions[index - 1];
-              final selected = _selectedIcon == emoji;
+              final selected = selectedIcon == emoji;
               return IconCell(
                 selected: selected,
                 colorScheme: colorScheme,
-                onTap: () => setState(() => _selectedIcon = emoji),
+                onTap: () => formNotifier.setSelectedIcon(emoji),
                 child: Text(emoji, style: const TextStyle(fontSize: 20)),
               );
             },
@@ -264,6 +277,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final formState = ref.watch(categoryFormProvider);
+    final isActive = formState.isActive;
+    final saving = formState.saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -339,13 +355,15 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                     title: const Text(ProductsLabels.categoryVisibility),
                     subtitle: Text(
-                      _isActive ? ProductsLabels.categoryVisible : ProductsLabels.categoryHiddenState,
+                      isActive ? ProductsLabels.categoryVisible : ProductsLabels.categoryHiddenState,
                     ),
-                    value: _isActive,
-                    onChanged: _saving
+                    value: isActive,
+                    onChanged: saving
                         ? null
                         : (value) {
-                            setState(() => _isActive = value);
+                            ref
+                                .read(categoryFormProvider.notifier)
+                                .setIsActive(value);
                           },
                   ),
                 ),
@@ -357,15 +375,15 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _saving
+                    onPressed: saving
                         ? null
                         : () => Navigator.of(context).pop(),
                     child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
+                    onPressed: saving ? null : _save,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,

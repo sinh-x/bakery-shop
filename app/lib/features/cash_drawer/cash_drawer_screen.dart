@@ -325,6 +325,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     if (!context.mounted) return;
     final result = await showOpenDrawerDialog(
       context,
+      ref,
       referenceBalance: accountingBalance1101,
       previousCloseCountedAmount: previousClose,
     );
@@ -427,6 +428,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     final expectedBalance = drawer?.expectedBalance ?? 0;
     final result = await showCashInDialog(
       context,
+      ref,
       staff: staff,
       expectedBalance: expectedBalance,
     );
@@ -452,6 +454,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     final expectedBalance = drawer?.expectedBalance ?? 0;
     final result = await showCashOutDialog(
       context,
+      ref,
       staff: staff,
       expectedBalance: expectedBalance,
     );
@@ -476,6 +479,7 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // balance for reconciliation reference.
     final result = await showCloseDrawerDialog(
       context,
+      ref,
       expectedBalance: drawer.expectedBalance,
       accountingBalance1101: drawer.accountingBalance1101,
     );

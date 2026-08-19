@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
+import '../../providers/order_print_dialog_notifiers.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Internal receipt print dialog shown when confirming a work item that has
 /// not yet been printed. Offers to print the work ticket(s) immediately.
@@ -25,14 +26,8 @@ class OrderInternalPrintDialog extends ConsumerStatefulWidget {
 
 class _OrderInternalPrintDialogState
     extends ConsumerState<OrderInternalPrintDialog> {
-  bool _printing = false;
-  String _statusText = '';
-
   Future<void> _printInternal() async {
-    setState(() {
-      _printing = true;
-      _statusText = SharedLabels.printingInternalReceipt;
-    });
+    ref.read(orderWorkItemPrintProvider.notifier).startPrinting();
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
@@ -59,7 +54,9 @@ class _OrderInternalPrintDialogState
       }
 
       for (final id in itemIds) {
-        setState(() => _statusText = SharedLabels.printingInternalReceipt);
+        ref
+            .read(orderWorkItemPrintProvider.notifier)
+            .setStatusText(SharedLabels.printingInternalReceipt);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
@@ -79,16 +76,17 @@ class _OrderInternalPrintDialogState
       }
     } finally {
       if (mounted) {
-        setState(() => _printing = false);
+        ref.read(orderWorkItemPrintProvider.notifier).finishPrinting();
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(orderWorkItemPrintProvider);
     return AlertDialog(
       title: const Text(SharedLabels.printChecklistTitle),
-      content: _printing
+      content: state.printing
           ? SizedBox(
               height: 80,
               child: Column(
@@ -97,7 +95,7 @@ class _OrderInternalPrintDialogState
                   const CircularProgressIndicator(),
                   const SizedBox(height: 12),
                   Text(
-                    _statusText,
+                    state.statusText,
                     style: Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -107,10 +105,10 @@ class _OrderInternalPrintDialogState
           : const Text(SharedLabels.printInternalPrompt),
       actions: [
         TextButton(
-          onPressed: _printing ? null : () => Navigator.pop(context),
+          onPressed: state.printing ? null : () => Navigator.pop(context),
           child: const Text(SharedLabels.printSkip),
         ),
-        if (!_printing)
+        if (!state.printing)
           FilledButton(onPressed: _printInternal, child: const Text(SharedLabels.print)),
       ],
     );

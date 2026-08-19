@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/stock_service.dart';
+import '../providers/stock_action_sheet_notifier.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
@@ -39,9 +40,6 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   final _noteController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
-  bool _isLoading = false;
-  int? _selectedNormalizedPrice;
-
   String get _title {
     switch (widget.actionType) {
       case ActionType.restock:
@@ -76,15 +74,24 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   void initState() {
     super.initState();
     final perChip = widget.item.perChip;
+    int? selected;
     if (perChip.isNotEmpty) {
       final provided = widget.initialPrice;
-      _selectedNormalizedPrice = (provided != null &&
+      selected = (provided != null &&
               perChip.any((c) => c.normalizedPrice == provided))
           ? provided
           : perChip.first.normalizedPrice;
     } else {
-      _selectedNormalizedPrice = null;
+      selected = null;
     }
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(stockActionSheetProvider.notifier)
+          .seedSelectedNormalizedPrice(selected);
+    });
   }
 
   Future<void> _submit() async {
@@ -96,7 +103,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    ref.read(stockActionSheetProvider.notifier).setLoading(true);
+    final selectedNormalizedPrice =
+        ref.read(stockActionSheetProvider).selectedNormalizedPrice;
 
     try {
       final service = ref.read(stockServiceProvider);
@@ -106,27 +115,27 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
             widget.item.productId,
             quantity,
             note: _noteController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
         case ActionType.waste:
           await service.waste(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
         case ActionType.adjust:
           await service.adjust(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
       }
       widget.onDone();
     } catch (e) {
       debugPrint('Stock action failed: $e');
-      setState(() => _isLoading = false);
+      ref.read(stockActionSheetProvider.notifier).setLoading(false);
       if (mounted) {
         showTopSnackBar(context, StockLabels.loiHeThong, backgroundColor: Colors.red);
       }
@@ -135,6 +144,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final sheetState = ref.watch(stockActionSheetProvider);
+    final isLoading = sheetState.isLoading;
+    final selectedNormalizedPrice = sheetState.selectedNormalizedPrice;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -206,7 +218,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
                 if (widget.item.perChip.isNotEmpty) ...[
                   DropdownButtonFormField<int>(
-                    initialValue: _selectedNormalizedPrice,
+                    initialValue: selectedNormalizedPrice,
                     decoration: const InputDecoration(
                       labelText: StockLabels.tuyChonGia,
                       border: OutlineInputBorder(),
@@ -226,7 +238,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                         )
                         .toList(),
                     onChanged: (value) {
-                      setState(() => _selectedNormalizedPrice = value);
+                      ref
+                          .read(stockActionSheetProvider.notifier)
+                          .setSelectedNormalizedPrice(value);
                     },
                   ),
                   const SizedBox(height: 12),
@@ -321,8 +335,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
                 // Submit button
                 FilledButton(
-                  onPressed: _isLoading ? null : _submit,
-                  child: _isLoading
+                  onPressed: isLoading ? null : _submit,
+                  child: isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,

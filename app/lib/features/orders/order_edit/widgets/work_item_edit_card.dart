@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,7 @@ import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
+import '../../providers/work_item_edit_card_notifier.dart';
 import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/candle_type_radio_group.dart';
@@ -28,10 +31,6 @@ class WorkItemEditCard extends ConsumerStatefulWidget {
 }
 
 class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
-  bool _expanded = true;
-  bool _isBirthday = false;
-  bool _rutTien = false;
-  String? _candleType;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
@@ -47,21 +46,23 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   static const int _cashFeeStep = 5000;
   static const int _cashAmountStep = 100000;
   static const int _minCashAmount = 100000;
-  bool _editingCashAmount = false;
-  String _savedCashAmount = '';
-  String _savedCashFee = '';
-
-  // Trưng bày markup UI state (DG-342 Phase 1 — FR1/FR2/AC1).
-  // Selling price is entered in thousands of đồng (",000đ" suffix); the floor
-  // warning shows when the entered value falls below the assigned (COGS
-  // anchor) price. On save the selling price is clamped to the assigned
-  // price so a unitPrice < assignedPrice row is never persisted.
-  String? _floorWarning;
 
   @override
   void initState() {
     super.initState();
-    _isBirthday = widget.item.isBirthday;
+    final isBirthday = widget.item.isBirthday;
+    final rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
+    final candleType = _resolveInitialCandleType();
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(workItemEditCardProvider(widget.item.id).notifier).seed(
+              isBirthday: isBirthday,
+              rutTien: rutTien,
+              candleType: candleType,
+            );
+      }
+    });
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(
       text: widget.item.age != null ? '${widget.item.age}' : '',
@@ -78,27 +79,25 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     _cashFeeCtrl = TextEditingController(
       text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee',
     );
-    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
-    // AC1/AC7: default candle type so the radio group renders a default
-    // selection (DG-340 Phase 2 — FR1/AC1).
-    //
-    // DG-361 Phase 1 — FR2/AC2: default to `nen_so` (Nến số) when birthday
-    // is checked and no prior selection exists; otherwise default to
-    // `khong_nen`. The default lives in the local field only and is NOT
-    // persisted until the user explicitly picks an option.
-    final storedCandle = widget.item.attributes['candle_type']?.toString();
-    if (storedCandle != null && storedCandle.isNotEmpty) {
-      _candleType = storedCandle;
-    } else if (_isBirthday) {
-      _candleType = 'nen_so';
-    } else {
-      _candleType = 'khong_nen';
-    }
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
     _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
     _cashAmountFocus = FocusNode()..addListener(_onCashAmountFocusChange);
     _cashFeeFocus = FocusNode()..addListener(_onCashFeeFocusChange);
+  }
+
+  /// Resolve the initial candle type for the notifier seed. Mirrors the
+  /// pre-migration logic that lived in `initState`.
+  String? _resolveInitialCandleType() {
+    final storedCandle = widget.item.attributes['candle_type']?.toString();
+    final isBirthday = widget.item.isBirthday;
+    if (storedCandle != null && storedCandle.isNotEmpty) {
+      return storedCandle;
+    } else if (isBirthday) {
+      return 'nen_so';
+    } else {
+      return 'khong_nen';
+    }
   }
 
   /// Assigned (COGS anchor) price for trưng bày markup — the existing
@@ -141,24 +140,25 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   void _commitMarkupPrice() {
     final text = _priceCtrl.text.trim();
     final thousands = int.tryParse(text);
+    final notifier = ref.read(workItemEditCardProvider(widget.item.id).notifier);
     if (thousands == null) {
-      setState(() => _floorWarning = null);
+      notifier.clearFloorWarning();
       return;
     }
     final selling = thousands.toDouble() * 1000;
     final assigned = _assignedPrice;
     final clamped = selling < assigned ? assigned : selling;
-    setState(() {
-      _floorWarning = selling < assigned ? OrdersLabels.markupFloorWarning : null;
-      // Reflect the clamped value back into the thousands-input field so the
-      // displayed text matches what was persisted.
-      _priceCtrl.text = (clamped / 1000).toInt().toString();
-    });
+    notifier.setFloorWarning(
+        selling < assigned ? OrdersLabels.markupFloorWarning : null);
+    // Reflect the clamped value back into the thousands-input field so the
+    // displayed text matches what was persisted.
+    _priceCtrl.text = (clamped / 1000).toInt().toString();
     _editItem(unitPrice: clamped);
   }
 
   void _onAgeFocusChange() {
-    if (!_ageFocus.hasFocus && _isBirthday) {
+    final cardState = ref.read(workItemEditCardProvider(widget.item.id));
+    if (!_ageFocus.hasFocus && cardState.isBirthday) {
       final age = int.tryParse(_ageCtrl.text.trim());
       _editItem(age: age);
     }
@@ -177,7 +177,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   }
 
   void _saveCashAttributes() {
-    if (!_rutTien) return;
+    final cardState = ref.read(workItemEditCardProvider(widget.item.id));
+    if (!cardState.rutTien) return;
     final cashAmount = _cashAmountCtrl.text.trim();
     final cashFee = _cashFeeCtrl.text.trim();
     final attrs = <String, dynamic>{
@@ -193,8 +194,9 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   /// the current item attributes. A "Không nến" selection (or birthday
   /// unchecked) removes the key entirely so AC7 (absent = no candle) holds.
   void _saveCandleType(String? value) {
+    final cardState = ref.read(workItemEditCardProvider(widget.item.id));
     final next = Map<String, dynamic>.from(widget.item.attributes);
-    if (_isBirthday && value != null && value != 'khong_nen') {
+    if (cardState.isBirthday && value != null && value != 'khong_nen') {
       next['candle_type'] = value;
     } else {
       next.remove('candle_type');
@@ -402,14 +404,14 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               if (!nowSelected) return;
               final next = Map<String, dynamic>.from(widget.item.attributes);
               next['price_chip_label'] = chip.label;
-              setState(() {
-                _priceCtrl.text = isTrungBay
-                    ? (chip.price / 1000).toInt().toString()
-                    : chip.price.toInt().toString();
-                // Selecting a chip resets the floor warning because the
-                // selling price equals the assigned (COGS anchor) price.
-                _floorWarning = null;
-              });
+              _priceCtrl.text = isTrungBay
+                  ? (chip.price / 1000).toInt().toString()
+                  : chip.price.toInt().toString();
+              // Selecting a chip resets the floor warning because the
+              // selling price equals the assigned (COGS anchor) price.
+              ref
+                  .read(workItemEditCardProvider(widget.item.id).notifier)
+                  .clearFloorWarning();
               _editItem(
                 unitPrice: chip.price,
                 assignedPrice: isTrungBay ? chip.price : null,
@@ -431,6 +433,14 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     final product = _findProduct();
     final isTrungBay = product.isTrungBay;
     final useInventory = item.attributes.useInventory;
+    final cardState = ref.watch(workItemEditCardProvider(widget.item.id));
+    final expanded = cardState.expanded;
+    final isBirthday = cardState.isBirthday;
+    final rutTien = cardState.rutTien;
+    final candleType = cardState.candleType;
+    final editingCashAmount = cardState.editingCashAmount;
+    final floorWarning = cardState.floorWarning;
+    final notifier = ref.read(workItemEditCardProvider(widget.item.id).notifier);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -522,8 +532,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                   onPressed: _isSwapAllowed ? _changeProduct : null,
                 ),
                 IconButton(
-                  icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 20),
-                  onPressed: () => setState(() => _expanded = !_expanded),
+                  icon: Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                  onPressed: notifier.toggleExpanded,
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
@@ -533,7 +543,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
               ],
             ),
           ),
-          if (_expanded) ...[
+          if (expanded) ...[
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -570,11 +580,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       ),
                       keyboardType: TextInputType.number,
                     ),
-                    if (_floorWarning != null)
+                    if (floorWarning != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          _floorWarning!,
+                          floorWarning,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.error,
                           ),
@@ -622,22 +632,14 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                   ),
                   const SizedBox(height: 4),
                   CheckboxListTile(
-                    value: _isBirthday,
+                    value: isBirthday,
                     onChanged: (v) {
                       final newVal = v ?? false;
-                      setState(() {
-                        _isBirthday = newVal;
-                        // DG-361 Phase 1 — FR2/AC2: when birthday is checked
-                        // and the user has not yet picked a candle type
-                        // (still the initial default), pre-select `nen_so`
-                        // as the default. Not persisted until user interacts.
-                        if (newVal &&
-                            _candleType == 'khong_nen' &&
-                            !widget.item.attributes
-                                .containsKey('candle_type')) {
-                          _candleType = 'nen_so';
-                        }
-                      });
+                      // DG-361 Phase 1 — FR2/AC2: when birthday is checked
+                      // and the user has not yet picked a candle type
+                      // (still the initial default), pre-select `nen_so`
+                      // as the default. Not persisted until user interacts.
+                      notifier.setBirthday(newVal, candleDefault: 'nen_so');
                       _editItem(isBirthday: newVal);
                       // When birthday is unchecked, clear any stored
                       // candle_type so AC7 (absent = no candle) holds.
@@ -652,7 +654,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
-                  if (_isBirthday) ...[
+                  if (isBirthday) ...[
                     TextFormField(
                       controller: _ageCtrl,
                       focusNode: _ageFocus,
@@ -679,9 +681,9 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       ),
                     ),
                     CandleTypeRadioGroup(
-                      groupValue: _candleType,
+                      groupValue: candleType,
                       onChanged: (v) {
-                        setState(() => _candleType = v);
+                        notifier.setCandleType(v);
                         _saveCandleType(v);
                       },
                     ),
@@ -689,22 +691,28 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                   ],
                   if (widget.item.attributes.containsKey('rut_tien')) ...[
                     CheckboxListTile(
-                      value: _rutTien,
+                      value: rutTien,
                       onChanged: (v) {
                         final newVal = v ?? false;
-                        setState(() {
-                          _rutTien = newVal;
-                          _editingCashAmount = false;
-                        });
+                        notifier.setRutTien(newVal);
                         if (!newVal) {
-                          _savedCashAmount = _cashAmountCtrl.text.trim();
-                          _savedCashFee = _cashFeeCtrl.text.trim();
+                          // Preserve the current cash field values so the
+                          // user can re-enable without re-typing.
+                          notifier.saveCashAttributes(
+                            _cashAmountCtrl.text.trim(),
+                            _cashFeeCtrl.text.trim(),
+                          );
                           _cashAmountCtrl.clear();
                           _cashFeeCtrl.clear();
                           _editItem(attributes: {});
                         } else {
-                          if (_savedCashAmount.isNotEmpty) _cashAmountCtrl.text = _savedCashAmount;
-                          if (_savedCashFee.isNotEmpty) _cashFeeCtrl.text = _savedCashFee;
+                          // Restore saved values if present.
+                          if (cardState.savedCashAmount.isNotEmpty) {
+                            _cashAmountCtrl.text = cardState.savedCashAmount;
+                          }
+                          if (cardState.savedCashFee.isNotEmpty) {
+                            _cashFeeCtrl.text = cardState.savedCashFee;
+                          }
                           _editItem(
                             attributes: {
                               'rut_tien': 'true',
@@ -721,7 +729,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),
-                    if (_rutTien) ...[
+                    if (rutTien) ...[
                       Row(
                         children: [
                           const Text('${OrdersLabels.soTienRut}: '),
@@ -731,10 +739,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                               if (current > _minCashAmount) {
                                 final next = current - _cashAmountStep;
                                 final clamped = next < _minCashAmount ? _minCashAmount : next;
-                                setState(() {
-                                  _cashAmountCtrl.text = '$clamped';
-                                  _editingCashAmount = false;
-                                });
+                                _cashAmountCtrl.text = '$clamped';
+                                notifier.setEditingCashAmount(false);
                                 _saveCashAttributes();
                               }
                             },
@@ -744,8 +750,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _editingCashAmount = true),
-                              child: _editingCashAmount
+                              onTap: () => notifier.setEditingCashAmount(true),
+                              child: editingCashAmount
                                   ? Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 8),
                                       child: TextFormField(
@@ -769,7 +775,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                                             _cashAmountCtrl.text = '$_minCashAmount';
                                           }
                                           _saveCashAttributes();
-                                          setState(() => _editingCashAmount = false);
+                                          notifier.setEditingCashAmount(false);
                                         },
                                       ),
                                     )
@@ -788,10 +794,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                               final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
                               final next = current + _cashAmountStep;
                               final clamped = next < _minCashAmount ? _minCashAmount : next;
-                              setState(() {
-                                _cashAmountCtrl.text = '$clamped';
-                                _editingCashAmount = false;
-                              });
+                              _cashAmountCtrl.text = '$clamped';
+                              notifier.setEditingCashAmount(false);
                               _saveCashAttributes();
                             },
                             icon: const Icon(Icons.add, size: 16),

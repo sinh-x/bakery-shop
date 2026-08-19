@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/event.dart';
 import '../../../data/providers/events_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
+import '../providers/event_history_filter_notifier.dart';
 import 'event_card_photo_count.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -16,6 +17,32 @@ const _kDateRangeLabels = {
   _DateRange.month: EventsLabels.filterMonth,
   _DateRange.all: EventsLabels.filterAll,
 };
+
+EventHistoryDateRange _toPublicRange(_DateRange r) {
+  switch (r) {
+    case _DateRange.today:
+      return EventHistoryDateRange.today;
+    case _DateRange.week:
+      return EventHistoryDateRange.week;
+    case _DateRange.month:
+      return EventHistoryDateRange.month;
+    case _DateRange.all:
+      return EventHistoryDateRange.all;
+  }
+}
+
+_DateRange _fromPublicRange(EventHistoryDateRange r) {
+  switch (r) {
+    case EventHistoryDateRange.today:
+      return _DateRange.today;
+    case EventHistoryDateRange.week:
+      return _DateRange.week;
+    case EventHistoryDateRange.month:
+      return _DateRange.month;
+    case EventHistoryDateRange.all:
+      return _DateRange.all;
+  }
+}
 
 const _kTypeIcons = <String, IconData>{
   'note': Icons.edit_note,
@@ -88,9 +115,6 @@ class EventHistoryList extends ConsumerStatefulWidget {
 }
 
 class _EventHistoryListState extends ConsumerState<EventHistoryList> {
-  _DateRange _dateRange = _DateRange.today;
-  String? _typeFilter;
-  bool _searchExpanded = false;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -116,11 +140,12 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
   }
 
   void _applyFilters() {
+    final filter = ref.read(eventHistoryFilterProvider);
     final search = _searchCtrl.text.trim();
     ref.read(eventsProvider.notifier).refresh(
-          type: _typeFilter,
+          type: filter.typeFilter,
           search: search.isNotEmpty ? search : null,
-          since: _sinceFor(_dateRange),
+          since: _sinceFor(_fromPublicRange(filter.dateRange)),
         );
   }
 
@@ -128,6 +153,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final events = ref.watch(eventsProvider);
+    final filter = ref.watch(eventHistoryFilterProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -136,7 +162,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
           padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
           child: Text(EventsLabels.recentEvents, style: theme.textTheme.titleMedium),
         ),
-        _buildFilterBar(theme),
+        _buildFilterBar(theme, filter),
         const Divider(height: 1),
         Expanded(
           child: events.when(
@@ -179,7 +205,9 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
     );
   }
 
-  Widget _buildFilterBar(ThemeData theme) {
+  Widget _buildFilterBar(ThemeData theme, EventHistoryFilterState filter) {
+    final notifier = ref.read(eventHistoryFilterProvider.notifier);
+    final dateRange = _fromPublicRange(filter.dateRange);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -194,9 +222,9 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
                     label: Text(_kDateRangeLabels[range]!),
-                    selected: _dateRange == range,
+                    selected: dateRange == range,
                     onSelected: (_) {
-                      setState(() => _dateRange = range);
+                      notifier.setDateRange(_toPublicRange(range));
                       _applyFilters();
                     },
                   ),
@@ -209,7 +237,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
           Row(
             children: [
               DropdownButton<String?>(
-                value: _typeFilter,
+                value: filter.typeFilter,
                 hint: const Text(EventsLabels.filterAll),
                 underline: const SizedBox.shrink(),
                 isDense: true,
@@ -236,11 +264,11 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                   ),
                 ],
                 onChanged: (v) {
-                  setState(() => _typeFilter = v);
+                  notifier.setTypeFilter(v);
                   _applyFilters();
                 },
               ),
-              if (_searchExpanded) ...[
+              if (filter.searchExpanded) ...[
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -258,10 +286,8 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.close, size: 18),
                         onPressed: () {
-                          setState(() {
-                            _searchExpanded = false;
-                            _searchCtrl.clear();
-                          });
+                          notifier.collapseSearch();
+                          _searchCtrl.clear();
                           _applyFilters();
                         },
                       ),
@@ -277,7 +303,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
                 IconButton(
                   icon: const Icon(Icons.search),
                   tooltip: EventsLabels.searchEvents,
-                  onPressed: () => setState(() => _searchExpanded = true),
+                  onPressed: () => notifier.setSearchExpanded(true),
                 ),
               ],
             ],

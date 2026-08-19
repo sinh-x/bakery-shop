@@ -1,5 +1,4 @@
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/receipt_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
+import 'providers/receipt_preview_notifier.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'receipt_preview_print_stub.dart'
@@ -33,11 +33,6 @@ class ReceiptPreviewScreen extends ConsumerStatefulWidget {
 }
 
 class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
-  Uint8List? _imageBytes;
-  String? _error;
-  bool _loading = true;
-  bool _printing = false;
-
   @override
   void initState() {
     super.initState();
@@ -53,23 +48,18 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         itemId: widget.itemId,
       );
       if (mounted) {
-        setState(() {
-          _imageBytes = bytes;
-          _loading = false;
-        });
+        ref.read(receiptPreviewProvider.notifier).setImage(bytes);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
+        ref.read(receiptPreviewProvider.notifier).setError(e.toString());
       }
     }
   }
 
   Future<void> _shareImage() async {
-    if (_imageBytes == null) return;
+    final imageBytes = ref.read(receiptPreviewProvider).imageBytes;
+    if (imageBytes == null) return;
     try {
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}.png';
@@ -77,7 +67,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       await SharePlus.instance.share(
         ShareParams(
           files: [
-            XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
+            XFile.fromData(imageBytes, mimeType: 'image/png', name: fileName),
           ],
           text: '${widget.receiptType.label} - ${widget.orderRef}',
         ),
@@ -90,11 +80,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   }
 
   Future<void> _saveImage() async {
-    if (_imageBytes == null) return;
+    final imageBytes = ref.read(receiptPreviewProvider).imageBytes;
+    if (imageBytes == null) return;
     try {
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}_${DateTime.now().millisecondsSinceEpoch}.png';
-      await platform.saveToFile(_imageBytes!, fileName);
+      await platform.saveToFile(imageBytes, fileName);
       if (mounted) {
         showTopSnackBar(context, SharedLabels.receiptSaved);
       }
@@ -112,7 +103,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         widget.receiptType == ReceiptType.workTicket &&
         orderAsync.value?.status == 'new';
 
-    setState(() => _printing = true);
+    ref.read(receiptPreviewProvider.notifier).setPrinting(true);
     try {
       final receiptService = ref.read(receiptServiceProvider);
       final printedBy = ref.read(loggedByProvider);
@@ -141,28 +132,29 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _printing = false);
+      if (mounted) ref.read(receiptPreviewProvider.notifier).setPrinting(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(receiptPreviewProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.receiptType.label),
         actions: const [AppBarOverflowMenu()],
       ),
-      body: _buildBody(),
-      bottomNavigationBar: _imageBytes != null ? _buildActions() : null,
+      body: _buildBody(state),
+      bottomNavigationBar: state.imageBytes != null ? _buildActions(state) : null,
     );
   }
 
-  Widget _buildBody() {
-    if (_loading) {
+  Widget _buildBody(ReceiptPreviewState state) {
+    if (state.loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null) {
+    if (state.error != null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -170,17 +162,14 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
             const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             Text(
-              _error!,
+              state.error!,
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () {
-                setState(() {
-                  _loading = true;
-                  _error = null;
-                });
+                ref.read(receiptPreviewProvider.notifier).retry();
                 _fetchReceipt();
               },
               child: const Text(SharedLabels.retry),
@@ -190,7 +179,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       );
     }
 
-    if (_imageBytes == null) {
+    if (state.imageBytes == null) {
       return const Center(child: Text(SharedLabels.errorLoading));
     }
 
@@ -199,7 +188,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         minScale: 0.5,
         maxScale: 3.0,
         child: Image.memory(
-          _imageBytes!,
+          state.imageBytes!,
           fit: BoxFit.contain,
           width: double.infinity,
         ),
@@ -207,7 +196,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     );
   }
 
-  Widget _buildActions() {
+  Widget _buildActions(ReceiptPreviewState state) {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -231,8 +220,8 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: FilledButton.icon(
-                onPressed: _printing ? null : _printReceipt,
-                icon: _printing
+                onPressed: state.printing ? null : _printReceipt,
+                icon: state.printing
                     ? const SizedBox(
                         width: 16,
                         height: 16,
@@ -242,7 +231,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
                         ),
                       )
                     : const Icon(Icons.print),
-                label: Text(_printing ? 'Đang in...' : SharedLabels.print),
+                label: Text(state.printing ? 'Đang in...' : SharedLabels.print),
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.secondary,
                 ),

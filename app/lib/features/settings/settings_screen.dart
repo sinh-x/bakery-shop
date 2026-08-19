@@ -16,6 +16,7 @@ import 'package:bakery_app/shared/labels/templates.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
+import 'providers/settings_screen_notifier.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -32,15 +33,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   // Server URL section
   late TextEditingController _urlController;
-  bool _testing = false;
-  ConnectionResult? _testResult;
 
   // Staff section
   late TextEditingController _manualNameCtrl;
 
-  // Version info
-  String _appVersion = '';
-  String _serverVersion = SharedLabels.serverVersionLoading;
+  late final bool _isAdmin;
 
   @override
   void initState() {
@@ -52,8 +49,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
   }
-
-  late final bool _isAdmin;
 
   @override
   void didChangeDependencies() {
@@ -77,21 +72,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     try {
       final info = await PackageInfo.fromPlatform();
       if (mounted) {
-        setState(() {
-          _appVersion = '${info.version}+${info.buildNumber}';
-        });
+        ref
+            .read(settingsScreenProvider.notifier)
+            .setAppVersion('${info.version}+${info.buildNumber}');
       }
     } catch (_) {
-      if (mounted) setState(() => _appVersion = '—');
+      if (mounted) {
+        ref.read(settingsScreenProvider.notifier).setAppVersion('—');
+      }
     }
   }
 
   Future<void> _fetchServerVersion(String baseUrl) async {
+    final notifier = ref.read(settingsScreenProvider.notifier);
     if (baseUrl.isEmpty) {
-      setState(() => _serverVersion = SharedLabels.serverVersionError);
+      notifier.setServerVersion(SharedLabels.serverVersionError);
       return;
     }
-    setState(() => _serverVersion = SharedLabels.serverVersionLoading);
+    notifier.setServerVersion(SharedLabels.serverVersionLoading);
     try {
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 5),
@@ -100,12 +98,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final response = await dio.get('$baseUrl/api/health');
       if (mounted) {
         final data = response.data as Map<String, dynamic>?;
-        setState(() {
-          _serverVersion = (data?['version'] as String?) ?? '—';
-        });
+        notifier.setServerVersion((data?['version'] as String?) ?? '—');
       }
     } catch (_) {
-      if (mounted) setState(() => _serverVersion = SharedLabels.serverVersionError);
+      if (mounted) {
+        notifier.setServerVersion(SharedLabels.serverVersionError);
+      }
     }
   }
 
@@ -113,10 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
-    setState(() {
-      _testing = true;
-      _testResult = null;
-    });
+    ref.read(settingsScreenProvider.notifier).setTesting(true);
 
     try {
       final dio = Dio(BaseOptions(
@@ -126,19 +121,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final response = await dio.get('$url/api/health');
       if (mounted) {
         final data = response.data as Map<String, dynamic>?;
-        setState(() {
-          _testing = false;
-          _testResult = ConnectionResult(success: response.statusCode == 200);
-          // Also update server version when test succeeds
-          _serverVersion = (data?['version'] as String?) ?? '—';
-        });
+        ref.read(settingsScreenProvider.notifier).setTestResult(
+              ConnectionResult(success: response.statusCode == 200),
+              serverVersion: (data?['version'] as String?) ?? '—',
+            );
       }
     } catch (_) {
       if (mounted) {
-        setState(() {
-          _testing = false;
-          _testResult = const ConnectionResult(success: false);
-        });
+        ref.read(settingsScreenProvider.notifier).setTestResult(
+              const ConnectionResult(success: false),
+            );
       }
     }
   }
@@ -160,6 +152,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Widget build(BuildContext context) {
     final currentUrl = ref.watch(apiBaseUrlProvider);
     final auth = ref.watch(authProvider);
+    final screenState = ref.watch(settingsScreenProvider);
+    final testing = screenState.testing;
+    final testResult = screenState.testResult;
+    final appVersion = screenState.appVersion;
+    final serverVersion = screenState.serverVersion;
 
     // Sync URL controller on first build
     if (_urlController.text.isEmpty && currentUrl.isNotEmpty) {
@@ -254,11 +251,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 // App version
                 InfoRow(
                   label: SharedLabels.appVersion,
-                  value: _appVersion.isEmpty ? '...' : _appVersion,
+                  value: appVersion.isEmpty ? '...' : appVersion,
                 ),
                 const SizedBox(height: 8),
                 // Server version
-                InfoRow(label: SharedLabels.serverVersion, value: _serverVersion),
+                InfoRow(label: SharedLabels.serverVersion, value: serverVersion),
                 const SizedBox(height: 16),
                 // Printer paper mode (DG-183 Phase 2)
                 const PaperModeSection(),
@@ -287,8 +284,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   keyboardType: TextInputType.url,
                   autocorrect: false,
                   onChanged: (_) {
-                    if (_testResult != null) {
-                      setState(() => _testResult = null);
+                    if (testResult != null) {
+                      ref
+                          .read(settingsScreenProvider.notifier)
+                          .clearTestResult();
                     }
                   },
                 ),
@@ -297,15 +296,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _testing ? null : _testConnection,
-                        icon: _testing
+                        onPressed: testing ? null : _testConnection,
+                        icon: testing
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.wifi_find),
-                        label: Text(_testing ? SharedLabels.testing : SharedLabels.testConnection),
+                        label: Text(testing ? SharedLabels.testing : SharedLabels.testConnection),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -318,10 +317,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     ),
                   ],
                 ),
-                if (_testResult != null) ...[
+                if (testResult != null) ...[
                   const SizedBox(height: 16),
                   Card(
-                    color: _testResult!.success
+                    color: testResult.success
                         ? Colors.green.shade50
                         : Colors.red.shade50,
                     child: Padding(
@@ -329,20 +328,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       child: Row(
                         children: [
                           Icon(
-                            _testResult!.success
+                            testResult.success
                                 ? Icons.check_circle
                                 : Icons.error,
-                            color: _testResult!.success
+                            color: testResult.success
                                 ? Colors.green
                                 : Colors.red,
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            _testResult!.success
+                            testResult.success
                                 ? SharedLabels.connectionSuccess
                                 : SharedLabels.connectionFailed,
                             style: TextStyle(
-                              color: _testResult!.success
+                              color: testResult.success
                                   ? Colors.green.shade800
                                   : Colors.red.shade800,
                               fontWeight: FontWeight.w500,

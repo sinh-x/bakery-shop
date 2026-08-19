@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
 import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
+import '../providers/product_picker_notifier.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../products/widgets/product_card.dart';
@@ -43,23 +46,21 @@ class ProductPickerPage extends ConsumerStatefulWidget {
 }
 
 class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
-  late Set<int> _selectedIds;
-  bool _multiSelectMode = false;
-
   @override
   void initState() {
     super.initState();
-    _selectedIds = widget.selectedItems.map((i) => i.product.id).toSet();
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(productPickerProvider.notifier)
+            .seedInitial(widget.selectedItems.map((i) => i.product.id).toSet());
+      }
+    });
   }
 
   void _toggleProduct(Product product) {
-    setState(() {
-      if (_selectedIds.contains(product.id)) {
-        _selectedIds.remove(product.id);
-      } else {
-        _selectedIds.add(product.id);
-      }
-    });
+    ref.read(productPickerProvider.notifier).toggleProduct(product);
   }
 
   void _selectSingleProduct(Product product) {
@@ -89,20 +90,19 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   }
 
   void _enterMultiSelectMode(Product product) {
-    setState(() {
-      _multiSelectMode = true;
-      _selectedIds.add(product.id);
-    });
+    ref.read(productPickerProvider.notifier).enterMultiSelectMode(product);
   }
 
   void _onConfirm(List<Product> allProducts) {
+    final pickerState = ref.read(productPickerProvider);
+    final selectedIds = pickerState.selectedIds;
     // Remove items that were deselected
     widget.selectedItems.removeWhere(
-      (i) => !_selectedIds.contains(i.product.id),
+      (i) => !selectedIds.contains(i.product.id),
     );
 
     // Add newly selected products (quantity = 1)
-    for (final id in _selectedIds) {
+    for (final id in selectedIds) {
       final alreadyAdded = widget.selectedItems.any((i) => i.product.id == id);
       if (!alreadyAdded) {
         final product = allProducts.where((p) => p.id == id).firstOrNull;
@@ -177,18 +177,21 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     List<Product> allProducts,
     List<Category> activeCategories,
   ) {
+    final pickerState = ref.watch(productPickerProvider);
+    final multiSelectMode = pickerState.multiSelectMode;
+    final selectedIds = pickerState.selectedIds;
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Text(
-        _multiSelectMode && _selectedIds.isNotEmpty
-            ? '${_selectedIds.length} đã chọn'
+        multiSelectMode && selectedIds.isNotEmpty
+            ? '${selectedIds.length} đã chọn'
             : OrdersLabels.selectProducts,
       ),
       actions: [
-        if (_multiSelectMode)
+        if (multiSelectMode)
           IconButton(
             icon: const Icon(Icons.check),
             tooltip: 'Xác nhận',
@@ -216,6 +219,9 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     String baseUrl,
     String cacheBuster,
   ) {
+    final pickerState = ref.watch(productPickerProvider);
+    final selectedIds = pickerState.selectedIds;
+    final multiSelectMode = pickerState.multiSelectMode;
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -227,7 +233,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
       itemCount: products.length,
       itemBuilder: (_, i) {
         final product = products[i];
-        final selected = _selectedIds.contains(product.id);
+        final selected = selectedIds.contains(product.id);
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -236,14 +242,14 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
               photoBaseUrl: baseUrl,
               cacheBuster: cacheBuster,
               showPriceBadge: true,
-              onTap: _multiSelectMode
+              onTap: multiSelectMode
                   ? () => _toggleProduct(product)
                   : () => _selectSingleProduct(product),
-              onLongPress: _multiSelectMode || widget.singleSelect
+              onLongPress: multiSelectMode || widget.singleSelect
                   ? null
                   : () => _enterMultiSelectMode(product),
             ),
-            if (selected && _multiSelectMode)
+            if (selected && multiSelectMode)
               IgnorePointer(
                 child: Container(
                   decoration: BoxDecoration(

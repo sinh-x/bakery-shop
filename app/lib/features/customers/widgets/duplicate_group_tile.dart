@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/customer_service.dart';
 import '../../../shared/labels/customers.dart';
+import '../providers/duplicate_group_tile_notifier.dart';
 
 /// One duplicate candidate group row in the finder screen (FR7/AC4).
 ///
@@ -16,7 +18,7 @@ import '../../../shared/labels/customers.dart';
 /// more members have a merge path via batch merge (DG-369 Phase 3 — FR5/AC3).
 /// For exactly two selected members the single-pair merge flow (with swap
 /// affordance) is used; for 3+ the batch merge flow is used.
-class DuplicateGroupTile extends StatefulWidget {
+class DuplicateGroupTile extends ConsumerStatefulWidget {
   const DuplicateGroupTile({
     super.key,
     required this.group,
@@ -46,15 +48,14 @@ class DuplicateGroupTile extends StatefulWidget {
   final bool merging;
 
   @override
-  State<DuplicateGroupTile> createState() => _DuplicateGroupTileState();
+  ConsumerState<DuplicateGroupTile> createState() =>
+      _DuplicateGroupTileState();
 }
 
-class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
-  /// Ordered selection: first entry = primary (keep), remaining entries =
-  /// sources (merge-from). Tapping a selected member deselects it; tapping
-  /// the primary when sources are selected demotes it (the next source
-  /// becomes primary). Tapping a new member adds it as a source.
-  final List<int> _selectedIds = [];
+class _DuplicateGroupTileState extends ConsumerState<DuplicateGroupTile> {
+  late final NotifierProvider<DuplicateGroupTileNotifier,
+      DuplicateGroupTileState> _provider =
+      duplicateGroupTileProvider(widget.group.key);
 
   @override
   void didUpdateWidget(covariant DuplicateGroupTile oldWidget) {
@@ -62,18 +63,12 @@ class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
     // If the group's membership changed (e.g. after a refresh), drop stale
     // selection ids that no longer exist in the group.
     final validIds = widget.group.customers.map((c) => c.id).toSet();
-    _selectedIds.removeWhere((id) => !validIds.contains(id));
+    ref.read(_provider.notifier).pruneInvalidIds(validIds);
   }
 
   void _onMemberTap(DuplicateCustomerEntry entry) {
     if (widget.merging) return;
-    setState(() {
-      if (_selectedIds.contains(entry.id)) {
-        _selectedIds.remove(entry.id);
-        return;
-      }
-      _selectedIds.add(entry.id);
-    });
+    ref.read(_provider.notifier).toggleMember(entry.id);
   }
 
   String get _kindLabel => widget.group.kind == 'phone'
@@ -83,11 +78,13 @@ class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selectedCount = _selectedIds.length;
+    final selection = ref.watch(_provider);
+    final selectedIds = selection.selectedIds;
+    final selectedCount = selectedIds.length;
     final canMerge = selectedCount >= 2 && !widget.merging;
-    final primaryId = _selectedIds.isNotEmpty ? _selectedIds.first : null;
-    final sourceIds = _selectedIds.length >= 2
-        ? _selectedIds.skip(1).toSet()
+    final primaryId = selectedIds.isNotEmpty ? selectedIds.first : null;
+    final sourceIds = selectedIds.length >= 2
+        ? selectedIds.skip(1).toSet()
         : const <int>{};
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -132,7 +129,7 @@ class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
                 alignment: Alignment.centerRight,
                 child: FilledButton.tonalIcon(
                   onPressed: () {
-                    final selected = _selectedIds
+                    final selected = selectedIds
                         .map((id) => widget.group.customers
                             .firstWhere((c) => c.id == id))
                         .toList();
@@ -144,7 +141,7 @@ class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
                     // Clear selection after dispatching; the merge dialog
                     // will run, and the screen refresh will rebuild this
                     // tile.
-                    setState(_selectedIds.clear);
+                    ref.read(_provider.notifier).clearSelection();
                   },
                   icon: const Icon(Icons.merge_type, size: 18),
                   label: const Text(CustomersLabels.duplicateFinderMergeButton),
@@ -156,7 +153,7 @@ class _DuplicateGroupTileState extends State<DuplicateGroupTile> {
                 child: Text(
                   CustomersLabels.duplicateFinderPickTwoHint(
                     widget.group.customers.length,
-                    _selectedIds.length,
+                    selectedIds.length,
                   ),
                   style: theme.textTheme.bodySmall,
                 ),

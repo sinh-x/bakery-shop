@@ -10,6 +10,7 @@ import '../../data/models/cake_queue_item.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../data/providers/products_provider.dart';
+import 'providers/cake_queue_content_notifier.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -31,21 +32,16 @@ class CakeQueueContent extends ConsumerStatefulWidget {
 }
 
 class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
-  bool _includeReady = false;
-  DateFilterOption _selectedDateFilter = DateFilterOption.all;
-
-  /// Collapse state per status group. All groups start expanded by default.
-  /// Reset when the date filter or include-ready toggle changes (§11 risk
-  /// mitigation: collapse state reset on filter change).
-  final Map<String, bool> _collapsedGroups = {};
-
   Future<void> _onRefresh() async {
-    await ref.read(cakeQueueProvider(_includeReady).notifier).refresh();
+    final includeReady = ref.read(cakeQueueContentProvider).includeReady;
+    await ref.read(cakeQueueProvider(includeReady).notifier).refresh();
   }
 
   @override
   Widget build(BuildContext context) {
-    final queueAsync = ref.watch(cakeQueueProvider(_includeReady));
+    final queueState = ref.watch(cakeQueueContentProvider);
+    final includeReady = queueState.includeReady;
+    final queueAsync = ref.watch(cakeQueueProvider(includeReady));
     final theme = Theme.of(context);
 
     return Column(
@@ -53,22 +49,20 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
       children: [
         // Date filter chips (FR2)
         DateFilterChips(
-          selected: _selectedDateFilter,
-          onChanged: (option) => setState(() {
-            _selectedDateFilter = option;
-            _collapsedGroups.clear();
-          }),
+          selected: queueState.selectedDateFilter,
+          onChanged: (option) => ref
+              .read(cakeQueueContentProvider.notifier)
+              .setDateFilter(option),
         ),
         // Include-ready filter (FR4 — preserve existing behavior)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: FilterChip(
             label: const Text(OrdersLabels.includeReadyFilter),
-            selected: _includeReady,
-            onSelected: (v) => setState(() {
-              _includeReady = v;
-              _collapsedGroups.clear();
-            }),
+            selected: includeReady,
+            onSelected: (v) => ref
+                .read(cakeQueueContentProvider.notifier)
+                .setIncludeReady(v),
           ),
         ),
 
@@ -91,7 +85,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
             ),
             data: (items) {
               final filtered =
-                  filterCakeQueueByDate(items, _selectedDateFilter);
+                  filterCakeQueueByDate(items, queueState.selectedDateFilter);
               if (filtered.isEmpty) {
                 return Center(
                   child: Text(
@@ -135,20 +129,22 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
           if (item is String) {
             final status = item;
             final groupItems = grouped[status]!;
-            final isCollapsed = _collapsedGroups[status] ?? false;
+            final collapsedGroups = ref.read(cakeQueueContentProvider).collapsedGroups;
+            final isCollapsed = collapsedGroups[status] ?? false;
             return CakeQueueGroupHeader(
               status: status,
               count: groupItems.length,
               isCollapsed: isCollapsed,
-              onTap: () => setState(() {
-                _collapsedGroups[status] = !isCollapsed;
-              }),
+              onTap: () => ref
+                  .read(cakeQueueContentProvider.notifier)
+                  .toggleGroupCollapse(status),
             );
           }
           final queueItem = item as CakeQueueItem;
           // Skip rendering the card if its group is collapsed.
           final status = queueItem.orderStatus;
-          final isCollapsed = _collapsedGroups[status] ?? false;
+          final collapsedGroups = ref.read(cakeQueueContentProvider).collapsedGroups;
+          final isCollapsed = collapsedGroups[status] ?? false;
           if (isCollapsed) {
             return const SizedBox.shrink();
           }

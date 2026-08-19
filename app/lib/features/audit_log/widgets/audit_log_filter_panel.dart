@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/audit_log_service.dart';
 import '../../../shared/labels/audit_log.dart';
+import '../providers/audit_log_filter_panel_notifier.dart';
 
 /// Filter controls for the audit log screen (FR24: user, date range, entity
 /// type).
 ///
-/// The panel is a self-contained [StatefulWidget] because it manages local
-/// text-editing controllers for the username and date fields while the user
-/// edits them; the actual filter state lives in [AuditLogNotifier]. On
+/// The panel is a self-contained [ConsumerStatefulWidget] because it manages
+/// local text-editing controllers for the username and date fields while the
+/// user edits them; the actual filter state lives in [AuditLogNotifier]. On
 /// "Apply" the panel calls [onApply] with the assembled [AuditLogFilters].
 ///
 /// Per the Flutter coding standards (§4) the local text-controller state is
-/// an acceptable `setState` use case (text editing controllers).
-class AuditLogFilterPanel extends StatefulWidget {
+/// an acceptable `setState` use case (text editing controllers). The
+/// entity-type selection is owned by [auditLogFilterPanelProvider].
+class AuditLogFilterPanel extends ConsumerStatefulWidget {
   const AuditLogFilterPanel({
     super.key,
     required this.current,
@@ -26,14 +29,14 @@ class AuditLogFilterPanel extends StatefulWidget {
   final VoidCallback onClear;
 
   @override
-  State<AuditLogFilterPanel> createState() => _AuditLogFilterPanelState();
+  ConsumerState<AuditLogFilterPanel> createState() =>
+      _AuditLogFilterPanelState();
 }
 
-class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
+class _AuditLogFilterPanelState extends ConsumerState<AuditLogFilterPanel> {
   late final TextEditingController _usernameController;
   late final TextEditingController _dateFromController;
   late final TextEditingController _dateToController;
-  late String _entityType;
 
   static const List<String> _entityTypes = [
     '',
@@ -50,7 +53,13 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
     _usernameController = TextEditingController(text: widget.current.username);
     _dateFromController = TextEditingController(text: widget.current.dateFrom);
     _dateToController = TextEditingController(text: widget.current.dateTo);
-    _entityType = widget.current.entityType;
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(auditLogFilterPanelProvider.notifier)
+            .setEntityType(widget.current.entityType);
+      }
+    });
   }
 
   @override
@@ -66,7 +75,14 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
       if (widget.current.dateTo != _dateToController.text) {
         _dateToController.text = widget.current.dateTo;
       }
-      _entityType = widget.current.entityType;
+      final newEntityType = widget.current.entityType;
+      Future.microtask(() {
+        if (!mounted) return;
+        final notifier = ref.read(auditLogFilterPanelProvider.notifier);
+        if (ref.read(auditLogFilterPanelProvider).entityType != newEntityType) {
+          notifier.setEntityType(newEntityType);
+        }
+      });
     }
   }
 
@@ -78,15 +94,20 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
     super.dispose();
   }
 
-  AuditLogFilters _buildFilters() => AuditLogFilters(
+  AuditLogFilters _buildFilters() {
+    final panelState = ref.read(auditLogFilterPanelProvider);
+    return AuditLogFilters(
         username: _usernameController.text.trim(),
-        entityType: _entityType,
+        entityType: panelState.entityType,
         dateFrom: _dateFromController.text.trim(),
         dateTo: _dateToController.text.trim(),
       );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final panelState = ref.watch(auditLogFilterPanelProvider);
+    final entityType = panelState.entityType;
     return Card(
       margin: const EdgeInsets.all(12),
       child: Padding(
@@ -109,8 +130,8 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
             _LabeledField(
               label: AuditLogLabels.filterEntityType,
               child: DropdownButtonFormField<String>(
-                key: ValueKey('entity_type_$_entityType'),
-                initialValue: _entityType,
+                key: ValueKey('entity_type_$entityType'),
+                initialValue: entityType,
                 decoration: const InputDecoration(
                   isDense: true,
                   border: OutlineInputBorder(),
@@ -129,7 +150,9 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
                     .toList(),
                 onChanged: (value) {
                   if (value != null) {
-                    setState(() => _entityType = value);
+                    ref
+                        .read(auditLogFilterPanelProvider.notifier)
+                        .setEntityType(value);
                   }
                 },
               ),
@@ -182,7 +205,7 @@ class _AuditLogFilterPanelState extends State<AuditLogFilterPanel> {
                     _usernameController.clear();
                     _dateFromController.clear();
                     _dateToController.clear();
-                    setState(() => _entityType = '');
+                    ref.read(auditLogFilterPanelProvider.notifier).clear();
                     widget.onClear();
                   },
                 ),

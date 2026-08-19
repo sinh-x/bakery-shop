@@ -9,6 +9,7 @@ import 'package:bakery_app/shared/utils/diacritics.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../providers/customer_search_field_notifier.dart';
 bool _matchesDiacriticAware(String query, Customer customer) {
   final q = query.trim().toLowerCase();
   final name = customer.name.trim().toLowerCase();
@@ -23,8 +24,6 @@ bool _matchesDiacriticAware(String query, Customer customer) {
   }
   return false;
 }
-
-enum _FilterMode { client, server }
 
 class CustomerSearchField extends ConsumerStatefulWidget {
   const CustomerSearchField({
@@ -55,26 +54,27 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   final FocusNode _focus = FocusNode();
   Timer? _debounce;
 
-  List<Customer> _allCustomers = const [];
-  List<Customer> _listCustomers = const [];
-  _FilterMode _mode = _FilterMode.client;
-  bool _loading = false;
-  Customer? _selected;
-  bool _clearedOnFocus = false;
-  String? _error;
-  bool _showRefineHint = false;
-
-  static const int _cap = 20;
+  static const int _cap = CustomerSearchFieldNotifier.cap;
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.initialCustomer;
-    if (_selected != null) {
-      _ctrl.text = _selected!.name;
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    final initialCustomer = widget.initialCustomer;
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(customerSearchFieldProvider.notifier)
+          .setInitialSelected(initialCustomer);
+    });
+    if (initialCustomer != null) {
+      _ctrl.text = initialCustomer.name;
     }
     _focus.addListener(_onFocusChange);
-    _load();
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(_load);
   }
 
   @override
@@ -88,73 +88,48 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   }
 
   void _onFocusChange() {
-    if (_focus.hasFocus && widget.clearOnFocus && !_clearedOnFocus) {
-      _clearedOnFocus = true;
-      _selected = null;
-      _ctrl.clear();
-      widget.onSelected?.call(null);
+    if (_focus.hasFocus && widget.clearOnFocus) {
+      final notifier = ref.read(customerSearchFieldProvider.notifier);
+      final state = ref.read(customerSearchFieldProvider);
+      if (!state.clearedOnFocus) {
+        notifier.markClearedOnFocus();
+        _ctrl.clear();
+        widget.onSelected?.call(null);
+      }
     }
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _showRefineHint = false;
-    });
+    final notifier = ref.read(customerSearchFieldProvider.notifier);
+    notifier.startLoad();
     try {
       final service = ref.read(customerServiceProvider);
       final customers = await service.listCustomers();
       if (!mounted) return;
-      setState(() {
-        _allCustomers = customers;
-        _mode = customers.length <= _cap
-            ? _FilterMode.client
-            : _FilterMode.server;
-        _applyBrowseList();
-        _loading = false;
-      });
+      notifier.setLoadedAll(customers);
     } catch (e) {
       debugPrint('[CustomerSearch] load failed: $e');
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = CustomersLabels.customerSearchError;
-      });
-    }
-  }
-
-  void _applyBrowseList() {
-    _showRefineHint = false;
-    if (_allCustomers.length <= _cap) {
-      _listCustomers = List.from(_allCustomers);
-    } else {
-      final sorted = List<Customer>.from(_allCustomers)
-        ..sort((a, b) => b.id.compareTo(a.id));
-      _listCustomers = sorted.take(_cap).toList();
+      notifier.setLoadError(CustomersLabels.customerSearchError);
     }
   }
 
   void _onChanged(String value) {
     final query = value.trim();
+    final notifier = ref.read(customerSearchFieldProvider.notifier);
+    final state = ref.read(customerSearchFieldProvider);
     if (query.isEmpty) {
       _debounce?.cancel();
-      setState(() {
-        _applyBrowseList();
-        _error = null;
-        _showRefineHint = false;
-      });
+      notifier.applyBrowseListForEmptyQuery();
       return;
     }
 
-    if (_mode == _FilterMode.client) {
-      setState(() {
-        _showRefineHint = false;
-        _listCustomers = _allCustomers
+    if (state.mode == CustomerSearchFilterMode.client) {
+      notifier.applyClientFilter(
+        state.allCustomers
             .where((c) => _matchesDiacriticAware(query, c))
-            .toList();
-        _error = null;
-      });
+            .toList(),
+      );
     } else {
       _debounce?.cancel();
       _debounce = Timer(
@@ -166,54 +141,46 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
 
   Future<void> _search(String query) async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final notifier = ref.read(customerSearchFieldProvider.notifier);
+    notifier.startServerSearch();
     try {
       final service = ref.read(customerServiceProvider);
       final results = await service.listCustomers(search: query);
       if (!mounted) return;
       final capped = results.take(_cap).toList();
-      setState(() {
-        _listCustomers = capped;
-        _showRefineHint = results.length > _cap;
-        _loading = false;
-      });
+      notifier.setServerResultsWithHint(capped, results.length > _cap);
     } catch (e) {
       debugPrint('[CustomerSearch] search failed: $e');
       if (!mounted) return;
-      setState(() {
-        _listCustomers = const [];
-        _loading = false;
-        _error = CustomersLabels.customerSearchError;
-        _showRefineHint = false;
-      });
+      notifier.setServerError(CustomersLabels.customerSearchError);
     }
   }
 
   Future<void> _retry() async {
     final q = _ctrl.text.trim();
-    if (_mode == _FilterMode.server && q.isNotEmpty) {
+    final state = ref.read(customerSearchFieldProvider);
+    if (state.mode == CustomerSearchFilterMode.server && q.isNotEmpty) {
       _search(q);
     } else {
       await _load();
-      if (mounted && _error == null && q.isNotEmpty && _mode == _FilterMode.client) {
+      if (!mounted) return;
+      final updated = ref.read(customerSearchFieldProvider);
+      if (updated.error == null &&
+          q.isNotEmpty &&
+          updated.mode == CustomerSearchFilterMode.client) {
         _onChanged(_ctrl.text);
       }
     }
   }
 
   void _select(Customer customer) {
-    setState(() {
-      _selected = customer;
-      _error = null;
-    });
+    ref.read(customerSearchFieldProvider.notifier).select(customer);
     widget.onSelected?.call(customer);
   }
 
   Widget _errorView() {
     final theme = Theme.of(context);
+    final error = ref.watch(customerSearchFieldProvider).error;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -225,7 +192,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
           ),
           const SizedBox(height: 8),
           Text(
-            _error!,
+            error ?? '',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
@@ -243,14 +210,15 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
 
   Widget _resultsList() {
     final theme = Theme.of(context);
+    final state = ref.watch(customerSearchFieldProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           child: ListView.builder(
-            itemCount: _listCustomers.length,
+            itemCount: state.listCustomers.length,
             itemBuilder: (context, index) {
-              final c = _listCustomers[index];
+              final c = state.listCustomers[index];
               return ListTile(
                 dense: true,
                 title: Text(c.name),
@@ -260,7 +228,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
             },
           ),
         ),
-        if (_selected != null)
+        if (state.selected != null)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 4),
             child: Row(
@@ -275,7 +243,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
                   child: Text(
                     CustomersLabels.customerSearchLinked.replaceAll(
                       '{name}',
-                      _selected!.name,
+                      state.selected!.name,
                     ),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.primary,
@@ -285,7 +253,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
               ],
             ),
           ),
-        if (_showRefineHint)
+        if (state.showRefineHint)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 4),
             child: Text(
@@ -302,6 +270,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final state = ref.watch(customerSearchFieldProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -318,11 +287,11 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: _loading
+          child: state.loading
               ? const Center(child: CircularProgressIndicator())
-              : _error != null
+              : state.error != null
                   ? _errorView()
-                  : _listCustomers.isEmpty
+                  : state.listCustomers.isEmpty
                       ? Center(
                           child: Text(
                             CustomersLabels.customerSearchNoMatch,

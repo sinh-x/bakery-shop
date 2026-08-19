@@ -7,6 +7,7 @@ import '../../data/providers/blanks_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'providers/blank_list_filter_notifier.dart';
 import 'widgets/blank_form.dart';
 import 'widgets/blank_tile.dart';
 import 'widgets/blanks_states.dart';
@@ -25,8 +26,6 @@ class BlankListScreen extends ConsumerStatefulWidget {
 
 class _BlankListScreenState extends ConsumerState<BlankListScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
-  String _selectedCategory = '';
-
   @override
   String screenRoutePath() => '/blanks';
 
@@ -55,7 +54,7 @@ class _BlankListScreenState extends ConsumerState<BlankListScreen>
       ref.read(blanksProvider.notifier).refresh();
 
   void _onCategorySelected(String category) {
-    setState(() => _selectedCategory = category);
+    ref.read(blankListFilterProvider.notifier).select(category);
     ref.read(blanksProvider.notifier).filterByCategory(category);
   }
 
@@ -72,6 +71,7 @@ class _BlankListScreenState extends ConsumerState<BlankListScreen>
   @override
   Widget build(BuildContext context) {
     final blanksAsync = ref.watch(blanksProvider);
+    final selectedCategory = ref.watch(blankListFilterProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text(BlanksLabels.screenManage),
@@ -124,7 +124,7 @@ class _BlankListScreenState extends ConsumerState<BlankListScreen>
             children: [
               BlankCategoryFilterBar(
                 categories: _uniqueCategories(blanks),
-                selected: _selectedCategory,
+                selected: selectedCategory,
                 onSelected: _onCategorySelected,
               ),
               Expanded(

@@ -1,12 +1,13 @@
 import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/order.dart';
 import '../../../shared/theme/bakery_theme.dart';
-import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../../orders/widgets/order_card.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../providers/today_order_list_expansion_notifier.dart';
 /// All order statuses in workflow order, including terminal statuses
 /// (completed, cancelled). Used by [TodayOrderList] to group today's orders
 /// (FR6/AC6 — DG-376 Phase 5).
@@ -53,17 +54,21 @@ Map<String, List<Order>> groupTodayOrdersByStatus(List<Order> orders) {
 /// Renders all orders due today (including completed and cancelled) grouped
 /// under workflow-ordered section headers. Each header shows a colored status
 /// dot, the localized status label, a count badge, and a collapse/expand
-/// chevron — reusing the [CategorySectionExpansionController] pattern from
-/// [CollapsibleCategorySections]. Tapping a header toggles the group's
-/// collapse state (DG-386 Phase 10 / FR6 / AC6). When collapsed, only the
-/// header (status label + count) is shown; when expanded, the [OrderCard]
-/// list renders below. All groups default to expanded so the pre-Phase-10
-/// behavior is preserved.
+/// chevron — mirroring the [CollapsibleCategorySections] expansion pattern.
+/// Tapping a header toggles the group's collapse state (DG-386 Phase 10 /
+/// FR6 / AC6). When collapsed, only the header (status label + count) is
+/// shown; when expanded, the [OrderCard] list renders below. All groups
+/// default to expanded so the pre-Phase-10 behavior is preserved.
+///
+/// The expansion state (per-status expand/collapse map plus the seeded-key
+/// set) lives in [todayOrderListExpansionProvider] (DG-404 Phase 4.7); the
+/// widget seeds newly-appeared groups in `initState` / `didUpdateWidget` and
+/// toggles via the notifier — no `setState` is required.
 ///
 /// The orders come from the today-summary API response
 /// ([TodaySummary.orders]) — no separate order fetch is needed. An empty
 /// list renders a centered empty-state message.
-class TodayOrderList extends StatefulWidget {
+class TodayOrderList extends ConsumerStatefulWidget {
   const TodayOrderList({
     super.key,
     required this.orders,
@@ -78,30 +83,25 @@ class TodayOrderList extends StatefulWidget {
   final void Function(Order order)? onOrderTap;
 
   @override
-  State<TodayOrderList> createState() => _TodayOrderListState();
+  ConsumerState<TodayOrderList> createState() => _TodayOrderListState();
 }
 
-class _TodayOrderListState extends State<TodayOrderList> {
-  late final CategorySectionExpansionController _expansionController;
-
-  /// Status keys that have already been seeded with an explicit expand/collapse
-  /// state. Used by [didUpdateWidget] to distinguish a newly-appeared status
-  /// group (seed it expanded) from one the user has already toggled (preserve
-  /// their choice) — [CategorySectionExpansionController.isExpanded] returns
-  /// `false` for both unseeded keys and explicitly-collapsed keys (Mn-3).
-  final Set<String> _seededStatuses = <String>{};
-
+class _TodayOrderListState extends ConsumerState<TodayOrderList> {
   @override
   void initState() {
     super.initState();
-    _expansionController = CategorySectionExpansionController();
     // All groups default to expanded so the pre-Phase-10 behavior (always
     // visible) is preserved until the user taps a header (DG-386 Phase 10).
-    final grouped = groupTodayOrdersByStatus(widget.orders);
-    for (final status in grouped.keys) {
-      _expansionController.setExpanded(status, true);
-      _seededStatuses.add(status);
-    }
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      final notifier = ref.read(todayOrderListExpansionProvider.notifier);
+      final grouped = groupTodayOrdersByStatus(widget.orders);
+      for (final status in grouped.keys) {
+        notifier.seedExpanded(status);
+      }
+    });
   }
 
   @override
@@ -111,13 +111,17 @@ class _TodayOrderListState extends State<TodayOrderList> {
     // (Mn-3). Preserves the expand-by-default contract: a group that was not
     // present in `initState` but appears on an updated `widget.orders` is
     // expanded here. Groups that already have a recorded state keep their
-    // user-toggled value — only keys absent from `_seededStatuses` are seeded.
-    final grouped = groupTodayOrdersByStatus(widget.orders);
-    for (final status in grouped.keys) {
-      if (_seededStatuses.add(status)) {
-        _expansionController.setExpanded(status, true);
+    // user-toggled value — `seedExpanded` is idempotent on already-seeded
+    // keys. Deferred to a microtask to avoid mutating providers during the
+    // build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      final notifier = ref.read(todayOrderListExpansionProvider.notifier);
+      final grouped = groupTodayOrdersByStatus(widget.orders);
+      for (final status in grouped.keys) {
+        notifier.seedExpanded(status);
       }
-    }
+    });
   }
 
   @override
@@ -135,24 +139,24 @@ class _TodayOrderListState extends State<TodayOrderList> {
       );
     }
 
+    final expansionState = ref.watch(todayOrderListExpansionProvider);
     final grouped = groupTodayOrdersByStatus(widget.orders);
     final children = <Widget>[];
     for (final entry in grouped.entries) {
       final status = entry.key;
       final orders = entry.value;
-      final expanded = _expansionController.isExpanded(status);
+      final expanded = expansionState.isExpanded(status);
       children.add(
         _TodayStatusGroupHeader(
           status: status,
           count: orders.length,
           isCollapsed: !expanded,
           onTap: () {
-            setState(() {
-              _expansionController.setExpanded(status, !expanded);
-              // Record the user's explicit choice so a later refresh does not
-              // re-seed this group via `didUpdateWidget` (Mn-3).
-              _seededStatuses.add(status);
-            });
+            // Toggle via the notifier and record the user's explicit choice
+            // so a later refresh does not re-seed this group (Mn-3). The
+            // notifier owns both the expansion map and the seeded set
+            // (DG-404 Phase 4.7).
+            ref.read(todayOrderListExpansionProvider.notifier).toggle(status);
           },
         ),
       );

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/collapsible_category_sections_notifier.dart';
 import '../utils/category_grouping.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
 class CategorySectionExpansionController {
@@ -12,7 +14,7 @@ class CategorySectionExpansionController {
   }
 }
 
-class CollapsibleCategorySections<T> extends StatefulWidget {
+class CollapsibleCategorySections<T> extends ConsumerStatefulWidget {
   const CollapsibleCategorySections({
     super.key,
     required this.sections,
@@ -23,9 +25,9 @@ class CollapsibleCategorySections<T> extends StatefulWidget {
     this.headerPadding = const EdgeInsets.symmetric(horizontal: 12),
     this.contentPadding = const EdgeInsets.symmetric(horizontal: 12),
   }) : assert(
-         itemBuilder != null || sectionContentBuilder != null,
-         'Provide itemBuilder or sectionContentBuilder',
-       );
+          itemBuilder != null || sectionContentBuilder != null,
+          'Provide itemBuilder or sectionContentBuilder',
+        );
 
   final List<GroupedCategorySection<T>> sections;
   final Widget Function(BuildContext context, T item)? itemBuilder;
@@ -40,12 +42,12 @@ class CollapsibleCategorySections<T> extends StatefulWidget {
   final EdgeInsetsGeometry contentPadding;
 
   @override
-  State<CollapsibleCategorySections<T>> createState() =>
+  ConsumerState<CollapsibleCategorySections<T>> createState() =>
       _CollapsibleCategorySectionsState<T>();
 }
 
 class _CollapsibleCategorySectionsState<T>
-    extends State<CollapsibleCategorySections<T>> {
+    extends ConsumerState<CollapsibleCategorySections<T>> {
   late final CategorySectionExpansionController _controller;
 
   @override
@@ -57,6 +59,12 @@ class _CollapsibleCategorySectionsState<T>
 
   @override
   Widget build(BuildContext context) {
+    // Watch the rebuild tick so the list refreshes after each toggle
+    // (DG-404 Phase 4.7). The expansion state itself lives in the
+    // (internal or caller-supplied) [CategorySectionExpansionController];
+    // the notifier just signals rebuild — replacing the pre-migration
+    // empty `setState` closure that wrapped the toggle.
+    ref.watch(collapsibleCategorySectionsRebuildProvider);
     if (widget.sections.isEmpty) {
       return widget.emptyState ?? const SizedBox.shrink();
     }
@@ -78,9 +86,11 @@ class _CollapsibleCategorySectionsState<T>
                   itemCount: section.items.length,
                   expanded: expanded,
                   onTap: () {
-                    setState(() {
-                      _controller.setExpanded(section.categoryKey, !expanded);
-                    });
+                    _controller.setExpanded(section.categoryKey, !expanded);
+                    ref
+                        .read(collapsibleCategorySectionsRebuildProvider
+                            .notifier)
+                        .bump();
                   },
                 ),
               ),

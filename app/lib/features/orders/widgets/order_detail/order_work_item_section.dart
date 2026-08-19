@@ -12,6 +12,7 @@ import '../../../../data/models/order.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../data/providers/products_provider.dart';
+import '../../providers/order_work_item_section_notifier.dart';
 import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
@@ -36,14 +37,12 @@ class OrderWorkItemSection extends ConsumerStatefulWidget {
 }
 
 class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
-  bool _expanded = true;
-  bool _transitioning = false;
-
   Future<void> _onTransitionWorkItem(
     WorkItem item,
     String targetStatus,
   ) async {
-    if (_transitioning) return;
+    final sectionState = ref.read(orderWorkItemSectionProvider);
+    if (sectionState.transitioning) return;
     String reason = '';
     if (isBackward(item.status, targetStatus, workItemStatusRank)) {
       final r = await showReasonDialog(context, targetStatus);
@@ -51,7 +50,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       reason = r;
     }
 
-    setState(() => _transitioning = true);
+    ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -73,7 +72,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _transitioning = false);
+      if (mounted) ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(false);
     }
   }
 
@@ -91,12 +90,16 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
     final products = ref.watch(productsProvider).asData?.value ?? const [];
+    final sectionState = ref.watch(orderWorkItemSectionProvider);
+    final expanded = sectionState.expanded;
+    final transitioning = sectionState.transitioning;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: () =>
+              ref.read(orderWorkItemSectionProvider.notifier).toggleExpanded(),
           borderRadius: BorderRadius.circular(4),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -111,7 +114,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                   ),
                 ),
                 Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  expanded ? Icons.expand_less : Icons.expand_more,
                   color: theme.colorScheme.primary,
                   size: 20,
                 ),
@@ -119,7 +122,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
             ),
           ),
         ),
-        if (_expanded)
+        if (expanded)
           itemsAsync.when(
             loading: () => const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
@@ -166,7 +169,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                         return wId != null && wId == int.tryParse(item.id);
                       }).toList(),
                       baseUrl: baseUrl,
-                      onTransition: _transitioning
+                      onTransition: transitioning
                           ? null
                           : (t) => _onTransitionWorkItem(item, t),
                       onTap: () => context.push(

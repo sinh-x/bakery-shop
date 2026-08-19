@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../shared/labels/auth.dart';
 import '../../shared/labels/technical_settings.dart';
 import '../../shared/providers/auth_provider.dart';
+import 'providers/login_form_notifier.dart';
 import 'widgets/error_banner.dart';
 import 'widgets/password_field.dart';
 import 'widgets/username_field.dart';
@@ -27,9 +28,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  bool _obscurePassword = true;
-  bool _submitting = false;
-  String? _errorMessage;
 
   @override
   void dispose() {
@@ -40,10 +38,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() {
-      _submitting = true;
-      _errorMessage = null;
-    });
+    final notifier = ref.read(loginFormProvider.notifier);
+    notifier.startSubmitting();
     try {
       await ref.read(authProvider.notifier).login(
             username: _usernameCtrl.text.trim(),
@@ -53,12 +49,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // explicit navigation here.
     } on DioException catch (e) {
       if (!mounted) return;
-      setState(() => _errorMessage = _mapDioError(e));
+      notifier.setErrorMessage(_mapDioError(e));
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorMessage = AuthLabels.loginErrorGeneric);
+      notifier.setErrorMessage(AuthLabels.loginErrorGeneric);
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) notifier.setSubmitting(false);
     }
   }
 
@@ -73,6 +69,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final formState = ref.watch(loginFormProvider);
+    final obscurePassword = formState.obscurePassword;
+    final submitting = formState.submitting;
+    final errorMessage = formState.errorMessage;
+    final notifier = ref.read(loginFormProvider.notifier);
     return Scaffold(
       appBar: AppBar(
         actions: [
@@ -109,19 +110,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: 16),
                     PasswordField(
                       controller: _passwordCtrl,
-                      obscure: _obscurePassword,
-                      onToggleObscure: () => setState(
-                        () => _obscurePassword = !_obscurePassword,
-                      ),
+                      obscure: obscurePassword,
+                      onToggleObscure: notifier.toggleObscurePassword,
                     ),
-                    if (_errorMessage != null) ...[
+                    if (errorMessage != null) ...[
                       const SizedBox(height: 12),
-                      ErrorBanner(message: _errorMessage!),
+                      ErrorBanner(message: errorMessage),
                     ],
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: _submitting ? null : _submit,
-                      child: _submitting
+                      onPressed: submitting ? null : _submit,
+                      child: submitting
                           ? SizedBox(
                               height: 20,
                               width: 20,

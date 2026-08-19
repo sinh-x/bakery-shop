@@ -7,6 +7,7 @@ import '../../../data/api/config_service.dart';
 import '../../../data/providers/catalog_provider.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../providers/catalog_tag_form_notifier.dart';
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   await showDialog<bool>(
@@ -115,7 +116,6 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
   final _formKey = GlobalKey<FormState>();
   final _keyCtrl = TextEditingController();
   final _labelCtrl = TextEditingController();
-  String? _selectedCategory;
   static final _categories = [
     ProductsLabels.tagCategoriesDoiTuong,
     ProductsLabels.tagCategoriesDip,
@@ -131,9 +131,10 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final selectedCategory = ref.read(catalogTagFormProvider).selectedCategory;
     try {
       final value =
-          '$_selectedCategory:${_keyCtrl.text.trim()}:${_labelCtrl.text.trim()}';
+          '$selectedCategory:${_keyCtrl.text.trim()}:${_labelCtrl.text.trim()}';
       await widget.ref
           .read(configServiceProvider)
           .createConfigValue('catalog_tag', value);
@@ -159,6 +160,7 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedCategory = ref.watch(catalogTagFormProvider).selectedCategory;
     return AlertDialog(
       title: const Text(ProductsLabels.addCatalogTag),
       content: Form(
@@ -167,7 +169,7 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
-              initialValue: _selectedCategory,
+              initialValue: selectedCategory,
               decoration: const InputDecoration(
                 labelText: ProductsLabels.tagCategory,
                 border: OutlineInputBorder(),
@@ -179,9 +181,9 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
                 );
               }).toList(),
               onChanged: (value) {
-                setState(() {
-                  _selectedCategory = value;
-                });
+                ref
+                    .read(catalogTagFormProvider.notifier)
+                    .setSelectedCategory(value);
               },
               validator: (value) => value == null ? SharedLabels.fieldRequired : null,
             ),

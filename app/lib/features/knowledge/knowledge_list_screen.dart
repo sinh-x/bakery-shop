@@ -9,6 +9,7 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/knowledge_list_filter_notifier.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 const _kTypeChips = [
   ('recipe', 'Công thức'),
@@ -32,7 +33,6 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
-  late String? _selectedType;
 
   @override
   String screenRoutePath() => '/knowledge';
@@ -45,8 +45,13 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
   @override
   void initState() {
     super.initState();
-    _selectedType = widget.initialType;
     initAutoRefresh();
+    // Defer provider mutations to a microtask because Riverpod disallows
+    // provider mutation during widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(knowledgeListFilterProvider.notifier).seed(widget.initialType);
+    });
   }
 
   @override
@@ -71,13 +76,14 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
   }
 
   void _setTypeFilter(String? type) {
-    setState(() => _selectedType = type);
+    ref.read(knowledgeListFilterProvider.notifier).setSelectedType(type);
     ref.invalidate(knowledgeEntriesProvider);
   }
 
   @override
   Widget build(BuildContext context) {
     final entriesAsync = ref.watch(knowledgeEntriesProvider);
+    final selectedType = ref.watch(knowledgeListFilterProvider).selectedType;
 
     return Scaffold(
       appBar: AppBar(
@@ -112,7 +118,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
                   padding: const EdgeInsets.only(right: 6),
                   child: FilterChip(
                     label: const Text('Tất cả'),
-                    selected: _selectedType == null,
+                    selected: selectedType == null,
                     onSelected: (_) => _setTypeFilter(null),
                   ),
                 ),
@@ -121,7 +127,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
                     padding: const EdgeInsets.only(right: 6),
                     child: FilterChip(
                       label: Text(t.$2),
-                      selected: _selectedType == t.$1,
+                      selected: selectedType == t.$1,
                       onSelected: (_) => _setTypeFilter(t.$1),
                     ),
                   ),
@@ -225,8 +231,9 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
   }
 
   List<KnowledgeEntry> _filterEntries(List<KnowledgeEntry> entries) {
+    final selectedType = ref.read(knowledgeListFilterProvider).selectedType;
     return entries.where((e) {
-      if (_selectedType != null && e.type != _selectedType) {
+      if (selectedType != null && e.type != selectedType) {
         return false;
       }
       if (_searchCtrl.text.isNotEmpty) {

@@ -385,21 +385,23 @@ void main() {
   testWidgets('DuplicateMergeDialog renders both records with order counts',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (ctx) => Center(
-              child: ElevatedButton(
-                onPressed: () => showDialog<void>(
-                  context: ctx,
-                  builder: (_) => const DuplicateMergeDialog(
-                    keep: DuplicateCustomerEntry(
-                        id: 1, name: 'Sinh', phone: '090', orderCount: 7),
-                    mergeFrom: DuplicateCustomerEntry(
-                        id: 2, name: 'An', phone: '091', orderCount: 3),
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => Center(
+                child: ElevatedButton(
+                  onPressed: () => showDialog<void>(
+                    context: ctx,
+                    builder: (_) => const DuplicateMergeDialog(
+                      keep: DuplicateCustomerEntry(
+                          id: 1, name: 'Sinh', phone: '090', orderCount: 7),
+                      mergeFrom: DuplicateCustomerEntry(
+                          id: 2, name: 'An', phone: '091', orderCount: 3),
+                    ),
                   ),
+                  child: const Text('open'),
                 ),
-                child: const Text('open'),
               ),
             ),
           ),
@@ -428,23 +430,25 @@ void main() {
       (tester) async {
     MergeChoice? result;
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (ctx) => Center(
-              child: ElevatedButton(
-                onPressed: () async {
-                  result = await showDialog<MergeChoice>(
-                    context: ctx,
-                    builder: (_) => const DuplicateMergeDialog(
-                      keep: DuplicateCustomerEntry(
-                          id: 1, name: 'Sinh', phone: '090', orderCount: 7),
-                      mergeFrom: DuplicateCustomerEntry(
-                          id: 2, name: 'An', phone: '091', orderCount: 3),
-                    ),
-                  );
-                },
-                child: const Text('open'),
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    result = await showDialog<MergeChoice>(
+                      context: ctx,
+                      builder: (_) => const DuplicateMergeDialog(
+                        keep: DuplicateCustomerEntry(
+                            id: 1, name: 'Sinh', phone: '090', orderCount: 7),
+                        mergeFrom: DuplicateCustomerEntry(
+                            id: 2, name: 'An', phone: '091', orderCount: 3),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
               ),
             ),
           ),

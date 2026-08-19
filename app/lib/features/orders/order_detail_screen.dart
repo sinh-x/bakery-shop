@@ -21,6 +21,7 @@ import '../templates/template_context.dart';
 import '../templates/widgets/template_picker_modal.dart';
 import 'providers/delivery_claim_handler.dart';
 import 'providers/delivery_claim_providers.dart';
+import 'providers/cake_detail_screen_notifier.dart';
 import 'widgets/google_maps_modal.dart';
 import 'widgets/order_detail/order_detail_customer_tab.dart';
 import 'widgets/order_detail/order_detail_general_tab.dart';
@@ -49,7 +50,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     with SingleTickerProviderStateMixin {
   static const _tabCount = 4;
   late final TabController _tabController;
-  bool _transitioning = false;
   bool _acknowledgedOnce = false;
 
   @override
@@ -93,7 +93,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       if (r == null || !mounted) return;
       reason = r;
     }
-    setState(() => _transitioning = true);
+    ref.read(orderDetailScreenProvider.notifier).setTransitioning(true);
     try {
       await ref
           .read(orderDetailProvider(order.orderRef).notifier)
@@ -131,7 +131,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         showTopSnackBar(context, '${SharedLabels.apiError}: ${normalized.message}');
       }
     } finally {
-      if (mounted) setState(() => _transitioning = false);
+      if (mounted) ref.read(orderDetailScreenProvider.notifier).setTransitioning(false);
     }
   }
 
@@ -282,6 +282,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
     final staffAsync = ref.watch(currentStaffProvider);
     final claimAsync = ref.watch(orderClaimProvider);
+    final transitioning = ref.watch(orderDetailScreenProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -454,7 +455,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                   transitions: transitions,
                   backwardTransitions: backwardTransitions,
                   remaining: remaining,
-                  transitioning: _transitioning,
+                  transitioning: transitioning,
                   onTransition: _onTransition,
                 ),
               ),

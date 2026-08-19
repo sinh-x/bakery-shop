@@ -5,6 +5,7 @@ import '../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../data/api/event_service.dart' show eventServiceProvider;
 import '../../../data/models/event_photo.dart';
 import '../../events/widgets/event_photo_viewer.dart';
+import '../providers/expense_history_photo_notifier.dart';
 
 /// Compact horizontal photo thumbnail strip for the expense history card.
 ///
@@ -27,10 +28,6 @@ class ExpenseHistoryPhotoStrip extends ConsumerStatefulWidget {
 
 class _ExpenseHistoryPhotoStripState
     extends ConsumerState<ExpenseHistoryPhotoStrip> {
-  List<EventPhoto> _photos = const [];
-  bool _loading = true;
-  int? _lastFetchedEventId;
-
   @override
   void initState() {
     super.initState();
@@ -48,29 +45,30 @@ class _ExpenseHistoryPhotoStripState
   Future<void> _loadPhotos() async {
     final eventId = widget.eventId;
     if (eventId <= 0) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        ref
+            .read(expenseHistoryPhotoProvider(eventId).notifier)
+            .setLoading(false);
+      }
       return;
     }
-    if (_lastFetchedEventId == eventId && _photos.isNotEmpty) return;
+    final notifier = ref.read(expenseHistoryPhotoProvider(eventId).notifier);
+    final state = ref.read(expenseHistoryPhotoProvider(eventId));
+    if (state.lastFetchedEventId == eventId && state.photos.isNotEmpty) return;
     try {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
-      if (mounted) {
-        setState(() {
-          _photos = photos;
-          _loading = false;
-          _lastFetchedEventId = eventId;
-        });
-      }
+      if (mounted) notifier.setPhotos(photos);
     } catch (e) {
       debugPrint('ExpenseHistoryPhotoStrip._loadPhotos failed: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted) notifier.setLoading(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    final state = ref.watch(expenseHistoryPhotoProvider(widget.eventId));
+    if (state.loading) {
       return const SizedBox(
         height: 72,
         child: Center(
@@ -82,19 +80,19 @@ class _ExpenseHistoryPhotoStripState
         ),
       );
     }
-    if (_photos.isEmpty) return const SizedBox.shrink();
+    if (state.photos.isEmpty) return const SizedBox.shrink();
     final baseUrl = ref.read(apiBaseUrlProvider);
     return SizedBox(
       height: 72,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _photos.length,
+        itemCount: state.photos.length,
         separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
-          final photo = _photos[index];
+          final photo = state.photos[index];
           final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
           return GestureDetector(
-            onTap: () => _openViewer(context, baseUrl, index),
+            onTap: () => _openViewer(context, baseUrl, index, state.photos),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: Image.network(
@@ -116,11 +114,16 @@ class _ExpenseHistoryPhotoStripState
     );
   }
 
-  void _openViewer(BuildContext context, String baseUrl, int index) {
+  void _openViewer(
+    BuildContext context,
+    String baseUrl,
+    int index,
+    List<EventPhoto> photos,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => EventPhotoViewer(
-          photos: _photos,
+          photos: photos,
           initialIndex: index,
           baseUrl: baseUrl,
         ),

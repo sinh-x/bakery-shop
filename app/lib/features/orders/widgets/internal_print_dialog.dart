@@ -8,6 +8,7 @@ import '../../../data/services/printer_service.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/printer_provider.dart';
+import '../providers/google_maps_modal_notifier.dart';
 import '../../../shared/widgets/printer_picker_dialog.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Dialog shown after confirming a work item, prompting the staff to print
@@ -27,14 +28,10 @@ class InternalPrintDialog extends ConsumerStatefulWidget {
 }
 
 class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
-  bool _printing = false;
-  String _statusText = '';
-
   Future<void> _printInternal() async {
-    setState(() {
-      _printing = true;
-      _statusText = SharedLabels.fetchingInternalReceipt;
-    });
+    ref.read(internalPrintProvider.notifier).startPrinting(
+          statusText: SharedLabels.fetchingInternalReceipt,
+        );
 
     try {
       if (kIsWeb) {
@@ -64,7 +61,9 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
         itemId: widget.itemId,
       );
 
-      setState(() => _statusText = SharedLabels.printingInternalReceipt);
+      ref
+          .read(internalPrintProvider.notifier)
+          .setStatusText(SharedLabels.printingInternalReceipt);
 
       PrinterPickerResult result = PrinterPickerResult.cancelled;
       if (printerService.lastPrinterMac != null) {
@@ -102,16 +101,17 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
       }
     } finally {
       if (mounted) {
-        setState(() => _printing = false);
+        ref.read(internalPrintProvider.notifier).finishPrinting();
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(internalPrintProvider);
     return AlertDialog(
       title: const Text(SharedLabels.printChecklistTitle),
-      content: _printing
+      content: state.printing
           ? SizedBox(
               height: 80,
               child: Column(
@@ -120,7 +120,7 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
                   const CircularProgressIndicator(),
                   const SizedBox(height: 12),
                   Text(
-                    _statusText,
+                    state.statusText,
                     style: Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -130,10 +130,10 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
           : const Text(SharedLabels.printInternalPrompt),
       actions: [
         TextButton(
-          onPressed: _printing ? null : () => Navigator.pop(context),
+          onPressed: state.printing ? null : () => Navigator.pop(context),
           child: const Text(SharedLabels.printSkip),
         ),
-        if (!_printing)
+        if (!state.printing)
           FilledButton(onPressed: _printInternal, child: const Text(SharedLabels.print)),
       ],
     );

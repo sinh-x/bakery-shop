@@ -14,6 +14,7 @@ import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
 import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
+import '../../features/orders/providers/order_submission_guard_notifier.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_checkout_payment_controller.dart';
 import '../../features/pos/widgets/pos_payment_step_builder.dart';
@@ -27,6 +28,7 @@ import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'providers/pos_checkout_notifier.dart';
 String posCheckoutLocalDueDate(DateTime dateTime) {
   return formatApiDate(dateTime);
 }
@@ -54,13 +56,12 @@ class PosCheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
-  bool _navigatingAfterCheckout = false;
+  // DG-404 Phase 4.5: local mutable flag migrated to `posCheckoutProvider`
+  // (`posDeliverImmediately`, `stage3ShowFullOptions`, `isFastPath`,
+  // `navigatingAfterCheckout`). The `_posStateInitialized` guard stays
+  // local because it only prevents re-entry into `_initPosState` within a
+  // single widget instance (no observable UI state, no setState).
   bool _posStateInitialized = false;
-  bool _posDeliverImmediately = false;
-  bool _stage3ShowFullOptions = false;
-  // DG-370 Phase 1: fast-path flag — when true, "Quay lại" from Stage 5
-  // returns to the POS product grid (/pos) instead of Stage 4.
-  bool _isFastPath = false;
 
   late final PosCheckoutPaymentController _payment;
   final GlobalKey<OrderCreationOrchestratorState> _orchestratorKey =
@@ -69,7 +70,6 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   @override
   void initState() {
     super.initState();
-    _isFastPath = widget.fastPath;
     _payment = PosCheckoutPaymentController(
       submitOrder: ({status, paymentMethod}) =>
           _orchestratorKey.currentState?.submitOrder(
@@ -87,6 +87,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           widget.fastPath ? _backFromPaymentStepFastPath : null,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // DG-404 review CQ-1: reset the post-submit latch so each new POS
+      // checkout starts with `submitted=false`. The latch is a global
+      // non-autoDispose `NotifierProvider` shared with the normal order
+      // flow; without a reset here, the FR6 draft-save guard (no-op for
+      // POS since `enableDraft=false`, but the latch also gates the
+      // shared submission spine's post-submit hook chain) would stay
+      // latched from the prior order.
+      ref.read(orderSubmissionLatchProvider.notifier).resetSubmitted();
       _initPosState();
     });
   }
@@ -95,6 +103,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     if (_posStateInitialized) return;
     _posStateInitialized = true;
 
+    final checkoutNotifier = ref.read(posCheckoutProvider.notifier);
+    checkoutNotifier.seedFastPath(widget.fastPath);
+    // DG-404 review CQ-2: reset the navigating-after-checkout latch so this
+    // fresh checkout session re-enables the empty-cart guard. The latch is
+    // a global non-autoDispose `NotifierProvider` that would otherwise stay
+    // `true` from the previous checkout and prevent the guard from
+    // redirecting to `/pos` on an empty cart.
+    checkoutNotifier.resetNavigatingAfterCheckout();
     final posNotifier = ref.read(posOrderStateProvider.notifier);
     const wizardData = OrderWizardData(
       customerName: OrdersLabels.khachLe,
@@ -107,13 +123,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     posNotifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
     posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
 
-    if (_isFastPath) {
+    if (widget.fastPath) {
       // DG-370 Phase 1/3 — Giao ngay fast-path: jump directly to Stage 5 with
       // deliverImmediately=true so the order is created with status
       // "delivered" (same semantics as PosStage3PickupScreen "Giao ngay").
       // Phase 3: persist the flag on the payment controller so BOTH pay-now
       // and pay-later produce status="delivered" (FR4).
-      _posDeliverImmediately = true;
+      checkoutNotifier.setDeliverImmediately(true);
       _payment.deliverImmediately = true;
       // Seed the wizard items from the POS cart so the payment step has the
       // cart contents available (mirrors the orchestrator's init safety net,
@@ -128,8 +144,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _goToStage(int stage) {
     if (stage == 3) {
-      _posDeliverImmediately = false;
-      _stage3ShowFullOptions = false;
+      ref.read(posCheckoutProvider.notifier).resetStage3();
     }
     ref.read(posOrderStateProvider.notifier).goToStage(stage);
   }
@@ -151,7 +166,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   /// pay-later, FR4) and jumps to Stage 5. Used as the `onFastPath` callback
   /// for Stage 1/2/3/4 bottom navigation buttons.
   void _enterFastPath() {
-    _posDeliverImmediately = true;
+    ref.read(posCheckoutProvider.notifier).setDeliverImmediately(true);
     _payment.deliverImmediately = true;
     _enterPaymentStep();
   }
@@ -174,6 +189,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   OrderCreationConfig _buildConfig() {
+    final checkoutState = ref.read(posCheckoutProvider);
     return OrderCreationConfig(
       orderStateProvider: posOrderStateProvider,
       posMode: true,
@@ -190,8 +206,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       enableOrderListRefresh: false,
       onStageChange: (stage) {
         if (stage == 3) {
-          _posDeliverImmediately = false;
-          _stage3ShowFullOptions = false;
+          ref.read(posCheckoutProvider.notifier).resetStage3();
         }
       },
       stage1Builder: (ctx, controller) => Stage1ProductSelectionScreen(
@@ -212,27 +227,28 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       stage3Builder: (ctx, controller) {
         final state = ref.read(posOrderStateProvider);
         final isPickup = state.wizardData.deliveryType == 'pickup';
-        if (isPickup && !_stage3ShowFullOptions) {
+        if (isPickup && !checkoutState.stage3ShowFullOptions) {
           return PosStage3PickupScreen(
             onDeliverNow: () {
-              _posDeliverImmediately = true;
+              ref.read(posCheckoutProvider.notifier).setDeliverImmediately(true);
               controller.goToStage(4);
             },
             onDeliverLater: () {
-              _posDeliverImmediately = false;
-              _stage3ShowFullOptions = true;
-              setState(() {});
+              ref
+                  .read(posCheckoutProvider.notifier)
+                  .setDeliverImmediately(false);
+              ref
+                  .read(posCheckoutProvider.notifier)
+                  .setStage3ShowFullOptions(true);
             },
             onFastPath: _enterFastPath,
           );
         }
         return Stage3DeliveryOptionsScreen(
-          onBack: isPickup && _stage3ShowFullOptions
+          onBack: isPickup && checkoutState.stage3ShowFullOptions
               ? () {
-                  _posDeliverImmediately = false;
-                  _stage3ShowFullOptions = false;
-                  setState(() {});
-                }
+                    ref.read(posCheckoutProvider.notifier).resetStage3();
+                  }
               : () => controller.goToStage(2),
           onContinue: () => controller.goToStage(4),
           onFastPath: _enterFastPath,
@@ -250,25 +266,34 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       // the orchestrator renders it via this builder closure so the
       // orchestrator stays mounted and `submitOrder` remains callable from
       // the payment step's pay-now/pay-later handlers.
-        stageContainerBuilder: (ctx, stages, currentStage) => AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: currentStage == 5
-              ? PosPaymentStepBuilder(
-                  controller: _payment,
-                  // DG-370 Phase 2 (FR2/AC2/AC6): forward the POS order state
-                  // provider so Stage 5 renders the same order summary cards
-                  // as Stage 4 (PosReviewPanel).
-                  orderStateProvider: posOrderStateProvider,
-                ).build(
-                  context,
-                  deliverImmediately: _posDeliverImmediately,
-                  mounted: mounted,
-                  onChanged: () => setState(() {}),
-                )
-            : (currentStage >= 1 && currentStage <= 4
-                ? stages[currentStage - 1]
-                : const SizedBox.shrink()),
-      ),
+        stageContainerBuilder: (ctx, stages, currentStage) {
+          // Watch the rebuild signal so the stage container re-reads the
+          // PosCheckoutPaymentController's plain fields (selectedPaymentMethod,
+          // paidAmount, isProcessing, ...) on every bump. Replaces the
+          // pre-migration `setState(() {})` rebuild (DG-404 Phase 4.5).
+          ref.watch(posCheckoutRebuildProvider);
+          final stageCheckoutState = ref.watch(posCheckoutProvider);
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: currentStage == 5
+                ? PosPaymentStepBuilder(
+                    controller: _payment,
+                    // DG-370 Phase 2 (FR2/AC2/AC6): forward the POS order state
+                    // provider so Stage 5 renders the same order summary cards
+                    // as Stage 4 (PosReviewPanel).
+                    orderStateProvider: posOrderStateProvider,
+                  ).build(
+                    context,
+                    deliverImmediately: stageCheckoutState.posDeliverImmediately,
+                    mounted: mounted,
+                    onChanged: () =>
+                        ref.read(posCheckoutRebuildProvider.notifier).bump(),
+                  )
+                : (currentStage >= 1 && currentStage <= 4
+                    ? stages[currentStage - 1]
+                    : const SizedBox.shrink()),
+          );
+        },
       onUploadPendingPhotos: (ref, order, state) =>
           _payment.uploadOrderPhotos(ref, order, state),
       onAfterSubmit: (hookCtx, order) async {
@@ -281,7 +306,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           hookCtx.ref,
         );
         _payment.postSubmitCleanup(hookCtx.ref);
-        _navigatingAfterCheckout = true;
+        ref.read(posCheckoutProvider.notifier).markNavigatingAfterCheckout();
       },
       onNavigateAfterSubmit: (ctx, orderRef) {
         ctx.pushReplacement('/pos/receipt/$orderRef');
@@ -292,8 +317,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(posCartProvider);
+    final navigatingAfterCheckout =
+        ref.watch(posCheckoutProvider).navigatingAfterCheckout;
 
-    if (cart.items.isEmpty && !_navigatingAfterCheckout) {
+    if (cart.items.isEmpty && !navigatingAfterCheckout) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) context.go('/pos');
       });

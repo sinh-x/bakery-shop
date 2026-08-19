@@ -1,4 +1,5 @@
 import 'package:bakery_app/shared/utils.dart' show formatVND;
+import 'package:bakery_app/features/expenses/providers/debt_list_notifier.dart';
 import 'package:bakery_app/features/expenses/widgets/creditor_group_card.dart';
 import 'package:bakery_app/features/expenses/widgets/debt_status_filter_strip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
@@ -39,15 +40,6 @@ class DebtListScreen extends ConsumerStatefulWidget {
 }
 
 class _DebtListScreenState extends ConsumerState<DebtListScreen> {
-  ExpenseDebtStatusFilter _status = ExpenseDebtStatusFilter.all;
-  bool _loading = true;
-  String? _error;
-  Map<String, dynamic> _data = const {
-    'creditors': <Map<String, dynamic>>[],
-    'total_owed': 0.0,
-    'count': 0,
-  };
-
   @override
   void initState() {
     super.initState();
@@ -56,11 +48,10 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
 
   Future<void> _reload() async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final statusApi = expenseDebtStatusFilterApiValue(_status);
+    final notifier = ref.read(debtListProvider.notifier);
+    final status = ref.read(debtListProvider).status;
+    notifier.startReload();
+    final statusApi = expenseDebtStatusFilterApiValue(status);
     try {
       final data = widget.loadDebts != null
           ? await widget.loadDebts!(status: statusApi.isEmpty ? null : statusApi)
@@ -68,22 +59,20 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
                 status: statusApi.isEmpty ? null : statusApi,
               );
       if (!mounted) return;
-      setState(() {
-        _data = data;
-        _loading = false;
-      });
+      notifier.setData(data);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e is DioException ? (e.message ?? ExpensesLabels.debtListLoadError) : ExpensesLabels.debtListLoadError;
-        _loading = false;
-      });
+      notifier.setError(
+        e is DioException
+            ? (e.message ?? ExpensesLabels.debtListLoadError)
+            : ExpensesLabels.debtListLoadError,
+      );
     }
   }
 
   void _setStatus(ExpenseDebtStatusFilter value) {
     if (!mounted) return;
-    setState(() => _status = value);
+    ref.read(debtListProvider.notifier).setStatus(value);
     _reload();
   }
 
@@ -98,28 +87,29 @@ class _DebtListScreenState extends ConsumerState<DebtListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final creditors = (_data['creditors'] as List?) ?? const <dynamic>[];
-    final totalOwed = (_data['total_owed'] as num?)?.toDouble() ?? 0.0;
+    final state = ref.watch(debtListProvider);
+    final creditors = (state.data['creditors'] as List?) ?? const <dynamic>[];
+    final totalOwed = (state.data['total_owed'] as num?)?.toDouble() ?? 0.0;
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text(ExpensesLabels.debtListTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DebtStatusFilterStrip(status: _status, onChanged: _setStatus),
+          DebtStatusFilterStrip(status: state.status, onChanged: _setStatus),
           const SizedBox(height: 8),
-          if (_loading)
+          if (state.loading)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
                 child: Center(child: CircularProgressIndicator()),
               ),
             )
-          else if (_error != null)
+          else if (state.error != null)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(_error!),
+                child: Text(state.error!),
               ),
             )
           else if (creditors.isEmpty)

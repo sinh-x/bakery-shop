@@ -9,6 +9,7 @@ import '../../../data/api/cash_drawer_service.dart';
 import '../../../data/models/cash_drawer_transaction.dart';
 import '../../../data/providers/cash_drawer_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
+import '../providers/cash_drawer_transaction_list_notifier.dart';
 import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'cash_drawer_edit_dialog.dart';
@@ -75,24 +76,6 @@ class _CashDrawerTransactionListState
     extends ConsumerState<CashDrawerTransactionList> {
   final ScrollController _scrollController = ScrollController();
 
-  /// Accumulated transactions across all loaded pages, newest-first.
-  final List<CashDrawerTransaction> _loadedItems = [];
-
-  /// Total transaction count reported by the backend (across all pages).
-  int _total = 0;
-
-  /// Next offset to request for infinite-scroll. Equals the count of items
-  /// loaded so far.
-  int _nextOffset = 0;
-
-  /// Whether a page request is currently in-flight. Guards against stacking
-  /// duplicate `loadMore` calls when the user scrolls rapidly.
-  bool _isLoadingPage = false;
-
-  /// Whether the most recent page request failed. Surfaces a retry row at
-  /// the bottom of the list.
-  bool _pageFailed = false;
-
   /// 30s polling timer for the active drawer (FR3/AC4). Null when
   /// [CashDrawerTransactionList.poll] is `false`.
   Timer? _pollTimer;
@@ -126,12 +109,7 @@ class _CashDrawerTransactionListState
   /// poll (FR3/AC4) so the active drawer reflects new transactions.
   void _resetAndRefresh() {
     if (!mounted) return;
-    setState(() {
-      _loadedItems.clear();
-      _nextOffset = 0;
-      _total = 0;
-      _pageFailed = false;
-    });
+    ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).resetForRefresh();
     // Invalidate the cached first page so the next read re-fetches fresh
     // data rather than returning the cached page.
     ref.invalidate(cashDrawerTransactionsProvider(
@@ -146,10 +124,7 @@ class _CashDrawerTransactionListState
 
   Future<void> _loadFirstPage() async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingPage = true;
-      _pageFailed = false;
-    });
+    ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).startFirstPage();
     try {
       final resp = await ref.read(cashDrawerTransactionsProvider(
         CashDrawerTransactionsFilter(
@@ -159,61 +134,36 @@ class _CashDrawerTransactionListState
         ),
       ).future);
       if (!mounted) return;
-      setState(() {
-        _loadedItems
-          ..clear()
-          ..addAll(resp.items);
-        _total = resp.total;
-        _nextOffset = resp.items.length;
-        _isLoadingPage = false;
-        _pageFailed = false;
-      });
+      ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).setFirstPage(resp.items, resp.total);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _isLoadingPage = false;
-        _pageFailed = true;
-      });
+      ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).failFirstPage();
     }
   }
 
   Future<void> _loadMore() async {
-    if (_isLoadingPage || _pageFailed) return;
+    final s = ref.read(cashDrawerTransactionListProvider(widget.drawerId));
+    if (s.isLoadingPage || s.pageFailed) return;
     // Stop when we've loaded every page the backend says exists.
-    if (_total > 0 && _nextOffset >= _total) return;
+    if (s.total > 0 && s.nextOffset >= s.total) return;
     // Defensive: if the first page hasn't resolved yet, don't stack a
     // second request on top of it.
-    if (_nextOffset == 0) return;
+    if (s.nextOffset == 0) return;
 
-    setState(() => _isLoadingPage = true);
+    ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).startLoadMore();
     try {
       final resp = await ref.read(cashDrawerTransactionsProvider(
         CashDrawerTransactionsFilter(
           drawerId: widget.drawerId,
           limit: widget.pageSize,
-          offset: _nextOffset,
+          offset: s.nextOffset,
         ),
       ).future);
       if (!mounted) return;
-      setState(() {
-        // Deduplicate by id in case the backend shifts the page boundary
-        // (e.g. a new transaction inserts at the top between page loads).
-        for (final item in resp.items) {
-          if (!_loadedItems.contains(item)) {
-            _loadedItems.add(item);
-          }
-        }
-        _total = resp.total;
-        _nextOffset += resp.items.length;
-        _isLoadingPage = false;
-        _pageFailed = false;
-      });
+      ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).appendPage(resp.items, resp.total);
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _isLoadingPage = false;
-        _pageFailed = true;
-      });
+      ref.read(cashDrawerTransactionListProvider(widget.drawerId).notifier).failLoadMore();
     }
   }
 
@@ -302,10 +252,14 @@ class _CashDrawerTransactionListState
 
   @override
   Widget build(BuildContext context) {
-    if (_loadedItems.isEmpty && _isLoadingPage) {
+    final s = ref.watch(cashDrawerTransactionListProvider(widget.drawerId));
+    final loadedItems = s.loadedItems;
+    final isLoadingPage = s.isLoadingPage;
+    final pageFailed = s.pageFailed;
+    if (loadedItems.isEmpty && isLoadingPage) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_loadedItems.isEmpty && _pageFailed) {
+    if (loadedItems.isEmpty && pageFailed) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -320,7 +274,7 @@ class _CashDrawerTransactionListState
         ),
       );
     }
-    if (_loadedItems.isEmpty) {
+    if (loadedItems.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Center(
@@ -336,21 +290,21 @@ class _CashDrawerTransactionListState
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _loadedItems.length + _tailItemCount,
+      itemCount: loadedItems.length + _tailItemCount,
       itemBuilder: (context, index) {
-        if (index < _loadedItems.length) {
+        if (index < loadedItems.length) {
           return _TransactionCard(
-            transaction: _loadedItems[index],
+            transaction: loadedItems[index],
             reconciled: widget.reconciled,
             onTap: _handleTransactionTap,
           );
         }
         // Tail row: loading indicator, retry row, or end-of-list marker for
         // the next page.
-        if (_pageFailed) {
+        if (pageFailed) {
           return _RetryRow(onRetry: _loadMore);
         }
-        if (_isLoadingPage) {
+        if (isLoadingPage) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(child: CircularProgressIndicator()),
@@ -358,7 +312,7 @@ class _CashDrawerTransactionListState
         }
         // All pages loaded — render a small "end of list" marker so the
         // user knows there's nothing more to load.
-        if (_total > 0 && _nextOffset >= _total) {
+        if (s.total > 0 && s.nextOffset >= s.total) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
@@ -380,8 +334,11 @@ class _CashDrawerTransactionListState
   /// Number of trailing rows appended after the loaded items: 1 when a page
   /// is loading, failed, or when there are more pages to load (end marker).
   int get _tailItemCount {
-    if (_pageFailed || _isLoadingPage) return 1;
-    if (_total > 0 && _nextOffset >= _total && _loadedItems.isNotEmpty) return 1;
+    final s = ref.read(cashDrawerTransactionListProvider(widget.drawerId));
+    if (s.pageFailed || s.isLoadingPage) return 1;
+    if (s.total > 0 && s.nextOffset >= s.total && s.loadedItems.isNotEmpty) {
+      return 1;
+    }
     return 0;
   }
 }

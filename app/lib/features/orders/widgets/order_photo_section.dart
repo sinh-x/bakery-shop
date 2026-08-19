@@ -1,4 +1,6 @@
 // EXEMPT: 200-line threshold exceeded because DG-150 blocker: splitting tile/viewer/upload/empty state now would duplicate provider-driven upload state and photo deletion guards across modal boundaries. Reviewed 2026-05-29.
+import 'dart:async';
+
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
+import '../providers/order_photo_tag_edit_notifier.dart';
 import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
@@ -530,19 +533,22 @@ class _TagEditSheet extends ConsumerStatefulWidget {
 }
 
 class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
-  late Set<String> _selectedTags;
-  bool _saving = false;
-
   @override
   void initState() {
     super.initState();
-    _selectedTags = parseOrderPhotoTags(widget.photo.tags);
+    final tags = parseOrderPhotoTags(widget.photo.tags);
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderPhotoTagEditProvider.notifier).seedTags(tags);
+      }
+    });
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    ref.read(orderPhotoTagEditProvider.notifier).setSaving(true);
     try {
-      final tags = _selectedTags.join(',');
+      final tags = ref.read(orderPhotoTagEditProvider).selectedTags.join(',');
       await ref
           .read(orderPhotosProvider(widget.orderRef).notifier)
           .updateTags(widget.photo.id, tags);
@@ -555,12 +561,13 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(orderPhotoTagEditProvider.notifier).setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(orderPhotoTagEditProvider);
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -581,19 +588,13 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
             spacing: 8,
             runSpacing: 8,
             children: kOrderPhotoTags.map((tag) {
-              final selected = _selectedTags.contains(tag.key);
+              final selected = state.selectedTags.contains(tag.key);
               return FilterChip(
                 label: Text(tag.label),
                 selected: selected,
-                onSelected: (val) {
-                  setState(() {
-                    if (val) {
-                      _selectedTags.add(tag.key);
-                    } else {
-                      _selectedTags.remove(tag.key);
-                    }
-                  });
-                },
+                onSelected: (val) => ref
+                    .read(orderPhotoTagEditProvider.notifier)
+                    .toggleTag(tag.key, val),
                 selectedColor: tag.color.withAlpha(50),
                 checkmarkColor: tag.color,
                 side: BorderSide(
@@ -604,8 +605,8 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
+            onPressed: state.saving ? null : _save,
+            child: state.saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,
