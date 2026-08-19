@@ -6,6 +6,7 @@ import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import '../providers/blank_form_notifier.dart';
 
 /// Show the add/edit blank bottom sheet.
 ///
@@ -33,13 +34,6 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _unitCtrl;
   late final TextEditingController _notesCtrl;
-  // Category is managed as a slug selected from the server-managed Category
-  // dropdown (same source as the product form). Existing blanks whose stored
-  // category does not match any server Category slug are preserved: the
-  // dropdown renders empty (hint) and the original value is kept on save
-  // unless the user picks a new one.
-  late String _category;
-  bool _saving = false;
 
   bool get _isEditing => widget.blank != null;
 
@@ -48,9 +42,11 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
     super.initState();
     final b = widget.blank;
     _nameCtrl = TextEditingController(text: b?.name ?? '');
-    _category = b?.category ?? '';
     _unitCtrl = TextEditingController(text: b?.unit ?? '');
     _notesCtrl = TextEditingController(text: b?.notes ?? '');
+    // Seed the form notifier with the (optional) Blank being edited.
+    Future.microtask(
+        () => ref.read(blankFormProvider.notifier).seed(widget.blank));
   }
 
   @override
@@ -63,21 +59,22 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    ref.read(blankFormProvider.notifier).setSaving(true);
+    final category = ref.read(blankFormProvider).category;
     try {
       final notifier = ref.read(blanksProvider.notifier);
       if (_isEditing) {
         await notifier.updateBlank(
           widget.blank!.id,
           name: _nameCtrl.text.trim(),
-          category: _category,
+          category: category,
           unit: _unitCtrl.text.trim(),
           notes: _notesCtrl.text.trim(),
         );
       } else {
         await notifier.createBlank(
           name: _nameCtrl.text.trim(),
-          category: _category,
+          category: category,
           unit: _unitCtrl.text.trim(),
           notes: _notesCtrl.text.trim(),
         );
@@ -93,7 +90,7 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
+        ref.read(blankFormProvider.notifier).setSaving(false);
         showTopSnackBar(context, e.toString());
       }
     }
@@ -105,6 +102,9 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
+    final formState = ref.watch(blankFormProvider);
+    final category = formState.category;
+    final saving = formState.saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -146,8 +146,8 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
                   final active =
                       categories.where((c) => c.active == 1).toList();
                   final validSlugs = active.map((c) => c.slug).toList();
-                  final selected = validSlugs.contains(_category)
-                      ? _category
+                  final selected = validSlugs.contains(category)
+                      ? category
                       : null;
                   return DropdownButtonFormField<String>(
                     initialValue: selected,
@@ -164,11 +164,15 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
                           ),
                         )
                         .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _category = v);
-                      }
-                    },
+                    onChanged: saving
+                        ? null
+                        : (v) {
+                            if (v != null) {
+                              ref
+                                  .read(blankFormProvider.notifier)
+                                  .setCategory(v);
+                            }
+                          },
                   );
                 },
               ),
@@ -194,15 +198,15 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _saving
+                    onPressed: saving
                         ? null
                         : () => Navigator.of(context).pop(),
                     child: const Text(BlanksLabels.actionCancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
+                    onPressed: saving ? null : _save,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
@@ -225,8 +229,11 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
   /// fallback slug renders empty (no auto-selection) so the original value is
   /// preserved on save.
   Widget _fallbackCategoryDropdown() {
+    final formState = ref.watch(blankFormProvider);
+    final category = formState.category;
+    final saving = formState.saving;
     final selected =
-        categoryMap.containsKey(_category) ? _category : null;
+        categoryMap.containsKey(category) ? category : null;
     return DropdownButtonFormField<String>(
       initialValue: selected,
       decoration: const InputDecoration(
@@ -237,11 +244,13 @@ class _BlankFormState extends ConsumerState<_BlankForm> {
       items: categoryMap.entries
           .map((e) => DropdownMenuItem(value: e.key, child: Text(_categoryLabel(e.key))))
           .toList(),
-      onChanged: (v) {
-        if (v != null) {
-          setState(() => _category = v);
-        }
-      },
+      onChanged: saving
+          ? null
+          : (v) {
+              if (v != null) {
+                ref.read(blankFormProvider.notifier).setCategory(v);
+              }
+            },
     );
   }
 }

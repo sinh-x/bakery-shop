@@ -6,6 +6,7 @@ import '../../../data/models/blank.dart';
 import '../../../data/providers/blank_stock_provider.dart';
 import '../../../shared/utils/format_double.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import '../providers/blank_stock_action_sheet_notifier.dart';
 
 /// Type of stock movement being recorded.
 enum BlankStockAction { production, usage }
@@ -46,7 +47,6 @@ class _BlankStockActionSheetState
   final _qtyCtrl = TextEditingController(text: '1');
   final _producedCtrl = TextEditingController();
   final _expiryCtrl = TextEditingController();
-  bool _saving = false;
 
   @override
   void dispose() {
@@ -69,7 +69,7 @@ class _BlankStockActionSheetState
       showTopSnackBar(context, BlanksLabels.messageStockInvalidQuantity);
       return;
     }
-    setState(() => _saving = true);
+    ref.read(blankStockActionSheetProvider.notifier).setSaving(true);
     try {
       final notifier = ref.read(blankStockProvider.notifier);
       if (_isProduction) {
@@ -94,7 +94,7 @@ class _BlankStockActionSheetState
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
+        ref.read(blankStockActionSheetProvider.notifier).setSaving(false);
         showTopSnackBar(context, BlanksLabels.messageStockRecordFailed);
       }
     }
@@ -102,6 +102,7 @@ class _BlankStockActionSheetState
 
   @override
   Widget build(BuildContext context) {
+    final saving = ref.watch(blankStockActionSheetProvider).saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -167,13 +168,13 @@ class _BlankStockActionSheetState
                 children: [
                   TextButton(
                     onPressed:
-                        _saving ? null : () => Navigator.of(context).pop(),
+                        saving ? null : () => Navigator.of(context).pop(),
                     child: const Text(BlanksLabels.actionCancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _submit,
-                    child: _saving
+                    onPressed: saving ? null : _submit,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
