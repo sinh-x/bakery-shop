@@ -7,6 +7,7 @@ import '../../data/api/api_client.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
+import 'providers/cake_detail_screen_notifier.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/cake_detail_body.dart';
 import 'widgets/internal_print_dialog.dart';
@@ -90,11 +91,8 @@ class CakeDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
-  bool _transitioning = false;
-  bool _saving = false;
-
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
-    if (_transitioning) return;
+    if (ref.read(cakeDetailScreenProvider).transitioning) return;
     String reason = '';
     if (_isBackwardItem(item.status, targetStatus) ||
         targetStatus == 'cancelled') {
@@ -102,7 +100,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       if (r == null || !mounted) return;
       reason = r;
     }
-    setState(() => _transitioning = true);
+    ref.read(cakeDetailScreenProvider.notifier).setTransitioning(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -125,7 +123,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _transitioning = false);
+      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setTransitioning(false);
     }
   }
 
@@ -146,7 +144,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     required double unitPrice,
     Map<String, dynamic>? attributes,
   }) async {
-    setState(() => _saving = true);
+    ref.read(cakeDetailScreenProvider.notifier).setSaving(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -167,7 +165,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
         rethrow;
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setSaving(false);
     }
   }
 
@@ -175,6 +173,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final screenState = ref.watch(cakeDetailScreenProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -228,8 +227,8 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             item: item,
             orderRef: widget.orderRef,
             baseUrl: baseUrl,
-            transitioning: _transitioning,
-            saving: _saving,
+            transitioning: screenState.transitioning,
+            saving: screenState.saving,
             onTransition: (t) => _onTransition(item, t),
             onSave: (notes, isBirthday, age, unitPrice, {attributes}) =>
                 _onSave(

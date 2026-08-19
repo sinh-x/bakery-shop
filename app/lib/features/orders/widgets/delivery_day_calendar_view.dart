@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/order.dart';
+import '../providers/delivery_calendar_notifiers.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'delivery_week_calendar_components.dart';
@@ -35,9 +38,20 @@ class DeliveryDayCalendarView extends ConsumerStatefulWidget {
 
 class _DeliveryDayCalendarViewState
     extends ConsumerState<DeliveryDayCalendarView> {
-  late DateTime _date = widget.initialDate ?? DateTime.now();
   final ScrollController _scrollController = ScrollController();
-  bool _didInitialScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(deliveryDayCalendarProvider.notifier)
+            .seedInitialDate(widget.initialDate);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -45,14 +59,11 @@ class _DeliveryDayCalendarViewState
     super.dispose();
   }
 
-  void _goToday() => setState(() {
-        _date = DateTime.now();
-        _didInitialScroll = false;
-      });
+  void _goToday() =>
+      ref.read(deliveryDayCalendarProvider.notifier).goToday();
 
-  void _shift(int days) => setState(() {
-        _date = _date.add(Duration(days: days));
-      });
+  void _shift(int days) =>
+      ref.read(deliveryDayCalendarProvider.notifier).shift(days);
 
   void _scrollToCurrentTime() {
     final offset = currentTimeGridOffset();
@@ -67,8 +78,10 @@ class _DeliveryDayCalendarViewState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final calendarState = ref.watch(deliveryDayCalendarProvider);
+    final date = calendarState.date;
     final grouped = groupDeliveryOrdersByDayAndSlot(widget.orders);
-    final dayKey = _formatDayKey(_date);
+    final dayKey = _formatDayKey(date);
     final today = DateTime.now();
     final todayKey = _formatDayKey(today);
     final ordersBySlot = <String, List<Order>>{};
@@ -78,11 +91,14 @@ class _DeliveryDayCalendarViewState
 
     final timeLineOffset = currentTimeGridOffset();
     final showTimeLine =
-        timeLineOffset != null && isTodayDate(_date);
+        timeLineOffset != null && isTodayDate(date);
 
-    if (showTimeLine && !_didInitialScroll) {
-      _didInitialScroll = true;
+    if (showTimeLine && !calendarState.didInitialScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // Mark the initial scroll as done inside the post-frame callback so
+        // the provider is not modified during the build phase.
+        ref.read(deliveryDayCalendarProvider.notifier).markInitialScrollDone();
         if (_scrollController.hasClients) {
           _scrollToCurrentTime();
         }
@@ -92,7 +108,7 @@ class _DeliveryDayCalendarViewState
     return Column(
       children: [
         _DayCalendarNav(
-          date: _date,
+          date: date,
           onPrev: () => _shift(-1),
           onNext: () => _shift(1),
           onToday: _goToday,
@@ -110,7 +126,7 @@ class _DeliveryDayCalendarViewState
                       WeekHourLabelColumn(theme: theme),
                       Expanded(
                         child: WeekDayColumn(
-                          date: _date,
+                          date: date,
                           dayKey: dayKey,
                           isToday: dayKey == todayKey,
                           ordersBySlot: ordersBySlot,

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart'
 import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../../data/models/order_photo.dart';
 import '../../../../providers/order_providers.dart';
+import '../../providers/txn_photo_busy_notifier.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
@@ -50,8 +51,6 @@ class TxnPhotoSection extends ConsumerStatefulWidget {
 }
 
 class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
-  bool _photoBusy = false;
-
   String get _orderRef => widget.orderRef;
   String get _txnId => widget.txnId;
 
@@ -68,7 +67,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
       imageQuality: 85,
     );
     if (image == null || !mounted) return;
-    setState(() => _photoBusy = true);
+    ref.read(txnPhotoBusyProvider.notifier).setBusy(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(_orderRef).notifier)
@@ -85,7 +84,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
         showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
-      if (mounted) setState(() => _photoBusy = false);
+      if (mounted) ref.read(txnPhotoBusyProvider.notifier).setBusy(false);
     }
   }
 
@@ -111,7 +110,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _photoBusy = true);
+    ref.read(txnPhotoBusyProvider.notifier).setBusy(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(_orderRef).notifier)
@@ -125,7 +124,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
         showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
-      if (mounted) setState(() => _photoBusy = false);
+      if (mounted) ref.read(txnPhotoBusyProvider.notifier).setBusy(false);
     }
   }
 
@@ -133,6 +132,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoBusy = ref.watch(txnPhotoBusyProvider);
     final photoAsync =
         ref.watch(transactionPhotoProvider((_orderRef, _txnId)));
     return Column(
@@ -171,7 +171,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                     Tooltip(
                       message: OrdersLabels.txnPhotoAttach,
                       child: TextButton.icon(
-                        onPressed: _photoBusy ? null : _pickTxnPhoto,
+                        onPressed: photoBusy ? null : _pickTxnPhoto,
                         icon:
                             const Icon(Icons.photo_camera_outlined, size: 20),
                         label: const Text(OrdersLabels.txnPhotoAttach),
@@ -185,7 +185,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                 child: Tooltip(
                   message: OrdersLabels.txnPhotoAttach,
                   child: TextButton.icon(
-                    onPressed: _photoBusy ? null : _pickTxnPhoto,
+                    onPressed: photoBusy ? null : _pickTxnPhoto,
                     icon: const Icon(Icons.photo_camera_outlined, size: 20),
                     label: const Text(OrdersLabels.txnPhotoAttach),
                   ),
@@ -229,7 +229,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                       Tooltip(
                         message: OrdersLabels.txnPhotoReplace,
                         child: TextButton.icon(
-                          onPressed: _photoBusy ? null : _pickTxnPhoto,
+                          onPressed: photoBusy ? null : _pickTxnPhoto,
                           icon: const Icon(Icons.swap_horiz, size: 18),
                           label: const Text(OrdersLabels.txnPhotoReplace),
                         ),
@@ -238,7 +238,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                         Tooltip(
                           message: OrdersLabels.txnPhotoRemove,
                           child: TextButton.icon(
-                            onPressed: _photoBusy ? null : _removeTxnPhoto,
+                            onPressed: photoBusy ? null : _removeTxnPhoto,
                             icon: const Icon(Icons.delete_outline, size: 18),
                             label: const Text(OrdersLabels.txnPhotoRemove),
                           ),
@@ -246,7 +246,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                     ],
                   ),
                 ),
-                if (_photoBusy)
+                if (photoBusy)
                   const Padding(
                     padding: EdgeInsets.only(left: 8, top: 32),
                     child: SizedBox(

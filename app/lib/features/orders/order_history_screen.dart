@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../data/providers/order/order_list_providers.dart';
+import 'providers/order_list_filter_notifier.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/order_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 const _historyStatuses = <String>[
   'new',
   'confirmed',
@@ -21,8 +23,6 @@ const _historyStatuses = <String>[
   'cancelled',
 ];
 
-enum _DateFilterMode { single, range }
-
 class OrderHistoryScreen extends ConsumerStatefulWidget {
   const OrderHistoryScreen({super.key});
 
@@ -32,9 +32,6 @@ class OrderHistoryScreen extends ConsumerStatefulWidget {
 
 class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
   final _searchController = TextEditingController();
-  _DateFilterMode _mode = _DateFilterMode.range;
-  String _searchQuery = '';
-  String? _rangeError;
 
   @override
   void dispose() {
@@ -42,9 +39,9 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
     super.dispose();
   }
 
-  List<Order> _applySearch(List<Order> orders) {
-    if (_searchQuery.trim().isEmpty) return orders;
-    final q = _searchQuery.trim().toLowerCase();
+  List<Order> _applySearch(List<Order> orders, String searchQuery) {
+    if (searchQuery.trim().isEmpty) return orders;
+    final q = searchQuery.trim().toLowerCase();
     return orders.where((o) {
       return o.customerName.toLowerCase().contains(q) ||
           o.customerPhone.contains(q) ||
@@ -60,10 +57,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
       lastDate: DateTime(2100),
     );
     if (picked == null) return;
-    setState(() {
-      _mode = _DateFilterMode.single;
-      _rangeError = null;
-    });
+    ref.read(orderHistoryFilterProvider.notifier).setSingleMode();
     await ref.read(orderHistoryPaginationProvider.notifier).setSingleDate(picked);
   }
 
@@ -79,17 +73,13 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
     final notifier = ref.read(orderHistoryPaginationProvider.notifier);
     final validation = notifier.validateRange(picked.start, picked.end);
     if (validation != null) {
-      setState(() {
-        _rangeError = validation;
-        _mode = _DateFilterMode.range;
-      });
+      ref
+          .read(orderHistoryFilterProvider.notifier)
+          .setRangeModeWithError(validation);
       return;
     }
 
-    setState(() {
-      _mode = _DateFilterMode.range;
-      _rangeError = null;
-    });
+    ref.read(orderHistoryFilterProvider.notifier).setRangeModeSuccess();
     await notifier.setDateRange(picked.start, picked.end);
   }
 
@@ -102,6 +92,10 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
     final notifier = ref.read(orderHistoryPaginationProvider.notifier);
     final fromDate = notifier.fromDate;
     final toDate = notifier.toDate;
+    final filterState = ref.watch(orderHistoryFilterProvider);
+    final mode = filterState.mode;
+    final searchQuery = filterState.searchQuery;
+    final rangeError = filterState.rangeError;
 
     return Scaffold(
       appBar: AppBar(
@@ -127,15 +121,17 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   children: [
                     ChoiceChip(
                       label: const Text(OrdersLabels.lichSuDonHangLocMotNgay),
-                      selected: _mode == _DateFilterMode.single,
-                      onSelected: (_) =>
-                          setState(() => _mode = _DateFilterMode.single),
+                      selected: mode == OrderHistoryDateFilterMode.single,
+                      onSelected: (_) => ref
+                          .read(orderHistoryFilterProvider.notifier)
+                          .setMode(OrderHistoryDateFilterMode.single),
                     ),
                     ChoiceChip(
                       label: const Text(OrdersLabels.lichSuDonHangLocKhoangNgay),
-                      selected: _mode == _DateFilterMode.range,
-                      onSelected: (_) =>
-                          setState(() => _mode = _DateFilterMode.range),
+                      selected: mode == OrderHistoryDateFilterMode.range,
+                      onSelected: (_) => ref
+                          .read(orderHistoryFilterProvider.notifier)
+                          .setMode(OrderHistoryDateFilterMode.range),
                     ),
                   ],
                 ),
@@ -147,12 +143,12 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                     OutlinedButton.icon(
                       icon: const Icon(Icons.event),
                       label: Text(
-                        _mode == _DateFilterMode.single
+                        mode == OrderHistoryDateFilterMode.single
                             ? formatDisplayDate(fromDate)
                             : '${formatDisplayDate(fromDate)} - ${formatDisplayDate(toDate)}',
                       ),
                       onPressed: () {
-                        if (_mode == _DateFilterMode.single) {
+                        if (mode == OrderHistoryDateFilterMode.single) {
                           _pickSingleDate(fromDate);
                         } else {
                           _pickRange(fromDate, toDate);
@@ -161,10 +157,10 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                     ),
                   ],
                 ),
-                if (_rangeError != null) ...[
+                if (rangeError != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    _rangeError!,
+                    rangeError,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                       fontWeight: FontWeight.w600,
@@ -177,11 +173,13 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   decoration: InputDecoration(
                     hintText: OrdersLabels.lichSuDonHangTimKiem,
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
+                    suffixIcon: searchQuery.isNotEmpty
                         ? IconButton(
                             onPressed: () {
                               _searchController.clear();
-                              setState(() => _searchQuery = '');
+                              ref
+                                  .read(orderHistoryFilterProvider.notifier)
+                                  .clearSearchQuery();
                             },
                             icon: const Icon(Icons.clear),
                           )
@@ -191,7 +189,9 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                     ),
                     isDense: true,
                   ),
-                  onChanged: (value) => setState(() => _searchQuery = value),
+                  onChanged: (value) => ref
+                      .read(orderHistoryFilterProvider.notifier)
+                      .setSearchQuery(value),
                 ),
               ],
             ),
@@ -221,7 +221,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                   return const Center(child: Text(OrdersLabels.lichSuDonHangTrong));
                 }
 
-                final filtered = _applySearch(orders);
+                final filtered = _applySearch(orders, searchQuery);
                 if (filtered.isEmpty) {
                   return const Center(
                     child: Text(OrdersLabels.lichSuDonHangKhongTimThay),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/work_item.dart';
 import '../../../providers/order_providers.dart';
 import '../../../data/providers/products_provider.dart';
+import '../providers/cake_detail_body_notifier.dart';
 import '../../../shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -52,21 +53,16 @@ class CakeDetailBody extends ConsumerStatefulWidget {
 }
 
 class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
-  bool _editing = false;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _cashAmountCtrl;
   late TextEditingController _cashFeeCtrl;
-  late bool _isBirthday;
-  late bool _rutTien;
-  String? _candleType;
 
   static const int _defaultCashFee = 20000;
   static const int _cashFeeStep = 5000;
   static const int _cashAmountStep = 100000;
   static const int _minCashAmount = 100000;
-  bool _editingCashAmount = false;
 
   @override
   void initState() {
@@ -76,9 +72,6 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     _priceCtrl = TextEditingController();
     _cashAmountCtrl = TextEditingController();
     _cashFeeCtrl = TextEditingController();
-    _isBirthday = false;
-    _rutTien = false;
-    _candleType = null;
   }
 
   @override
@@ -98,13 +91,13 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     _priceCtrl.text = widget.item.unitPrice > 0
         ? vndToThousands(widget.item.unitPrice).toStringAsFixed(0)
         : '';
-    _isBirthday = widget.item.isBirthday;
+    final isBirthday = widget.item.isBirthday;
     // F15: Initialize rut tien state from attributes['rut_tien'] directly
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl.text = cashAmount;
     _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
-    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
+    final rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     final storedCandle = widget.item.attributes['candle_type']?.toString();
     // AC1/AC7: default selection so the radio group renders a selection. A
     // stored candle_type takes precedence.
@@ -113,33 +106,39 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     // is checked and no prior selection exists; otherwise default to
     // `khong_nen`. The default is NOT persisted until the user submits the
     // edit form (`_submit`).
+    String? candleType;
     if (storedCandle != null && storedCandle.isNotEmpty) {
-      _candleType = storedCandle;
-    } else if (_isBirthday) {
-      _candleType = 'nen_so';
+      candleType = storedCandle;
+    } else if (isBirthday) {
+      candleType = 'nen_so';
     } else {
-      _candleType = 'khong_nen';
+      candleType = 'khong_nen';
     }
-    setState(() => _editing = true);
+    ref.read(cakeDetailBodyProvider.notifier).startEdit(
+          isBirthday: isBirthday,
+          rutTien: rutTien,
+          candleType: candleType,
+        );
   }
 
   void _cancelEdit() {
-    setState(() => _editing = false);
+    ref.read(cakeDetailBodyProvider.notifier).cancelEdit();
   }
 
   Future<void> _submit() async {
+    final bodyState = ref.read(cakeDetailBodyProvider);
     final rawPrice = double.tryParse(_priceCtrl.text.trim());
     final unitPrice = rawPrice != null
         ? vndFromThousands(rawPrice)
         : widget.item.unitPrice;
-    final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
+    final age = bodyState.isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
     final hasCandle =
-        _isBirthday && _candleType != null && _candleType != 'khong_nen';
+        bodyState.isBirthday && bodyState.candleType != null && bodyState.candleType != 'khong_nen';
     // Determine whether candle_type changed relative to the stored value.
     final storedCandle = widget.item.attributes['candle_type']?.toString();
-    final candleChanged = (hasCandle ? _candleType : null) != storedCandle;
+    final candleChanged = (hasCandle ? bodyState.candleType : null) != storedCandle;
     Map<String, dynamic>? attributes;
-    if (_rutTien) {
+    if (bodyState.rutTien) {
       attributes = {
         'rut_tien': 'true',
         'cash_amount': _cashAmountCtrl.text.trim(),
@@ -148,7 +147,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             : '$_defaultCashFee',
       };
       if (hasCandle) {
-        attributes['candle_type'] = _candleType;
+        attributes['candle_type'] = bodyState.candleType;
       }
     } else if (widget.item.attributes.containsKey('rut_tien')) {
       // F17: Toggle-off removes cash keys entirely (existing behavior).
@@ -157,7 +156,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
       // No rut_tien change: only patch candle_type, preserving everything else.
       attributes = Map<String, dynamic>.from(widget.item.attributes);
       if (hasCandle) {
-        attributes['candle_type'] = _candleType;
+        attributes['candle_type'] = bodyState.candleType;
       } else {
         attributes.remove('candle_type');
       }
@@ -166,12 +165,12 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
     try {
       await widget.onSave(
         _notesCtrl.text.trim(),
-        _isBirthday,
+        bodyState.isBirthday,
         age,
         unitPrice,
         attributes: attributes,
       );
-      if (mounted) setState(() => _editing = false);
+      if (mounted) ref.read(cakeDetailBodyProvider.notifier).finishEdit();
     } catch (error, stackTrace) {
       debugPrint('cake_detail: save failed for item ${widget.item.id}: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -182,6 +181,12 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bodyState = ref.watch(cakeDetailBodyProvider);
+    final editing = bodyState.editing;
+    final isBirthday = bodyState.isBirthday;
+    final rutTien = bodyState.rutTien;
+    final candleType = bodyState.candleType;
+    final editingCashAmount = bodyState.editingCashAmount;
     final statusColor = workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
     const allStatuses = [
@@ -236,7 +241,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
         ),
         const SizedBox(height: 4),
 
-        if (!_editing) ...[
+        if (!editing) ...[
           // ── Read mode: qty × price ────────────────────────────────
           Text(
             '${widget.item.quantity} × ${formatVND(widget.item.unitPrice)}',
@@ -396,28 +401,21 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
           Row(
             children: [
               Checkbox(
-                value: _isBirthday,
-                onChanged: (v) => setState(() {
-                  _isBirthday = v ?? false;
-                  if (!_isBirthday) _ageCtrl.clear();
-                  // DG-361 Phase 1 — FR2/AC2: when birthday is checked and
-                  // the user has not yet picked a candle type (still the
-                  // initial default), pre-select `nen_so`. Not persisted
-                  // until the user submits the edit form (`_submit`).
-                  if (_isBirthday &&
-                      _candleType == 'khong_nen' &&
-                      (widget.item.attributes['candle_type'] == null ||
-                          widget.item.attributes['candle_type'].toString().isEmpty)) {
-                    _candleType = 'nen_so';
-                  }
-                }),
+                value: isBirthday,
+                onChanged: (v) {
+                  final newVal = v ?? false;
+                  if (!newVal) _ageCtrl.clear();
+                  ref
+                      .read(cakeDetailBodyProvider.notifier)
+                      .setBirthday(newVal, candleDefault: 'nen_so');
+                },
               ),
               const Text(OrdersLabels.isBirthday),
             ],
           ),
 
           // Age field (only when birthday)
-          if (_isBirthday) ...[
+          if (isBirthday) ...[
             const SizedBox(height: 8),
             TextField(
               controller: _ageCtrl,
@@ -436,8 +434,9 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
             const SizedBox(height: 8),
             const _SectionLabel(OrdersLabels.candleTypeSectionLabel),
             CandleTypeRadioGroup(
-              groupValue: _candleType,
-              onChanged: (v) => setState(() => _candleType = v),
+              groupValue: candleType,
+              onChanged: (v) =>
+                  ref.read(cakeDetailBodyProvider.notifier).setCandleType(v),
             ),
           ],
 
@@ -446,20 +445,21 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
           Row(
             children: [
               Checkbox(
-                value: _rutTien,
-                onChanged: (v) => setState(() {
-                  _rutTien = v ?? false;
-                  if (!_rutTien) {
+                value: rutTien,
+                onChanged: (v) {
+                  final newVal = v ?? false;
+                  if (!newVal) {
                     _cashAmountCtrl.clear();
                   }
-                }),
+                  ref.read(cakeDetailBodyProvider.notifier).setRutTien(newVal);
+                },
               ),
               const Text(OrdersLabels.rutTien),
             ],
           ),
 
           // Cash fields (only when rut tien is enabled)
-          if (_rutTien) ...[
+          if (rutTien) ...[
             const SizedBox(height: 8),
             // Cash amount stepper: [-] [amount] [+] with 100k step
             Row(
@@ -473,10 +473,10 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                       final clamped = next < _minCashAmount
                           ? _minCashAmount
                           : next;
-                      setState(() {
-                        _cashAmountCtrl.text = '$clamped';
-                        _editingCashAmount = false;
-                      });
+                      _cashAmountCtrl.text = '$clamped';
+                      ref
+                          .read(cakeDetailBodyProvider.notifier)
+                          .setEditingCashAmount(false);
                     }
                   },
                   icon: const Icon(Icons.remove, size: 16),
@@ -488,8 +488,10 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                 ),
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _editingCashAmount = true),
-                    child: _editingCashAmount
+                    onTap: () => ref
+                        .read(cakeDetailBodyProvider.notifier)
+                        .setEditingCashAmount(true),
+                    child: editingCashAmount
                         ? Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: TextField(
@@ -515,7 +517,9 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                                 if (val < _minCashAmount && val != 0) {
                                   _cashAmountCtrl.text = '$_minCashAmount';
                                 }
-                                setState(() => _editingCashAmount = false);
+                                ref
+                                    .read(cakeDetailBodyProvider.notifier)
+                                    .setEditingCashAmount(false);
                               },
                             ),
                           )
@@ -540,10 +544,10 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                     final clamped = next < _minCashAmount
                         ? _minCashAmount
                         : next;
-                    setState(() {
-                      _cashAmountCtrl.text = '$clamped';
-                      _editingCashAmount = false;
-                    });
+                    _cashAmountCtrl.text = '$clamped';
+                    ref
+                        .read(cakeDetailBodyProvider.notifier)
+                        .setEditingCashAmount(false);
                   },
                   icon: const Icon(Icons.add, size: 16),
                   constraints: const BoxConstraints(
@@ -562,9 +566,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                   onPressed: () {
                     final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
                     if (current >= _cashFeeStep) {
-                      setState(() {
-                        _cashFeeCtrl.text = '${current - _cashFeeStep}';
-                      });
+                      _cashFeeCtrl.text = '${current - _cashFeeStep}';
                     }
                   },
                   icon: const Icon(Icons.remove, size: 16),
@@ -588,9 +590,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
                   onPressed: () {
                     final current =
                         int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
-                    setState(() {
-                      _cashFeeCtrl.text = '${current + _cashFeeStep}';
-                    });
+                    _cashFeeCtrl.text = '${current + _cashFeeStep}';
                   },
                   icon: const Icon(Icons.add, size: 16),
                   constraints: const BoxConstraints(
@@ -648,7 +648,7 @@ class _CakeDetailBodyState extends ConsumerState<CakeDetailBody> {
         CakeDetailBlankSection(
           orderRef: widget.orderRef,
           item: widget.item,
-          editing: _editing,
+          editing: editing,
           onAddBlank: ref
               .read(orderWorkItemsProvider(widget.orderRef).notifier)
               .addBlank,

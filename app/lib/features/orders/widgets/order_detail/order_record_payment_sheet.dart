@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart' show ImagePicker, ImageSource, X
 
 import '../../../../data/api/order_service.dart';
 import '../../../../providers/order_providers.dart';
+import '../../providers/order_record_payment_notifier.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
@@ -47,23 +48,17 @@ class OrderRecordPaymentSheet extends ConsumerStatefulWidget {
 
 class _OrderRecordPaymentSheetState
     extends ConsumerState<OrderRecordPaymentSheet> {
-  late String _type;
-  String _method = 'cash';
-  String? _paymentSource;
-  XFile? _pendingTransferPhoto;
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
-    _type = 'deposit';
   }
 
   void _onTypeSelected(String type) {
-    setState(() => _type = type);
+    ref.read(orderRecordPaymentProvider.notifier).setType(type);
     if (type == 'full_payment' && widget.remaining > 0) {
       // Display the amount in thousands (user types 200 → means 200,000)
       _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
@@ -71,13 +66,7 @@ class _OrderRecordPaymentSheetState
   }
 
   void _onMethodSelected(String method) {
-    setState(() {
-      _method = method;
-      if (method != 'transfer') {
-        _paymentSource = null;
-        _pendingTransferPhoto = null;
-      }
-    });
+    ref.read(orderRecordPaymentProvider.notifier).setMethod(method);
   }
 
   /// Opens the camera/gallery picker (FR2) reusing the POS checkout
@@ -94,7 +83,7 @@ class _OrderRecordPaymentSheetState
       imageQuality: 85,
     );
     if (image == null || !mounted) return;
-    setState(() => _pendingTransferPhoto = image);
+    ref.read(orderRecordPaymentProvider.notifier).setPendingTransferPhoto(image);
   }
 
   @override
@@ -108,24 +97,25 @@ class _OrderRecordPaymentSheetState
     if (!_formKey.currentState!.validate()) return;
     // Multiply by 1000: staff types 200 → actual amount 200,000
     final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
-    setState(() => _submitting = true);
+    ref.read(orderRecordPaymentProvider.notifier).setSubmitting(true);
     try {
+      final s = ref.read(orderRecordPaymentProvider);
       // Capture the created txn so its id can link the uploaded photo (FR2).
       final txn = await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
           .record(
             amount: amount,
-            type: _type,
-            method: _method,
+            type: s.type,
+            method: s.method,
             notes: _notesCtrl.text.trim(),
-            paymentSource: _paymentSource,
+            paymentSource: s.paymentSource,
           );
       // Upload the transfer proof photo after the payment is recorded (FR3).
       // Tags = 'chuyen-khoan,<sanitized-account>' (FR3/FR4). The photo upload
       // is best-effort: a failure does not roll back the recorded payment.
-      final pendingPhoto = _pendingTransferPhoto;
-      if (_method == 'transfer' && pendingPhoto != null) {
-        final accountTag = sanitizeAccountTag(_paymentSource);
+      final pendingPhoto = s.pendingTransferPhoto;
+      if (s.method == 'transfer' && pendingPhoto != null) {
+        final accountTag = sanitizeAccountTag(s.paymentSource);
         final tags = accountTag.isEmpty
             ? 'chuyen-khoan'
             : 'chuyen-khoan,$accountTag';
@@ -165,7 +155,7 @@ class _OrderRecordPaymentSheetState
         // payment-recorded snackbar suppression logic below stays consistent
         // (DG-364 review-auto cycle 1, MN-3).
         if (mounted) {
-          setState(() => _pendingTransferPhoto = null);
+          ref.read(orderRecordPaymentProvider.notifier).clearPendingTransferPhoto();
         }
       }
       if (mounted) {
@@ -181,13 +171,14 @@ class _OrderRecordPaymentSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) ref.read(orderRecordPaymentProvider.notifier).setSubmitting(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = ref.watch(orderRecordPaymentProvider);
 
     const types = [
       ('deposit', OrdersLabels.txnTypeDeposit),
@@ -222,7 +213,7 @@ class _OrderRecordPaymentSheetState
                   .map(
                     (t) => ChoiceChip(
                       label: Text(t.$2),
-                      selected: _type == t.$1,
+                      selected: s.type == t.$1,
                       onSelected: (_) => _onTypeSelected(t.$1),
                     ),
                   )
@@ -237,7 +228,7 @@ class _OrderRecordPaymentSheetState
                   .map(
                     (m) => ChoiceChip(
                       label: Text(m.$2),
-                      selected: _method == m.$1,
+                      selected: s.method == m.$1,
                       onSelected: (_) => _onMethodSelected(m.$1),
                     ),
                   )
@@ -269,12 +260,13 @@ class _OrderRecordPaymentSheetState
                 border: OutlineInputBorder(),
               ),
             ),
-            if (_method == 'transfer') ...[
+            if (s.method == 'transfer') ...[
               const SizedBox(height: 12),
               TargetAccountDropdown(
-                value: _paymentSource,
-                onChanged: (value) =>
-                    setState(() => _paymentSource = value),
+                value: s.paymentSource,
+                onChanged: (value) => ref
+                    .read(orderRecordPaymentProvider.notifier)
+                    .setPaymentSource(value),
               ),
               const SizedBox(height: 8),
               // Photo attachment button (FR2): reuses the
@@ -289,18 +281,18 @@ class _OrderRecordPaymentSheetState
                     onPressed: _pickTransferPhoto,
                     icon: const Icon(Icons.photo_camera_outlined, size: 20),
                     label: Text(
-                      _pendingTransferPhoto == null
+                      s.pendingTransferPhoto == null
                           ? OrdersLabels.attachTransferPhoto
                           : OrdersLabels.transferPhotoSelected,
                     ),
                   ),
                 ),
               ),
-              if (_pendingTransferPhoto != null) ...[
+              if (s.pendingTransferPhoto != null) ...[
                 Padding(
                   padding: const EdgeInsets.only(left: 8, top: 2),
                   child: Text(
-                    _pendingTransferPhoto!.name,
+                    s.pendingTransferPhoto!.name,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
@@ -311,8 +303,8 @@ class _OrderRecordPaymentSheetState
             ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: _submitting
+              onPressed: s.submitting ? null : _submit,
+              child: s.submitting
                   ? const SizedBox(
                       height: 20,
                       width: 20,

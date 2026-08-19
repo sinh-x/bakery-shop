@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import 'providers/order_list_filter_notifier.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -55,17 +56,7 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver, AutoRefreshMixin {
   late final TabController _tabController;
-  String _statusFilter = 'new';
-  String _searchQuery = '';
-  final bool _urgencyFilterEnabled = false;
   final _searchController = TextEditingController();
-
-  // View mode: 'list' or 'kanban'
-  String _viewMode = 'list';
-
-  // Date filter for order list (DG-193 Phase 2 — FR1, FR2).
-  // Default is [DateFilterOption.all] so the initial view shows every order.
-  DateFilterOption _dateFilter = DateFilterOption.all;
 
   @override
   String screenRoutePath() => '/orders';
@@ -84,18 +75,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
   Future<void> _loadViewMode() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _viewMode = prefs.getString('order_view_mode') ?? 'list';
-    });
+    ref
+        .read(orderListFilterProvider.notifier)
+        .setViewMode(prefs.getString('order_view_mode') ?? 'list');
   }
 
   Future<void> _toggleViewMode() async {
-    final newMode = _viewMode == 'list' ? 'kanban' : 'list';
+    final current = ref.read(orderListFilterProvider).viewMode;
+    final newMode = current == 'list' ? 'kanban' : 'list';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('order_view_mode', newMode);
-    setState(() {
-      _viewMode = newMode;
-    });
+    ref.read(orderListFilterProvider.notifier).setViewMode(newMode);
   }
 
   void _onAppBarMenuSelected(String value) {
@@ -131,7 +121,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() => setState(() {}));
+    _tabController.addListener(() {
+      // Rebuild the AppBar title (urgency/incomplete badge visibility)
+      // when the user switches tabs. Previously an empty `setState(() {})`;
+      // now a counter bump the title watches.
+      ref.read(orderListTabRebuildProvider.notifier).bump();
+    });
     _loadViewMode();
     initAutoRefresh();
   }
@@ -154,8 +149,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     await ref.read(orderListProvider.notifier).refresh();
   }
 
-  List<Order> _applyStatusFilter(List<Order> orders) {
-    switch (_statusFilter) {
+  List<Order> _applyStatusFilter(List<Order> orders, String statusFilter) {
+    switch (statusFilter) {
       case 'ready':
         // Pickup-only ready orders (same as Kanban "Sẵn sàng" column)
         return orders
@@ -180,13 +175,13 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where((o) => o.status == 'delivered' && !o.isPaid)
             .toList();
       default:
-        return orders.where((o) => o.status == _statusFilter).toList();
+        return orders.where((o) => o.status == statusFilter).toList();
     }
   }
 
-  List<Order> _applySearchFilter(List<Order> orders) {
-    if (_searchQuery.isEmpty) return orders;
-    final q = _searchQuery.toLowerCase();
+  List<Order> _applySearchFilter(List<Order> orders, String searchQuery) {
+    if (searchQuery.isEmpty) return orders;
+    final q = searchQuery.toLowerCase();
     return orders
         .where(
           (o) =>
@@ -198,35 +193,16 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
-  List<Order> _applyUrgencyFilter(List<Order> orders) {
-    if (!_urgencyFilterEnabled) return orders;
-    return orders
-        .where((o) => o.urgency == urgencyCritical || o.urgency == urgencyUrgent)
-        .toList();
-  }
-
-  /// Filters orders by [dueDate] (YYYY-MM-DD) against the selected
-  /// [_dateFilter] option (DG-193 Phase 2 — FR2).
-  ///
-  /// - [DateFilterOption.all] returns every order (filter cleared).
-  /// - The other options compare each order's parsed `dueDate` against today
-  ///   and/or tomorrow. Orders without a `dueDate` (null or empty) are
-  ///   excluded from non-`all` date filters — they only reappear when the
-  ///   user selects "Tất cả".
-  ///
-  /// Date comparison is day-precision: the `dueDate` string (`yyyy-MM-dd`)
-  /// is parsed via [parseApiDate] and compared to `today`/`tomorrow` produced
-  /// from `DateTime.now()`. This keeps filtering O(n) and client-side only
-  /// (NFR2).
-  List<Order> _applyDateFilter(List<Order> orders) {
-    return applyDateFilter(orders, _dateFilter);
+  List<Order> _applyDateFilter(List<Order> orders, DateFilterOption dateFilter) {
+    return applyDateFilter(orders, dateFilter);
   }
 
   List<Order> _applyFilters(List<Order> orders) {
-    // Pipeline: status → search → date → urgency (DG-193 Phase 2 — FR3).
-    var filtered = _applySearchFilter(_applyStatusFilter(orders));
-    filtered = _applyDateFilter(filtered);
-    filtered = _applyUrgencyFilter(filtered);
+    final filterState = ref.read(orderListFilterProvider);
+    // Pipeline: status → search → date (DG-193 Phase 2 — FR3).
+    var filtered = _applySearchFilter(
+        _applyStatusFilter(orders, filterState.statusFilter), filterState.searchQuery);
+    filtered = _applyDateFilter(filtered, filterState.dateFilter);
     return filtered;
   }
 
@@ -268,6 +244,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
+    final filterState = ref.watch(orderListFilterProvider);
+    final viewMode = filterState.viewMode;
+    final searchQuery = filterState.searchQuery;
+    final statusFilter = filterState.statusFilter;
+    final dateFilter = filterState.dateFilter;
+    // Watch the tab rebuild counter so the AppBar title (urgency/incomplete
+    // badges) re-renders on tab switches.
+    ref.watch(orderListTabRebuildProvider);
     final isOrdersTab = _tabController.index == 0;
 
     return Scaffold(
@@ -358,9 +342,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           ),
           IconButton(
             icon: Icon(
-              _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
+              viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
-            tooltip: _viewMode == 'list'
+            tooltip: viewMode == 'list'
                 ? SharedLabels.switchToKanbanView
                 : SharedLabels.switchToListView,
             onPressed: _toggleViewMode,
@@ -428,12 +412,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   decoration: InputDecoration(
                     hintText: SharedLabels.searchOrders,
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
+                    suffixIcon: searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
                             onPressed: () {
                               _searchController.clear();
-                              setState(() => _searchQuery = '');
+                              ref
+                                  .read(orderListFilterProvider.notifier)
+                                  .clearSearchQuery();
                             },
                           )
                         : null,
@@ -443,18 +429,22 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     isDense: true,
                   ),
-                  onChanged: (v) => setState(() => _searchQuery = v),
+                  onChanged: (v) => ref
+                      .read(orderListFilterProvider.notifier)
+                      .setSearchQuery(v),
                 ),
               ),
 
               // Date filter chips (visible in both list and kanban view — DG-193 Phase 2, FR4)
               DateFilterChips(
-                selected: _dateFilter,
-                onChanged: (option) => setState(() => _dateFilter = option),
+                selected: dateFilter,
+                onChanged: (option) => ref
+                    .read(orderListFilterProvider.notifier)
+                    .setDateFilter(option),
               ),
 
               // Status filter chips (hidden in Kanban — columns already group by status)
-              if (_viewMode == 'list')
+              if (viewMode == 'list')
                 SizedBox(
                   height: 44,
                   child: ListView(
@@ -466,7 +456,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     children: _statusFilters.map((s) {
                       final color = BakeryTheme.statusColors[s] ?? Colors.grey;
                       final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
-                      final selected = _statusFilter == s;
+                      final selected = statusFilter == s;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterChip(
@@ -481,7 +471,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           label: Text(label),
                           selected: selected,
                           selectedColor: color.withAlpha(30),
-                          onSelected: (_) => setState(() => _statusFilter = s),
+                          onSelected: (_) => ref
+                              .read(orderListFilterProvider.notifier)
+                              .setStatusFilter(s),
                         ),
                       );
                     }).toList(),
@@ -490,11 +482,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
               // Order list / Kanban view
               Expanded(
-                child: _viewMode == 'kanban'
+                child: viewMode == 'kanban'
                     ? KanbanBoard(
                         filteredOrders: ordersAsync.maybeWhen(
                           data: (orders) =>
-                              _applyDateFilter(_applySearchFilter(orders)),
+                              _applyDateFilter(_applySearchFilter(orders, searchQuery), dateFilter),
                           orElse: () => <Order>[],
                         ),
                       )
@@ -519,11 +511,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                _urgencyFilterEnabled
-                                    ? OrdersLabels.urgencyFilterEmpty
-                                    : _searchQuery.isNotEmpty
-                                            ? 'Không có đơn hàng phù hợp'
-                                            : 'Không có đơn hàng',
+                                searchQuery.isNotEmpty
+                                    ? 'Không có đơn hàng phù hợp'
+                                    : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );

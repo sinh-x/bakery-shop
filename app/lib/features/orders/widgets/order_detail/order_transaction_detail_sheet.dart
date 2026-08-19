@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
+import '../../providers/order_transaction_detail_notifier.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'order_detail_helpers.dart';
 import 'order_detail_row.dart';
@@ -36,12 +37,11 @@ class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
 
 class _OrderTransactionDetailSheetState
     extends ConsumerState<OrderTransactionDetailSheet> {
-  bool _acting = false;
-
   PaymentTransaction get txn => widget.txn;
 
   @override
   Widget build(BuildContext context) {
+    final acting = ref.watch(orderTransactionDetailProvider);
     final theme = Theme.of(context);
     final color = txnColor(txn.type);
     final typeLabel = txnTypeLabel(txn.type);
@@ -137,7 +137,7 @@ class _OrderTransactionDetailSheetState
             showEmptyState: true,
           ),
           const SizedBox(height: 20),
-          if (_acting)
+          if (acting)
             const Center(child: CircularProgressIndicator())
           else ...[
             OutlinedButton.icon(
@@ -182,7 +182,7 @@ class _OrderTransactionDetailSheetState
   Future<void> _onInvalidate() async {
     final reason = await _showInvalidateReasonDialog();
     if (reason == null || !mounted) return;
-    setState(() => _acting = true);
+    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
@@ -196,14 +196,14 @@ class _OrderTransactionDetailSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
     }
   }
 
   Future<void> _onRestore() async {
     final confirmed = await _showRestoreConfirmDialog();
     if (!confirmed || !mounted) return;
-    setState(() => _acting = true);
+    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
@@ -217,7 +217,7 @@ class _OrderTransactionDetailSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
     }
   }
 

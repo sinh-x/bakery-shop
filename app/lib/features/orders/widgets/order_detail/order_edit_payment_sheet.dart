@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
+import '../../providers/order_edit_payment_notifier.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'txn_photo_section.dart';
@@ -27,25 +30,30 @@ class OrderEditPaymentSheet extends ConsumerStatefulWidget {
 
 class _OrderEditPaymentSheetState
     extends ConsumerState<OrderEditPaymentSheet> {
-  late String _type;
-  late String _method;
-  String? _paymentSource;
   late final TextEditingController _amountCtrl;
   late final TextEditingController _notesCtrl;
   final _formKey = GlobalKey<FormState>();
-  bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
-    _type = widget.txn.type;
-    _method = widget.txn.method;
-    _paymentSource = widget.txn.paymentSource;
+    final txn = widget.txn;
+    // Defer the seed to avoid modifying a provider during the build phase
+    // (initState is part of the build lifecycle).
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderEditPaymentProvider.notifier).seed(
+              type: txn.type,
+              method: txn.method,
+              paymentSource: txn.paymentSource,
+            );
+      }
+    });
     // Convert back from actual amount to thousands for display
     _amountCtrl = TextEditingController(
-      text: vndThousandsTextFromAmount(widget.txn.amount),
+      text: vndThousandsTextFromAmount(txn.amount),
     );
-    _notesCtrl = TextEditingController(text: widget.txn.notes);
+    _notesCtrl = TextEditingController(text: txn.notes);
   }
 
   @override
@@ -58,17 +66,18 @@ class _OrderEditPaymentSheetState
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
-    setState(() => _submitting = true);
+    ref.read(orderEditPaymentProvider.notifier).setSubmitting(true);
     try {
+      final s = ref.read(orderEditPaymentProvider);
       await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
           .edit(
             widget.txn.id,
             amount: amount,
-            type: _type,
-            method: _method,
+            type: s.type,
+            method: s.method,
             notes: _notesCtrl.text.trim(),
-            paymentSource: _paymentSource,
+            paymentSource: s.paymentSource,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -79,13 +88,14 @@ class _OrderEditPaymentSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) ref.read(orderEditPaymentProvider.notifier).setSubmitting(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = ref.watch(orderEditPaymentProvider);
 
     const types = [
       ('deposit', OrdersLabels.txnTypeDeposit),
@@ -119,8 +129,10 @@ class _OrderEditPaymentSheetState
                   .map(
                     (t) => ChoiceChip(
                       label: Text(t.$2),
-                      selected: _type == t.$1,
-                      onSelected: (_) => setState(() => _type = t.$1),
+                      selected: s.type == t.$1,
+                      onSelected: (_) => ref
+                          .read(orderEditPaymentProvider.notifier)
+                          .setType(t.$1),
                     ),
                   )
                   .toList(),
@@ -134,11 +146,10 @@ class _OrderEditPaymentSheetState
                   .map(
                     (m) => ChoiceChip(
                       label: Text(m.$2),
-                      selected: _method == m.$1,
-                      onSelected: (_) => setState(() {
-                    _method = m.$1;
-                    if (m.$1 != 'transfer') _paymentSource = null;
-                  }),
+                      selected: s.method == m.$1,
+                      onSelected: (_) => ref
+                          .read(orderEditPaymentProvider.notifier)
+                          .setMethod(m.$1),
                     ),
                   )
                   .toList(),
@@ -169,12 +180,13 @@ class _OrderEditPaymentSheetState
                 border: OutlineInputBorder(),
               ),
             ),
-            if (_method == 'transfer') ...[
+            if (s.method == 'transfer') ...[
               const SizedBox(height: 12),
               TargetAccountDropdown(
-                value: _paymentSource,
-                onChanged: (value) =>
-                    setState(() => _paymentSource = value),
+                value: s.paymentSource,
+                onChanged: (value) => ref
+                    .read(orderEditPaymentProvider.notifier)
+                    .setPaymentSource(value),
               ),
             ],
             const SizedBox(height: 12),
@@ -186,8 +198,8 @@ class _OrderEditPaymentSheetState
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: _submitting
+              onPressed: s.submitting ? null : _submit,
+              child: s.submitting
                   ? const SizedBox(
                       height: 20,
                       width: 20,
