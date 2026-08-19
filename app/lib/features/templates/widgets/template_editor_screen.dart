@@ -6,6 +6,7 @@ import '../../../data/api/template_service.dart';
 import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
 import '../../../shared/labels/templates.dart';
+import '../providers/template_editor_notifier.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Template editor screen (DG-375 Phase 4 / FR8, AC8).
 ///
@@ -46,10 +47,6 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _bodyCtrl;
   late final TextEditingController _cursorAccessor;
-  late String _selectedScenario;
-  late bool _isSystem;
-  late bool _isActive;
-  bool _saving = false;
 
   bool get _isEditing => widget.template != null;
 
@@ -60,9 +57,11 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     _nameCtrl = TextEditingController(text: t?.name ?? '');
     _bodyCtrl = TextEditingController(text: t?.body ?? '');
     _cursorAccessor = TextEditingController();
-    _selectedScenario = t?.scenario ?? 'ask_info';
-    _isSystem = t?.isSystem ?? widget.initialIsSystem;
-    _isActive = t?.active ?? true;
+    // Seed the editor notifier with the template (edit mode) or the
+    // caller-supplied default isSystem flag (create mode).
+    Future.microtask(() => ref
+        .read(templateEditorProvider.notifier)
+        .seed(widget.template, initialIsSystem: widget.initialIsSystem));
   }
 
   @override
@@ -75,26 +74,27 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    ref.read(templateEditorProvider.notifier).setSaving(true);
+    final editor = ref.read(templateEditorProvider);
     final name = _nameCtrl.text.trim();
     try {
       final notifier = ref.read(templateListProvider.notifier);
       if (_isEditing) {
         await notifier.updateTemplate(
           widget.template!.id,
-          scenario: _selectedScenario,
+          scenario: editor.selectedScenario,
           name: name,
           body: _bodyCtrl.text,
-          isSystem: _isSystem,
-          active: _isActive,
+          isSystem: editor.isSystem,
+          active: editor.isActive,
         );
       } else {
         await notifier.createTemplate(
-          scenario: _selectedScenario,
+          scenario: editor.selectedScenario,
           name: name,
           body: _bodyCtrl.text,
-          isSystem: _isSystem,
-          active: _isActive,
+          isSystem: editor.isSystem,
+          active: editor.isActive,
         );
       }
       if (!mounted) return;
@@ -102,7 +102,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
       showTopSnackBar(context, TemplatesLabels.editorSavedSnack.replaceAll('{name}', name));
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
+        ref.read(templateEditorProvider.notifier).setSaving(false);
         showTopSnackBar(context, '${TemplatesLabels.editorSaveError} ($e)');
       }
     }
@@ -137,6 +137,8 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final editor = ref.watch(templateEditorProvider);
+    final saving = editor.saving;
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing
@@ -165,7 +167,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _selectedScenario,
+                initialValue: editor.selectedScenario,
                 decoration: const InputDecoration(
                   labelText: TemplatesLabels.editorScenarioLabel,
                   border: OutlineInputBorder(),
@@ -177,9 +179,11 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                       child: Text(TemplatesLabels.scenarioLabel(slug)),
                     ),
                 ],
-                onChanged: _saving
+                onChanged: saving
                     ? null
-                    : (v) => setState(() => _selectedScenario = v ?? _selectedScenario),
+                    : (v) => ref
+                        .read(templateEditorProvider.notifier)
+                        .setSelectedScenario(v ?? editor.selectedScenario),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -202,7 +206,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: _saving ? null : _openOrderFieldSheet,
+                  onPressed: saving ? null : _openOrderFieldSheet,
                   icon: const Icon(Icons.data_object),
                   label: const Text(TemplatesLabels.editorInsertFieldButton),
                 ),
@@ -211,19 +215,22 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
               SwitchListTile.adaptive(
                 title: const Text(TemplatesLabels.editorActiveLabel),
                 subtitle: const Text(TemplatesLabels.editorActiveHint),
-                value: _isActive,
-                onChanged: _saving
+                value: editor.isActive,
+                onChanged: saving
                     ? null
-                    : (v) => setState(() => _isActive = v),
+                    : (v) =>
+                        ref.read(templateEditorProvider.notifier).setActive(v),
               ),
               if (widget.isAdmin) ...[
                 SwitchListTile.adaptive(
                   title: const Text(TemplatesLabels.editorIsSystemLabel),
                   subtitle: const Text(TemplatesLabels.editorIsSystemHint),
-                  value: _isSystem,
-                  onChanged: _saving
+                  value: editor.isSystem,
+                  onChanged: saving
                       ? null
-                      : (v) => setState(() => _isSystem = v),
+                      : (v) => ref
+                          .read(templateEditorProvider.notifier)
+                          .setIsSystem(v),
                 ),
               ],
               const SizedBox(height: 16),
@@ -231,13 +238,13 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                    onPressed: saving ? null : () => Navigator.of(context).pop(),
                     child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
+                    onPressed: saving ? null : _save,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
