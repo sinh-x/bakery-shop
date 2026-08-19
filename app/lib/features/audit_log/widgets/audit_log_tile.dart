@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/audit_log_service.dart';
 import '../../../shared/labels/audit_log.dart';
+import '../providers/audit_log_tile_notifier.dart';
 
 /// A single audit log entry rendered as a Material list tile (FR24).
 ///
 /// Shows the user, action (with a colored chip), entity type + id, timestamp,
-/// and expandable old/new value sections. The tile is a [StatefulWidget] only
-/// to track the expansion toggle; that is an acceptable local-UI-state use of
-/// `setState` (§4 animation/widget-toggle exception).
-class AuditLogTile extends StatefulWidget {
+/// and expandable old/new value sections. The tile is a
+/// [ConsumerStatefulWidget] so it can read [auditLogTileProvider] (keyed by
+/// entry id) for its expansion toggle; the expansion state is owned by the
+/// notifier (DG-404 Phase 4.7).
+class AuditLogTile extends ConsumerStatefulWidget {
   const AuditLogTile({super.key, required this.entry});
 
   final AuditLogEntry entry;
 
   @override
-  State<AuditLogTile> createState() => _AuditLogTileState();
+  ConsumerState<AuditLogTile> createState() => _AuditLogTileState();
 }
 
-class _AuditLogTileState extends State<AuditLogTile> {
-  bool _expanded = false;
-
+class _AuditLogTileState extends ConsumerState<AuditLogTile> {
   Color _actionColor(String action) {
     switch (action) {
       case 'create':
@@ -37,6 +38,8 @@ class _AuditLogTileState extends State<AuditLogTile> {
   @override
   Widget build(BuildContext context) {
     final e = widget.entry;
+    final tileState = ref.watch(auditLogTileProvider(e.id));
+    final expanded = tileState.expanded;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(
@@ -82,13 +85,15 @@ class _AuditLogTileState extends State<AuditLogTile> {
             ),
             trailing: IconButton(
               icon: Icon(
-                _expanded ? Icons.expand_less : Icons.expand_more,
+                expanded ? Icons.expand_less : Icons.expand_more,
               ),
-              onPressed: () => setState(() => _expanded = !_expanded),
+              onPressed: () =>
+                  ref.read(auditLogTileProvider(e.id).notifier).toggle(),
             ),
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () =>
+                ref.read(auditLogTileProvider(e.id).notifier).toggle(),
           ),
-          if (_expanded)
+          if (expanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Column(

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../shared/labels/technical_settings.dart';
+import 'providers/pre_login_connection_notifier.dart';
 import 'widgets/settings_sections.dart';
 
 /// Factory that builds a standalone [Dio] instance for pre-login connection
@@ -43,8 +44,6 @@ class PreLoginSettingsScreen extends ConsumerStatefulWidget {
 class _PreLoginSettingsScreenState
     extends ConsumerState<PreLoginSettingsScreen> {
   late TextEditingController _urlController;
-  bool _testing = false;
-  ConnectionResult? _testResult;
 
   @override
   void initState() {
@@ -71,29 +70,24 @@ class _PreLoginSettingsScreenState
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
-    setState(() {
-      _testing = true;
-      _testResult = null;
-    });
+    ref.read(preLoginConnectionProvider.notifier).setTesting(true);
 
     try {
       final dio = ref.read(preLoginDioFactoryProvider)();
       final response = await dio.get<dynamic>('$url/api/health');
       if (mounted) {
-        setState(() {
-          _testing = false;
-          _testResult = ConnectionResult(success: response.statusCode == 200);
-        });
+        ref.read(preLoginConnectionProvider.notifier).setTestResult(
+              ConnectionResult(success: response.statusCode == 200),
+            );
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _testing = false;
-          _testResult = ConnectionResult(
-            success: false,
-            errorMessage: e.toString(),
-          );
-        });
+        ref.read(preLoginConnectionProvider.notifier).setTestResult(
+              ConnectionResult(
+                success: false,
+                errorMessage: e.toString(),
+              ),
+            );
       }
     }
   }
@@ -112,6 +106,9 @@ class _PreLoginSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final conn = ref.watch(preLoginConnectionProvider);
+    final testing = conn.testing;
+    final testResult = conn.testResult;
     return Scaffold(
       appBar: AppBar(
         leading: BackButton(onPressed: () => context.go('/login')),
@@ -143,8 +140,10 @@ class _PreLoginSettingsScreenState
             keyboardType: TextInputType.url,
             autocorrect: false,
             onChanged: (_) {
-              if (_testResult != null) {
-                setState(() => _testResult = null);
+              if (testResult != null) {
+                ref
+                    .read(preLoginConnectionProvider.notifier)
+                    .clearTestResult();
               }
             },
           ),
@@ -153,15 +152,15 @@ class _PreLoginSettingsScreenState
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _testing ? null : _testConnection,
-                  icon: _testing
+                  onPressed: testing ? null : _testConnection,
+                  icon: testing
                       ? const SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.wifi_find),
-                  label: Text(_testing
+                  label: Text(testing
                       ? TechnicalSettingsLabels.testing
                       : TechnicalSettingsLabels.testConnection),
                 ),
@@ -176,10 +175,10 @@ class _PreLoginSettingsScreenState
               ),
             ],
           ),
-          if (_testResult != null) ...[
+          if (testResult != null) ...[
             const SizedBox(height: 16),
             Card(
-              color: _testResult!.success
+              color: testResult.success
                   ? Colors.green.shade50
                   : Colors.red.shade50,
               child: Padding(
@@ -187,10 +186,10 @@ class _PreLoginSettingsScreenState
                 child: Row(
                   children: [
                     Icon(
-                      _testResult!.success
+                      testResult.success
                           ? Icons.check_circle
                           : Icons.error,
-                      color: _testResult!.success
+                      color: testResult.success
                           ? Colors.green
                           : Colors.red,
                     ),
@@ -200,20 +199,20 @@ class _PreLoginSettingsScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _testResult!.success
+                            testResult.success
                                 ? TechnicalSettingsLabels.connectionSuccess
                                 : TechnicalSettingsLabels.connectionFailed,
                             style: TextStyle(
-                              color: _testResult!.success
+                              color: testResult.success
                                   ? Colors.green.shade800
                                   : Colors.red.shade800,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          if (!_testResult!.success &&
-                              _testResult!.errorMessage != null)
+                          if (!testResult.success &&
+                              testResult.errorMessage != null)
                             Text(
-                              _testResult!.errorMessage!,
+                              testResult.errorMessage!,
                               style: TextStyle(
                                 color: Colors.red.shade700,
                                 fontSize: 12,

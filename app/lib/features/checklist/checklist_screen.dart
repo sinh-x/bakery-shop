@@ -11,6 +11,7 @@ import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/checklist_entry_tile_notifier.dart';
 class ChecklistScreen extends ConsumerStatefulWidget {
   const ChecklistScreen({super.key});
 
@@ -269,26 +270,27 @@ class _ChecklistTab extends StatelessWidget {
   }
 }
 
-class _ChecklistEntryTile extends StatefulWidget {
+class _ChecklistEntryTile extends ConsumerStatefulWidget {
   const _ChecklistEntryTile({required this.entry, required this.onToggle});
 
   final ChecklistEntry entry;
   final Future<void> Function(ChecklistEntry) onToggle;
 
   @override
-  State<_ChecklistEntryTile> createState() => _ChecklistEntryTileState();
+  ConsumerState<_ChecklistEntryTile> createState() => _ChecklistEntryTileState();
 }
 
-class _ChecklistEntryTileState extends State<_ChecklistEntryTile> {
-  bool _loading = false;
-
+class _ChecklistEntryTileState extends ConsumerState<_ChecklistEntryTile> {
   @override
   Widget build(BuildContext context) {
     final entry = widget.entry;
     final completed = entry.completed;
+    final loading = ref
+        .watch(checklistEntryTileProvider(entry.id))
+        .loading;
 
     return ListTile(
-      leading: _loading
+      leading: loading
           ? const SizedBox(
               width: 24,
               height: 24,
@@ -315,18 +317,20 @@ class _ChecklistEntryTileState extends State<_ChecklistEntryTile> {
               ).textTheme.bodySmall?.copyWith(color: Colors.green.shade700),
             )
           : null,
-      onTap: _loading ? null : _handleToggle,
+      onTap: loading ? null : _handleToggle,
       tileColor: completed ? Colors.green.withValues(alpha: 0.04) : null,
     );
   }
 
   Future<void> _handleToggle() async {
-    if (_loading) return;
-    setState(() => _loading = true);
+    final tileNotifier =
+        ref.read(checklistEntryTileProvider(widget.entry.id).notifier);
+    if (ref.read(checklistEntryTileProvider(widget.entry.id)).loading) return;
+    tileNotifier.setLoading(true);
     try {
       await widget.onToggle(widget.entry);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) tileNotifier.setLoading(false);
     }
   }
 

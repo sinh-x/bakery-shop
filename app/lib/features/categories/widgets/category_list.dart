@@ -5,6 +5,7 @@ import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import '../../../data/models/category.dart';
 import '../../../data/providers/categories_provider.dart';
 import 'package:bakery_app/shared/labels/products.dart';
+import '../providers/category_list_notifier.dart';
 import 'active_category_tile.dart';
 import 'inactive_category_tile.dart';
 
@@ -28,19 +29,27 @@ class CategoryList extends ConsumerStatefulWidget {
 }
 
 class _CategoryListState extends ConsumerState<CategoryList> {
-  late List<Category> _activeCategories;
-
   @override
   void initState() {
     super.initState();
-    _activeCategories = _sortedActive(widget.categories);
+    final cats = _sortedActive(widget.categories);
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(categoryListProvider.notifier).setActiveCategories(cats);
+    });
   }
 
   @override
   void didUpdateWidget(CategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.categories != widget.categories) {
-      _activeCategories = _sortedActive(widget.categories);
+      final cats = _sortedActive(widget.categories);
+      Future.microtask(() {
+        if (!mounted) return;
+        ref.read(categoryListProvider.notifier).setActiveCategories(cats);
+      });
     }
   }
 
@@ -50,12 +59,12 @@ class _CategoryListState extends ConsumerState<CategoryList> {
   }
 
   Future<void> _onReorder(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex -= 1;
-    setState(() {
-      final item = _activeCategories.removeAt(oldIndex);
-      _activeCategories.insert(newIndex, item);
-    });
-    final ids = _activeCategories.map((c) => c.id).toList();
+    ref.read(categoryListProvider.notifier).reorder(oldIndex, newIndex);
+    final ids = ref
+        .read(categoryListProvider)
+        .activeCategories
+        .map((c) => c.id)
+        .toList();
     try {
       await ref.read(categoriesProvider.notifier).reorderCategories(ids);
       if (mounted) {
@@ -70,14 +79,16 @@ class _CategoryListState extends ConsumerState<CategoryList> {
 
   @override
   Widget build(BuildContext context) {
+    final activeCategories =
+        ref.watch(categoryListProvider).activeCategories;
     final inactive = widget.categories.where((c) => c.active == 0).toList();
 
     return CustomScrollView(
       slivers: [
         SliverReorderableList(
-          itemCount: _activeCategories.length,
+          itemCount: activeCategories.length,
           itemBuilder: (context, index) {
-            final category = _activeCategories[index];
+            final category = activeCategories[index];
             return ActiveCategoryTile(
               key: ValueKey(category.id),
               category: category,

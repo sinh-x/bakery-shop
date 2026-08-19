@@ -7,6 +7,7 @@ import '../../../data/models/address.dart';
 import '../../../data/providers/address_library_provider.dart';
 import '../../../shared/labels/address_labels.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/address_library_editor_notifier.dart';
 import 'widgets/address_library_empty_view.dart';
 import 'widgets/address_library_error_view.dart';
 import 'widgets/address_library_row.dart';
@@ -206,9 +207,6 @@ class _AddressLibraryEditorDialogState
     extends ConsumerState<AddressLibraryEditorDialog> {
   late final TextEditingController _addressController;
   late final TextEditingController _linkController;
-  String? _addressError;
-  String? _linkError;
-  bool _saving = false;
 
   @override
   void initState() {
@@ -229,40 +227,41 @@ class _AddressLibraryEditorDialogState
   bool get _isEdit => widget.initial != null;
 
   /// Validate the form fields. Returns true if valid; sets the inline
-  /// error state so the dialog re-renders with error text under each
-  /// invalid field.
+  /// error state via the notifier so the dialog re-renders with error
+  /// text under each invalid field.
   bool _validate() {
     var ok = true;
     final address = _addressController.text.trim();
     if (address.isEmpty) {
-      _addressError = AddressLabels.editorAddressRequired;
+      ref
+          .read(addressLibraryEditorProvider.notifier)
+          .setAddressError(AddressLabels.editorAddressRequired);
       ok = false;
     } else {
-      _addressError = null;
+      ref.read(addressLibraryEditorProvider.notifier).setAddressError(null);
     }
     final link = _linkController.text.trim();
     if (link.isNotEmpty) {
       final uri = Uri.tryParse(link);
       if (uri == null || !uri.hasScheme || !uri.host.contains('.')) {
-        _linkError = AddressLabels.editorMapsLinkInvalid;
+        ref
+            .read(addressLibraryEditorProvider.notifier)
+            .setLinkError(AddressLabels.editorMapsLinkInvalid);
         ok = false;
       } else {
-        _linkError = null;
+        ref.read(addressLibraryEditorProvider.notifier).setLinkError(null);
       }
     } else {
-      _linkError = null;
+      ref.read(addressLibraryEditorProvider.notifier).setLinkError(null);
     }
     return ok;
   }
 
   Future<void> _save() async {
     if (!_validate()) {
-      setState(() {});
       return;
     }
-    setState(() {
-      _saving = true;
-    });
+    ref.read(addressLibraryEditorProvider.notifier).setSaving(true);
     final address = _addressController.text.trim();
     final link = _linkController.text.trim();
     final linkValue = link.isEmpty ? null : link;
@@ -282,23 +281,23 @@ class _AddressLibraryEditorDialogState
         );
       }
       if (mounted) {
-        setState(() => _saving = false);
+        ref.read(addressLibraryEditorProvider.notifier).setSaving(false);
         Navigator.of(context).pop(result);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _saving = false;
-          // Surface the backend error (e.g. 409 collision) under the
-          // address field, since that's the most common conflict point.
-          _addressError = AddressLabels.libraryErrorSnack;
-        });
+        // Surface the backend error (e.g. 409 collision) under the
+        // address field, since that's the most common conflict point.
+        ref.read(addressLibraryEditorProvider.notifier)
+          ..setSaving(false)
+          ..setAddressError(AddressLabels.libraryErrorSnack);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final editorState = ref.watch(addressLibraryEditorProvider);
     return AlertDialog(
       title: Text(
         _isEdit
@@ -315,7 +314,7 @@ class _AddressLibraryEditorDialogState
                 labelText: AddressLabels.editorAddressLabel,
                 hintText: AddressLabels.editorAddressHint,
                 border: const OutlineInputBorder(),
-                errorText: _addressError,
+                errorText: editorState.addressError,
               ),
               autofocus: !_isEdit,
               textCapitalization: TextCapitalization.sentences,
@@ -329,7 +328,7 @@ class _AddressLibraryEditorDialogState
                 labelText: AddressLabels.editorMapsLinkLabel,
                 hintText: AddressLabels.editorMapsLinkHint,
                 border: const OutlineInputBorder(),
-                errorText: _linkError,
+                errorText: editorState.linkError,
                 prefixIcon: const Icon(Icons.map_outlined),
               ),
               keyboardType: TextInputType.url,
@@ -340,12 +339,12 @@ class _AddressLibraryEditorDialogState
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          onPressed: editorState.saving ? null : () => Navigator.of(context).pop(),
           child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
-          onPressed: _saving ? null : _save,
-          child: _saving
+          onPressed: editorState.saving ? null : _save,
+          child: editorState.saving
               ? const SizedBox(
                   width: 18,
                   height: 18,

@@ -5,6 +5,7 @@ import '../../data/providers/checklist_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/checklist_history_filter_notifier.dart';
 import 'widgets/day_card.dart';
 
 class ChecklistHistoryScreen extends ConsumerStatefulWidget {
@@ -17,50 +18,49 @@ class ChecklistHistoryScreen extends ConsumerStatefulWidget {
 
 class _ChecklistHistoryScreenState
     extends ConsumerState<ChecklistHistoryScreen> {
-  late DateTime _fromDate;
-  late DateTime _toDate;
-
-  @override
-  void initState() {
-    super.initState();
-    _toDate = DateTime.now();
-    _fromDate = _toDate.subtract(const Duration(days: 6));
-  }
-
   Future<void> _pickFromDate() async {
+    final filter = ref.read(checklistHistoryFilterProvider);
+    final fromDate = filter.fromDate;
+    final toDate = filter.toDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _fromDate,
+      initialDate: fromDate,
       firstDate: DateTime(2024),
-      lastDate: _toDate,
+      lastDate: toDate,
       helpText: 'Chọn ngày bắt đầu',
     );
-    if (picked != null && picked != _fromDate) {
-      setState(() => _fromDate = picked);
+    if (picked != null && picked != fromDate) {
+      ref.read(checklistHistoryFilterProvider.notifier).setFromDate(picked);
       ref
           .read(checklistHistoryProvider.notifier)
-          .fetchRange(_fromDate, _toDate);
+          .fetchRange(picked, toDate);
     }
   }
 
   Future<void> _pickToDate() async {
+    final filter = ref.read(checklistHistoryFilterProvider);
+    final fromDate = filter.fromDate;
+    final toDate = filter.toDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _toDate,
-      firstDate: _fromDate,
+      initialDate: toDate,
+      firstDate: fromDate,
       lastDate: DateTime.now(),
       helpText: 'Chọn ngày kết thúc',
     );
-    if (picked != null && picked != _toDate) {
-      setState(() => _toDate = picked);
+    if (picked != null && picked != toDate) {
+      ref.read(checklistHistoryFilterProvider.notifier).setToDate(picked);
       ref
           .read(checklistHistoryProvider.notifier)
-          .fetchRange(_fromDate, _toDate);
+          .fetchRange(fromDate, picked);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final filter = ref.watch(checklistHistoryFilterProvider);
+    final fromDate = filter.fromDate;
+    final toDate = filter.toDate;
     final historyAsync = ref.watch(checklistHistoryProvider);
 
     return Scaffold(
@@ -72,7 +72,7 @@ class _ChecklistHistoryScreenState
             tooltip: 'Làm mới',
             onPressed: () => ref
                 .read(checklistHistoryProvider.notifier)
-                .fetchRange(_fromDate, _toDate),
+                .fetchRange(fromDate, toDate),
           ),
           const AppBarOverflowMenu(),
         ],
@@ -92,7 +92,7 @@ class _ChecklistHistoryScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(_fmtDisplay(_fromDate)),
+                    label: Text(_fmtDisplay(fromDate)),
                     onPressed: _pickFromDate,
                   ),
                 ),
@@ -105,7 +105,7 @@ class _ChecklistHistoryScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(_fmtDisplay(_toDate)),
+                    label: Text(_fmtDisplay(toDate)),
                     onPressed: _pickToDate,
                   ),
                 ),
@@ -126,7 +126,7 @@ class _ChecklistHistoryScreenState
                     FilledButton(
                       onPressed: () => ref
                           .read(checklistHistoryProvider.notifier)
-                          .fetchRange(_fromDate, _toDate),
+                          .fetchRange(fromDate, toDate),
                       child: const Text(SharedLabels.retry),
                     ),
                   ],

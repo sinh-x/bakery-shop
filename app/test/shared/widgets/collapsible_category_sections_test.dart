@@ -1,6 +1,7 @@
 import 'package:bakery_app/shared/utils/category_grouping.dart';
 import 'package:bakery_app/shared/widgets/collapsible_category_sections.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -15,12 +16,14 @@ void main() {
     ];
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(splashFactory: NoSplash.splashFactory),
-        home: Scaffold(
-          body: CollapsibleCategorySections<String>(
-            sections: sections,
-            itemBuilder: (context, item) => ListTile(title: Text(item)),
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
+          home: Scaffold(
+            body: CollapsibleCategorySections<String>(
+              sections: sections,
+              itemBuilder: (context, item) => ListTile(title: Text(item)),
+            ),
           ),
         ),
       ),
@@ -53,13 +56,15 @@ void main() {
     ];
 
     Widget buildHarness() {
-      return MaterialApp(
-        theme: ThemeData(splashFactory: NoSplash.splashFactory),
-        home: Scaffold(
-          body: CollapsibleCategorySections<String>(
-            sections: sections,
-            expansionController: controller,
-            itemBuilder: (context, item) => ListTile(title: Text(item)),
+      return ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
+          home: Scaffold(
+            body: CollapsibleCategorySections<String>(
+              sections: sections,
+              expansionController: controller,
+              itemBuilder: (context, item) => ListTile(title: Text(item)),
+            ),
           ),
         ),
       );

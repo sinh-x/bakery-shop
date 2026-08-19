@@ -15,6 +15,7 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../providers/photo_upload_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
+import 'providers/knowledge_form_notifier.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -27,13 +28,6 @@ const _kTypeChips = [
   ('reference', 'Tham khảo'),
   ('note', 'Ghi chú'),
 ];
-
-// Internal helper to track a photo (either existing or new local file)
-class _PhotoEntry {
-  _PhotoEntry({this.photo, this.file}) : assert(photo != null || file != null);
-  final KnowledgePhoto? photo;
-  final XFile? file;
-}
 
 class KnowledgeFormScreen extends ConsumerStatefulWidget {
   const KnowledgeFormScreen({super.key, this.entry});
@@ -50,12 +44,6 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _contentCtrl;
   late final TextEditingController _tagCtrl;
-  late String _selectedType;
-  late final Set<String> _selectedTags;
-  final _photos = <_PhotoEntry>[];
-  bool _saving = false;
-  bool _showTagField = false;
-  bool _pinAfterSave = false;
 
   bool get _isEditing => widget.entry != null;
 
@@ -79,15 +67,12 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     _titleCtrl = TextEditingController(text: e?.title ?? '');
     _contentCtrl = TextEditingController(text: e?.content ?? '');
     _tagCtrl = TextEditingController();
-    _selectedType = e?.type ?? 'note';
-    _selectedTags = Set<String>.from(e?.tags ?? []);
-
-    // Pre-fill existing photos as local entries
-    if (e != null) {
-      for (final photo in e.photos) {
-        _photos.add(_PhotoEntry(photo: photo));
-      }
-    }
+    // Defer provider mutations to a microtask because Riverpod disallows
+    // provider mutation during widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(knowledgeFormProvider.notifier).seed(e);
+    });
   }
 
   @override
@@ -99,7 +84,8 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   }
 
   Future<void> _pickPhoto() async {
-    if (_photos.length >= 5) {
+    final formState = ref.read(knowledgeFormProvider);
+    if (formState.photos.length >= 5) {
       showTopSnackBar(context, 'Tối đa 5 ảnh');
       return;
     }
@@ -107,12 +93,13 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     final images = await picker.pickMultiImage();
     if (images.isNotEmpty) {
       if (!mounted) return;
-      final remaining = 5 - _photos.length;
-      setState(() {
-        _photos.addAll(
-          images.take(remaining).map((image) => _PhotoEntry(file: image)),
-        );
-      });
+      final remaining = 5 - ref.read(knowledgeFormProvider).photos.length;
+      ref.read(knowledgeFormProvider.notifier).addPhotos(
+            images
+                .take(remaining)
+                .map((image) => KnowledgeFormPhotoEntry(file: image))
+                .toList(),
+          );
       if (images.length > remaining && mounted) {
         showTopSnackBar(context, 'Chỉ thêm được $remaining ảnh nữa');
       }
@@ -122,13 +109,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   void _confirmTag() {
     final tag = _tagCtrl.text.trim();
     if (tag.isNotEmpty) {
-      setState(() {
-        _selectedTags.add(tag);
-        _tagCtrl.clear();
-        _showTagField = false;
-      });
+      ref.read(knowledgeFormProvider.notifier).addTag(tag);
+      _tagCtrl.clear();
     } else {
-      setState(() => _showTagField = false);
+      ref.read(knowledgeFormProvider.notifier).hideTagField();
     }
   }
 
@@ -137,7 +121,9 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     final content = _contentCtrl.text.trim();
     if (title.isEmpty) return;
 
-    setState(() => _saving = true);
+    final formNotifier = ref.read(knowledgeFormProvider.notifier);
+    final form = ref.read(knowledgeFormProvider);
+    formNotifier.setSaving(true);
     try {
       if (_isEditing) {
         await ref
@@ -146,8 +132,8 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
               widget.entry!.id,
               title: title,
               content: content,
-              type: _selectedType,
-              tags: _selectedTags.toList(),
+              type: form.selectedType,
+              tags: form.selectedTags.toList(),
             );
         // Upload new photos after update
         await _uploadNewPhotos(widget.entry!.id);
@@ -163,15 +149,15 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             .createEntry(
               title: title,
               content: content,
-              type: _selectedType,
-              tags: _selectedTags.toList(),
+              type: form.selectedType,
+              tags: form.selectedTags.toList(),
             );
         // Upload new photos after create
         await _uploadNewPhotos(created.id);
         ref.invalidate(knowledgeEntriesProvider);
         ref.invalidate(knowledgeEntryDetailProvider(created.id));
         // Pin after save if checked
-        if (_pinAfterSave) {
+        if (form.pinAfterSave) {
           try {
             await ref
                 .read(knowledgeEntriesProvider.notifier)
@@ -198,7 +184,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
         showTopSnackBar(context, message);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -206,13 +192,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final form = ref.watch(knowledgeFormProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? SharedLabels.editKnowledge : SharedLabels.createKnowledge),
         actions: [
           IconButton(
-            icon: _saving
+            icon: form.saving
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -220,7 +207,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                   )
                 : const Icon(Icons.check),
             tooltip: SharedLabels.save,
-            onPressed: _saving ? null : _submit,
+            onPressed: form.saving ? null : _submit,
           ),
           const AppBarOverflowMenu(),
         ],
@@ -267,12 +254,13 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             spacing: 6,
             runSpacing: 6,
             children: _kTypeChips.map((t) {
-              final selected = _selectedType == t.$1;
+              final selected = form.selectedType == t.$1;
               return ChoiceChip(
                 label: Text(t.$2),
                 selected: selected,
                 selectedColor: colorScheme.primaryContainer,
-                onSelected: (_) => setState(() => _selectedType = t.$1),
+                onSelected: (_) =>
+                    ref.read(knowledgeFormProvider.notifier).setSelectedType(t.$1),
               );
             }).toList(),
           ),
@@ -288,14 +276,15 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              ..._selectedTags.map(
+              ...form.selectedTags.map(
                 (tag) => Chip(
                   label: Text(tag),
-                  onDeleted: () => setState(() => _selectedTags.remove(tag)),
+                  onDeleted: () =>
+                      ref.read(knowledgeFormProvider.notifier).removeTag(tag),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-              if (_showTagField)
+              if (form.showTagField)
                 SizedBox(
                   width: 120,
                   child: TextField(
@@ -318,7 +307,8 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 16),
                   label: const Text(EventsLabels.addTag),
-                  onPressed: () => setState(() => _showTagField = true),
+                  onPressed: () =>
+                      ref.read(knowledgeFormProvider.notifier).showTagField(),
                 ),
             ],
           ),
@@ -366,7 +356,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                 ),
                 const SizedBox(width: 8),
                 // Photo previews
-                ..._photos.asMap().entries.map((mapEntry) {
+                ...form.photos.asMap().entries.map((mapEntry) {
                   final index = mapEntry.key;
                   final photo = mapEntry.value;
                   return Padding(
@@ -388,8 +378,9 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                           top: 2,
                           right: 2,
                           child: GestureDetector(
-                            onTap: () =>
-                                setState(() => _photos.removeAt(index)),
+                            onTap: () => ref
+                                .read(knowledgeFormProvider.notifier)
+                                .removePhotoAt(index),
                             child: Container(
                               padding: const EdgeInsets.all(2),
                               decoration: BoxDecoration(
@@ -418,8 +409,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           ),
           const SizedBox(height: 8),
           CheckboxListTile(
-            value: _pinAfterSave,
-            onChanged: (v) => setState(() => _pinAfterSave = v ?? false),
+            value: form.pinAfterSave,
+            onChanged: (v) => ref
+                .read(knowledgeFormProvider.notifier)
+                .setPinAfterSave(v ?? false),
             title: const Text('Ghim sau khi lưu'),
             controlAffinity: ListTileControlAffinity.leading,
             contentPadding: EdgeInsets.zero,
@@ -430,7 +423,8 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   }
 
   Future<void> _uploadNewPhotos(int entryId) async {
-    final newPhotos = _photos.where((p) => p.file != null).toList();
+    final formState = ref.read(knowledgeFormProvider);
+    final newPhotos = formState.photos.where((p) => p.file != null).toList();
     if (newPhotos.isEmpty) return;
     final service = ref.read(knowledgeServiceProvider);
     final upload = ref.read(photoUploadNotifierProvider.notifier);
@@ -455,7 +449,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     }
   }
 
-  ImageProvider _buildImage(_PhotoEntry photo) {
+  ImageProvider _buildImage(KnowledgeFormPhotoEntry photo) {
     if (photo.file != null) {
       if (kIsWeb) {
         return NetworkImage(photo.file!.path);

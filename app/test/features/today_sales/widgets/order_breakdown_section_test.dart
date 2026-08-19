@@ -2,6 +2,7 @@ import 'package:bakery_app/data/models/order_breakdown.dart';
 import 'package:bakery_app/features/today_sales/widgets/order_breakdown_section.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // Finder for the mode DropdownButton regardless of its private generic type.
@@ -28,12 +29,14 @@ OrderBreakdown _breakdown(List<OrderBreakdownCell> cells) =>
 
 // Wrap in a scrollable + oversized viewport so the matrix Card never overflows
 // the test surface (mirrors the cashflow-summary test harness).
-Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: SizedBox(
-            width: 1200,
-            child: child,
+Widget _wrap(Widget child) => ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 1200,
+              child: child,
+            ),
           ),
         ),
       ),

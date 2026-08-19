@@ -8,6 +8,7 @@ import '../../data/providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
+import 'providers/customer_form_notifier.dart';
 import 'widgets/duplicate_warning_dialog.dart';
 import 'widgets/phone_entry_row.dart';
 import 'widgets/shared_phone_banner.dart';
@@ -54,8 +55,6 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   final List<PhoneEntry> _phones = [];
-  bool _saving = false;
-  List<Customer> _sharedPhone = const [];
 
   bool get _isEditing => widget.customer != null;
 
@@ -90,7 +89,6 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     if (!_phones.any((e) => e.isPrimary)) {
       _phones.first.isPrimary = true;
     }
-    _sharedPhone = const [];
   }
 
   @override
@@ -103,30 +101,27 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   }
 
   void _addPhone() {
-    setState(() {
-      _phones.add(PhoneEntry(controller: TextEditingController()));
-    });
+    _phones.add(PhoneEntry(controller: TextEditingController()));
+    ref.read(customerFormProvider.notifier).rebuild();
   }
 
   void _removePhone(int index) {
     if (_phones.length <= 1) return;
     final wasPrimary = _phones[index].isPrimary;
-    setState(() {
-      _phones[index].dispose();
-      _phones.removeAt(index);
-      // If the removed entry was primary, reassign to the first remaining row.
-      if (wasPrimary && _phones.isNotEmpty) {
-        _phones.first.isPrimary = true;
-      }
-    });
+    _phones[index].dispose();
+    _phones.removeAt(index);
+    // If the removed entry was primary, reassign to the first remaining row.
+    if (wasPrimary && _phones.isNotEmpty) {
+      _phones.first.isPrimary = true;
+    }
+    ref.read(customerFormProvider.notifier).rebuild();
   }
 
   void _setPrimary(int index) {
-    setState(() {
-      for (var i = 0; i < _phones.length; i++) {
-        _phones[i].isPrimary = i == index;
-      }
-    });
+    for (var i = 0; i < _phones.length; i++) {
+      _phones[i].isPrimary = i == index;
+    }
+    ref.read(customerFormProvider.notifier).rebuild();
   }
 
   /// Collect validated, trimmed phones for submission. Returns null when the
@@ -197,11 +192,11 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     // existing customer ("use existing"), proceed ("create anyway"), or
     // cancel. Edit mode skips this check — the customer is already linked.
     if (!_isEditing) {
-      setState(() => _saving = true);
+      ref.read(customerFormProvider.notifier).setSaving(true);
       final matches = await _findDuplicateCandidates(name, phones);
       if (!mounted) return;
       if (matches.isNotEmpty) {
-        setState(() => _saving = false);
+        ref.read(customerFormProvider.notifier).setSaving(false);
         final choice = await _showDuplicateWarningDialog(matches);
         if (!mounted) return;
         if (choice == null) return;
@@ -215,13 +210,10 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
         }
         // choice.createAnyway == true → fall through to the create call.
       } else {
-        setState(() => _saving = false);
+        ref.read(customerFormProvider.notifier).setSaving(false);
       }
     }
-    setState(() {
-      _saving = true;
-      _sharedPhone = const [];
-    });
+    ref.read(customerFormProvider.notifier).startSubmit();
     final service = ref.read(customerServiceProvider);
     try {
       final CustomerMutationResult result;
@@ -235,7 +227,9 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
         result = await service.createCustomer(name: name, phones: phones);
       }
       if (!mounted) return;
-      setState(() => _sharedPhone = result.sharedPhoneCustomers);
+      ref
+          .read(customerFormProvider.notifier)
+          .setSharedPhone(result.sharedPhoneCustomers);
       // Invalidate the customer list so the parent screen refreshes.
       ref.invalidate(customerListProvider);
       // DG-409 Phase 5 (FR13, AC6): invalidate the session cache so the
@@ -253,7 +247,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _saving = false);
+      ref.read(customerFormProvider.notifier).clearSaving();
       showTopSnackBar(context, e.toString());
     }
   }
@@ -307,6 +301,12 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the form state so the widget rebuilds when saving/sharedPhone
+    // change, and when the rebuild counter bumps (phone-list structural
+    // changes driven by _addPhone/_removePhone/_setPrimary).
+    final form = ref.watch(customerFormProvider);
+    final saving = form.saving;
+    final sharedPhone = form.sharedPhone;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -350,29 +350,29 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: _saving ? null : _addPhone,
+                  onPressed: saving ? null : _addPhone,
                   icon: const Icon(Icons.add),
                   label: const Text(CustomersLabels.customerAddPhone),
                 ),
               ),
-              if (_sharedPhone.isNotEmpty) ...[
+              if (sharedPhone.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                SharedPhoneBanner(customers: _sharedPhone),
+                SharedPhoneBanner(customers: sharedPhone),
               ],
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _saving
+                    onPressed: saving
                         ? null
                         : () => Navigator.of(context).pop(false),
                     child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
+                    onPressed: saving ? null : _save,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,

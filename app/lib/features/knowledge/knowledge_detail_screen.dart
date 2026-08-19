@@ -14,6 +14,7 @@ import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/xfile_utils.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/knowledge_share_entry_notifier.dart';
 import 'widgets/knowledge_photo_gallery.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -235,13 +236,12 @@ class _ShareEntryButton extends ConsumerStatefulWidget {
 }
 
 class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
-  bool _sharing = false;
-
   static const _parallelism = 4;
 
   Future<void> _share() async {
-    if (_sharing) return;
-    setState(() => _sharing = true);
+    final sharing = ref.read(knowledgeShareEntryProvider).sharing;
+    if (sharing) return;
+    ref.read(knowledgeShareEntryProvider.notifier).setSharing(true);
     final entry = widget.entry;
     final text = entry.content.isNotEmpty
         ? '${entry.title}\n\n${entry.content}'
@@ -288,7 +288,9 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
         showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
       }
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) {
+        ref.read(knowledgeShareEntryProvider.notifier).setSharing(false);
+      }
     }
   }
 
@@ -428,8 +430,9 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
 
   @override
   Widget build(BuildContext context) {
+    final sharing = ref.watch(knowledgeShareEntryProvider).sharing;
     return IconButton(
-      icon: _sharing
+      icon: sharing
           ? const SizedBox(
               width: 20,
               height: 20,
@@ -437,7 +440,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
             )
           : const Icon(Icons.share),
       tooltip: SharedLabels.share,
-      onPressed: _sharing ? null : _share,
+      onPressed: sharing ? null : _share,
     );
   }
 }
