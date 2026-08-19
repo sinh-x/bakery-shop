@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/customer_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
+import 'providers/order_submission_guard_notifier.dart';
 import '../../providers/order/order_draft_provider.dart';
 import '../../shared/labels/templates.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -46,6 +47,17 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   @override
   void initState() {
     super.initState();
+    // DG-404 review CQ-1: reset the post-submit latch so each new order
+    // starts with `submitted=false`. The latch is a global non-autoDispose
+    // `NotifierProvider` that would otherwise stay `true` after the first
+    // successful submission and silently disable FR6 draft auto-save for
+    // every subsequent order. Deferred via `Future.microtask` to match the
+    // existing seed pattern (see `order_edit_screen._initFrom`).
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderSubmissionLatchProvider.notifier).resetSubmitted();
+      }
+    });
     // Sync the PageController's initial page with the draft-restored stage so
     // the PageView opens on the right stage when a draft is hydrated by the
     // orchestrator. The orchestrator owns the full restore; this only reads

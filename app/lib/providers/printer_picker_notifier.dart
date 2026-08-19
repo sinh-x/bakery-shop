@@ -37,12 +37,17 @@ class PrinterPickerDialogState {
     List<DiscoveredPrinter>? devices,
     String? errorMessage,
     String? connectingToName,
+    bool clearErrorMessage = false,
+    bool clearConnectingToName = false,
   }) {
     return PrinterPickerDialogState(
       phase: phase ?? this.phase,
       devices: devices ?? this.devices,
-      errorMessage: errorMessage ?? this.errorMessage,
-      connectingToName: connectingToName ?? this.connectingToName,
+      errorMessage:
+          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      connectingToName: clearConnectingToName
+          ? null
+          : (connectingToName ?? this.connectingToName),
     );
   }
 }
@@ -57,7 +62,8 @@ class PrinterPickerNotifier extends Notifier<PrinterPickerDialogState> {
 
   void startLoading() => state = state.copyWith(
         phase: PrinterPickerPhase.loading,
-        errorMessage: null,
+        clearErrorMessage: true,
+        clearConnectingToName: true,
       );
 
   void setError(String message) => state = state.copyWith(

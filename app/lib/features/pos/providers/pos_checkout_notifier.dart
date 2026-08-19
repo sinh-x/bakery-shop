@@ -60,6 +60,15 @@ class PosCheckoutNotifier extends Notifier<PosCheckoutState> {
   void markNavigatingAfterCheckout() =>
       state = state.copyWith(navigatingAfterCheckout: true);
 
+  /// Reset the navigating-after-checkout latch so a fresh checkout session
+  /// re-enables the empty-cart guard. Without this, the global
+  /// non-autoDispose `NotifierProvider` would stay `true` after the first
+  /// checkout and the empty-cart guard would no longer redirect to `/pos`
+  /// (DG-404 review CQ-2). Invoked when entering a fresh checkout session
+  /// (in `_initPosState` alongside `seedFastPath`).
+  void resetNavigatingAfterCheckout() =>
+      state = state.copyWith(navigatingAfterCheckout: false);
+
   /// Set the deliverImmediately flag (used by the Giao ngay fast-path and
   /// the Stage 3 pickup screen).
   void setDeliverImmediately(bool value) =>

@@ -27,6 +27,15 @@ class OrderSubmissionLatchNotifier extends Notifier<bool> {
   bool build() => false;
 
   void setSubmitted() => state = true;
+
+  /// Reset the post-submit latch so the next order's draft-save (FR6) is
+  /// not silently skipped. Invoked on new-order entry (create/POS checkout
+  /// `initState`) so each order starts with the latch false — the prior
+  /// `setState`-backed `_submitted` field was per-screen and reset on
+  /// rebuild, but this global `NotifierProvider` is not `autoDispose` and
+  /// would otherwise latch `true` permanently after the first submission
+  /// (DG-404 review CQ-1).
+  void resetSubmitted() => state = false;
 }
 
 final orderSubmissionLatchProvider =

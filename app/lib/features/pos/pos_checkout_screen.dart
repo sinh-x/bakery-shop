@@ -14,6 +14,7 @@ import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
 import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
+import '../../features/orders/providers/order_submission_guard_notifier.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_checkout_payment_controller.dart';
 import '../../features/pos/widgets/pos_payment_step_builder.dart';
@@ -86,6 +87,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           widget.fastPath ? _backFromPaymentStepFastPath : null,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // DG-404 review CQ-1: reset the post-submit latch so each new POS
+      // checkout starts with `submitted=false`. The latch is a global
+      // non-autoDispose `NotifierProvider` shared with the normal order
+      // flow; without a reset here, the FR6 draft-save guard (no-op for
+      // POS since `enableDraft=false`, but the latch also gates the
+      // shared submission spine's post-submit hook chain) would stay
+      // latched from the prior order.
+      ref.read(orderSubmissionLatchProvider.notifier).resetSubmitted();
       _initPosState();
     });
   }
@@ -96,6 +105,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     final checkoutNotifier = ref.read(posCheckoutProvider.notifier);
     checkoutNotifier.seedFastPath(widget.fastPath);
+    // DG-404 review CQ-2: reset the navigating-after-checkout latch so this
+    // fresh checkout session re-enables the empty-cart guard. The latch is
+    // a global non-autoDispose `NotifierProvider` that would otherwise stay
+    // `true` from the previous checkout and prevent the guard from
+    // redirecting to `/pos` on an empty cart.
+    checkoutNotifier.resetNavigatingAfterCheckout();
     final posNotifier = ref.read(posOrderStateProvider.notifier);
     const wizardData = OrderWizardData(
       customerName: OrdersLabels.khachLe,
