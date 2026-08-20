@@ -1,5 +1,6 @@
 import 'package:bakery_app/features/orders/providers/order_record_payment_notifier.dart';
 import 'package:bakery_app/features/orders/providers/order_edit_payment_notifier.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -108,6 +109,55 @@ void main() {
       expect(updated.year, 2026);
       expect(updated.month, 8);
       expect(updated.day, 16);
+    });
+  });
+
+  // review-auto cycle 1 CQ-1 — regression test for the UTC/local double-shift
+  // bug in the edit flow. The edit sheet must seed `createdAt` as server-local
+  // wall-clock (via `ServerTimezone.toServerLocal`) so that editing only the
+  // date and then serializing via `timestampToJson` (which calls `.toUtc()`)
+  // round-trips back to the original UTC instant instead of shifting by the
+  // local offset.
+  group(
+      'OrderEditPaymentNotifier UTC/local round-trip (review-auto cycle 1 CQ-1)',
+      () {
+    test(
+        'editing only the date preserves the original UTC time after '
+        'serialization', () {
+      // The stored UTC timestamp returned by the backend. Choose an instant
+      // whose local wall-clock differs from UTC (so a double-shift would be
+      // detectable). Use the test host's local offset — `toServerLocal`
+      // renders through the device timezone (assumed to match the server).
+      const storedUtc = '2026-08-16T06:00:00Z';
+      final utcDt = DateTime.parse(storedUtc);
+      // Compute the local wall-clock fields the picker should display.
+      final localSeed = ServerTimezone.toServerLocal(utcDt);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(orderEditPaymentProvider.notifier);
+      notifier.seed(
+        type: 'payment',
+        method: 'cash',
+        createdAt: localSeed,
+      );
+
+      // User edits only the date to 2026-07-01; time is preserved.
+      notifier.setCreatedDate(DateTime(2026, 7, 1));
+      final edited = container.read(orderEditPaymentProvider).createdAt!;
+
+      // The local hour/minute must match what the picker displayed.
+      expect(edited.hour, localSeed.hour);
+      expect(edited.minute, localSeed.minute);
+
+      // Serialize as the API client would on save.
+      final wire = timestampToJson(edited);
+
+      // The UTC time component must be unchanged (06:00:00Z) — only the date
+      // changed. Before the CQ-1 fix the local hour was copied into a
+      // DateTime whose `.toUtc()` then shifted it again, double-shifting the
+      // stored time by the local offset.
+      expect(wire, '2026-07-01T06:00:00Z');
     });
   });
 }

@@ -959,3 +959,55 @@ def test_update_invalidated_transaction_rejects_any_field(api_client):
         json={"amount": 999999},
     )
     assert resp.status_code == 422
+
+
+# --- review-auto cycle 1 CQ-2: normalize_timestamp hardening ---
+
+
+def test_create_transaction_date_only_created_at_rejected(api_client):
+    """CQ-2: a date-only `createdAt` (no T separator / time component) is
+    rejected with 422 so the canonical YYYY-MM-DDTHH:MM:SSZ invariant is
+    preserved."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01"},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_transaction_short_time_created_at_rejected(api_client):
+    """CQ-2: a timestamp missing seconds (HH:MM without :SS) is rejected
+    with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01T09:15"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_date_only_created_at_rejected(api_client):
+    """CQ-2: a date-only `createdAt` on PATCH is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-07-01"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_short_time_created_at_rejected(api_client):
+    """CQ-2: a timestamp missing seconds on PATCH is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-07-01T09:15"},
+    )
+    assert resp.status_code == 422

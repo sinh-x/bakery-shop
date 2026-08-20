@@ -141,15 +141,22 @@ class _OrderTransactionDetailSheetState
           if (acting)
             const Center(child: CircularProgressIndicator())
           else ...[
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                widget.onEdit();
-              },
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text(OrdersLabels.editPayment),
-            ),
-            const SizedBox(height: 8),
+            // review-auto cycle 1 CQ-3: hide the Edit action for invalidated
+            // transactions — FR6 freezes them on the backend (any PATCH
+            // returns 422), so surfacing Edit only produces a generic API
+            // error. Mirror the existing invalidate/restore branching: when
+            // `isInvalidated` only the Restore action is offered.
+            if (!isInvalidated) ...[
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  widget.onEdit();
+                },
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text(OrdersLabels.editPayment),
+              ),
+              const SizedBox(height: 8),
+            ],
             if (isInvalidated)
               FilledButton.icon(
                 onPressed: _onRestore,

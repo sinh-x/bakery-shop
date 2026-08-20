@@ -124,6 +124,12 @@ def normalize_timestamp(raw: str | None, *, empty_error: str | None = None) -> s
     timestamps (e.g. ``+07:00``) and returns ``YYYY-MM-DDTHH:MM:SSZ`` (no
     fractional seconds) or with fractional seconds preserved when present.
 
+    Inputs MUST be a full ISO-8601 datetime: a ``T`` separator and a
+    complete time component (``HH:MM:SS``). Date-only (``"2026-07-01"``)
+    and short-time (``"2026-07-01T09:15"``) inputs are rejected so the
+    canonical ``YYYY-MM-DDTHH:MM:SSZ`` invariant is preserved
+    (review-auto cycle 1 CQ-2).
+
     Args:
         raw: The raw timestamp string, or ``None``/empty.
         empty_error: Optional detail message used when ``raw`` is empty
@@ -136,13 +142,15 @@ def normalize_timestamp(raw: str | None, *, empty_error: str | None = None) -> s
 
     Raises:
         ValueError: When ``raw`` is an empty/whitespace string and
-            ``empty_error`` is provided, or when the value cannot be
-            parsed as ISO-8601. Callers map these to their preferred
-            error type (e.g. :class:`fastapi.HTTPException`).
+            ``empty_error`` is provided, when the value cannot be
+            parsed as ISO-8601, or when it is not a full datetime
+            (missing ``T`` separator or seconds component). Callers
+            map these to their preferred error type (e.g.
+            :class:`fastapi.HTTPException`).
 
     Traceability: DG-202 FR1, DG-415 FR3/NFR1 — shared helper extracted
-    from the duplicated ``_normalize_timestamp`` in ``events.py`` so the
-    payment-transaction API can reuse the same normalization semantics.
+        from the duplicated ``_normalize_timestamp`` in ``events.py`` so the
+        payment-transaction API can reuse the same normalization semantics.
     """
     if raw is None:
         return None
@@ -151,14 +159,22 @@ def normalize_timestamp(raw: str | None, *, empty_error: str | None = None) -> s
         if empty_error is not None:
             raise ValueError(empty_error)
         return None
+    # review-auto cycle 1 CQ-2: reject date-only / short-time inputs so the
+    # canonical ``YYYY-MM-DDTHH:MM:SSZ`` invariant is preserved. Require a
+    # ``T`` separator and a complete ``HH:MM:SS`` time component.
+    if "T" not in value:
+        raise ValueError("timestamp phải có dạng YYYY-MM-DDTHH:MM:SSZ")
+    time_part = re.split(r"[Z+\-]", value.split("T", 1)[1], maxsplit=1)[0]
+    if len(time_part.split(":")) < 3:
+        raise ValueError("timestamp phải có đủ giây (HH:MM:SS)")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError("timestamp không đúng định dạng ISO") from exc
-    if not _TZ_RE.search(value):
-        # Treat bare timestamps as UTC and append the Z suffix so all stored
-        # timestamps are UTC (DG-202 FR1).
-        return f"{value}Z"
+    # Bare (no timezone) and Z/offset timestamps are all normalized through
+    # the parsed datetime object so the output is always canonical
+    # ``YYYY-MM-DDTHH:MM:SSZ`` (no string concat that could leave short
+    # components). Treat bare timestamps as UTC (DG-202 FR1).
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     utc_dt = parsed.astimezone(timezone.utc)
