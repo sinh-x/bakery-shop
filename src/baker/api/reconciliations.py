@@ -1,5 +1,6 @@
 """Reconciliation API routes for current-day stock counting."""
 
+import json
 import logging
 from datetime import date
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from baker.api.auth import resolve_actor
+from baker.api.orders import _generate_unique_public_order_code
 from baker.services.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
@@ -125,7 +127,7 @@ def _load_display_products(conn) -> list[dict]:
                FROM stock_lots sl
                LEFT JOIN inventory_items ii
                  ON ii.lot_id = sl.id AND ii.status = 'available'
-               WHERE sl.product_id IN ("""
+               WHERE sl.product_id IN ("""  # nosec B608
             + placeholders
             + ") GROUP BY sl.product_id, sl.price_chip_id",
             product_ids,
@@ -151,7 +153,7 @@ def _load_display_products(conn) -> list[dict]:
         neg_rows = conn.execute(
             f"""SELECT product_id, price_chip_id, qty
                FROM negative_balance
-               WHERE product_id IN ({placeholders})""",
+               WHERE product_id IN ({placeholders})""",  # nosec B608
             product_ids,
         ).fetchall()
         for neg_row in neg_rows:
@@ -160,7 +162,7 @@ def _load_display_products(conn) -> list[dict]:
             expected_by_option[key] = current - int(neg_row["qty"])
 
         chip_rows = conn.execute(
-            "SELECT id, product_id, label, price, position "
+            "SELECT id, product_id, label, price, position "  # nosec B608
             f"FROM product_price_chips WHERE product_id IN ({placeholders}) "
             "ORDER BY product_id, position, id",
             product_ids,
@@ -337,6 +339,18 @@ def _create_sale_orders(
     latest_by_key: dict[tuple[int, int | None], dict],
     actor: str,
 ) -> list[list[dict]]:
+    # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
+    # entries for reconciliation sale orders (reuses the normal order
+    # and payment_transaction sync patterns). Import kept at function
+    # scope (not inner per-order loop) to avoid repeated import overhead
+    # and keep the accounting coupling at call-site without circular
+    # imports.
+    from baker.services.journal_sync import (
+        _sync_delivered_order_journal,
+        _sync_payment_journal,
+        run_journal_sync,
+    )
+
     orders_by_line: list[list[dict]] = []
 
     for line in payload.lines:
@@ -364,94 +378,118 @@ def _create_sale_orders(
         for row_payload in row_payloads:
             chip_id = _resolve_line_chip_id(conn, line)
             latest = latest_by_key[(line.product_id, chip_id)]
-            order = Order(
-                customer_name="Đối soát tồn kho",
-                items=[
-                    OrderItem(
-                        product=latest["name"],
-                        qty=row_payload["quantity"],
-                        price=row_payload["unit_price"],
-                        product_id=str(line.product_id),
-                        price_chip_id=chip_id,
-                    )
-                ],
-                status="new",
-                source="reconciliation",
-                notes=f"Đối soát phiên #{session_id}",
-                created_by=actor,
-            )
-            order.calculate_total()
-            order.save(conn)
+            row_quantity = row_payload["quantity"]
+            unit_price = row_payload["unit_price"]
+            payment_method = row_payload["payment_method"]
 
-            work_item = WorkItem(
-                order_id=order.id or 0,
-                product_id=str(line.product_id),
-                product_name=latest["name"],
-                quantity=row_payload["quantity"],
-                unit_price=row_payload["unit_price"],
-                position=0,
-                price_chip_id=chip_id,
-            )
-            work_item.save(conn)
+            # DG-368 Phase 2: split quantity into N orders, each with
+            # quantity=1 (FR1). Total order count equals the row quantity
+            # (NFR2). Each order still gets a full WorkItem, PaymentTransaction
+            # and journal sync (revenue, COGS, payment) — FR2 — by reusing the
+            # existing per-order pipeline in a loop.
+            linked_order_refs: list[str] = []
+            first_order_ref: str | None = None
+            first_payment_ref: str | None = None
+            first_order_item_id: int | None = None
+            first_sale_movement_id: int | None = None
 
-            payment_txn = PaymentTransaction(
-                order_id=order.id or 0,
-                amount=float(order.total_price),
-                type="payment",
-                method=row_payload["payment_method"],
-                note=f"Đối soát phiên #{session_id}",
-            )
-            payment_txn.save(conn)
+            for _ in range(row_quantity):
+                due_date = date.today().isoformat()
+                order = Order(
+                    customer_name="Đối soát tồn kho",
+                    items=[
+                        OrderItem(
+                            product=latest["name"],
+                            qty=1,
+                            price=unit_price,
+                            product_id=str(line.product_id),
+                            price_chip_id=chip_id,
+                        )
+                    ],
+                    status="new",
+                    source="reconciliation",
+                    due_date=due_date,
+                    public_order_code=_generate_unique_public_order_code(
+                        conn, due_date, "reconciliation"
+                    ),
+                    notes=f"Đối soát phiên #{session_id}",
+                    created_by=actor,
+                )
+                order.calculate_total()
+                order.save(conn)
 
-            Order.update_status(conn, order.order_ref, "delivered", "")
-            auto_decrement_stock(conn, order.id or 0, order.order_ref)
+                work_item = WorkItem(
+                    order_id=order.id or 0,
+                    product_id=str(line.product_id),
+                    product_name=latest["name"],
+                    quantity=1,
+                    unit_price=unit_price,
+                    position=0,
+                    price_chip_id=chip_id,
+                )
+                work_item.save(conn)
 
-            # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
-            # entries for reconciliation sale orders (reuses the normal order
-            # and payment_transaction sync patterns). Inline import keeps the
-            # accounting coupling at call-site and avoids circular imports.
-            from baker.services.journal_sync import (
-                _sync_delivered_order_journal,
-                _sync_payment_journal,
-                run_journal_sync,
-            )
+                payment_txn = PaymentTransaction(
+                    order_id=order.id or 0,
+                    amount=float(order.total_price),
+                    type="payment",
+                    method=payment_method,
+                    note=f"Đối soát phiên #{session_id}",
+                )
+                payment_txn.save(conn)
 
-            run_journal_sync(
-                _sync_delivered_order_journal,
-                conn, order.id, order.order_ref,
-                log_label=f"delivered order journal sync for reconciliation order {order.id}",
-                source_type="order",
-                source_id=order.id,
-            )
-            run_journal_sync(
-                _sync_payment_journal,
-                conn, payment_txn.id, float(order.total_price), "payment", row_payload["payment_method"],
-                order_id=order.id,
-                log_label=f"payment journal sync for reconciliation txn {payment_txn.id}",
-                source_type="payment_transaction",
-                source_id=payment_txn.id,
-            )
+                Order.update_status(conn, order.order_ref, "delivered", "")
+                auto_decrement_stock(conn, order.id or 0, order.order_ref)
 
-            sale_movement = conn.execute(
-                """SELECT id
-                   FROM stock_movements
-                   WHERE movement_type = 'sale' AND reference_id = ? AND product_id = ?
-                     AND ((price_chip_id IS NULL AND ? IS NULL) OR price_chip_id = ?)
-                   ORDER BY id DESC
-                   LIMIT 1""",
-                (order.order_ref, line.product_id, chip_id, chip_id),
-            ).fetchone()
+                run_journal_sync(
+                    _sync_delivered_order_journal,
+                    conn, order.id, order.order_ref,
+                    log_label=f"delivered order journal sync for reconciliation order {order.id}",
+                    source_type="order",
+                    source_id=order.id,
+                )
+                run_journal_sync(
+                    _sync_payment_journal,
+                    conn, payment_txn.id, float(order.total_price), "payment", payment_method,
+                    order_id=order.id,
+                    log_label=f"payment journal sync for reconciliation txn {payment_txn.id}",
+                    source_type="payment_transaction",
+                    source_id=payment_txn.id,
+                )
+
+                sale_movement = conn.execute(
+                    """SELECT id
+                       FROM stock_movements
+                       WHERE movement_type = 'sale' AND reference_id = ? AND product_id = ?
+                         AND ((price_chip_id IS NULL AND ? IS NULL) OR price_chip_id = ?)
+                       ORDER BY id DESC
+                       LIMIT 1""",
+                    (order.order_ref, line.product_id, chip_id, chip_id),
+                ).fetchone()
+
+                linked_order_refs.append(order.order_ref)
+                if first_order_ref is None:
+                    first_order_ref = order.order_ref
+                    first_payment_ref = str(payment_txn.id)
+                    first_order_item_id = work_item.id
+                    first_sale_movement_id = sale_movement["id"] if sale_movement else None
 
             line_rows.append(
                 {
-                    "quantity": row_payload["quantity"],
-                    "unit_price": row_payload["unit_price"],
-                    "payment_method": row_payload["payment_method"],
-                    "order_ref": order.order_ref,
-                    "payment_ref": str(payment_txn.id),
-                    "order_item_id": work_item.id,
-                    "sale_movement_id": sale_movement["id"] if sale_movement else None,
+                    "quantity": row_quantity,
+                    "unit_price": unit_price,
+                    "payment_method": payment_method,
+                    # FR4: reconciliation_sessions.linked_order_ref points to
+                    # the first order created for the line (kept at row level so
+                    # the session's first_sale_row uses the first order).
+                    "order_ref": first_order_ref,
+                    "payment_ref": first_payment_ref,
+                    "order_item_id": first_order_item_id,
+                    "sale_movement_id": first_sale_movement_id,
                     "price_chip_id": chip_id,
+                    # FR3: full list of all order_refs created for this row,
+                    # stored as a JSON array in reconciliation_sale_rows.linked_order_refs.
+                    "linked_order_refs": linked_order_refs,
                 }
             )
 
@@ -819,8 +857,8 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
                 row_link = line_sale_rows[row_index]
                 conn.execute(
                     """INSERT INTO reconciliation_sale_rows
-                       (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref, linked_order_refs, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         line_id,
                         sale_row.quantity,
@@ -828,6 +866,11 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
                         sale_row.payment_method,
                         row_link["order_ref"],
                         row_link["payment_ref"],
+                        # FR3: JSON array of all order_refs created for this
+                        # row (one order per unit of quantity). Always stored
+                        # so the full order list is reconstructable from the
+                        # row regardless of quantity.
+                        json.dumps(row_link["linked_order_refs"]),
                         now_utc(),
                     ),
                 )
@@ -840,9 +883,25 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
 
 
 @router.get("/history")
-def get_reconciliation_history(limit: int = 30):
+def get_reconciliation_history(
+    limit: int = 30,
+    offset: int = 0,
+    paginated: bool = False,
+):
+    """Lịch sử phiên đối soát (DG-409 Phase 3: thêm ``offset`` + envelope).
+
+    Mặc định trả shape cũ ``{"sessions": [...]}`` (backward-compatible, NFR6).
+    Khi ``paginated=true``, bổ sung ``total``, ``has_more``, ``limit``,
+    ``offset`` vào cùng envelope (additive).
+    """
     bounded_limit = max(1, min(limit, 200))
+    bounded_offset = max(0, offset)
     with get_db() as conn:
+        if paginated:
+            count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM reconciliation_sessions"
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
         rows = conn.execute(
             """SELECT rs.id,
                       rs.reconciliation_date,
@@ -856,24 +915,32 @@ def get_reconciliation_history(limit: int = 30):
                LEFT JOIN reconciliation_lines rl ON rl.session_id = rs.id
                GROUP BY rs.id
                ORDER BY rs.id DESC
-               LIMIT ?""",
-            (bounded_limit,),
+               LIMIT ? OFFSET ?""",
+            (bounded_limit, bounded_offset),
         ).fetchall()
-        return {
-            "sessions": [
-                {
-                    "id": row["id"],
-                    "reconciliation_date": row["reconciliation_date"],
-                    "staff_name": row["staff_name"],
-                    "payment_method": row["payment_method"] or "",
-                    "waste_reason": row["waste_reason"] or "",
-                    "linked_order_ref": row["linked_order_ref"],
-                    "created_at": row["created_at"],
-                    "line_count": row["line_count"],
-                }
-                for row in rows
-            ]
-        }
+        sessions = [
+            {
+                "id": row["id"],
+                "reconciliation_date": row["reconciliation_date"],
+                "staff_name": row["staff_name"],
+                "payment_method": row["payment_method"] or "",
+                "waste_reason": row["waste_reason"] or "",
+                "linked_order_ref": row["linked_order_ref"],
+                "created_at": row["created_at"],
+                "line_count": row["line_count"],
+            }
+            for row in rows
+        ]
+        if paginated:
+            has_more = (bounded_offset + len(sessions)) < total
+            return {
+                "sessions": sessions,
+                "total": total,
+                "has_more": has_more,
+                "limit": bounded_limit,
+                "offset": bounded_offset,
+            }
+        return {"sessions": sessions}
 
 
 @router.get("/history/{session_id}")
@@ -926,7 +993,8 @@ def get_reconciliation_history_detail(session_id: int):
                       unit_price,
                       payment_method,
                       linked_order_ref,
-                      linked_payment_ref
+                      linked_payment_ref,
+                      linked_order_refs
                FROM reconciliation_sale_rows
                WHERE line_id IN (
                    SELECT id FROM reconciliation_lines WHERE session_id = ?
@@ -936,6 +1004,11 @@ def get_reconciliation_history_detail(session_id: int):
         ).fetchall()
         sale_rows_by_line_id: dict[int, list[dict]] = {}
         for row in sale_row_rows:
+            raw_refs = row["linked_order_refs"]
+            try:
+                linked_order_refs = json.loads(raw_refs) if raw_refs else None
+            except (TypeError, ValueError):
+                linked_order_refs = None
             sale_rows_by_line_id.setdefault(row["line_id"], []).append(
                 {
                     "id": row["id"],
@@ -944,6 +1017,7 @@ def get_reconciliation_history_detail(session_id: int):
                     "payment_method": row["payment_method"],
                     "linked_order_ref": row["linked_order_ref"],
                     "linked_payment_ref": row["linked_payment_ref"],
+                    "linked_order_refs": linked_order_refs,
                     "is_legacy": False,
                 }
             )
@@ -984,6 +1058,7 @@ def get_reconciliation_history_detail(session_id: int):
                                 "payment_method": session["payment_method"] or "",
                                 "linked_order_ref": session["linked_order_ref"],
                                 "linked_payment_ref": session["linked_payment_ref"],
+                                "linked_order_refs": None,
                                 "is_legacy": True,
                             }
                         ]

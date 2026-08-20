@@ -109,6 +109,14 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         draw.text((MARGIN + icon_w + 4, y), age_text, font=tf, fill=(180, 0, 0))
         y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
+        # DG-361 Phase 4.3 / FR3 / AC3: candle type label after birthday badge.
+        candle_label = _candle_type_label(_candle_type_value(work_item))
+        if candle_label:
+            y = _icon_text(
+                draw, y, "\U0001F56F", f" {candle_label}",
+                _font(_SZ_MEDIUM, True), (180, 0, 0), x=MARGIN,
+            )
+
     # Cash-in-cake badge (rut tien) — amount on work ticket (fee is in summary)
     cash_amount = _cash_amount_value(work_item)
     if cash_amount > 0:

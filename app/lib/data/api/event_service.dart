@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../../shared/utils/date_formatting.dart';
 import '../models/event.dart';
@@ -140,12 +139,12 @@ class EventService {
 
   Future<EventPhoto> uploadEventPhoto(
     int eventId,
-    File file, {
+    XFile file, {
     String tags = '',
   }) async {
     final bytes = await file.readAsBytes();
     final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: file.path.split('/').last),
+      'file': MultipartFile.fromBytes(bytes, filename: file.name),
       'tags': tags,
     });
     final response = await _dio.post(

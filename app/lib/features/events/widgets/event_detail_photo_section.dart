@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../data/models/event_photo.dart';
 import 'event_photo_viewer.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Read-only photo gallery for the event detail screen.
 ///
 /// Fetches nothing itself — the parent screen owns the load lifecycle
@@ -38,7 +38,7 @@ class EventDetailPhotoSection extends ConsumerWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Text(
-          '${VN.apiError}: $error',
+          '${SharedLabels.apiError}: $error',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.error,
           ),
@@ -49,7 +49,7 @@ class EventDetailPhotoSection extends ConsumerWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Text(
-          VN.noEventPhotos,
+          EventsLabels.noEventPhotos,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.outline,
           ),

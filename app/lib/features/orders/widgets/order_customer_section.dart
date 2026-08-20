@@ -3,13 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/customer.dart';
-import '../../../providers/customers_provider.dart';
+import '../../../data/providers/customers_provider.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import 'customer_search_button.dart';
 import 'order_customer_suggestions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 class OrderCustomerSection extends ConsumerWidget {
   const OrderCustomerSection({
     super.key,
@@ -63,9 +62,9 @@ class OrderCustomerSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (customerName != null && customerName!.isNotEmpty)
-          _buildInfoRow(context, Icons.person_outline, VN.customerName, customerName!),
+          _buildInfoRow(context, Icons.person_outline, OrdersLabels.customerName, customerName!),
         if (customerPhone != null && customerPhone!.isNotEmpty)
-          _buildInfoRow(context, Icons.phone_outlined, VN.customerPhone, customerPhone!),
+          _buildInfoRow(context, Icons.phone_outlined, OrdersLabels.customerPhone, customerPhone!),
       ],
     );
   }
@@ -110,7 +109,7 @@ class OrderCustomerSection extends ConsumerWidget {
           TextFormField(
             controller: nameCtrl,
             decoration: const InputDecoration(
-              labelText: VN.customerName,
+              labelText: OrdersLabels.customerName,
               border: OutlineInputBorder(),
             ),
             textCapitalization: TextCapitalization.words,
@@ -118,7 +117,7 @@ class OrderCustomerSection extends ConsumerWidget {
           const SizedBox(height: 12),
           PhoneTextField(
             controller: phoneCtrl!,
-            labelText: VN.customerPhone,
+            labelText: OrdersLabels.customerPhone,
           ),
           const SizedBox(height: 4),
           OrderCustomerSuggestions(

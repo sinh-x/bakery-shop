@@ -18,7 +18,7 @@ def check_revenue_gaps_cmd():
                       WHERE je.source_type = 'order' AND je.source_id = o.id
                   )
                 ORDER BY o.id ASC
-                """,
+                """,  # nosec B608
                 list(DELIVERED_STATUSES),
             ).fetchall()
     except Exception:  # noqa: BLE001 — top-level CLI guard

@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
 import '../../../shared/services/image_download_metadata.dart';
+import '../../../shared/utils/xfile_utils.dart';
 import 'bulk_download_web.dart';
 import 'bulk_common.dart';
 
@@ -91,7 +91,6 @@ class BulkShareService {
         }
         try {
           downloadedPhotoBytesByPhotoId[photo.id] = bytes;
-          final tempDir = await getTemporaryDirectory();
           final metadata = imageDownloadMetadata(
             bytes,
             sourceName: photo.filePath,
@@ -102,10 +101,15 @@ class BulkShareService {
             photoId: photo.id,
             extension: metadata.extension,
           );
-          final file = File('${tempDir.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          allWrittenFiles.add(file);
-          allShareFiles.add(XFile(file.path, mimeType: metadata.mimeType));
+          final XFile shareFile = await createXFileFromBytes(
+            bytes,
+            fileName: fileName,
+            mimeType: metadata.mimeType,
+          );
+          if (!kIsWeb) {
+            allWrittenFiles.add(File(shareFile.path));
+          }
+          allShareFiles.add(shareFile);
         } catch (e) {
           failCount++;
           errors.add('${photo.productName} #${photo.id}: save failed — $e');

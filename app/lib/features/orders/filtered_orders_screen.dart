@@ -1,14 +1,16 @@
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
+import 'providers/order_list_filter_notifier.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'widgets/order_card.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Filters [orders] to those with urgency critical OR urgent AND an active
 /// (non-terminal) status. Used by the urgency filtered listing reached by
 /// tapping the urgency banner — must match the banner's count.
@@ -79,7 +81,6 @@ class FilteredOrdersScreen extends ConsumerStatefulWidget {
 
 class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
   final _searchController = TextEditingController();
-  String _searchQuery = '';
 
   bool get _isIncomplete => widget.filter == 'incomplete';
 
@@ -98,9 +99,9 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
       ? OrdersLabels.incompleteFilterEmpty
       : OrdersLabels.combinedUrgencyFilterEmpty;
 
-  List<Order> _applySearch(List<Order> orders) {
-    if (_searchQuery.trim().isEmpty) return orders;
-    final q = _searchQuery.trim().toLowerCase();
+  List<Order> _applySearch(List<Order> orders, String searchQuery) {
+    if (searchQuery.trim().isEmpty) return orders;
+    final q = searchQuery.trim().toLowerCase();
     return orders.where((o) {
       return o.customerName.toLowerCase().contains(q) ||
           o.customerPhone.contains(q) ||
@@ -112,6 +113,7 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
     final notifier = ref.read(orderListProvider.notifier);
+    final searchQuery = ref.watch(filteredOrdersSearchProvider);
 
     List<Order> applyFilter(List<Order> orders) {
       if (_isIncomplete) {
@@ -131,13 +133,15 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: VN.lichSuDonHangTimKiem,
+                hintText: OrdersLabels.lichSuDonHangTimKiem,
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
+                suffixIcon: searchQuery.isNotEmpty
                     ? IconButton(
                         onPressed: () {
                           _searchController.clear();
-                          setState(() => _searchQuery = '');
+                          ref
+                              .read(filteredOrdersSearchProvider.notifier)
+                              .clearQuery();
                         },
                         icon: const Icon(Icons.clear),
                       )
@@ -147,7 +151,8 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                 ),
                 isDense: true,
               ),
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: (value) =>
+                  ref.read(filteredOrdersSearchProvider.notifier).setQuery(value),
             ),
           ),
           Expanded(
@@ -160,11 +165,11 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(VN.apiError),
+                      const Text(SharedLabels.apiError),
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: notifier.refresh,
-                        child: const Text(VN.retry),
+                        child: const Text(SharedLabels.retry),
                       ),
                     ],
                   ),
@@ -181,10 +186,10 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
                   );
                 }
 
-                final searched = _applySearch(filtered);
+                final searched = _applySearch(filtered, searchQuery);
                 if (searched.isEmpty) {
                   return const Center(
-                    child: Text(VN.lichSuDonHangKhongTimThay),
+                    child: Text(OrdersLabels.lichSuDonHangKhongTimThay),
                   );
                 }
 

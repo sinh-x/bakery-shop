@@ -4,11 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
-import '../../../providers/categories_provider.dart';
+import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../providers/products_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import '../../../data/providers/products_provider.dart';
 import '../../../shared/mixins/auto_refresh_mixin.dart';
 import '../../../shared/utils/category_grouping.dart';
 import '../../../shared/utils/date_formatting.dart';
@@ -17,7 +16,11 @@ import '../../../shared/widgets/collapsible_category_sections.dart';
 import '../pos/utils/pos_cart_wizard_sync.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
+import 'providers/pos_search_notifier.dart';
 /// Main POS (Point of Sale) screen — 6th bottom tab.
 /// Product-first flow with 3-tap quick sale for walk-in customers.
 class PosScreen extends ConsumerStatefulWidget {
@@ -29,9 +32,6 @@ class PosScreen extends ConsumerStatefulWidget {
 
 class _PosScreenState extends ConsumerState<PosScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
-  String _searchQuery = '';
-  bool _showOutOfStockProducts = false;
-  DateTime _lastStockRefreshAt = DateTime.now();
   final CategorySectionExpansionController _sectionExpansionController =
       CategorySectionExpansionController();
 
@@ -47,25 +47,29 @@ class _PosScreenState extends ConsumerState<PosScreen>
   void onAutoRefreshTriggered() {
     super.onAutoRefreshTriggered();
     if (mounted) {
-      setState(() => _lastStockRefreshAt = DateTime.now());
+      ref.read(posSearchProvider.notifier).markStockRefreshed();
     }
   }
 
-  List<Product> _visibleProducts(List<Product> products) {
+  List<Product> _visibleProducts(
+    List<Product> products, {
+    required String searchQuery,
+    required bool showOutOfStockProducts,
+  }) {
     var result = products.where((p) => p.active == 1).toList();
 
-    if (!_showOutOfStockProducts) {
+    if (!showOutOfStockProducts) {
       result = result.where((p) => (p.stockQty ?? 0) > 0).toList();
     }
 
     // Default: trung_bay products only (when no search)
-    if (_searchQuery.isEmpty) {
+    if (searchQuery.isEmpty) {
       result = result
           .where((p) => p.attributes['trung_bay']?.toString() == 'true')
           .toList();
     } else {
       // Search: all products matching query
-      final q = _searchQuery.toLowerCase();
+      final q = searchQuery.toLowerCase();
       result = result.where((p) => p.name.toLowerCase().contains(q)).toList();
     }
 
@@ -75,9 +79,15 @@ class _PosScreenState extends ConsumerState<PosScreen>
   List<GroupedCategorySection<Product>> _groupedSections({
     required List<Product> products,
     required List<Category> categories,
+    required String searchQuery,
+    required bool showOutOfStockProducts,
   }) {
     final activeCategories = categories.where((c) => c.active == 1).toList();
-    final visible = _visibleProducts(products);
+    final visible = _visibleProducts(
+      products,
+      searchQuery: searchQuery,
+      showOutOfStockProducts: showOutOfStockProducts,
+    );
     final sections = groupItemsByCategory<Product>(
       items: visible,
       categories: activeCategories,
@@ -89,9 +99,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
   }
 
   void _expandSectionsForSearch(
-    List<GroupedCategorySection<Product>> sections,
-  ) {
-    if (_searchQuery.isEmpty) {
+    List<GroupedCategorySection<Product>> sections, {
+    required String searchQuery,
+  }) {
+    if (searchQuery.isEmpty) {
       return;
     }
     for (final section in sections) {
@@ -102,8 +113,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
   void _onSearchChanged(String value) {
     final productsValue = ref.read(productsProvider).value;
     final categoriesValue = ref.read(categoriesProvider).value;
+    final showOutOfStock =
+        ref.read(posSearchProvider).showOutOfStockProducts;
 
-    setState(() => _searchQuery = value);
+    ref.read(posSearchProvider.notifier).setSearchQuery(value);
 
     if (value.isEmpty || productsValue == null || categoriesValue == null) {
       return;
@@ -112,8 +125,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
     final sections = _groupedSections(
       products: productsValue,
       categories: categoriesValue,
+      searchQuery: value,
+      showOutOfStockProducts: showOutOfStock,
     );
-    _expandSectionsForSearch(sections);
+    _expandSectionsForSearch(sections, searchQuery: value);
   }
 
   @override
@@ -139,7 +154,9 @@ class _PosScreenState extends ConsumerState<PosScreen>
   }
 
   String _refreshLabel() {
-    return VN.stockUpdatedAt(formatDisplayTime(_lastStockRefreshAt));
+    final lastStockRefreshAt =
+        ref.read(posSearchProvider).lastStockRefreshAt ?? DateTime.now();
+    return StockLabels.stockUpdatedAt(formatDisplayTime(lastStockRefreshAt));
   }
 
   void _onPosAppBarMenuSelected(String value) {
@@ -175,14 +192,17 @@ class _PosScreenState extends ConsumerState<PosScreen>
     });
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
+    final searchState = ref.watch(posSearchProvider);
+    final searchQuery = searchState.searchQuery;
+    final showOutOfStockProducts = searchState.showOutOfStockProducts;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.banHang),
+        title: const Text(OrdersLabels.banHang),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: _refreshStock,
           ),
           AppBarOverflowMenu(
@@ -190,19 +210,19 @@ class _PosScreenState extends ConsumerState<PosScreen>
             items: const [
               PopupMenuItem<String>(
                 value: 'stock_reconciliation',
-                child: Text(VN.openStockReconciliation),
+                child: Text(SharedLabels.openStockReconciliation),
               ),
               PopupMenuItem<String>(
                 value: 'stock_reconciliation_history',
-                child: Text(VN.openStockReconciliationHistory),
+                child: Text(SharedLabels.openStockReconciliationHistory),
               ),
               PopupMenuItem<String>(
                 value: 'orders_history',
-                child: Text(VN.openOrderHistory),
+                child: Text(SharedLabels.openOrderHistory),
               ),
               PopupMenuItem<String>(
                 value: 'stock',
-                child: Text(VN.openStock),
+                child: Text(SharedLabels.openStock),
               ),
             ],
           ),
@@ -215,7 +235,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
             padding: const EdgeInsets.all(8),
             child: TextField(
               decoration: InputDecoration(
-                hintText: VN.searchProducts,
+                hintText: ProductsLabels.searchProducts,
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -231,15 +251,17 @@ class _PosScreenState extends ConsumerState<PosScreen>
               children: [
                 Expanded(
                   child: Text(
-                    VN.showOutOfStockProducts,
+                    StockLabels.showOutOfStockProducts,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
                 Switch.adaptive(
-                  value: _showOutOfStockProducts,
+                  value: showOutOfStockProducts,
                   onChanged: (value) {
-                    setState(() => _showOutOfStockProducts = value);
-                    if (_searchQuery.isEmpty) {
+                    ref
+                        .read(posSearchProvider.notifier)
+                        .setShowOutOfStockProducts(value);
+                    if (searchQuery.isEmpty) {
                       return;
                     }
                     final productsValue = ref.read(productsProvider).value;
@@ -250,8 +272,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
                     final sections = _groupedSections(
                       products: productsValue,
                       categories: categoriesValue,
+                      searchQuery: searchQuery,
+                      showOutOfStockProducts: value,
                     );
-                    _expandSectionsForSearch(sections);
+                    _expandSectionsForSearch(sections, searchQuery: searchQuery);
                   },
                 ),
               ],
@@ -284,10 +308,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       children: [
                         const Icon(Icons.error_outline, size: 18),
                         const SizedBox(width: 8),
-                        const Expanded(child: Text(VN.categoryLoadError)),
+                        const Expanded(child: Text(ProductsLabels.categoryLoadError)),
                         TextButton(
                           onPressed: () => ref.invalidate(categoriesProvider),
-                          child: const Text(VN.taiLai),
+                          child: const Text(OrdersLabels.taiLai),
                         ),
                       ],
                     ),
@@ -299,11 +323,11 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(VN.apiError),
+                          const Text(SharedLabels.apiError),
                           const SizedBox(height: 8),
                           ElevatedButton(
                             onPressed: _refreshStock,
-                            child: const Text(VN.taiLai),
+                            child: const Text(OrdersLabels.taiLai),
                           ),
                         ],
                       ),
@@ -312,11 +336,13 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       final sections = _groupedSections(
                         products: products,
                         categories: categories,
+                        searchQuery: searchQuery,
+                        showOutOfStockProducts: showOutOfStockProducts,
                       );
                       if (sections.isEmpty) {
                         return Center(
                           child: Text(
-                            VN.khongCoSanPham,
+                            OrdersLabels.khongCoSanPham,
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                         );
@@ -327,7 +353,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                         sectionContentBuilder: (context, section) =>
                             PosProductGrid(
                               products: section.items,
-                              showOutOfStockProducts: _showOutOfStockProducts,
+                              showOutOfStockProducts: showOutOfStockProducts,
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
                               padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),

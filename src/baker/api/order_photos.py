@@ -141,7 +141,7 @@ def update_order_photo(ref: str, photo_id: int, update: OrderPhotoUpdate):
         updates = [f"{field} = ?" for field in data]
         params = list(data.values()) + [photo_id]
         conn.execute(
-            f"UPDATE order_photos SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE order_photos SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
 

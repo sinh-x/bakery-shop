@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
+import '../../../shared/labels/templates.dart';
 import 'section_header.dart';
 import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
@@ -14,12 +15,18 @@ class Stage4ReviewScreen extends ConsumerWidget {
     required this.onSubmit,
     this.isProcessing = false,
     required this.orderStateProvider,
+    this.onOpenTemplates,
   });
 
   final VoidCallback onBack;
   final VoidCallback onSubmit;
   final bool isProcessing;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-375 Phase 4.3 / FR2 / AC2: optional callback that opens the message
+  /// template picker. When non-null a "Mẫu tin nhắn" button is rendered next
+  /// to the submit button in the review stage.
+  final VoidCallback? onOpenTemplates;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -73,6 +80,14 @@ class Stage4ReviewScreen extends ConsumerWidget {
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          if (onOpenTemplates != null) ...[
+            OutlinedButton.icon(
+              onPressed: onOpenTemplates,
+              icon: const Icon(Icons.message_outlined, size: 18),
+              label: const Text(TemplatesLabels.reviewStageButton),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: isProcessing ? null : onSubmit,
             child: isProcessing

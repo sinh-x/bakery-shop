@@ -1,5 +1,4 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// ignore_for_file: unnecessary_null_in_if_null_operators
 
 part of 'order.dart';
 
@@ -35,6 +34,11 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
           ?.map((e) => PackingItem.fromJson(e as Map<String, dynamic>))
           .toList() ??
       const [],
+  paymentMethods:
+      (json['paymentMethods'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
   workTicketPrintedAt: json['workTicketPrintedAt'] as String?,
   workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
   createdStaffName: json['createdStaffName'] as String? ?? '',
@@ -52,7 +56,7 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   longitude: (json['longitude'] as num?)?.toDouble(),
   googleMapsUrl: json['googleMapsUrl'] as String?,
   deliveryTimeSlot: json['deliveryTimeSlot'] as String?,
-  assignedStaffId: json['assignedStaffId'] as String? ?? null,
+  assignedStaffId: json['assignedStaffId'] as String?,
   assignedStaffName: json['assignedStaffName'] as String? ?? '',
   createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
   updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
@@ -80,6 +84,7 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'amountPaid': instance.amountPaid,
   'isPaid': instance.isPaid,
   'packingChecklist': instance.packingChecklist,
+  'paymentMethods': instance.paymentMethods,
   'workTicketPrintedAt': instance.workTicketPrintedAt,
   'workTicketPrintedBy': instance.workTicketPrintedBy,
   'createdStaffName': instance.createdStaffName,

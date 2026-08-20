@@ -515,7 +515,7 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
         WHERE je.source_type = 'order_cogs'
         GROUP BY je.id
         ORDER BY je.id
-        """,
+        """,  # nosec B608
         (COGS_CODE,),
     ).fetchall()
 
@@ -535,7 +535,7 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
             """
             SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price,
                    oi.cost_at_sale
-                   """
+                   """  # nosec B608
             + (", oi.assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
             + """
             FROM order_items oi
@@ -648,7 +648,7 @@ def _check_cash_flow_integrity(conn) -> dict[str, Any]:
         WHERE a.code IN ({placeholders})
         GROUP BY a.id
         ORDER BY a.code
-        """,
+        """,  # nosec B608
         cash_codes,
     ).fetchall()
 
@@ -675,7 +675,7 @@ def _check_cash_flow_integrity(conn) -> dict[str, Any]:
         FROM journal_lines jl
         JOIN accounts a ON a.id = jl.account_id
         WHERE a.code IN ({placeholders})
-        """,
+        """,  # nosec B608
         cash_codes,
     ).fetchone()
 
@@ -1871,7 +1871,7 @@ def _journal_sum(
                COALESCE(SUM({side_col}), 0) AS amount
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
-    """
+    """  # nosec B608
     if account_glob is not None:
         sql += " JOIN accounts a ON a.id = jl.account_id AND (a.code GLOB ?"
         params.append(account_glob)

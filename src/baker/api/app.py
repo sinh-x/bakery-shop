@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from baker.api.accounts import router as accounts_router
+from baker.api.addresses import router as addresses_router
 from baker.api.audit_log import router as audit_log_router
 from baker.api.auth import router as auth_router
 from baker.api.blanks import router as blanks_router
@@ -29,13 +30,15 @@ from baker.api.product_attribute_options import router as product_attribute_opti
 from baker.api.product_price_chips import router as product_price_chips_router
 from baker.api.reconciliations import router as reconciliations_router
 from baker.api.receipts import router as receipts_router
+from baker.api.reports import router as reports_router
 from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
 from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
+from baker.api.templates import router as templates_router
 from baker.api.users import router as users_router
 from baker.api.work_items import router as work_items_router
-from baker.config import BUILD_FINGERPRINT, VERSION
+from baker.config import BUILD_FINGERPRINT, CORS_ORIGINS, VERSION
 from baker.db.connection import checkpoint_wal
 from baker.logging import setup_logging
 
@@ -85,10 +88,11 @@ def create_app() -> FastAPI:
     # DG-029 Phase 2: JWT validation, role extraction, denylist check (FR2/FR6).
     app.add_middleware(AuthMiddleware)
 
-    # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
+    # CORS origins are configurable via BAKER_CORS_ORIGINS env var (DG-345 Phase 2).
+    # Default to the production domain for backward compatibility (NFR2).
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=['https://lily.tail10c2c6.ts.net'],
+        allow_origins=CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=['*'],
         allow_headers=[
@@ -130,6 +134,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(audit_log_router)
+    app.include_router(addresses_router)
     app.include_router(photos_router)
     app.include_router(products_router)
     app.include_router(accounts_router)
@@ -154,10 +159,12 @@ def create_app() -> FastAPI:
     app.include_router(product_price_chips_router)
     app.include_router(staff_router)
     app.include_router(checklist_router)
+    app.include_router(templates_router)
     app.include_router(receipts_router)
     app.include_router(printing_router)
     app.include_router(stock_router)
     app.include_router(users_router)
     app.include_router(reconciliations_router)
+    app.include_router(reports_router)
 
     return app

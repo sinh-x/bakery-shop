@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,11 +7,12 @@ import '../../data/api/api_client.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
+import 'providers/cake_detail_screen_notifier.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/cake_detail_body.dart';
 import 'widgets/internal_print_dialog.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 const _workItemStatusRank = {
   'pending': 0,
   'confirmed': 1,
@@ -35,12 +37,12 @@ Future<String?> _showItemReasonDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
-          title: Text(isCancel ? VN.cancelOrderTitle : VN.statusReasonTitle),
+          title: Text(isCancel ? OrdersLabels.cancelOrderTitle : OrdersLabels.statusReasonTitle),
           content: TextField(
             controller: ctrl,
             decoration: const InputDecoration(
-              labelText: VN.statusReasonLabel,
-              hintText: VN.statusReasonHint,
+              labelText: OrdersLabels.statusReasonLabel,
+              hintText: OrdersLabels.statusReasonHint,
               border: OutlineInputBorder(),
             ),
             maxLines: 2,
@@ -50,7 +52,7 @@ Future<String?> _showItemReasonDialog(
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text(VN.cancel),
+              child: const Text(SharedLabels.cancel),
             ),
             FilledButton(
               style: isCancel
@@ -62,7 +64,7 @@ Future<String?> _showItemReasonDialog(
                   ? null
                   : () => Navigator.pop(ctx, ctrl.text.trim()),
               child: Text(
-                isCancel ? VN.confirmCancelAction : VN.confirmStatusChange,
+                isCancel ? OrdersLabels.confirmCancelAction : OrdersLabels.confirmStatusChange,
               ),
             ),
           ],
@@ -89,11 +91,8 @@ class CakeDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
-  bool _transitioning = false;
-  bool _saving = false;
-
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
-    if (_transitioning) return;
+    if (ref.read(cakeDetailScreenProvider).transitioning) return;
     String reason = '';
     if (_isBackwardItem(item.status, targetStatus) ||
         targetStatus == 'cancelled') {
@@ -101,7 +100,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       if (r == null || !mounted) return;
       reason = r;
     }
-    setState(() => _transitioning = true);
+    ref.read(cakeDetailScreenProvider.notifier).setTransitioning(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -109,7 +108,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       // Refresh order detail to pick up server-synced order status
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
-        showTopSnackBar(context, VN.workItemStatusChanged);
+        showTopSnackBar(context, OrdersLabels.workItemStatusChanged);
       }
 
       // Prompt to print internal receipt if confirming and not yet printed
@@ -121,10 +120,10 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _transitioning = false);
+      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setTransitioning(false);
     }
   }
 
@@ -145,7 +144,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     required double unitPrice,
     Map<String, dynamic>? attributes,
   }) async {
-    setState(() => _saving = true);
+    ref.read(cakeDetailScreenProvider.notifier).setSaving(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -158,15 +157,15 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             attributes: attributes,
           );
       if (mounted) {
-        showTopSnackBar(context, VN.orderEditSaved);
+        showTopSnackBar(context, OrdersLabels.orderEditSaved);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
         rethrow;
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setSaving(false);
     }
   }
 
@@ -174,19 +173,20 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final screenState = ref.watch(cakeDetailScreenProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.cakeDetail),
+        title: const Text(OrdersLabels.cakeDetail),
         actions: [
           IconButton(
             icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: VN.viewOrder,
+            tooltip: OrdersLabels.viewOrder,
             onPressed: () => context.push('/orders/${widget.orderRef}'),
           ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
-            tooltip: VN.printReceipt,
+            tooltip: SharedLabels.printReceipt,
             onPressed: () => context.push(
               '/orders/${widget.orderRef}/receipt?type=${ReceiptType.workTicket.value}&item_id=${widget.workItemId}',
             ),
@@ -200,13 +200,13 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref
                     .read(orderWorkItemsProvider(widget.orderRef).notifier)
                     .refresh(),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -227,8 +227,8 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             item: item,
             orderRef: widget.orderRef,
             baseUrl: baseUrl,
-            transitioning: _transitioning,
-            saving: _saving,
+            transitioning: screenState.transitioning,
+            saving: screenState.saving,
             onTransition: (t) => _onTransition(item, t),
             onSave: (notes, isBirthday, age, unitPrice, {attributes}) =>
                 _onSave(

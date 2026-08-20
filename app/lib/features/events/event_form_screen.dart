@@ -1,9 +1,7 @@
-import 'dart:io';
-
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 // EXEMPT: 300-line screen threshold exceeded because the event form owns
 // type/tag selection, photo upload lifecycle, and submit flow in one screen
@@ -12,14 +10,16 @@ import 'package:image_picker/image_picker.dart';
 // 2026-08-02.
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
-import '../../data/models/event_photo.dart';
-import '../../providers/events_provider.dart';
+import '../../data/providers/events_provider.dart';
 import '../../providers/photo_upload_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
+import 'providers/event_form_notifier.dart';
 import 'widgets/event_form_photo_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../data/api/api_client.dart' show apiBaseUrlProvider;
 
 class _EventType {
@@ -30,24 +30,24 @@ class _EventType {
 }
 
 const _kTypes = [
-  _EventType('note', VN.eventNote, Icons.edit_note),
-  _EventType('equipment', VN.typeEquipment, Icons.warning_amber),
-  _EventType('production', VN.eventProduction, Icons.bakery_dining),
-  _EventType('inventory', VN.eventInventory, Icons.inventory_2),
-  _EventType('expense', VN.eventExpense, Icons.payments),
-  _EventType('delivery', VN.eventDelivery, Icons.local_shipping),
-  _EventType('order', VN.eventOrder, Icons.receipt_long),
+  _EventType('note', EventsLabels.eventNote, Icons.edit_note),
+  _EventType('equipment', EventsLabels.typeEquipment, Icons.warning_amber),
+  _EventType('production', EventsLabels.eventProduction, Icons.bakery_dining),
+  _EventType('inventory', EventsLabels.eventInventory, Icons.inventory_2),
+  _EventType('expense', EventsLabels.eventExpense, Icons.payments),
+  _EventType('delivery', EventsLabels.eventDelivery, Icons.local_shipping),
+  _EventType('order', EventsLabels.eventOrder, Icons.receipt_long),
 ];
 
 const _kStandardTags = [
-  ('incident', VN.tagIncident),
-  ('knowledge-gap', VN.tagKnowledgeGap),
-  ('maintenance', VN.tagMaintenance),
-  ('equipment', VN.tagEquipment),
-  ('pricing', VN.tagPricing),
-  ('ordering', VN.tagOrdering),
-  ('decoration', VN.tagDecoration),
-  ('staff', VN.tagStaff),
+  ('incident', EventsLabels.tagIncident),
+  ('knowledge-gap', EventsLabels.tagKnowledgeGap),
+  ('maintenance', EventsLabels.tagMaintenance),
+  ('equipment', EventsLabels.tagEquipment),
+  ('pricing', EventsLabels.tagPricing),
+  ('ordering', EventsLabels.tagOrdering),
+  ('decoration', EventsLabels.tagDecoration),
+  ('staff', EventsLabels.tagStaff),
 ];
 
 class EventFormScreen extends ConsumerStatefulWidget {
@@ -70,15 +70,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late final TextEditingController _summaryCtrl;
   final _customTagCtrl = TextEditingController();
 
-  late String _selectedType;
-  late final Set<String> _selectedTags;
-  final _customTags = <String>[];
-  bool _showCustomTagField = false;
-  bool _saving = false;
-
-  final _selectedPhotos = <XFile>[];
-  final _existingPhotos = <EventPhoto>[];
-
   bool get _isEditing => widget.event != null;
   bool get _isOrderLinked => widget.orderId != null;
 
@@ -95,24 +86,20 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     );
     final e = widget.event;
     _summaryCtrl = TextEditingController(text: e?.summary ?? '');
-    _selectedType = e?.type ?? 'note';
-    _selectedTags = Set<String>.from(e?.tags ?? []);
-    if (e != null) {
-      final standardTagValues = _kStandardTags.map((t) => t.$1).toSet();
-      for (final tag in e.tags) {
-        if (!standardTagValues.contains(tag)) {
-          _customTags.add(tag);
-        }
-      }
-      _loadExistingPhotos(e.id);
-    }
+    // Defer provider mutations to a microtask because Riverpod disallows
+    // provider mutation during widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(eventFormProvider.notifier).seed(e);
+      if (e != null) _loadExistingPhotos(e.id);
+    });
   }
 
   Future<void> _loadExistingPhotos(int eventId) async {
     try {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
-      if (mounted) setState(() => _existingPhotos.addAll(photos));
+      if (mounted) ref.read(eventFormProvider.notifier).addExistingPhotos(photos);
     } catch (e) {
       debugPrint('_loadExistingPhotos failed: $e');
       // Non-fatal: edit form still works without existing photo display.
@@ -129,11 +116,12 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
-
-    setState(() => _saving = true);
+    final formNotifier = ref.read(eventFormProvider.notifier);
+    final form = ref.read(eventFormProvider);
+    formNotifier.setSaving(true);
     try {
       final loggedBy = ref.read(loggedByProvider);
-      final hasNewPhotos = _selectedPhotos.isNotEmpty;
+      final hasNewPhotos = form.selectedPhotos.isNotEmpty;
       final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_isEditing) {
         await ref
@@ -141,21 +129,21 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             .updateEvent(
               id: widget.event!.id,
               summary: summary,
-              type: _selectedType,
-              tags: _selectedTags.toList(),
+              type: form.selectedType,
+              tags: form.selectedTags.toList(),
               loggedBy: loggedBy,
             );
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(widget.event!.id, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventUpdated);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventUpdated);
       } else {
         final createdEvent = await ref
             .read(eventsProvider.notifier)
             .logEvent(
               summary: summary,
-              type: _selectedType,
-              tags: _selectedTags.toList(),
+              type: form.selectedType,
+              tags: form.selectedTags.toList(),
               loggedBy: loggedBy,
               orderId: widget.orderId,
             );
@@ -163,7 +151,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         if (hasNewPhotos && mounted) {
           await _uploadPhotos(createdEvent.id, upload);
         }
-        if (mounted) showTopSnackBar(context, VN.eventLogged);
+        if (mounted) showTopSnackBar(context, EventsLabels.eventLogged);
       }
       if (mounted) context.pop();
     } catch (e) {
@@ -171,9 +159,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -188,13 +174,14 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     int eventId,
     PhotoUploadNotifier upload,
   ) async {
+    final form = ref.read(eventFormProvider);
     final service = ref.read(eventServiceProvider);
     await upload.uploadAll(
-      _selectedPhotos,
-      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+      form.selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
-      showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      showTopSnackBar(context, EventsLabels.eventPhotosUploadFailed);
     }
   }
 
@@ -204,21 +191,21 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.loggedBy),
+        title: const Text(EventsLabels.loggedBy),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: VN.setYourName),
+          decoration: const InputDecoration(hintText: EventsLabels.setYourName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -230,17 +217,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   }
 
   void _confirmCustomTag() {
-    final tag = _customTagCtrl.text.trim();
-    if (tag.isNotEmpty) {
-      setState(() {
-        if (!_customTags.contains(tag)) _customTags.add(tag);
-        _selectedTags.add(tag);
-        _customTagCtrl.clear();
-        _showCustomTagField = false;
-      });
-    } else {
-      setState(() => _showCustomTagField = false);
-    }
+    ref.read(eventFormProvider.notifier).confirmCustomTag(_customTagCtrl.text.trim());
+    _customTagCtrl.clear();
   }
 
   @override
@@ -248,12 +226,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final loggedBy = ref.watch(loggedByProvider);
+    final form = ref.watch(eventFormProvider);
 
     final title = _isEditing
-        ? VN.editEvent
+        ? EventsLabels.editEvent
         : _isOrderLinked
-            ? VN.addOrderIncident
-            : VN.createEvent;
+            ? EventsLabels.addOrderIncident
+            : EventsLabels.createEvent;
 
     return Scaffold(
       appBar: AppBar(
@@ -271,7 +250,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   const Icon(Icons.receipt_long, size: 18),
                   const SizedBox(width: 6),
                   Text(
-                    '${VN.orderLabel}: ${widget.orderRef}',
+                    '${EventsLabels.orderLabel}: ${widget.orderRef}',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
@@ -287,8 +266,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             maxLines: 6,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              labelText: VN.eventSummary,
-              hintText: VN.eventPrompt,
+              labelText: EventsLabels.eventSummary,
+              hintText: EventsLabels.eventPrompt,
               border: OutlineInputBorder(),
             ),
           ),
@@ -296,13 +275,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.eventType, style: theme.textTheme.titleSmall),
+            child: Text(EventsLabels.eventType, style: theme.textTheme.titleSmall),
           ),
           Wrap(
             spacing: 6,
             runSpacing: 4,
             children: _kTypes.map((t) {
-              final selected = _selectedType == t.value;
+              final selected = form.selectedType == t.value;
               return ChoiceChip(
                 label: Text(t.label),
                 avatar: Icon(t.icon, size: 16),
@@ -310,7 +289,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                 selectedColor: t.value == 'equipment'
                     ? Colors.orange.shade100
                     : colorScheme.primaryContainer,
-                onSelected: (_) => setState(() => _selectedType = t.value),
+                onSelected: (_) =>
+                    ref.read(eventFormProvider.notifier).setSelectedType(t.value),
               );
             }).toList(),
           ),
@@ -318,7 +298,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.tagsLabel, style: theme.textTheme.titleSmall),
+            child: Text(ProductsLabels.tagsLabel, style: theme.textTheme.titleSmall),
           ),
           Wrap(
             spacing: 6,
@@ -327,30 +307,22 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               ..._kStandardTags.map(
                 (tag) => FilterChip(
                   label: Text(tag.$2),
-                  selected: _selectedTags.contains(tag.$1),
-                  onSelected: (v) => setState(() {
-                    if (v) {
-                      _selectedTags.add(tag.$1);
-                    } else {
-                      _selectedTags.remove(tag.$1);
-                    }
-                  }),
+                  selected: form.selectedTags.contains(tag.$1),
+                  onSelected: (v) => ref
+                      .read(eventFormProvider.notifier)
+                      .toggleTag(tag.$1, selected: v),
                 ),
               ),
-              ..._customTags.map(
+              ...form.customTags.map(
                 (tag) => FilterChip(
                   label: Text(tag),
-                  selected: _selectedTags.contains(tag),
-                  onSelected: (v) => setState(() {
-                    if (v) {
-                      _selectedTags.add(tag);
-                    } else {
-                      _selectedTags.remove(tag);
-                    }
-                  }),
+                  selected: form.selectedTags.contains(tag),
+                  onSelected: (v) => ref
+                      .read(eventFormProvider.notifier)
+                      .toggleTag(tag, selected: v),
                 ),
               ),
-              if (_showCustomTagField)
+              if (form.showCustomTagField)
                 SizedBox(
                   width: 120,
                   child: TextField(
@@ -358,7 +330,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     autofocus: true,
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
-                      hintText: VN.addTag,
+                      hintText: EventsLabels.addTag,
                       isDense: true,
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(
@@ -372,20 +344,19 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               else
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 16),
-                  label: const Text(VN.addTag),
-                  onPressed: () => setState(() => _showCustomTagField = true),
+                  label: const Text(EventsLabels.addTag),
+                  onPressed: () =>
+                      ref.read(eventFormProvider.notifier).showCustomTagField(),
                 ),
             ],
           ),
           const SizedBox(height: 24),
           EventFormPhotoSection(
-            existingPhotos: _existingPhotos,
-            selectedPhotos: _selectedPhotos,
+            existingPhotos: form.existingPhotos,
+            selectedPhotos: form.selectedPhotos,
             baseUrl: ref.read(apiBaseUrlProvider),
             onSelectionChanged: (files) =>
-                setState(() => _selectedPhotos
-                  ..clear()
-                  ..addAll(files)),
+                ref.read(eventFormProvider.notifier).setSelectedPhotos(files),
           ),
           UploadProgressIndicator(
             states: ref.watch(photoUploadNotifierProvider).states,
@@ -394,9 +365,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             children: [
               const Icon(Icons.person_outline, size: 18),
               const SizedBox(width: 6),
-              Text('${VN.loggedBy}: ', style: theme.textTheme.bodyMedium),
+              Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
               Text(
-                loggedBy.isNotEmpty ? loggedBy : VN.setYourName,
+                loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: loggedBy.isEmpty ? colorScheme.error : null,
@@ -405,24 +376,24 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               const Spacer(),
               TextButton(
                 onPressed: _changeLogger,
-                child: const Text(VN.changeLogger),
+                child: const Text(EventsLabels.changeLogger),
               ),
             ],
           ),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: _saving ? null : _submit,
+            onPressed: form.saving ? null : _submit,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: _saving
+            child: form.saving
                 ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
-                    _isEditing ? VN.save : VN.logEvent,
+                    _isEditing ? SharedLabels.save : EventsLabels.logEvent,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,

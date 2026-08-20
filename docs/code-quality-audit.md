@@ -1,87 +1,206 @@
 # Code Quality Audit Report: Bakery Shop Flutter App
 
-> Date: 2026-05-09
+> Date: 2026-08-17 (re-audit, live counts)
 > Scope: God file audit of non-generated Dart files under `app/lib/`
-> Files scanned: 120 non-generated `.dart` files (30,479 total lines)
-> Severity thresholds: High >500, Medium 300-500, Low 200-300
+> Files scanned: 475 non-generated `.dart` files (81,256 total lines)
+> Severity thresholds: High >500, Medium 400–500, Low 300–399 (fixed — see §Severity Thresholds)
+> Reproducibility: All counts below are reproducible by re-running the commands in §Audit Method against the current working tree. The codebase is the source of truth.
 
 ## Summary
 
 | Severity | Count | Total Lines | % of All Lines |
 |----------|-------|-------------|----------------|
-| High (>500) | 16 | 16,873 | 55.4% |
-| Medium (300-500) | 22 | 8,277 | 27.2% |
-| Low (200-300) | 8 | 2,039 | 6.7% |
-| **Audited** | **46** | **27,189** | **89.2%** |
+| High (>500) | 18 | 14,459 | 17.8% |
+| Medium (400–500) | 15 | 6,603 | 8.1% |
+| Low (300–399) | 42 | 14,445 | 17.8% |
+| **Audited (≥300)** | **75** | **35,507** | **43.7%** |
 
-> 46 of 120 files (38.3%) are at least 200 lines. 16 files exceed 500 lines and are High severity.
+> 75 of 475 files (15.8%) are at least 300 lines. 18 files exceed 500 lines and are High severity. The top offender is `app/lib/features/products/product_form_screen.dart` at 1,774 lines.
+
+> [!NOTE] **Live re-audit (DG-416 Phase 2, 2026-08-17)**
+> Counts in this report are reproducible via the commands in §Audit Method. See ticket DG-416 and the Phase 1 re-audit artifact `agent-teams/builder/artifacts/2026-08-17-dg416-audit-counts.md`.
 
 ## God Files: High Severity (>500 lines)
 
-| # | File | Lines | Widget Classes | Top-Level Funcs | Severity | Recommendation |
-|---|------|-------|----------------|-----------------|----------|----------------|
-| 1 | `features/orders/order_detail_screen.dart` | 2,557 | 18 | 2 | High | Break into per-section screens or extract inner widget classes to `widgets/`. Create `payment_section.dart`, `work_item_section.dart`, `print_dialogs.dart`, `info_section.dart`. |
-| 2 | `features/products/product_form_screen.dart` | 1,831 | 5 | 0 | High | Extract form sections (basic info, attributes, catalog integration, pricing) into `product_form/widgets/`. Split enum attribute handling into dedicated widget. |
-| 3 | `features/orders/order_edit_screen.dart` | 1,389 | 6 | 0 | High | Extract work-item section and extras management into dedicated widgets. Separate form validation logic to a service/provider. |
-| 4 | `features/stock/stock_reconciliation_screen.dart` | 1,024 | 8 | 0 | High | Extract reconciliation row widget, diff display, and count input components. Move scan-row logic into per-row widgets. |
-| 5 | `features/orders/cake_detail_screen.dart` | 943 | 4 | 1 | High | Split into info section, packing section, and attribute display. Extract attribute list into reusable widget. |
-| 6 | `features/orders/order_create_screen.dart` | 938 | 3 | 0 | High | Extract customer form section, item picker section, extras section. Widget count is 3 — triggering extraction threshold. |
-| 7 | `shared/widgets/vietnamese_labels.dart` | 790 | 0 | 6 | High | Split by domain: `labels/orders.dart`, `labels/products.dart`, `labels/shared.dart`, `labels/checklist.dart`, `labels/events.dart`. Phase migration per §FR-6. |
-| 8 | `features/orders/order_list_screen.dart` | 744 | 5 | 0 | High | Extract filter bar, search bar, list tile widget, empty state, and loading indicator to separate files. |
-| 9 | `data/providers/reconciliation_provider.dart` | 651 | 0 | 2 | High | Split manual state class into freezed model. Extract reconciliation math helpers to `reconciliation_math.dart`. |
-| 10 | `features/settings/settings_screen.dart` | 618 | 5 | 0 | High | Extract each settings section to its own widget file under `settings/widgets/`. |
-| 11 | `features/orders/cake_queue_screen.dart` | 618 | 4 | 0 | High | Extract queue list tile, time slot picker, and summary bar widgets. |
-| 12 | `features/orders/widgets/expandable_item_card.dart` | 616 | 2 | 0 | High | Split into expandable card shell, collapsed content widget, and expanded content widget. |
-| 13 | `features/orders/widgets/order_photo_section.dart` | 592 | 4 | 0 | High | Extract photo tile, photo viewer sheet, upload button, and empty state into sub-widgets. |
-| 14 | `features/products/catalog_browse_screen.dart` | 563 | 3 | 0 | High | Extract photo grid, filter bar, bulk operations bar. Widget count triggers extraction rule. |
-| 15 | `providers/order_providers.dart` | 530 | 0 | 1 | High | Separate draft model classes to `data/models/`. Split providers by concern: order CRUD vs. draft management. |
-| 16 | `data/api/reconciliation_service.dart` | 519 | 0 | 0 | High | Split scan reconciliation into smaller endpoint handlers. Extract date-range helper methods. |
+| # | File | Lines | Severity |
+|---|------|-------|----------|
+| 1 | `app/lib/features/products/product_form_screen.dart` | 1,774 | High |
+| 2 | `app/lib/shared/widgets/vietnamese_labels.dart` | 1,686 | High (historical — file was split into per-domain `labels/` files by DG-418 VN labels migration; this row is retained as a pre-migration record and is no longer authoritative for the current tree) |
+| 3 | `app/lib/features/orders/order_list_screen.dart` | 981 | High |
+| 4 | `app/lib/features/stock/widgets/reconciliation_product_card.dart` | 881 | High |
+| 5 | `app/lib/features/cash_drawer/cash_drawer_screen.dart` | 877 | High |
+| 6 | `app/lib/features/orders/order_edit/widgets/work_item_edit_card.dart` | 801 | High |
+| 7 | `app/lib/data/api/reconciliation_models.dart` | 781 | High |
+| 8 | `app/lib/features/orders/widgets/cake_detail_body.dart` | 729 | High |
+| 9 | `app/lib/features/pos/widgets/pos_product_grid.dart` | 652 | High |
+| 10 | `app/lib/features/cash_drawer/widgets/cash_drawer_action_dialogs.dart` | 651 | High |
+| 11 | `app/lib/features/stock/widgets/reconciliation_sell_waste_modal.dart` | 646 | High |
+| 12 | `app/lib/features/orders/widgets/order_card.dart` | 646 | High |
+| 13 | `app/lib/features/orders/widgets/order_photo_section.dart` | 620 | High |
+| 14 | `app/lib/features/cash_drawer/widgets/cash_drawer_transaction_list.dart` | 569 | High |
+| 15 | `app/lib/features/orders/widgets/expandable_item_card.dart` | 563 | High |
+| 16 | `app/lib/features/orders/order_edit_screen.dart` | 562 | High |
+| 17 | `app/lib/data/api/cash_drawer_service.dart` | 531 | High |
+| 18 | `app/lib/features/customers/customer_form.dart` | 509 | High |
 
-## God Files: Medium Severity (300-500 lines)
+> Line counts above are `wc -l` output captured on 2026-08-17 against `feature/DG-416-update-standards-docs`. Re-run the High-band command in §Audit Method to verify; each row should match `wc -l <path>` exactly.
 
-| # | File | Lines | Widget Classes | Top-Level Funcs | Severity | Recommendation |
-|---|------|-------|----------------|-----------------|----------|----------------|
-| 1 | `shared/router/app_router.dart` | 496 | 4 | 0 | Medium | Split into route definitions per feature module. Extract redirect guards to separate file. |
-| 2 | `features/orders/widgets/order_card.dart` | 467 | 1 | 0 | Medium | Extract status badge, price row, and action buttons into sub-widgets. |
-| 3 | `features/pos/pos_checkout_screen.dart` | 465 | 2 | 1 | Medium | Extract cart item list, payment method selector, and summary bar. |
-| 4 | `features/knowledge/knowledge_detail_screen.dart` | 460 | 2 | 0 | Medium | Extract photo gallery integration and metadata display sections. |
-| 5 | `features/products/widgets/catalog_photo_viewer.dart` | 443 | 3 | 0 | Medium | Widget count triggers extraction. Extract zoom controls, tag editor, share button to sub-widgets. |
-| 6 | `features/pos/widgets/pos_product_grid.dart` | 435 | 2 | 2 | Medium | Extract grid item widget and category tabs. Move category filter logic to provider. |
-| 7 | `features/knowledge/knowledge_form_screen.dart` | 434 | 1 | 0 | Medium | Extract form sections: metadata fields, content editor, photo picker, tag editor. |
-| 8 | `features/dashboard/dashboard_screen.dart` | 401 | 6 | 0 | Medium | 6 inner widgets → extraction required. Create `dashboard/widgets/` and move stat cards. |
-| 9 | `shared/widgets/printer_picker_dialog.dart` | 392 | 1 | 0 | Medium | Extract printer list tile, connection status indicator, test print button. |
-| 10 | `features/events/widgets/event_history_list.dart` | 392 | 2 | 2 | Medium | Extract event tile, filter controls, export button to sub-widgets. |
-| 11 | `features/stock/stock_screen.dart` | 385 | 2 | 2 | Medium | Extract ingredient list tile, filter bar, stock level indicator widgets. |
-| 12 | `features/checklist/checklist_config_screen.dart` | 374 | 2 | 0 | Medium | Extract template editor, entry list manager, import/export controls. |
-| 13 | `features/checklist/checklist_history_screen.dart` | 371 | 5 | 0 | Medium | 5 inner widgets → extraction required. Extract history card, date filter, status badge. |
-| 14 | `features/events/event_form_screen.dart` | 333 | 1 | 0 | Medium | Extract form fields: datetime picker, recurrence config, description editor. |
-| 15 | `features/knowledge/widgets/knowledge_photo_gallery.dart` | 330 | 3 | 0 | Medium | Widget count triggers extraction. Extract photo tile, lightbox overlay, upload button. |
-| 16 | `data/services/printer_service.dart` | 328 | 0 | 1 | Medium | Split connection management from print job formatting. Extract receipt template builder. |
-| 17 | `features/knowledge/knowledge_list_screen.dart` | 322 | 2 | 0 | Medium | Extract search bar, list tile, filter chips, empty state widgets. |
-| 18 | `features/categories/category_form.dart` | 319 | 2 | 0 | Medium | Extract name field, color picker, icon selector, parent category picker. |
-| 19 | `features/stock/widgets/stock_action_sheet.dart` | 310 | 1 | 0 | Medium | Extract action type selector, quantity input, reason field, confirm button. |
-| 20 | `features/checklist/checklist_screen.dart` | 304 | 4 | 0 | Medium | 4 inner widgets → extraction required. Extract entry card, progress bar, action buttons. |
-| 21 | `features/categories/category_management_screen.dart` | 303 | 5 | 1 | Medium | 5 inner widgets → extraction required. Extract category tree, drag handle, edit sheet. |
-| 22 | `features/pos/pos_screen.dart` | 300 | 1 | 0 | Medium | At screen threshold limit. Extract category sidebar, search bar, cart panel sections. |
+## God Files: Medium Severity (400–500 lines)
 
-## God Files: Low Severity (200-300 lines)
+| # | File | Lines | Severity |
+|---|------|-------|----------|
+| 1 | `app/lib/features/settings/address_library_screen.dart` | 488 | Medium |
+| 2 | `app/lib/features/orders/cake_queue_screen.dart` | 469 | Medium |
+| 3 | `app/lib/features/products/widgets/catalog_photo_viewer.dart` | 468 | Medium |
+| 4 | `app/lib/features/knowledge/knowledge_form_screen.dart` | 466 | Medium |
+| 5 | `app/lib/features/orders/order_detail_screen.dart` | 464 | Medium |
+| 6 | `app/lib/features/products/product_catalog_screen.dart` | 457 | Medium |
+| 7 | `app/lib/features/knowledge/knowledge_detail_screen.dart` | 454 | Medium |
+| 8 | `app/lib/features/events/event_form_screen.dart` | 434 | Medium |
+| 9 | `app/lib/features/expenses/expense_form_screen.dart` | 433 | Medium |
+| 10 | `app/lib/features/expenses/expense_screen.dart` | 428 | Medium |
+| 11 | `app/lib/features/categories/category_form.dart` | 423 | Medium |
+| 12 | `app/lib/features/templates/widgets/template_picker_modal.dart` | 406 | Medium |
+| 13 | `app/lib/features/expenses/widgets/expense_filter_card.dart` | 406 | Medium |
+| 14 | `app/lib/features/blanks/blank_detail_screen.dart` | 405 | Medium |
+| 15 | `app/lib/shared/widgets/printer_picker_dialog.dart` | 402 | Medium |
 
-| # | File | Lines | Widget Classes | Top-Level Funcs | Severity | Recommendation |
-|---|------|-------|----------------|-----------------|----------|----------------|
-| 1 | `features/events/widgets/event_log_form.dart` | 295 | 1 | 0 | Low | Extract outcome selector, timestamp picker, notes field. |
-| 2 | `features/products/product_catalog_screen.dart` | 255 | 2 | 0 | Low | Extract catalog card, filter toolbar, import button widgets. |
-| 3 | `features/orders/receipt_preview_screen.dart` | 255 | 1 | 0 | Low | Extract receipt content widget, print action bar, share button. |
-| 4 | `features/products/widgets/catalog_tag_edit_sheet.dart` | 250 | 2 | 1 | Low | Extract tag color picker, name field, preview chip widgets. |
-| 5 | `features/orders/widgets/product_picker_page.dart` | 250 | 1 | 0 | Low | Extract search bar, product chip, quantity stepper widgets. |
-| 6 | `features/stock/stock_reconciliation_history_screen.dart` | 235 | 4 | 0 | Low | 4 inner widgets → extraction recommended. Extract history card, diff summary, date filter. |
-| 7 | `data/api/product_service.dart` | 224 | 0 | 0 | Low | Split catalog queries from product CRUD. Extract DTO mapping helpers. |
-| 8 | `data/api/order_service.dart` | 205 | 0 | 0 | Low | Split order CRUD from list/search/filter endpoints. Extract query param builder. |
+## God Files: Low Severity (300–399 lines)
+
+| # | File | Lines | Severity |
+|---|------|-------|----------|
+| 1 | `app/lib/features/pos/widgets/pos_checkout_payment_controller.dart` | 399 | Low |
+| 2 | `app/lib/features/orders/widgets/address_autocomplete_field.dart` | 392 | Low |
+| 3 | `app/lib/features/events/widgets/event_history_list.dart` | 388 | Low |
+| 4 | `app/lib/features/products/catalog_browse_screen.dart` | 386 | Low |
+| 5 | `app/lib/data/api/customer_service.dart` | 385 | Low |
+| 6 | `app/lib/features/orders/widgets/order_delivery_section.dart` | 384 | Low |
+| 7 | `app/lib/features/settings/settings_screen.dart` | 380 | Low |
+| 8 | `app/lib/features/checklist/checklist_config_screen.dart` | 380 | Low |
+| 9 | `app/lib/features/checklist/checklist_history_screen.dart` | 376 | Low |
+| 10 | `app/lib/features/stock/widgets/reconciliation_shared_widgets.dart` | 374 | Low |
+| 11 | `app/lib/features/knowledge/knowledge_list_screen.dart` | 373 | Low |
+| 12 | `app/lib/features/orders/order_history_screen.dart` | 371 | Low |
+| 13 | `app/lib/features/settings/widgets/catalog_tags_dialogs.dart` | 365 | Low |
+| 14 | `app/lib/features/events/widgets/event_log_form.dart` | 359 | Low |
+| 15 | `app/lib/features/pos/widgets/pos_payment_step.dart` | 357 | Low |
+| 16 | `app/lib/features/pos/pos_screen.dart` | 353 | Low |
+| 17 | `app/lib/features/stock/widgets/stock_action_sheet.dart` | 348 | Low |
+| 18 | `app/lib/features/expenses/widgets/expense_form_card.dart` | 346 | Low |
+| 19 | `app/lib/features/customers/widgets/customer_search_field.dart` | 338 | Low |
+| 20 | `app/lib/features/customers/customer_detail_screen.dart` | 338 | Low |
+| 21 | `app/lib/features/checklist/checklist_screen.dart` | 338 | Low |
+| 22 | `app/lib/data/services/printer_service.dart` | 338 | Low |
+| 23 | `app/lib/data/api/order_service.dart` | 337 | Low |
+| 24 | `app/lib/features/knowledge/widgets/knowledge_photo_gallery.dart` | 334 | Low |
+| 25 | `app/lib/shared/labels/orders.dart` | 332 | Low |
+| 26 | `app/lib/features/pos/pos_checkout_screen.dart` | 332 | Low |
+| 27 | `app/lib/features/orders/widgets/delivery_order_card.dart` | 331 | Low |
+| 28 | `app/lib/features/orders/widgets/order_detail/order_record_payment_sheet.dart` | 327 | Low |
+| 29 | `app/lib/features/orders/order_edit/widgets/edit_extras_section.dart` | 327 | Low |
+| 30 | `app/lib/features/dashboard/management_dashboard_screen.dart` | 324 | Low |
+| 31 | `app/lib/shared/labels/shared.dart` | 323 | Low |
+| 32 | `app/lib/features/today_sales/widgets/cashflow_summary_section.dart` | 323 | Low |
+| 33 | `app/lib/features/orders/widgets/order_submission_mixin.dart` | 318 | Low |
+| 34 | `app/lib/shared/utils/delivery_helpers.dart` | 314 | Low |
+| 35 | `app/lib/providers/order/order_create_state_provider.dart` | 314 | Low |
+| 36 | `app/lib/providers/products_provider.dart` | 313 | Low |
+| 37 | `app/lib/features/templates/widgets/template_editor_screen.dart` | 308 | Low |
+| 38 | `app/lib/data/providers/reconciliation_notifier.dart` | 308 | Low |
+| 39 | `app/lib/features/cash_drawer/widgets/cash_drawer_breakdown_card.dart` | 307 | Low |
+| 40 | `app/lib/features/products/widgets/catalog_browse_sections.dart` | 304 | Low |
+| 41 | `app/lib/features/orders/widgets/product_picker_page.dart` | 301 | Low |
+| 42 | `app/lib/features/orders/widgets/stage3_delivery_options_screen.dart` | 300 | Low |
 
 ## Follow-up Tickets
 
 | Ticket | Description |
 |--------|-------------|
-| DG-135 | Refactor 16 High-severity oversized files (>500 lines) |
-| DG-136 | Extract widget classes from files triggering ≥3 extraction rule |
-| DG-137 | Apply const constructor suppression across codebase |
-| DG-138 | Deferred const audit — suppress or fix const issues |
+| DG-404 | Refactor setState violations in ConsumerState/ConsumerStatefulWidget contexts |
+| DG-408 | Extract inner widget classes from files triggering the ≥3 private inner widget extraction rule (35 extraction targets) |
+| DG-417 | Relocate misplaced providers (cross-dependency violation: `reconciliation_notifier.dart` imports app-layer providers) |
+| DG-418 | Migrate remaining inline strings to shared Vietnamese label modules (60 strict import lines remaining) |
+
+## Severity Thresholds
+
+The severity bands are fixed and must not be changed without an explicit standards update:
+
+| Band | Line range (inclusive) |
+|------|------------------------|
+| High | > 500 |
+| Medium | 400 – 500 |
+| Low | 300 – 399 |
+
+Files below 300 lines are not audited. Generated files (`*.g.dart`, `*.freezed.dart`) are excluded from all counts.
+
+## Audit Method (Reproducible)
+
+All commands run from the repo root `/home/sinh/Documents/bakery-shop`. Generated files (`*.g.dart`, `*.freezed.dart`) are excluded. Re-running these commands in the same working tree yields the counts reported above (75 / 18 / 15 / 42). See `agent-teams/builder/artifacts/2026-08-17-dg416-audit-counts.md` for the full Phase 1 re-audit artifact.
+
+### F1 — Total non-generated Dart files
+
+```bash
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' | wc -l
+# → 475
+```
+
+### F2 — Files ≥300 lines with severity split
+
+```bash
+# Total ≥300
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 >= 300 && $2 != "total"' | wc -l
+# → 75
+
+# High (>500)
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 > 500 && $2 != "total"' | wc -l
+# → 18
+
+# Medium (400–500 inclusive)
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 >= 400 && $1 <= 500 && $2 != "total"' | wc -l
+# → 15
+
+# Low (300–399)
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 >= 300 && $1 < 400 && $2 != "total"' | wc -l
+# → 42
+
+# Full sorted list (≥300 lines) — use to populate/verify the High/Medium/Low tables
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 >= 300 && $2 != "total" {print $1"\t"$2}' | sort -rn
+```
+
+### Severity band totals (lines)
+
+```bash
+# Total lines across all audited (≥300) files
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 >= 300 && $2 != "total" {sum+=$1} END {print sum}'
+# → 35507
+
+# Per-band line totals: change the awk condition to match each band
+#   High:   $1 > 500                          → 14459
+#   Medium: $1 >= 400 && $1 <= 500            →  6603
+#   Low:    $1 >= 300 && $1 < 400             → 14445
+```
+
+### Reproducing the High-severity table
+
+To verify any row in §"God Files: High Severity", run:
+
+```bash
+wc -l <path-from-table>
+```
+
+The output line count must match the value in the table exactly. The 18 High-band files are the complete set returned by:
+
+```bash
+find app/lib -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -exec wc -l {} + \
+  | awk '$1 > 500 && $2 != "total" {print $1"\t"$2}' | sort -rn
+```
+
+### Stability
+
+Each command above was re-run twice during the Phase 1 re-audit (deployment d-a1f0b4) and again during Phase 2 verification (deployment d-f1a731); counts were stable across all runs. The counts are reproducible within the same working tree.

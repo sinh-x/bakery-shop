@@ -107,7 +107,7 @@ void main() {
     expect(find.textContaining('0901234567'), findsOneWidget);
     expect(find.textContaining('0909876543'), findsOneWidget);
     // The primary phone label marker should appear once.
-    expect(find.textContaining(VN.customerPrimaryPhone), findsOneWidget);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsOneWidget);
   });
 
   testWidgets(
@@ -119,7 +119,7 @@ void main() {
 
     expect(find.textContaining('0901234567'), findsOneWidget);
     // No "(Số chính)" marker is appended in legacy fallback mode.
-    expect(find.textContaining(VN.customerPrimaryPhone), findsNothing);
+    expect(find.textContaining(CustomersLabels.customerPrimaryPhone), findsNothing);
   });
 
   testWidgets('detail card shows no phone line when customer has none',
@@ -145,7 +145,7 @@ void main() {
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.deleteCustomer), findsOneWidget);
+    expect(find.text(CustomersLabels.deleteCustomer), findsOneWidget);
   });
 
   testWidgets('staff does not see the delete menu item (admin-only)',
@@ -162,8 +162,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Delete item is gated by role; only edit + settings appear.
-    expect(find.text(VN.deleteCustomer), findsNothing);
-    expect(find.text(VN.editCustomer), findsOneWidget);
+    expect(find.text(CustomersLabels.deleteCustomer), findsNothing);
+    expect(find.text(CustomersLabels.editCustomer), findsOneWidget);
   });
 
   testWidgets(
@@ -184,11 +184,11 @@ void main() {
     // Open the overflow menu and pick delete.
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
 
     // Confirm in the AlertDialog.
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
 
     // The backend's VN guidance must be surfaced, not a raw DioException
@@ -213,9 +213,9 @@ void main() {
 
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
 
     // The backend's VN permission message is surfaced.
@@ -240,9 +240,9 @@ void main() {
 
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
 
     // The generic VN fallback label is shown, not raw exception text.
@@ -267,9 +267,9 @@ void main() {
 
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.tap(find.text(CustomersLabels.deleteCustomer));
     await tester.pumpAndSettle();
 
     // The admin-only VN fallback label is shown, not the generic failure

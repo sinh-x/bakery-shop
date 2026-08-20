@@ -1,10 +1,13 @@
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/stock_service.dart';
+import '../providers/stock_action_sheet_notifier.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 enum ActionType { restock, waste, adjust }
 
 /// Stock action bottom sheet for restock, waste, and adjust operations.
@@ -37,28 +40,25 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   final _noteController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
-  bool _isLoading = false;
-  int? _selectedNormalizedPrice;
-
   String get _title {
     switch (widget.actionType) {
       case ActionType.restock:
-        return VN.nhapHangSheet;
+        return StockLabels.nhapHangSheet;
       case ActionType.waste:
-        return VN.haoHutSheet;
+        return StockLabels.haoHutSheet;
       case ActionType.adjust:
-        return VN.dieuChinhSheet;
+        return StockLabels.dieuChinhSheet;
     }
   }
 
   String get _submitLabel {
     switch (widget.actionType) {
       case ActionType.restock:
-        return VN.xacNhanNhapHang;
+        return StockLabels.xacNhanNhapHang;
       case ActionType.waste:
-        return VN.xacNhanHaoHut;
+        return StockLabels.xacNhanHaoHut;
       case ActionType.adjust:
-        return VN.xacNhanDieuChinh;
+        return StockLabels.xacNhanDieuChinh;
     }
   }
 
@@ -74,15 +74,24 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   void initState() {
     super.initState();
     final perChip = widget.item.perChip;
+    int? selected;
     if (perChip.isNotEmpty) {
       final provided = widget.initialPrice;
-      _selectedNormalizedPrice = (provided != null &&
+      selected = (provided != null &&
               perChip.any((c) => c.normalizedPrice == provided))
           ? provided
           : perChip.first.normalizedPrice;
     } else {
-      _selectedNormalizedPrice = null;
+      selected = null;
     }
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(stockActionSheetProvider.notifier)
+          .seedSelectedNormalizedPrice(selected);
+    });
   }
 
   Future<void> _submit() async {
@@ -90,11 +99,13 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
     final quantity = int.tryParse(_quantityController.text) ?? 0;
     if (quantity <= 0) {
-      showTopSnackBar(context, VN.soLuongInvalid, backgroundColor: Colors.red);
+      showTopSnackBar(context, StockLabels.soLuongInvalid, backgroundColor: Colors.red);
       return;
     }
 
-    setState(() => _isLoading = true);
+    ref.read(stockActionSheetProvider.notifier).setLoading(true);
+    final selectedNormalizedPrice =
+        ref.read(stockActionSheetProvider).selectedNormalizedPrice;
 
     try {
       final service = ref.read(stockServiceProvider);
@@ -104,35 +115,38 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
             widget.item.productId,
             quantity,
             note: _noteController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
         case ActionType.waste:
           await service.waste(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
         case ActionType.adjust:
           await service.adjust(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            normalizedPrice: _selectedNormalizedPrice,
+            normalizedPrice: selectedNormalizedPrice,
           );
       }
       widget.onDone();
     } catch (e) {
       debugPrint('Stock action failed: $e');
-      setState(() => _isLoading = false);
+      ref.read(stockActionSheetProvider.notifier).setLoading(false);
       if (mounted) {
-        showTopSnackBar(context, VN.loiHeThong, backgroundColor: Colors.red);
+        showTopSnackBar(context, StockLabels.loiHeThong, backgroundColor: Colors.red);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final sheetState = ref.watch(stockActionSheetProvider);
+    final isLoading = sheetState.isLoading;
+    final selectedNormalizedPrice = sheetState.selectedNormalizedPrice;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -190,7 +204,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             Text(
-                              '${VN.tonKho} hiện tại: ${widget.item.totalQuantity}',
+                              '${StockLabels.tonKho} hiện tại: ${widget.item.totalQuantity}',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: Colors.grey),
                             ),
@@ -204,9 +218,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
                 if (widget.item.perChip.isNotEmpty) ...[
                   DropdownButtonFormField<int>(
-                    initialValue: _selectedNormalizedPrice,
+                    initialValue: selectedNormalizedPrice,
                     decoration: const InputDecoration(
-                      labelText: VN.tuyChonGia,
+                      labelText: StockLabels.tuyChonGia,
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.sell_outlined),
                     ),
@@ -224,7 +238,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                         )
                         .toList(),
                     onChanged: (value) {
-                      setState(() => _selectedNormalizedPrice = value);
+                      ref
+                          .read(stockActionSheetProvider.notifier)
+                          .setSelectedNormalizedPrice(value);
                     },
                   ),
                   const SizedBox(height: 12),
@@ -250,7 +266,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         textAlign: TextAlign.center,
                         decoration: InputDecoration(
-                          labelText: VN.soLuong,
+                          labelText: OrdersLabels.soLuong,
                           hintText: widget.actionType == ActionType.adjust
                               ? 'Nhập số lượng mới'
                               : 'Nhập số lượng',
@@ -258,11 +274,11 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return VN.fieldRequired;
+                            return SharedLabels.fieldRequired;
                           }
                           final qty = int.tryParse(value);
                           if (qty == null || qty <= 0) {
-                            return VN.soLuongInvalid;
+                            return StockLabels.soLuongInvalid;
                           }
                           return null;
                         },
@@ -284,8 +300,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   TextFormField(
                     controller: _noteController,
                     decoration: const InputDecoration(
-                      labelText: VN.ghiChuLabel,
-                      hintText: VN.ghiChuHint,
+                      labelText: StockLabels.ghiChuLabel,
+                      hintText: StockLabels.ghiChuHint,
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.note),
                     ),
@@ -299,15 +315,15 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   TextFormField(
                     controller: _reasonController,
                     decoration: const InputDecoration(
-                      labelText: VN.lyDoLabel,
-                      hintText: VN.lyDoHint,
+                      labelText: StockLabels.lyDoLabel,
+                      hintText: StockLabels.lyDoHint,
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.info_outline),
                     ),
                     maxLines: 2,
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
-                        return VN.lyDoRequired;
+                        return StockLabels.lyDoRequired;
                       }
                       return null;
                     },
@@ -319,8 +335,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
                 // Submit button
                 FilledButton(
-                  onPressed: _isLoading ? null : _submit,
-                  child: _isLoading
+                  onPressed: isLoading ? null : _submit,
+                  child: isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,
@@ -336,7 +352,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                 // Cancel button
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text(VN.cancel),
+                  child: const Text(SharedLabels.cancel),
                 ),
               ],
             ),

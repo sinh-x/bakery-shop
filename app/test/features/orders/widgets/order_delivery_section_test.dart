@@ -5,6 +5,8 @@ import 'package:bakery_app/features/orders/widgets/due_date_time_picker_row.dart
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/utils.dart';
 
 void main() {
   testWidgets('OrderDeliverySection readOnly pickup renders only delivery type row',
@@ -21,8 +23,8 @@ void main() {
     );
 
     expect(find.byType(OrderDeliverySection), findsOneWidget);
-    expect(find.text(VN.pickup), findsOneWidget);
-    expect(find.text(VN.deliveryAddress), findsNothing);
+    expect(find.text(OrdersLabels.pickup), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryAddress), findsNothing);
   });
 
   testWidgets('OrderDeliverySection readOnly door renders address, phone, shipping fee',
@@ -41,7 +43,7 @@ void main() {
       ),
     );
 
-    expect(find.text(VN.deliveryDoor), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryDoor), findsOneWidget);
     expect(find.text('123 Lê Lợi'), findsOneWidget);
     expect(find.text('0987654321'), findsOneWidget);
     expect(find.text(formatVND(25000)), findsOneWidget);
@@ -63,9 +65,9 @@ void main() {
     );
 
     expect(find.byType(SegmentedButton<String>), findsOneWidget);
-    expect(find.text(VN.pickup), findsOneWidget);
-    expect(find.text(VN.deliveryBus), findsOneWidget);
-    expect(find.text(VN.deliveryDoor), findsOneWidget);
+    expect(find.text(OrdersLabels.pickup), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryBus), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryDoor), findsOneWidget);
   });
 
   testWidgets('OrderDeliverySection editable door shows address field and shipping stepper',
@@ -88,7 +90,7 @@ void main() {
       ),
     );
 
-    expect(find.text(VN.deliveryAddress), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryAddress), findsOneWidget);
     expect(find.text('45 Trần Phú'), findsOneWidget);
     expect(find.text('0901234567'), findsOneWidget);
     expect(find.text(formatVND(20000)), findsOneWidget);
@@ -133,7 +135,7 @@ void main() {
     );
 
     expect(find.byType(DueDateTimePickerRow), findsOneWidget);
-    expect(find.text(VN.dueDate), findsOneWidget);
+    expect(find.text(OrdersLabels.dueDate), findsOneWidget);
     expect(find.text(OrdersLabels.notSelected), findsWidgets);
   });
 
@@ -151,8 +153,8 @@ void main() {
       ),
     );
 
-    final dueDateHeaderY = tester.getTopLeft(find.text(VN.dueDate)).dy;
-    final deliveryTypeHeaderY = tester.getTopLeft(find.text(VN.deliveryType)).dy;
+    final dueDateHeaderY = tester.getTopLeft(find.text(OrdersLabels.dueDate)).dy;
+    final deliveryTypeHeaderY = tester.getTopLeft(find.text(OrdersLabels.deliveryType)).dy;
     final segmentedButtonY =
         tester.getTopLeft(find.byType(SegmentedButton<String>)).dy;
 
@@ -177,7 +179,7 @@ void main() {
 
     final dueDateY = tester.getTopLeft(find.text('8/7/2026')).dy;
     final deliveryTypeValueY =
-        tester.getTopLeft(find.text(VN.deliveryDoor)).dy;
+        tester.getTopLeft(find.text(OrdersLabels.deliveryDoor)).dy;
 
     expect(dueDateY, lessThan(deliveryTypeValueY));
   });
@@ -244,9 +246,9 @@ void main() {
       ),
     );
 
-    expect(find.text(VN.errorLoading), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
-    await tester.tap(find.text(VN.retry));
+    expect(find.text(SharedLabels.errorLoading), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
+    await tester.tap(find.text(SharedLabels.retry));
     expect(retryCalled, true);
   });
 
@@ -318,7 +320,7 @@ void main() {
     );
 
     // Legacy 'delivery' maps to the door label.
-    expect(find.text(VN.deliveryDoor), findsOneWidget);
+    expect(find.text(OrdersLabels.deliveryDoor), findsOneWidget);
     // GPS coordinates row renders (same as 'door'). _buildInfoRow appends a
     // colon to the label, so look for the value + the label-with-colon.
     expect(find.text('10.775, 106.695'), findsOneWidget);

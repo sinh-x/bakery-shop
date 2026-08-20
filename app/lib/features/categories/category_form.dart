@@ -1,10 +1,15 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
-import '../../providers/categories_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import '../../data/providers/categories_provider.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/category_form_notifier.dart';
+import 'widgets/icon_cell.dart';
+import 'widgets/upper_case_formatter.dart';
 
 /// Curated emoji options for category icons.
 const categoryEmojiOptions = [
@@ -56,9 +61,6 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codePrefixCtrl;
   late final TextEditingController _slugCtrl;
-  late String _selectedIcon;
-  late bool _isActive;
-  bool _saving = false;
 
   bool get _isEditing => widget.category != null;
 
@@ -69,8 +71,19 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     _nameCtrl = TextEditingController(text: c?.name ?? '');
     _codePrefixCtrl = TextEditingController(text: c?.codePrefix ?? '');
     _slugCtrl = TextEditingController(text: c?.slug ?? '');
-    _selectedIcon = c?.icon ?? '';
-    _isActive = (c?.active ?? 1) == 1;
+    final seedId = c?.id;
+    final seedIcon = c?.icon;
+    final seedActive = (c?.active ?? 1) == 1;
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(categoryFormProvider.notifier).seed(
+            editingId: seedId,
+            icon: seedIcon,
+            active: seedActive,
+          );
+    });
     if (!_isEditing) {
       _nameCtrl.addListener(_onNameChanged);
     }
@@ -174,7 +187,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    final formNotifier = ref.read(categoryFormProvider.notifier);
+    final formState = ref.read(categoryFormProvider);
+    formNotifier.setSaving(true);
     try {
       final notifier = ref.read(categoriesProvider.notifier);
       if (_isEditing) {
@@ -182,26 +197,26 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           widget.category!.id,
           name: _nameCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
-          active: _isActive ? 1 : 0,
-          icon: _selectedIcon,
+          active: formState.isActive ? 1 : 0,
+          icon: formState.selectedIcon,
         );
       } else {
         await notifier.createCategory(
           name: _nameCtrl.text.trim(),
           slug: _slugCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
-          icon: _selectedIcon,
+          icon: formState.selectedIcon,
         );
       }
       if (mounted) {
         Navigator.of(context).pop();
         showTopSnackBar(
           context,
-          _isEditing ? VN.categoryUpdated : VN.categoryCreated,
+          _isEditing ? ProductsLabels.categoryUpdated : ProductsLabels.categoryCreated,
         );
       }
     } catch (e) {
-      setState(() => _saving = false);
+      formNotifier.setSaving(false);
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
@@ -209,11 +224,13 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   }
 
   Widget _buildIconPicker(ColorScheme colorScheme) {
+    final selectedIcon = ref.watch(categoryFormProvider).selectedIcon;
+    final formNotifier = ref.read(categoryFormProvider.notifier);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          VN.categoryIcon,
+          ProductsLabels.categoryIcon,
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
         const SizedBox(height: 8),
@@ -228,11 +245,11 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             itemCount: categoryEmojiOptions.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
-                final selected = _selectedIcon.isEmpty;
-                return _IconCell(
+                final selected = selectedIcon.isEmpty;
+                return IconCell(
                   selected: selected,
                   colorScheme: colorScheme,
-                  onTap: () => setState(() => _selectedIcon = ''),
+                  onTap: () => formNotifier.setSelectedIcon(''),
                   child: Icon(
                     Icons.close,
                     size: 20,
@@ -243,11 +260,11 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 );
               }
               final emoji = categoryEmojiOptions[index - 1];
-              final selected = _selectedIcon == emoji;
-              return _IconCell(
+              final selected = selectedIcon == emoji;
+              return IconCell(
                 selected: selected,
                 colorScheme: colorScheme,
-                onTap: () => setState(() => _selectedIcon = emoji),
+                onTap: () => formNotifier.setSelectedIcon(emoji),
                 child: Text(emoji, style: const TextStyle(fontSize: 20)),
               );
             },
@@ -260,6 +277,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final formState = ref.watch(categoryFormProvider);
+    final isActive = formState.isActive;
+    final saving = formState.saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -275,7 +295,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _isEditing ? VN.editCategory : VN.addCategory,
+                _isEditing ? ProductsLabels.editCategory : ProductsLabels.addCategory,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 20),
@@ -284,30 +304,30 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 autofocus: true,
                 textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
-                  labelText: VN.categoryName,
+                  labelText: ProductsLabels.categoryName,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _codePrefixCtrl,
                 textCapitalization: TextCapitalization.characters,
                 inputFormatters: [
-                  _UpperCaseFormatter(),
+                  UpperCaseFormatter(),
                   LengthLimitingTextInputFormatter(4),
                 ],
                 decoration: const InputDecoration(
-                  labelText: VN.codePrefix,
-                  hintText: VN.codePrefixHint,
-                  helperText: VN.codePrefixHelp,
+                  labelText: ProductsLabels.codePrefix,
+                  hintText: ProductsLabels.codePrefixHint,
+                  helperText: ProductsLabels.codePrefixHelp,
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return VN.noPrefixError;
+                  if (v == null || v.trim().isEmpty) return ProductsLabels.noPrefixError;
                   if (!RegExp(r'^[A-Z]{2,4}$').hasMatch(v.trim())) {
-                    return VN.prefixFormatError;
+                    return ProductsLabels.prefixFormatError;
                   }
                   return null;
                 },
@@ -317,12 +337,12 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 controller: _slugCtrl,
                 readOnly: _isEditing,
                 decoration: InputDecoration(
-                  labelText: VN.categorySlug,
+                  labelText: ProductsLabels.categorySlug,
                   border: const OutlineInputBorder(),
                   filled: _isEditing,
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
               ),
               const SizedBox(height: 16),
               if (_isEditing) ...[
@@ -333,15 +353,17 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   ),
                   child: SwitchListTile.adaptive(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    title: const Text(VN.categoryVisibility),
+                    title: const Text(ProductsLabels.categoryVisibility),
                     subtitle: Text(
-                      _isActive ? VN.categoryVisible : VN.categoryHiddenState,
+                      isActive ? ProductsLabels.categoryVisible : ProductsLabels.categoryHiddenState,
                     ),
-                    value: _isActive,
-                    onChanged: _saving
+                    value: isActive,
+                    onChanged: saving
                         ? null
                         : (value) {
-                            setState(() => _isActive = value);
+                            ref
+                                .read(categoryFormProvider.notifier)
+                                .setIsActive(value);
                           },
                   ),
                 ),
@@ -353,21 +375,21 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _saving
+                    onPressed: saving
                         ? null
                         : () => Navigator.of(context).pop(),
-                    child: const Text(VN.cancel),
+                    child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
+                    onPressed: saving ? null : _save,
+                    child: saving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text(VN.save),
+                        : const Text(SharedLabels.save),
                   ),
                 ],
               ),
@@ -376,48 +398,5 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
         ),
       ),
     );
-  }
-}
-
-class _IconCell extends StatelessWidget {
-  const _IconCell({
-    required this.selected,
-    required this.colorScheme,
-    required this.onTap,
-    required this.child,
-  });
-
-  final bool selected;
-  final ColorScheme colorScheme;
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          color: selected ? colorScheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? colorScheme.primary : Colors.grey.shade300,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Center(child: child),
-      ),
-    );
-  }
-}
-
-class _UpperCaseFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }

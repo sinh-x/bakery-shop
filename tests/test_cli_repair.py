@@ -1714,9 +1714,11 @@ def test_repair_backfills_reconciliation_revenue_journal_entry(api_client):
         lines = _journal_line_codes(conn, after["order"][0])
         deposits_line = next(l for l in lines if l[0] == "2100")
         revenue_line = next(l for l in lines if l[0] == "4100")
-        # 2 units × 12000 = 24000.
-        assert deposits_line[1] == 24000.0, deposits_line
-        assert revenue_line[2] == 24000.0, revenue_line
+        # DG-368: sale_qty=2 splits into 2 Orders (each qty=1). The helper
+        # returns the last Order, whose revenue entry is 1 unit × 12000 = 12000
+        # (the other Order keeps its own 12000 entry, untouched here).
+        assert deposits_line[1] == 12000.0, deposits_line
+        assert revenue_line[2] == 12000.0, revenue_line
 
 
 def test_repair_backfills_reconciliation_cogs_journal_entry(api_client):
@@ -1775,9 +1777,11 @@ def test_repair_backfills_reconciliation_payment_journal_entry(api_client):
         # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
         asset_line = next(l for l in lines if l[0] == "1101")
         deposits_line = next(l for l in lines if l[0] == "2100")
-        # 2 units × 12000 = 24000 inflow.
-        assert asset_line[1] == 24000.0, asset_line
-        assert deposits_line[2] == 24000.0, deposits_line
+        # DG-368: sale_qty=2 splits into 2 Orders (each qty=1). The helper
+        # returns the last Order's payment, whose entry is 1 unit × 12000 = 12000
+        # (the other Order keeps its own 12000 entry, untouched here).
+        assert asset_line[1] == 12000.0, asset_line
+        assert deposits_line[2] == 12000.0, deposits_line
 
 
 def test_repair_backfills_all_reconciliation_journal_entries_idempotent(api_client):
@@ -1825,3 +1829,642 @@ def test_repair_backfills_all_reconciliation_journal_entries_idempotent(api_clie
         assert after_second["order"] == after_first["order"]
         assert after_second["order_cogs"] == after_first["order_cogs"]
         assert after_second["payment_transaction"] == after_first["payment_transaction"]
+
+
+# ---------------------------------------------------------------------------
+# DG-356 Phase 2 — repair-order-revenue --shipping-release
+# ---------------------------------------------------------------------------
+
+
+def _insert_bus_order(
+    conn,
+    *,
+    order_ref: str,
+    customer_name: str = "Khách bus",
+    total_price: float = 100000.0,
+    status: str = "delivered",
+    shipping_fee: float = 25000.0,
+    delivery_type: str = "bus",
+    due_date: str = "2026-07-15",
+) -> int:
+    """Insert a bus order with a shipping fee (helper for shipping-release tests)."""
+    cur = conn.execute(
+        "INSERT INTO orders "
+        "(order_ref, customer_name, total_price, status, due_date, "
+        " delivery_type, shipping_fee) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (order_ref, customer_name, total_price, status, due_date, delivery_type, shipping_fee),
+    )
+    return int(cur.lastrowid)
+
+
+def _pay_and_sync_bus(conn, *, order_id: int, amount: float) -> int:
+    """Insert a cash deposit payment and run the payment journal sync.
+
+    This credits 2200 with the shipping portion so ``_held_shipping_for_order``
+    sees it as held, mirroring the real payment-time bus split.
+    """
+    from baker.services.journal_sync import _sync_payment_journal
+
+    cur = conn.execute(
+        "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+        "VALUES (?, ?, 'deposit', 'cash', '')",
+        (order_id, amount),
+    )
+    txn_id = int(cur.lastrowid)
+    _sync_payment_journal(conn, txn_id, amount, "deposit", "cash", order_id=order_id)
+    return txn_id
+
+
+def _insert_cash_drawer(
+    conn,
+    *,
+    opened_at: str,
+    opening_balance: int = 0,
+    status: str = "open",
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO cash_drawer "
+        "(opened_at, opening_balance, status) "
+        "VALUES (?, ?, ?)",
+        (opened_at, int(opening_balance), status),
+    )
+    return int(cur.lastrowid)
+
+
+def _shipping_release_entry_count(conn, order_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _delete_shipping_release_entry(conn, order_id: int) -> None:
+    """Delete the order_shipping_release journal entry (and its lines) for setup.
+
+    DG-366 Phase 3 made ``_sync_payment_journal`` re-trigger the shipping
+    release for delivered/completed bus orders, so ``_pay_and_sync_bus`` now
+    creates the release entry as a side effect. Tests that exercise the
+    repair "backfill missing entry" path call this helper after setup to
+    restore the pre-Phase-3 "missing release" state.
+    """
+    conn.execute(
+        "DELETE FROM journal_lines WHERE journal_entry_id IN ("
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?"
+        ")",
+        (order_id,),
+    )
+    conn.execute(
+        "DELETE FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?",
+        (order_id,),
+    )
+
+
+def _shipping_release_lines(conn, order_id: int) -> dict[str, dict[str, float]]:
+    """Return per-account debit/credit for the order's latest shipping release entry."""
+    rows = conn.execute(
+        """
+        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+        ORDER BY je.id DESC, jl.id ASC
+        """,
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
+    return out
+
+
+def test_shipping_release_command_registered():
+    """--shipping-release flag is registered and documented in --help."""
+    result = _invoke(["repair-order-revenue", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--shipping-release" in result.output
+
+
+def test_shipping_release_rejects_cogs_combo():
+    """--shipping-release and --cogs are mutually exclusive."""
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--cogs", "--all"]
+    )
+    assert result.exit_code != 0
+    assert "không thể dùng" in result.output.lower() or "không" in result.output.lower()
+
+
+def test_shipping_release_backfills_missing_entry_credit_1101_within_drawer():
+    """AC4: bus order missing order_shipping_release, delivery within open drawer
+    → entry created with CR 1101 (Cash in Drawer)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Open drawer opened before the delivery event.
+        _insert_cash_drawer(conn, opened_at="2026-07-14T00:00:00Z", opening_balance=0)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-1101", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Seed a delivered event so _resolve_delivered_timestamp returns a
+        # timestamp at/after the drawer's opened_at.
+        conn.execute(
+            "INSERT INTO events (type, order_id, timestamp, data, summary, staff_name) "
+            "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
+            (oid, f'{{"order_ref": "ORD-BUS-REL-1101", "to_status": "delivered"}}'),
+        )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry
+        # for delivered bus orders. Delete it to restore the "missing entry"
+        # state the repair command must backfill.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-1101" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 25000.0
+        assert lines["1101"]["credit"] == 25000.0
+
+
+def test_shipping_release_backfills_missing_entry_credit_1102_no_drawer():
+    """AC5: bus order missing order_shipping_release, no open drawer
+    → entry created with CR 1102 (Owner's Cash)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # No open drawer.
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-1102", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        conn.execute(
+            "INSERT INTO events (type, order_id, timestamp, data, summary, staff_name) "
+            "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
+            (oid, f'{{"order_ref": "ORD-BUS-REL-1102", "to_status": "delivered"}}'),
+        )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-1102" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 25000.0
+        assert lines["1102"]["credit"] == 25000.0
+
+
+def test_shipping_release_credit_1102_when_delivery_predates_drawer():
+    """AC5 boundary: an open drawer exists but the order's delivery timestamp
+    predates ``drawer.opened_at`` → credit 1102 (Owner's Cash), not 1101.
+
+    Covers the second branch of ``_resolve_shipping_release_asset_account``
+    (FR4): ``delivery_ts is not None and delivery_ts >= drawer.opened_at``
+    is False because ``delivery_ts < drawer.opened_at``, so the release is
+    routed to 1102 with no drawer link. Mirrors the AC5 no-drawer case but
+    exercises the explicit predate comparison.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Open drawer opened AFTER the delivery event.
+        _insert_cash_drawer(conn, opened_at="2026-07-16T00:00:00Z", opening_balance=0)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-PREDATE", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Seed a delivered event BEFORE the drawer opened_at.
+        conn.execute(
+            "INSERT INTO events (type, order_id, timestamp, data, summary, staff_name) "
+            "VALUES ('order', ?, '2026-07-15T08:00:00Z', ?, 'Giao đơn', 'Thử nghiệm')",
+            (oid, f'{{"order_ref": "ORD-BUS-REL-PREDATE", "to_status": "delivered"}}'),
+        )
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-PREDATE" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 25000.0
+        # FR4: delivery predates drawer → credit 1102 (Owner's Cash), not 1101.
+        assert lines["1102"]["credit"] == 25000.0
+        assert "1101" not in lines
+
+
+def test_shipping_release_skips_existing_matching_entry_idempotent():
+    """AC6: bus order already has a matching order_shipping_release → skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-IDEM", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+
+    # First repair creates the entry.
+    r1 = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert r1.exit_code == 0, r1.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        first_entry_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+
+    # Second run — idempotent: skipped, no new entry.
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "bỏ qua: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        second_entry_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+        assert int(first_entry_id) == int(second_entry_id)
+
+
+def test_shipping_release_reports_locked_and_does_not_modify():
+    """AC7: bus order with a locked stale order_shipping_release entry →
+    reported as locked, not modified."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-LOCK", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates a correct release
+        # entry. Remove it so only the manually-inserted stale locked entry
+        # exists — the scenario this test exercises.
+        _delete_shipping_release_entry(conn, oid)
+        # Create a stale release entry (wrong amount) then lock it.
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, 'order_shipping_release', ?)",
+            (f"Shipping release: ORD-BUS-REL-LOCK", oid),
+        )
+        stale_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 10000.0, 0.0, 'Thanh toán ship bus')",
+            (stale_id, held_acct),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 10000.0, 'Tiền ship bus đã trả')",
+            (stale_id, asset_acct),
+        )
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (stale_id,),
+        )
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "khoá: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # The locked entry is untouched (still 10000, not 25000).
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 10000.0
+
+
+def test_shipping_release_dry_run_does_not_mutate():
+    """AC8: --dry-run previews the missing entry without writing."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-DRY", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-DRY" in result.output
+    assert "sẽ sửa" in result.output
+    assert "đã sửa" not in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+
+def test_shipping_release_all_scans_bus_orders_only():
+    """FR2/FR8: --all scans only bus orders with shipping_fee > 0; pickup/door
+    orders are excluded and reported as not-applicable (not present)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        bus_oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-ALL", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=bus_oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry
+        # for the bus order. Remove it so the --all repair has a missing
+        # entry to backfill (otherwise the bus order would be reported as
+        # skipped and the test would no longer exercise the backfill path).
+        _delete_shipping_release_entry(conn, bus_oid)
+        # Pickup order with shipping_fee — must NOT be scanned.
+        pickup_oid = _insert_bus_order(
+            conn, order_ref="ORD-PICK-REL-ALL", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="pickup",
+        )
+        _pay_and_sync_bus(conn, order_id=pickup_oid, amount=100000)
+        # Bus order with shipping_fee=0 — must NOT be scanned.
+        zero_oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-ZERO", total_price=100000, shipping_fee=0,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=zero_oid, amount=100000)
+
+    result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-REL-ALL" in result.output
+    # Pickup and zero-fee orders are excluded from the scan entirely.
+    assert "ORD-PICK-REL-ALL" not in result.output
+    assert "ORD-BUS-REL-ZERO" not in result.output
+    assert "đã sửa: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, bus_oid) == 1
+        assert _shipping_release_entry_count(conn, pickup_oid) == 0
+        assert _shipping_release_entry_count(conn, zero_oid) == 0
+
+
+def test_shipping_release_all_idempotent_second_run_all_skipped():
+    """FR5/AC6: second --all run reports every scanned bus order as skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-ALL2", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates the release entry.
+        # Remove it so the first --all run has a missing entry to backfill.
+        _delete_shipping_release_entry(conn, oid)
+
+    r1 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert r1.exit_code == 0, r1.output
+    assert "đã sửa: 1" in r1.output
+
+    r2 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert r2.exit_code == 0, r2.output
+    assert "bỏ qua: 1" in r2.output
+    assert "đã sửa: 0" in r2.output
+
+
+def test_shipping_release_not_applicable_for_non_bus_order_id():
+    """--order-id on a non-bus order reports not-applicable."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DOOR-REL-NA", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "không áp dụng: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+
+def test_shipping_release_repair_stale_unlocked_entry():
+    """A stale unlocked release entry is deleted and recreated with the
+    correct amount (mirrors the sync code's unlocked-stale path)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-REL-STALE", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # DG-366 Phase 3: _sync_payment_journal now creates a correct release
+        # entry. Remove it so only the manually-inserted stale unlocked
+        # entry exists — the scenario this test exercises.
+        _delete_shipping_release_entry(conn, oid)
+        # Insert a stale (wrong-amount) unlocked release entry.
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, 'order_shipping_release', ?)",
+            (f"Shipping release: ORD-BUS-REL-STALE", oid),
+        )
+        stale_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 10000.0, 0.0, 'Thanh toán ship bus')",
+            (stale_id, held_acct),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 10000.0, 'Tiền ship bus đã trả')",
+            (stale_id, asset_acct),
+        )
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--order-id", str(oid)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "đã sửa: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+        lines = _shipping_release_lines(conn, oid)
+        assert lines["2200"]["debit"] == 25000.0
+
+# ---------------------------------------------------------------------------
+# DG-366 Phase 5 — check-shipping-release-gaps (read-only detection, FR5/AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_check_shipping_release_gaps_command_registered():
+    """--help lists the command and documents it as read-only."""
+    result = _invoke(["check-shipping-release-gaps", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "chỉ đọc" in result.output.lower()
+
+
+def test_check_shipping_release_gaps_finds_missing_release():
+    """AC6: bus order with held 2200 but no order_shipping_release is reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-DET", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Phase 3 auto-creates the release; delete it to restore the gap.
+        _delete_shipping_release_entry(conn, oid)
+        assert _shipping_release_entry_count(conn, oid) == 0
+        # Sanity: held_in_2200 should be 25000 after the payment.
+        from baker.services.journal_sync import _held_shipping_for_order
+        assert _held_shipping_for_order(conn, oid) == 25000.0
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-DET" in result.output
+    assert "25.000" in result.output
+    assert "Tổng: 1" in result.output
+
+
+def test_check_shipping_release_gaps_read_only_no_mutation():
+    """The detection query never mutates the database."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-RO", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        _delete_shipping_release_entry(conn, oid)
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        o_before = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-RO" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        o_after = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    assert je_before == je_after
+    assert jl_before == jl_after
+    assert o_before == o_after
+
+
+def test_check_shipping_release_gaps_empty_when_release_exists():
+    """Bus order with held 2200 AND a matching release entry → not reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-OK", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        # Phase 3 creates the release — leave it in place (no gap).
+        assert _shipping_release_entry_count(conn, oid) == 1
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-OK" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_non_bus_orders():
+    """Pickup/door orders are never reported (no shipping held in 2200)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-PICKUP-GAP", customer_name="Khách pickup",
+            total_price=100000, status="delivered", due_date="2026-07-15",
+        )
+        _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-PICKUP-GAP" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_non_delivered_bus_orders():
+    """Bus orders not yet delivered/completed are not reported."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-NEW", total_price=100000, shipping_fee=25000,
+            status="new", due_date="2026-07-15",
+        )
+        _pay_and_sync_bus(conn, order_id=oid, amount=100000)
+        _delete_shipping_release_entry(conn, oid)
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-NEW" not in result.output
+    assert "không có đơn ship bus nào" in result.output
+
+
+def test_check_shipping_release_gaps_ignores_bus_order_with_no_held_shipping():
+    """Bus order with no held 2200 (no payment) and no release → not reported
+    (the AC6 gap requires held shipping in 2200)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-BUS-GAP-UNPAID", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15",
+        )
+        # No payment → no held shipping in 2200.
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(["check-shipping-release-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-BUS-GAP-UNPAID" not in result.output
+    assert "không có đơn ship bus nào" in result.output

@@ -1,22 +1,32 @@
 // DG-211 Phase 5: single-state customer model + stage-widget decomposition
 // (coordinator delegates stage bodies to widgets/order_edit/edit_stageN_*).
+import 'dart:async';
+
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/customer_service.dart';
+import '../../data/models/address.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
+import 'providers/order_edit_wizard_notifier.dart';
+import '../../shared/labels/templates.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/address_labels.dart';
+import '../templates/widgets/template_picker_modal.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
 import 'order_edit/utils/edit_summary_helpers.dart';
+import 'template_context_builder.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_stage_indicator.dart';
 import 'widgets/order_wizard.dart';
@@ -24,7 +34,8 @@ import 'widgets/order_edit/edit_stage1_product.dart';
 import 'widgets/order_edit/edit_stage2_customer.dart';
 import 'widgets/order_edit/edit_stage3_delivery.dart';
 import 'widgets/order_edit/edit_stage4_review.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class OrderEditScreen extends ConsumerStatefulWidget {
   const OrderEditScreen({super.key, required this.orderRef});
 
@@ -43,50 +54,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _notesCtrl = TextEditingController();
   late final PageController _pageController;
 
-  String _source = '';
-  DateTime? _dueDate;
-  TimeOfDay? _dueTime;
-  String _deliveryType = 'pickup';
-  double _shippingFee = 0.0;
-  bool _saving = false;
   bool _initialized = false;
-  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
-  // manual `deliveryTimeSlot` state was removed (DG-306 Phase 1 / FR2) — the
-  // slot is auto-derived from `_dueTime` at submit time via `deriveTimeSlot`.
-  // DG-306 Phase 3 / FR7: the Google Maps URL field was removed from the
-  // edit form — the URL is now managed via the Google Maps modal on the
-  // order detail screen. The existing URL is preserved at save time by
-  // passing the loaded order's `googleMapsUrl` back to the backend.
-  // DG-329 Phase 7 / FR9: the manual Lat/Long text fields were removed from
-  // the edit wizard. The loaded order's stored coordinates are preserved
-  // verbatim at save time (no user editing in the wizard); coordinates are
-  // managed via the Google Maps modal on the order detail screen.
-  double? _existingLatitude;
-  double? _existingLongitude;
-  String? _existingGoogleMapsUrl;
-  // FR9: single-state customer model (was tri-state: _selectedCustomer +
-  // _linkedCustomerId + _customerTouched). The existing linked customer is
-  // loaded from `order.customerId` into `_selectedCustomer` on open.
-  Customer? _selectedCustomer;
-  // Save-semantics flag (OPS-1): sends customerId (incl. null to unlink) when
-  // the user touched the customer selection. Not customer state.
-  bool _customerTouched = false;
-  int _currentStage = 1;
-
-  // DG-304 Phase 5: admin staff assignment state for the delivery stage
-  // dropdown (FR8/AC5). `_assignedStaffTouched` gates whether the value is
-  // sent on save (incl. null to unassign — FR6), mirroring `customerTouched`.
-  String? _assignedStaffId;
-  bool _assignedStaffTouched = false;
-
-  /// FR2/FR3: the delivery phone syncs with the customer phone until the user
-  /// manually makes them differ; once diverged it stays independent for the
-  /// rest of the edit session.
-  bool _deliveryPhoneDiverged = false;
 
   /// Re-entrancy guard set while syncing the delivery phone from the customer
   /// phone so the delivery-phone listener does not treat the sync as a manual
-  /// edit and flip [_deliveryPhoneDiverged].
+  /// edit and flip `deliveryPhoneDiverged`.
   bool _syncingDeliveryPhone = false;
 
   /// Guards controller writes performed during [_initFrom] so the sync
@@ -118,7 +90,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   /// customer-phone change also updates the delivery phone so the two stay
   /// in sync.
   void _onCustomerPhoneChanged() {
-    if (_initializing || _deliveryPhoneDiverged) return;
+    final wizardState = ref.read(orderEditWizardProvider);
+    if (_initializing || wizardState.deliveryPhoneDiverged) return;
     _syncingDeliveryPhone = true;
     _deliveryPhoneCtrl.text = _phoneCtrl.text;
     _syncingDeliveryPhone = false;
@@ -133,8 +106,19 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (_initializing || _syncingDeliveryPhone) return;
     if (stripNonDigits(_deliveryPhoneCtrl.text) !=
         stripNonDigits(_phoneCtrl.text)) {
-      _deliveryPhoneDiverged = true;
+      // Mark diverged — the diverged flag is derived from the controller
+      // text comparison; we store it on the notifier so the host's
+      // `_saveDraft` and `_initFrom` re-entrancy guards can read it.
+      // (No explicit notifier mutator needed — divergence is read-only
+      // from the controller text via the `_deliveryPhoneDiverged` getter
+      // below.)
     }
+  }
+
+  bool get _deliveryPhoneDiverged {
+    if (_deliveryPhoneCtrl.text.trim().isEmpty) return false;
+    return stripNonDigits(_deliveryPhoneCtrl.text) !=
+        stripNonDigits(_phoneCtrl.text);
   }
 
   void _initFrom(Order order) {
@@ -146,11 +130,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _addressCtrl.text = order.deliveryAddress;
     _deliveryPhoneCtrl.text = formatPhone(order.deliveryPhone);
     _notesCtrl.text = order.notes;
-    _source = order.source;
-    _deliveryType = order.deliveryType;
-    _shippingFee = order.shippingFee;
-    // FR9: load the existing linked customer from `order.customerId`.
-    if (order.customerId != null) _loadLinkedCustomer(order.customerId!);
     // FR7: prefill delivery phone from customer phone for all delivery types
     // when empty (CQ-2: aligns the edit flow with the create flow, which
     // auto-fills for every type rather than only bus/door).
@@ -158,24 +137,31 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         _phoneCtrl.text.trim().isNotEmpty) {
       _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
     }
-    // FR2/FR3: an order whose stored delivery phone already differs from the
-    // customer phone starts diverged so the user's prior manual override is
-    // preserved across the edit session.
-    _deliveryPhoneDiverged =
-        stripNonDigits(_deliveryPhoneCtrl.text) !=
-            stripNonDigits(_phoneCtrl.text) &&
-            _deliveryPhoneCtrl.text.trim().isNotEmpty;
-    _dueDate = parseDueDate(order.dueDate);
-    _dueTime = parseDueTime(order.dueTime);
-    // DG-303 Phase 4: prefill GPS + time slot fields from the existing order.
-    // DG-329 Phase 7 / FR9: Lat/Long are no longer editable in the wizard;
-    // preserve the stored values verbatim for save.
-    _existingLatitude = order.latitude;
-    _existingLongitude = order.longitude;
-    _existingGoogleMapsUrl = order.googleMapsUrl;
-    // DG-304 Phase 5: prefill the staff assignment from the existing order so
-    // the dropdown shows the current assignee (FR8/AC5).
-    _assignedStaffId = order.assignedStaffId;
+    // Defer the notifier seed to avoid modifying a provider during the
+    // build phase (the host's `build()` calls `_initFrom` from the
+    // `data:` callback). The TextEditingController-backed fields are
+    // seeded synchronously above so the first render shows the loaded
+    // values; the notifier seed only affects provider-driven state which
+    // rebuilds via `ref.watch` once the microtask runs.
+    final diverged = _deliveryPhoneDiverged;
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderEditWizardProvider.notifier).seedFromOrder(
+              source: order.source,
+              deliveryType: order.deliveryType,
+              shippingFee: order.shippingFee,
+              dueDate: parseDueDate(order.dueDate),
+              dueTime: parseDueTime(order.dueTime),
+              assignedStaffId: order.assignedStaffId,
+              existingLatitude: order.latitude,
+              existingLongitude: order.longitude,
+              existingGoogleMapsUrl: order.googleMapsUrl,
+              deliveryPhoneDiverged: diverged,
+            );
+      }
+    });
+    // FR9: load the existing linked customer from `order.customerId`.
+    if (order.customerId != null) _loadLinkedCustomer(order.customerId!);
     _initializing = false;
   }
 
@@ -183,13 +169,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     try {
       final customerSvc = ref.read(customerServiceProvider);
       final customer = await customerSvc.getCustomer(customerId);
-      if (mounted) setState(() => _selectedCustomer = customer);
+      if (mounted) ref.read(orderEditWizardProvider.notifier).setSelectedCustomer(customer);
     } catch (e) {
       debugPrint('[OrderEdit] load linked customer failed: $e');
     }
   }
 
-  bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
+  bool get _needsAddress {
+    final deliveryType = ref.read(orderEditWizardProvider).deliveryType;
+    return deliveryType == 'bus' || deliveryType == 'door';
+  }
 
   String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
 
@@ -198,42 +187,45 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     required double busDefault,
     required double doorDefault,
   }) {
-    setState(() {
-      _deliveryType = type;
-      _shippingFee = shippingFeeForDeliveryType(
-        type,
-        busDefault: busDefault,
-        doorDefault: doorDefault,
-      );
-    });
+    final shippingFee = shippingFeeForDeliveryType(
+      type,
+      busDefault: busDefault,
+      doorDefault: doorDefault,
+    );
+    ref.read(orderEditWizardProvider.notifier).updateDeliveryTypeAndShippingFee(
+          type,
+          shippingFee,
+        );
   }
 
-  void _setShippingFee(double fee) {
-    setState(() => _shippingFee = fee);
-  }
+  void _setShippingFee(double fee) =>
+      ref.read(orderEditWizardProvider.notifier).setShippingFee(fee);
 
   Future<void> _pickDate() async {
+    final dueDate = ref.read(orderEditWizardProvider).dueDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 1)),
+      initialDate: dueDate ?? DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (picked != null) setState(() => _dueDate = picked);
+    if (picked != null) ref.read(orderEditWizardProvider.notifier).setDueDate(picked);
   }
 
   Future<void> _pickTime() async {
+    final dueTime = ref.read(orderEditWizardProvider).dueTime;
     final picked = await showDialog<int>(
       context: context,
-      builder: (ctx) => HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
+      builder: (ctx) => HourPickerDialog(initialHour: dueTime?.hour ?? 8),
     );
     if (picked != null) {
-      setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
+      ref.read(orderEditWizardProvider.notifier)
+          .setDueTime(TimeOfDay(hour: picked, minute: 0));
     }
   }
 
   void _goToStage(int stage) {
-    setState(() => _currentStage = stage);
+    ref.read(orderEditWizardProvider.notifier).goToStage(stage);
     _pageController.animateToPage(
       stage - 1,
       duration: const Duration(milliseconds: 300),
@@ -243,8 +235,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final wizardState = ref.read(orderEditWizardProvider);
     final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
-    final newDueDate = _dueDate != null ? formatApiDate(_dueDate!) : null;
+    final newDueDate = wizardState.dueDate != null ? formatApiDate(wizardState.dueDate!) : null;
     String? publicCodeDateChangeDecision;
     if (shouldAskPublicCodeDateDecision(originalOrder, newDueDate)) {
       publicCodeDateChangeDecision =
@@ -254,28 +247,30 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
     // FR1: auto-create-and-link a customer when name+phone present, no link.
     final created = await maybeAutoCreateCustomer(
-      selectedCustomer: _selectedCustomer,
+      selectedCustomer: wizardState.selectedCustomer,
       name: _nameCtrl.text,
       phone: _phoneCtrl.text,
       customerService: ref.read(customerServiceProvider),
     );
-    if (created.customer != null && created.customer!.id != _selectedCustomer?.id) {
-      _selectedCustomer = created.customer;
+    if (created.customer != null &&
+        created.customer!.id != wizardState.selectedCustomer?.id) {
+      ref
+          .read(orderEditWizardProvider.notifier)
+          .setSelectedCustomer(created.customer);
     }
-    if (created.touched) _customerTouched = true;
     // CQ-6: surface a non-blocking notice when auto-create failed so the
     // operator knows the order will save without a linked customer.
     if (created.failed && mounted) {
       showTopSnackBar(context, CustomersLabels.autoCreateFailedNotice);
     }
-    final customerId = _selectedCustomer?.id;
+    final customerId = ref.read(orderEditWizardProvider).selectedCustomer?.id;
 
     // FR2: empty customer name defaults to `Khách lẻ` at save time only.
     final effectiveName = _nameCtrl.text.trim().isEmpty
-        ? VN.khachLe
+        ? OrdersLabels.khachLe
         : _nameCtrl.text.trim();
 
-    setState(() => _saving = true);
+    ref.read(orderEditWizardProvider.notifier).setSaving(true);
     late final Order updatedOrder;
     try {
       updatedOrder = await ref
@@ -283,29 +278,29 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           .save(
             notes: _notesCtrl.text.trim(),
             dueDate: newDueDate,
-            dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
+            dueTime: wizardState.dueTime != null ? _formatTime(wizardState.dueTime!) : null,
             customerPhone: _phoneCtrl.text.trim(),
             deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
             deliveryPhone: _needsAddress ? _deliveryPhoneCtrl.text.trim() : '',
-            deliveryType: _deliveryType,
-            source: _source.isEmpty ? null : _source,
+            deliveryType: wizardState.deliveryType,
+            source: wizardState.source.isEmpty ? null : wizardState.source,
             customerName: effectiveName,
             customerId: customerId,
             // OPS-1: send customerId (incl. null to unlink) when touched.
-            customerTouched: _customerTouched,
-            shippingFee: _shippingFee,
+            customerTouched: wizardState.customerTouched,
+            shippingFee: wizardState.shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
-            latitude: _existingLatitude,
-            longitude: _existingLongitude,
-            googleMapsUrl: _existingGoogleMapsUrl,
+            latitude: wizardState.existingLatitude,
+            longitude: wizardState.existingLongitude,
+            googleMapsUrl: wizardState.existingGoogleMapsUrl,
             // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
-            deliveryTimeSlot: _dueTime != null
-                ? deriveTimeSlot(_formatTime(_dueTime!))
+            deliveryTimeSlot: wizardState.dueTime != null
+                ? deriveTimeSlot(_formatTime(wizardState.dueTime!))
                 : null,
             // DG-304 Phase 5: admin staff assignment (FR8/AC5). Only sent when
             // the admin touched the dropdown; null clears the assignment.
-            assignedStaffId: _assignedStaffId,
-            assignedStaffTouched: _assignedStaffTouched,
+            assignedStaffId: wizardState.assignedStaffId,
+            assignedStaffTouched: wizardState.assignedStaffTouched,
           );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
@@ -313,7 +308,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
       }
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(orderEditWizardProvider.notifier).setSaving(false);
       return;
     }
     // Post-save UI runs outside the save try/catch so a navigation/snackbar
@@ -329,79 +324,130 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       // throw after a successful save (CQ-3). The save itself already
       // succeeded; the snackbar above informed the user.
       if (context.canPop()) context.pop();
-      setState(() => _saving = false);
+      ref.read(orderEditWizardProvider.notifier).setSaving(false);
     }
   }
 
-  OrderWizardData get _wizardSnapshot => OrderWizardData(
-        customerName: _nameCtrl.text,
-        customerPhone: _phoneCtrl.text,
-        selectedCustomer: _selectedCustomer,
-        deliveryType: _deliveryType,
-        deliveryAddress: _addressCtrl.text,
-        deliveryPhone: _deliveryPhoneCtrl.text,
-        shippingFee: _shippingFee,
-        notes: _notesCtrl.text,
-        source: _source,
-        latitude: _existingLatitude,
-        longitude: _existingLongitude,
-        googleMapsUrl: _existingGoogleMapsUrl,
-      );
+  OrderWizardData get _wizardSnapshot {
+    final s = ref.read(orderEditWizardProvider);
+    return OrderWizardData(
+      customerName: _nameCtrl.text,
+      customerPhone: _phoneCtrl.text,
+      selectedCustomer: s.selectedCustomer,
+      deliveryType: s.deliveryType,
+      deliveryAddress: _addressCtrl.text,
+      deliveryPhone: _deliveryPhoneCtrl.text,
+      shippingFee: s.shippingFee,
+      notes: _notesCtrl.text,
+      source: s.source,
+      latitude: s.existingLatitude,
+      longitude: s.existingLongitude,
+      googleMapsUrl: s.existingGoogleMapsUrl,
+    );
+  }
+
+  /// DG-375 Phase 4.3 / FR3 / AC3: opens the template picker modal filled
+  /// from the current edit-wizard state + the saved order's codes. Used by
+  /// the overflow menu and the review-stage button.
+  void _openTemplatePicker() {
+    final order = ref.read(orderDetailProvider(widget.orderRef)).asData?.value;
+    if (order == null) return;
+    final workItemsAsync =
+        ref.read(orderWorkItemsProvider(widget.orderRef));
+    final summaryItems =
+        summaryItemsFromWorkItems(workItemsAsync.value ?? const []);
+    final s = ref.read(orderEditWizardProvider);
+    final ctx = buildTemplateContextFromEditWizard(
+      order: order,
+      summaryItems: summaryItems,
+      wizardSnapshot: _wizardSnapshot,
+      dueDate: s.dueDate,
+      dueTime: s.dueTime,
+      createdBy: ref.read(loggedByProvider),
+    );
+    TemplatePickerModal.show(context, templateContext: ctx);
+  }
 
   void _onCustomerSelected(Customer? c) {
-    setState(() {
-      _selectedCustomer = c;
-      _customerTouched = true;
-      if (c != null) {
-        _nameCtrl.text = c.name;
-        if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
-      }
-    });
+    ref.read(orderEditWizardProvider.notifier).setSelectedCustomer(c);
+    if (c != null) {
+      _nameCtrl.text = c.name;
+      if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
+    }
   }
 
   void _onClearCustomerSelection() {
-    setState(() {
-      if (_selectedCustomer != null) {
-        _selectedCustomer = null;
-        _customerTouched = true;
-      }
-    });
+    if (ref.read(orderEditWizardProvider).selectedCustomer != null) {
+      ref.read(orderEditWizardProvider.notifier).clearSelectedCustomer();
+    }
   }
 
   /// DG-304 Phase 5: admin selects a delivery staff member (or clears to
   /// unassign) in the wizard delivery stage dropdown (FR8/FR6/AC5).
-  void _onAssignedStaffChanged(String? staffId) {
-    setState(() {
-      _assignedStaffId = staffId;
-      _assignedStaffTouched = true;
-    });
+  void _onAssignedStaffChanged(String? staffId) =>
+      ref.read(orderEditWizardProvider.notifier).setAssignedStaffId(staffId);
+
+  /// DG-385 Phase 4 / FR2 / AC2 / AC7: auto-bind the selected suggestion's
+  /// `googleMapsUrl` to the order being edited. The address text is written
+  /// into the address controller by the autocomplete field; this callback
+  /// only updates the stored map link and clears stale GPS coordinates so
+  /// the saved order does not carry mismatched address/coords. Edit-flow
+  /// parity with order creation (FR9/AC7).
+  void _onAddressSelected(AddressSuggestion suggestion) {
+    ref
+        .read(orderEditWizardProvider.notifier)
+        .setAddressSelected(suggestion.googleMapsUrl);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            suggestion.googleMapsUrl != null
+                ? AddressLabels.mapsLinkBoundSnack
+                : AddressLabels.mapsLinkNoLinkSnack,
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
     final fees = shippingFeeDefaults(ref);
+    final wizardState = ref.watch(orderEditWizardProvider);
+    final saving = wizardState.saving;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.editOrder),
+        title: const Text(OrdersLabels.editOrder),
         actions: [
           TextButton(
-            onPressed: _saving ? null : () => _goToStage(4),
-            child: _saving
+            onPressed: saving ? null : () => _goToStage(4),
+            child: saving
                 ? const SizedBox(
                     height: 18,
                     width: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
-          const AppBarOverflowMenu(),
+          AppBarOverflowMenu(
+            items: const [
+              PopupMenuItem<String>(
+                value: 'messageTemplates',
+                child: Text(TemplatesLabels.overflowMenuOpenPicker),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'messageTemplates') _openTemplatePicker();
+            },
+          ),
         ],
       ),
       body: orderAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => const Center(child: Text(VN.apiError)),
+        error: (e, _) => const Center(child: Text(SharedLabels.apiError)),
         data: (order) {
           _initFrom(order);
           final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
@@ -414,7 +460,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                   child: OrderStageIndicator(
-                    currentStage: _currentStage,
+                    currentStage: wizardState.currentStage,
                     onStageTap: _goToStage,
                   ),
                 ),
@@ -429,13 +475,14 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onContinue: () => _goToStage(2),
                       ),
                       EditStage2Customer(
-                        selectedCustomer: _selectedCustomer,
+                        selectedCustomer: wizardState.selectedCustomer,
                         onSelectedCustomer: _onCustomerSelected,
                         onClearSelection: _onClearCustomerSelection,
                         nameCtrl: _nameCtrl,
                         phoneCtrl: _phoneCtrl,
-                        source: _source,
-                        onSourceChanged: (s) => setState(() => _source = s),
+                        source: wizardState.source,
+                        onSourceChanged: (s) =>
+                            ref.read(orderEditWizardProvider.notifier).setSource(s),
                         wizardSnapshot: _wizardSnapshot,
                         summaryItems:
                             summaryItems.where((i) => !i.isExtra).toList(),
@@ -443,8 +490,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onContinue: () => _goToStage(3),
                       ),
                       EditStage3Delivery(
-                        deliveryType: _deliveryType,
-                        shippingFee: _shippingFee,
+                        deliveryType: wizardState.deliveryType,
+                        shippingFee: wizardState.shippingFee,
                         addressCtrl: _addressCtrl,
                         deliveryPhoneCtrl: _deliveryPhoneCtrl,
                         customerPhone: _phoneCtrl.text,
@@ -458,28 +505,35 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                           doorDefault: fees.door,
                         ),
                         onShippingFeeChanged: _setShippingFee,
-                        dueDate: _dueDate,
-                        dueTime: _dueTime,
+                        dueDate: wizardState.dueDate,
+                        dueTime: wizardState.dueTime,
                         onPickDate: _pickDate,
                         onPickTime: _pickTime,
-                        onDueTimeChanged: (t) => setState(() => _dueTime = t),
+                        onDueTimeChanged: (t) =>
+                            ref.read(orderEditWizardProvider.notifier).setDueTime(t),
                         wizardSnapshot: _wizardSnapshot,
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),
                         onContinue: () => _goToStage(4),
                         // DG-304 Phase 5: staff assignment dropdown state.
-                        assignedStaffId: _assignedStaffId,
+                        assignedStaffId: wizardState.assignedStaffId,
                         onAssignedStaffChanged: _onAssignedStaffChanged,
+                        // DG-385 Phase 4 / FR5/FR2/AC5/AC7: customer id for
+                        // customer-prioritized suggestions + auto-bind map
+                        // link on selection (edit-flow parity with create).
+                        customerId: wizardState.selectedCustomer?.id,
+                        onAddressSelected: _onAddressSelected,
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,
                         wizardSnapshot: _wizardSnapshot,
                         summaryItems: summaryItems,
-                        dueDate: _dueDate,
-                        dueTime: _dueTime,
+                        dueDate: wizardState.dueDate,
+                        dueTime: wizardState.dueTime,
                         onSave: _save,
                         onBack: () => _goToStage(3),
-                        isProcessing: _saving,
+                        isProcessing: saving,
+                        onOpenTemplates: _openTemplatePicker,
                       ),
                     ],
                   ),

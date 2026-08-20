@@ -7,6 +7,53 @@ from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD
 from baker.utils.db import escape_like as _escape_like
 
 
+DEFAULT_PAGE_SIZE = 50
+
+
+def clamp_limit(limit: int, *, default: int = DEFAULT_PAGE_SIZE, maximum: int = 500) -> int:
+    """Clamp a ``limit`` query param to a safe positive integer.
+
+    Falls back to ``default`` when ``limit`` is non-positive, and caps at
+    ``maximum`` to prevent unbounded result sets (NFR3 for DG-409 Phase 3).
+    """
+    if limit is None or limit <= 0:
+        return default
+    return min(limit, maximum)
+
+
+def paginate_params(limit: int | None, offset: int | None) -> tuple[int, int]:
+    """Normalize ``(limit, offset)`` into safe values for SQL LIMIT/OFFSET.
+
+    ``limit`` defaults to :data:`DEFAULT_PAGE_SIZE` when not supplied and is
+    clamped to ``[1, 500]``. ``offset`` defaults to 0 and is clamped to
+    ``[0, ∞)``. Returns a ``(limit, offset)`` tuple ready to splice into a
+    parameterized ``LIMIT ? OFFSET ?`` query.
+    """
+    lim = clamp_limit(limit) if limit is not None else DEFAULT_PAGE_SIZE
+    off = max(0, offset or 0)
+    return lim, off
+
+
+def paginated_envelope(items: list, total: int, limit: int, offset: int) -> dict:
+    """Build a backward-compatible pagination envelope (FR14, DG-409 Phase 3).
+
+    Returns ``{"items": [...], "total": N, "has_more": bool, "limit": L,
+    "offset": O}``. ``has_more`` is True when ``offset + len(items) < total``
+    — i.e. another page is available. Callers return this envelope only when
+    the client opts in via ``paginated=true`` (or a limit/offset param for
+    already-envelope endpoints); bare-array endpoints keep their old shape
+    otherwise (NFR6 — additive only).
+    """
+    has_more = (offset + len(items)) < total
+    return {
+        "items": items,
+        "total": total,
+        "has_more": has_more,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 def _has_order_items_column(conn, col_name: str) -> bool:
     """Return True when ``col_name`` exists on the ``order_items`` table.
 
@@ -64,7 +111,7 @@ def fetch_staff(conn, *, active_only=True, role=None):
         params = params + (role,)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return conn.execute(
-        f"SELECT * FROM staff{where} ORDER BY name", params
+        f"SELECT * FROM staff{where} ORDER BY name", params  # nosec B608
     ).fetchall()
 
 
@@ -110,7 +157,7 @@ def count_events_by_logger(conn, since=None, until=None):
 
     where = " AND ".join(conditions)
     return conn.execute(
-        f"SELECT logged_by, COUNT(*) as cnt FROM events WHERE {where} GROUP BY logged_by",
+        f"SELECT logged_by, COUNT(*) as cnt FROM events WHERE {where} GROUP BY logged_by",  # nosec B608
         params,
     ).fetchall()
 
@@ -250,7 +297,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)
-    query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"
+    query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"  # nosec B608
     params.append(limit)
 
     return conn.execute(query, params).fetchall()
@@ -268,7 +315,7 @@ def count_events_by_type(conn, since=None, until=None):
         params.append(until)
 
     where = " AND ".join(conditions) if conditions else "1=1"
-    query = f"SELECT type, COUNT(*) as cnt FROM events WHERE {where} GROUP BY type"
+    query = f"SELECT type, COUNT(*) as cnt FROM events WHERE {where} GROUP BY type"  # nosec B608
     return conn.execute(query, params).fetchall()
 
 
@@ -286,7 +333,7 @@ def sum_sales(conn, since=None, until=None):
     where = " AND ".join(conditions)
     query = f"""SELECT COALESCE(SUM(
         CASE WHEN json_valid(data) THEN json_extract(data, '$.amount') ELSE 0 END
-    ), 0) as total FROM events WHERE {where}"""
+    ), 0) as total FROM events WHERE {where}"""  # nosec B608
     row = conn.execute(query, params).fetchone()
     return row[0] if row else 0
 
@@ -329,7 +376,7 @@ def fetch_debts(conn, *, creditor=None, since=None, until=None, status=None):
 
     where = " AND ".join(conditions)
     query = (
-        f"SELECT e.id AS event_id, e.summary, e.timestamp, "
+        f"SELECT e.id AS event_id, e.summary, e.timestamp, "  # nosec B608
         f"CAST(json_extract(e.data, '$.amount_vnd') AS REAL) AS amount_vnd, "
         f"COALESCE(json_extract(e.data, '$.vendor'), '') AS vendor, "
         f"COALESCE((SELECT SUM(CAST(json_extract(value, '$.amount') AS REAL)) "

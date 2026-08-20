@@ -2,6 +2,7 @@
 // work item groups with inline filtering and navigation wiring that share
 // the section's scroll controller and state context.
 // Reviewed 2026-07-30.
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,11 +11,14 @@ import '../../../../data/api/api_client.dart';
 import '../../../../data/models/order.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import '../../../../data/providers/products_provider.dart';
+import '../../providers/order_work_item_section_notifier.dart';
+import '../enum_attribute_display.dart';
 import 'order_detail_helpers.dart';
 import 'order_work_item_card.dart';
 import 'order_work_item_print_dialog.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Expandable section listing the order's work items (regular + extras),
 /// with per-item status transition and internal-print prompts.
 class OrderWorkItemSection extends ConsumerStatefulWidget {
@@ -33,14 +37,12 @@ class OrderWorkItemSection extends ConsumerStatefulWidget {
 }
 
 class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
-  bool _expanded = true;
-  bool _transitioning = false;
-
   Future<void> _onTransitionWorkItem(
     WorkItem item,
     String targetStatus,
   ) async {
-    if (_transitioning) return;
+    final sectionState = ref.read(orderWorkItemSectionProvider);
+    if (sectionState.transitioning) return;
     String reason = '';
     if (isBackward(item.status, targetStatus, workItemStatusRank)) {
       final r = await showReasonDialog(context, targetStatus);
@@ -48,7 +50,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       reason = r;
     }
 
-    setState(() => _transitioning = true);
+    ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(true);
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
@@ -56,7 +58,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       // Refresh order detail to pick up server-synced order status
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
-        showTopSnackBar(context, VN.workItemStatusChanged);
+        showTopSnackBar(context, OrdersLabels.workItemStatusChanged);
       }
 
       // Prompt to print internal receipt if confirming and not yet printed
@@ -67,10 +69,10 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _transitioning = false);
+      if (mounted) ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(false);
     }
   }
 
@@ -87,12 +89,17 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+    final products = ref.watch(productsProvider).asData?.value ?? const [];
+    final sectionState = ref.watch(orderWorkItemSectionProvider);
+    final expanded = sectionState.expanded;
+    final transitioning = sectionState.transitioning;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: () =>
+              ref.read(orderWorkItemSectionProvider.notifier).toggleExpanded(),
           borderRadius: BorderRadius.circular(4),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -100,14 +107,14 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
               children: [
                 Expanded(
                   child: Text(
-                    VN.workItemsSection,
+                    OrdersLabels.workItemsSection,
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
                   ),
                 ),
                 Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  expanded ? Icons.expand_less : Icons.expand_more,
                   color: theme.colorScheme.primary,
                   size: 20,
                 ),
@@ -115,7 +122,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
             ),
           ),
         ),
-        if (_expanded)
+        if (expanded)
           itemsAsync.when(
             loading: () => const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
@@ -124,7 +131,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
             error: (e, _) => Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Text(
-                VN.apiError,
+                SharedLabels.apiError,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
@@ -135,7 +142,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                 return Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 4),
                   child: Text(
-                    VN.noWorkItems,
+                    OrdersLabels.noWorkItems,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
@@ -153,12 +160,16 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                   ...regularItems.map(
                     (item) => OrderWorkItemCard(
                       item: item,
+                      enumAttributes: enumAttributesFor(
+                        item.productId,
+                        products,
+                      ),
                       photos: allPhotos.where((p) {
                         final wId = p.workItemId;
                         return wId != null && wId == int.tryParse(item.id);
                       }).toList(),
                       baseUrl: baseUrl,
-                      onTransition: _transitioning
+                      onTransition: transitioning
                           ? null
                           : (t) => _onTransitionWorkItem(item, t),
                       onTap: () => context.push(
@@ -171,7 +182,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        VN.extras,
+                        OrdersLabels.extras,
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: theme.colorScheme.outline,
                         ),

@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/pos/widgets/pos_checkout_cart_item_tile.dart';
 import 'package:bakery_app/providers/pos_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 
 Product _product() {
   return const Product(
@@ -46,7 +46,7 @@ void main() {
         ),
       );
 
-      expect(find.text(VN.useInventory), findsOneWidget);
+      expect(find.text(StockLabels.useInventory), findsOneWidget);
     });
 
     testWidgets('does not render "Dùng tồn kho" badge when useInventory is false',
@@ -70,7 +70,7 @@ void main() {
         ),
       );
 
-      expect(find.text(VN.useInventory), findsNothing,
+      expect(find.text(StockLabels.useInventory), findsNothing,
           reason: 'MAJOR-2: force-sell item must not show the inventory badge');
     });
   });

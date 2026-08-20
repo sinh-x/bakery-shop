@@ -7,8 +7,8 @@
 class AuditLogLabels {
   AuditLogLabels._();
 
-  // Screen title — mirrors the existing `VN.openAuditLog` entry used by the
-  // Settings technical tab and the router placeholder.
+  // Screen title — mirrors the existing `SharedLabels.openAuditLog` entry
+  // used by the Settings technical tab and the router placeholder.
   static const screenTitle = 'Nhật ký thay đổi';
 
   // Filter controls (FR24).

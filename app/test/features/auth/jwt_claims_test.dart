@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:bakery_app/features/auth/jwt_claims.dart';
+import 'package:bakery_app/shared/providers/jwt_claims.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Builds a minimal JWT (header.payload.sig) with the given payload. The

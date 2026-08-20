@@ -1,18 +1,49 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/customer_service.dart';
-import '../../providers/customers_provider.dart';
-import '../../shared/labels/customers.dart';
+import '../../data/providers/customers_provider.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/services/session_cache.dart';
+import 'package:bakery_app/shared/utils/diacritics.dart';
+import 'widgets/duplicate_batch_merge_dialog.dart';
 import 'widgets/duplicate_group_tile.dart';
 import 'widgets/duplicate_merge_dialog.dart';
+import 'providers/duplicate_finder_screen_notifier.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+/// Returns `true` if any member of [group] matches [query]
+/// (case-insensitive, diacritic-insensitive) against `name` or `phone`.
+///
+/// The group is the atomic display unit: a single matching member shows the
+/// entire group (FR3/FR4). Reuses `stripDiacritics` from
+/// `shared/utils/diacritics.dart` (extracted in Phase 4.1).
+bool _groupMatches(DuplicateGroup group, String query) {
+  final q = stripDiacritics(query.trim().toLowerCase());
+  if (q.isEmpty) return true;
+  for (final m in group.customers) {
+    final name = stripDiacritics(m.name.trim().toLowerCase());
+    if (name.contains(q)) return true;
+    final phone = m.phone.trim().toLowerCase();
+    if (phone.contains(q)) return true;
+  }
+  return false;
+}
 
-/// Admin-only duplicate-finder + merge screen (DG-252 Phase 7 — FR7/AC4).
+/// Admin-only duplicate-finder + merge screen (DG-252 Phase 7 — FR7/AC4,
+/// extended by DG-369 Phase 3 for batch merge of 3+ members).
 ///
 /// Lists duplicate candidate groups returned by `GET /api/customers/duplicates`
-/// (admin-only on the backend). Each group offers a merge action that opens
-/// [DuplicateMergeDialog] showing both records' order counts; confirming
-/// calls `POST /api/customers/{id}/merge` and refreshes the list.
+/// (admin-only on the backend). Each group offers a merge action:
+/// - **2 selected members** → opens [DuplicateMergeDialog] (single-pair merge
+///   with swap affordance) calling `POST /api/customers/{id}/merge`.
+/// - **3+ selected members** → opens [DuplicateBatchMergeDialog] (batch
+///   confirmation listing primary + all sources) calling
+///   `POST /api/customers/{id}/batch-merge`.
+///
+/// On success the customer list is invalidated and the duplicate groups are
+/// refreshed (AC6).
 ///
 /// Route-gated by the router redirect guard via `_adminOnlyRoutes`
 /// (`app_router.dart`). Staff users hitting `/customers/duplicates` are
@@ -26,9 +57,22 @@ class DuplicateFinderScreen extends ConsumerStatefulWidget {
 }
 
 class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
-  /// Group key currently in flight (DG-252 review Mn7 — in-flight guard
-  /// against double merge taps). `null` when no merge is running.
-  String? _mergingKey;
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    ref.read(duplicateFinderSearchProvider.notifier).set(query);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    ref.read(duplicateFinderSearchProvider.notifier).clear();
+  }
 
   Future<void> _onMerge(
     DuplicateGroup group,
@@ -42,13 +86,20 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
               DuplicateMergeDialog(keep: keep, mergeFrom: mergeFrom),
         );
     if (choice == null) return;
-    setState(() => _mergingKey = group.key);
+    ref
+        .read(duplicateFinderScreenProvider.notifier)
+        .setMergingKey(group.key);
     try {
       await ref.read(customerServiceProvider).mergeCustomers(
             targetId: choice.keep.id,
             sourceId: choice.mergeFrom.id,
           );
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): merge mutates customer records, so
+      // invalidate the session cache for the customer entity type.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       await ref.read(duplicateGroupsProvider.notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, CustomersLabels.duplicateFinderMergeSuccess);
@@ -60,7 +111,57 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _mergingKey = null);
+        ref
+            .read(duplicateFinderScreenProvider.notifier)
+            .setMergingKey(null);
+      }
+    }
+  }
+
+  Future<void> _onBatchMerge(
+    DuplicateGroup group,
+    DuplicateCustomerEntry primary,
+    List<DuplicateCustomerEntry> sources,
+  ) async {
+    final choice = await showDialog<BatchMergeChoice>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => DuplicateBatchMergeDialog(
+            primary: primary,
+            sources: sources,
+          ),
+        );
+    if (choice == null) return;
+    ref
+        .read(duplicateFinderScreenProvider.notifier)
+        .setMergingKey(group.key);
+    try {
+      await ref.read(customerServiceProvider).batchMergeCustomers(
+            targetId: choice.primary.id,
+            sourceCustomerIds: choice.sources.map((s) => s.id).toList(),
+          );
+      ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): batch merge mutates customer records,
+      // invalidate the session cache for the customer entity type.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
+      await ref.read(duplicateGroupsProvider.notifier).refresh();
+      if (mounted) {
+        showTopSnackBar(
+            context, CustomersLabels.duplicateFinderBatchMergeSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(
+            context, CustomersLabels.duplicateFinderBatchMergeFailed);
+        debugPrint('duplicate_finder batch merge failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        ref
+            .read(duplicateFinderScreenProvider.notifier)
+            .setMergingKey(null);
       }
     }
   }
@@ -68,6 +169,8 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(duplicateGroupsProvider);
+    final search = ref.watch(duplicateFinderSearchProvider);
+    final mergingKey = ref.watch(duplicateFinderScreenProvider).mergingKey;
     return Scaffold(
       appBar: AppBar(
         title: const Text(CustomersLabels.duplicateFinderTitle),
@@ -80,60 +183,103 @@ class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
           ),
         ],
       ),
-      body: async.when(
-        loading: () => const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 12),
-              Text(CustomersLabels.duplicateFinderLoadingGroups),
-            ],
-          ),
-        ),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text(VN.apiError),
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: () =>
-                    ref.read(duplicateGroupsProvider.notifier).refresh(),
-                icon: const Icon(Icons.refresh),
-                label: const Text(CustomersLabels.duplicateFinderRetry),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: CustomersLabels.duplicateFinderSearchHint,
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: search.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearch,
+                        tooltip: OrdersLabels.clear,
+                      ),
+                border: const OutlineInputBorder(),
               ),
-            ],
+            ),
           ),
-        ),
-        data: (groups) {
-          if (groups.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle_outline, size: 48, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text(CustomersLabels.duplicateFinderEmpty),
-                ],
+          Expanded(
+            child: async.when(
+              loading: () => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(CustomersLabels.duplicateFinderLoadingGroups),
+                  ],
+                ),
               ),
-            );
-          }
-          return ListView.builder(
-            itemCount: groups.length,
-            itemBuilder: (context, index) {
-              final group = groups[index];
-              return DuplicateGroupTile(
-                group: group,
-                merging: _mergingKey == group.key,
-                onMerge: (keep, mergeFrom) =>
-                    _onMerge(group, keep, mergeFrom),
-              );
-            },
-          );
-        },
+              error: (e, _) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text(SharedLabels.apiError),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () =>
+                          ref.read(duplicateGroupsProvider.notifier).refresh(),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(CustomersLabels.duplicateFinderRetry),
+                    ),
+                  ],
+                ),
+              ),
+              data: (groups) {
+                if (groups.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle_outline,
+                            size: 48, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text(CustomersLabels.duplicateFinderEmpty),
+                      ],
+                    ),
+                  );
+                }
+                final filtered = search.isEmpty
+                    ? groups
+                    : groups.where((g) => _groupMatches(g, search)).toList();
+                if (filtered.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text(CustomersLabels.duplicateFinderSearchNoResults),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final group = filtered[index];
+                    return DuplicateGroupTile(
+                      group: group,
+                      merging: mergingKey == group.key,
+                      onMerge: (keep, mergeFrom) =>
+                          _onMerge(group, keep, mergeFrom),
+                      onBatchMerge: (primary, sources) =>
+                          _onBatchMerge(group, primary, sources),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

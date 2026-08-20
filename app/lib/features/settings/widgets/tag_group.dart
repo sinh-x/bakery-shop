@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/labels/shared.dart';
 import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import 'tag_row.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
 class TagGroup extends StatelessWidget {
   const TagGroup({required this.category, required this.tags, super.key});
 
@@ -46,7 +45,7 @@ class TagGroup extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              VN.noTagsInCategory,
+              ProductsLabels.noTagsInCategory,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey,
                   ),

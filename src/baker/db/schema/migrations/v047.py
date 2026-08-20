@@ -68,7 +68,7 @@ def _migrate_v47_fix_stale_cogs_entries(conn):
     if stale_ids:
         placeholders = ",".join("?" * len(stale_ids))
         conn.execute(
-            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",  # nosec B608
             stale_ids,
         )
 

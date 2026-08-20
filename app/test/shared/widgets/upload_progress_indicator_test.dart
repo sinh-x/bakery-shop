@@ -1,5 +1,5 @@
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,22 +34,22 @@ void main() {
         UploadProgressIndicator(states: states),
       ));
 
-      expect(find.byIcon(Icons.radio_button_unchecked), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
       expect(find.byIcon(Icons.error), findsOneWidget);
 
       // Per-photo status lines present.
       expect(
-        find.text(VN.photoUploadStatus(1, VN.photoUploadStatusLabels['pending']!)),
+        find.text(SharedLabels.photoUploadStatus(1, SharedLabels.photoUploadStatusLabels['pending']!)),
         findsOneWidget,
       );
       expect(
-        find.text(VN.photoUploadStatus(3, VN.photoUploadStatusLabels['success']!)),
+        find.text(SharedLabels.photoUploadStatus(3, SharedLabels.photoUploadStatusLabels['success']!)),
         findsOneWidget,
       );
       expect(
-        find.text(VN.photoUploadFailed(4, 'boom')),
+        find.text(SharedLabels.photoUploadFailed(4, 'boom')),
         findsOneWidget,
       );
     });
@@ -65,7 +65,7 @@ void main() {
         UploadProgressIndicator(states: states),
       ));
 
-      expect(find.text(VN.uploadedPhotosCount(1, 3)), findsOneWidget);
+      expect(find.text(SharedLabels.uploadedPhotosCount(1, 3)), findsOneWidget);
     });
 
     testWidgets('shows error count summary while uploading when any failed',
@@ -81,7 +81,7 @@ void main() {
       ));
 
       expect(
-        find.text(VN.uploadedPhotosCountWithErrors(1, 1, 3)),
+        find.text(SharedLabels.uploadedPhotosCountWithErrors(1, 1, 3)),
         findsOneWidget,
       );
     });
@@ -96,7 +96,7 @@ void main() {
         UploadProgressIndicator(states: states),
       ));
 
-      expect(find.text(VN.photoUploadComplete(2)), findsOneWidget);
+      expect(find.text(SharedLabels.photoUploadComplete(2)), findsOneWidget);
     });
 
     testWidgets('shows terminal error summary when batch finished with errors',
@@ -111,7 +111,7 @@ void main() {
       ));
 
       expect(
-        find.text(VN.photoUploadCompleteWithErrors(1, 1, 2)),
+        find.text(SharedLabels.photoUploadCompleteWithErrors(1, 1, 2)),
         findsOneWidget,
       );
     });
@@ -130,7 +130,7 @@ void main() {
       final rows = tester.widgetList<Row>(find.byType(Row));
       expect(rows, isNotEmpty);
       // The summary text is present in the compact row.
-      expect(find.text(VN.uploadedPhotosCount(1, 2)), findsOneWidget);
+      expect(find.text(SharedLabels.uploadedPhotosCount(1, 2)), findsOneWidget);
       // No per-photo error/pending icons in compact mode.
       expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
       expect(find.byIcon(Icons.error), findsNothing);

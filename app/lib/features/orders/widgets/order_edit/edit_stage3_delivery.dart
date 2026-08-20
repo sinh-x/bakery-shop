@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../data/models/address.dart';
 import '../../../../data/models/order_draft.dart';
 import '../../../../shared/utils/date_formatting.dart';
 import '../../../../shared/utils/order_helpers.dart';
+import '../address_autocomplete_field.dart';
 import '../hour_picker.dart';
 import '../order_delivery_section.dart';
 import '../order_wizard.dart';
 import '../stage_summary_card.dart';
 import 'staff_assignment_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Stage 3 of the order edit wizard — delivery.
 ///
 /// Uses the canonical shared `OrderDeliverySection` (DG-216 Phase 3).
@@ -42,6 +44,13 @@ class EditStage3Delivery extends ConsumerWidget {
     // DG-304 Phase 5: staff assignment dropdown state (FR8/AC5/AC6).
     this.assignedStaffId,
     this.onAssignedStaffChanged,
+    // DG-385 Phase 4 / FR2 / AC2: auto-bind `googleMapsUrl` callback. Called
+    // when the user picks an address from the autocomplete dropdown; the
+    // edit screen binds the suggestion's map link to the order. The
+    // selected customer id drives customer-prioritized suggestions
+    // (FR5/AC5).
+    this.customerId,
+    this.onAddressSelected,
   });
 
   final String deliveryType;
@@ -71,6 +80,17 @@ class EditStage3Delivery extends ConsumerWidget {
   final String? assignedStaffId;
   final ValueChanged<String?>? onAssignedStaffChanged;
 
+  // DG-385 Phase 4 / FR5 / AC5: the selected customer id, used to
+  // prioritize that customer's previously used addresses in the
+  // autocomplete suggestions. Null when no customer is selected.
+  final int? customerId;
+
+  /// DG-385 Phase 4 / FR2 / AC2: auto-bind callback. Called when the user
+  /// picks an address from the autocomplete dropdown. The edit screen binds
+  /// the suggestion's `googleMapsUrl` to the order and may clear stale GPS
+  /// coordinates.
+  final ValueChanged<AddressSuggestion>? onAddressSelected;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showStaffAssignment =
@@ -93,6 +113,18 @@ class EditStage3Delivery extends ConsumerWidget {
                   notesCtrl: notesCtrl,
                   shippingBusDefault: shippingBusDefault,
                   shippingDoorDefault: shippingDoorDefault,
+                  // DG-385 Phase 4 / FR1/FR2/FR5/FR9/AC7: autocomplete address
+                  // field with library suggestions, customer-prioritized
+                  // ordering, and auto-bind of `googleMapsUrl` on selection.
+                  // Edit-flow parity with order creation (FR9/AC7).
+                  addressField: AddressAutocompleteField(
+                    controller: addressCtrl,
+                    customerId: customerId,
+                    onSelected: onAddressSelected,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? SharedLabels.fieldRequired
+                        : null,
+                  ),
                   onDeliveryTypeChanged: (type) {
                     // FR7: prefill delivery phone from customer phone for bus/door
                     // when the delivery phone is empty; never overwrite a
@@ -152,7 +184,7 @@ class EditStage3Delivery extends ConsumerWidget {
                 onPressed: onPickDate,
                 icon: const Icon(Icons.calendar_today, size: 18),
                 label: Text(
-                  dueDate != null ? formatDisplayDate(dueDate) : VN.dueDate,
+                  dueDate != null ? formatDisplayDate(dueDate) : OrdersLabels.dueDate,
                 ),
                 style: OutlinedButton.styleFrom(
                   alignment: Alignment.centerLeft,
@@ -165,7 +197,7 @@ class EditStage3Delivery extends ConsumerWidget {
                 onPressed: onPickTime,
                 icon: const Icon(Icons.schedule, size: 18),
                 label: Text(
-                  dueTime != null ? _formatTime(dueTime!) : VN.dueTime,
+                  dueTime != null ? _formatTime(dueTime!) : OrdersLabels.dueTime,
                 ),
                 style: OutlinedButton.styleFrom(
                   alignment: Alignment.centerLeft,

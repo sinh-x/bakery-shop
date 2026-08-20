@@ -1,8 +1,11 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar;
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
-import 'package:bakery_app/providers/events_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/features/expenses/providers/debt_settlement_notifier.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,14 +59,6 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
-  String _paymentMethod = VN.methodCash;
-  String _paymentSource = VN.paymentSourceDrawerCash;
-  bool _loading = false;
-  bool _submitting = false;
-  String? _loadError;
-  BakeryEvent? _event;
-  int _totalDebt = 0;
-  int _settledSoFar = 0;
 
   @override
   void initState() {
@@ -80,10 +75,8 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
 
   Future<void> _loadDebt() async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
+    final notifier = ref.read(debtSettlementProvider.notifier);
+    notifier.startLoading();
     try {
       final loader = widget.loadEvent;
       final event = loader != null
@@ -103,26 +96,19 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
         },
       );
       if (!mounted) return;
-      setState(() {
-        _event = event;
-        _totalDebt = total;
-        _settledSoFar = settled;
-        _loading = false;
-      });
+      notifier.setLoadedEvent(
+        event: event,
+        totalDebt: total,
+        settledSoFar: settled,
+      );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _loadError = e is DioException
-            ? (e.message ?? VN.debtSettlementFailure)
-            : VN.debtSettlementFailure;
-        _loading = false;
-      });
+      notifier.setLoadError(
+        e is DioException
+            ? (e.message ?? ExpensesLabels.debtSettlementFailure)
+            : ExpensesLabels.debtSettlementFailure,
+      );
     }
-  }
-
-  int get _remaining {
-    final r = _totalDebt - _settledSoFar;
-    return r < 0 ? 0 : r;
   }
 
   Future<void> _submit() async {
@@ -130,7 +116,9 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
     final amount = int.tryParse(_amountCtrl.text.trim());
     if (amount == null || amount <= 0) return;
     if (!mounted) return;
-    setState(() => _submitting = true);
+    final notifier = ref.read(debtSettlementProvider.notifier);
+    final state = ref.read(debtSettlementProvider);
+    notifier.setSubmitting(true);
     try {
       final settledBy = ref.read(loggedByProvider);
       final submit = widget.submitSettlement;
@@ -138,8 +126,8 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
         await submit(
           eventId: widget.eventId,
           amount: amount,
-          paymentMethod: _paymentMethod,
-          paymentSource: _paymentSource,
+          paymentMethod: state.paymentMethod,
+          paymentSource: state.paymentSource,
           note: _noteCtrl.text.trim(),
           settledBy: settledBy,
         );
@@ -147,47 +135,53 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
         await ref.read(eventServiceProvider).settleDebt(
               eventId: widget.eventId,
               amount: amount,
-              paymentMethod: _paymentMethod,
-              paymentSource: _paymentSource,
+              paymentMethod: state.paymentMethod,
+              paymentSource: state.paymentSource,
               note: _noteCtrl.text.trim(),
               settledBy: settledBy,
             );
       }
       if (!mounted) return;
-      showTopSnackBar(context, VN.debtSettlementSuccess);
+      showTopSnackBar(context, ExpensesLabels.debtSettlementSuccess);
       context.pop(true);
     } catch (e) {
       if (!mounted) return;
       showTopSnackBar(
         context,
         e is DioException
-            ? (e.message ?? VN.debtSettlementFailure)
-            : VN.debtSettlementFailure,
+            ? (e.message ?? ExpensesLabels.debtSettlementFailure)
+            : ExpensesLabels.debtSettlementFailure,
       );
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) notifier.setSubmitting(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(debtSettlementProvider);
+    final notifier = ref.read(debtSettlementProvider.notifier);
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.debtSettlementTitle)),
-      body: _loading
+      appBar: AppBar(title: const Text(ExpensesLabels.debtSettlementTitle)),
+      body: state.loading
           ? const Center(child: CircularProgressIndicator())
-          : _loadError != null
+          : state.loadError != null
               ? Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(_loadError!),
+                  child: Text(state.loadError!),
                 )
-              : _buildForm(theme),
+              : _buildForm(theme, state, notifier),
     );
   }
 
-  Widget _buildForm(ThemeData theme) {
-    final remaining = _remaining;
-    final creditor = '${_event?.data['vendor'] ?? ''}';
+  Widget _buildForm(
+    ThemeData theme,
+    DebtSettlementState state,
+    DebtSettlementNotifier notifier,
+  ) {
+    final remaining = state.remaining;
+    final creditor = '${state.event?.data['vendor'] ?? ''}';
     return Form(
       key: _formKey,
       child: ListView(
@@ -200,12 +194,12 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(VN.debtSettlementSummary, style: theme.textTheme.titleMedium),
+                  Text(ExpensesLabels.debtSettlementSummary, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 6),
-                  Text('${VN.debtSettlementCreditor}: $creditor'),
-                  Text('${VN.debtSettlementTotalDebt}: ${formatVND(_totalDebt.toDouble())}'),
-                  Text('${VN.debtSettlementSettledSoFar}: ${formatVND(_settledSoFar.toDouble())}'),
-                  Text('${VN.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementCreditor}: $creditor'),
+                  Text('${ExpensesLabels.debtSettlementTotalDebt}: ${formatVND(state.totalDebt.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementSettledSoFar}: ${formatVND(state.settledSoFar.toDouble())}'),
+                  Text('${ExpensesLabels.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}'),
                 ],
               ),
             ),
@@ -215,45 +209,45 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             controller: _amountCtrl,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementAmountLabel,
-              hintText: VN.debtSettlementAmountHint,
+              labelText: ExpensesLabels.debtSettlementAmountLabel,
+              hintText: ExpensesLabels.debtSettlementAmountHint,
               border: OutlineInputBorder(),
             ),
             validator: (value) {
               final raw = value?.trim() ?? '';
-              if (raw.isEmpty) return VN.debtSettlementAmountRequired;
+              if (raw.isEmpty) return ExpensesLabels.debtSettlementAmountRequired;
               final parsed = int.tryParse(raw);
               if (parsed == null || parsed <= 0) {
-                return VN.debtSettlementAmountInvalid;
+                return ExpensesLabels.debtSettlementAmountInvalid;
               }
               if (parsed > remaining) {
-                return VN.debtSettlementAmountExceedsRemaining;
+                return ExpensesLabels.debtSettlementAmountExceedsRemaining;
               }
               return null;
             },
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: _paymentMethod,
+            initialValue: state.paymentMethod,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementPaymentMethodLabel,
+              labelText: ExpensesLabels.debtSettlementPaymentMethodLabel,
               border: OutlineInputBorder(),
             ),
             items: const [
-              DropdownMenuItem(value: VN.methodCash, child: Text(VN.methodCash)),
+              DropdownMenuItem(value: OrdersLabels.methodCash, child: Text(OrdersLabels.methodCash)),
               DropdownMenuItem(
-                value: VN.methodTransfer,
-                child: Text(VN.methodTransfer),
+                value: OrdersLabels.methodTransfer,
+                child: Text(OrdersLabels.methodTransfer),
               ),
             ],
             onChanged: (value) =>
-                setState(() => _paymentMethod = value ?? VN.methodCash),
+                notifier.setPaymentMethod(value ?? OrdersLabels.methodCash),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: _paymentSource,
+            initialValue: state.paymentSource,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementPaymentSourceLabel,
+              labelText: ExpensesLabels.debtSettlementPaymentSourceLabel,
               border: OutlineInputBorder(),
             ),
             items: [
@@ -262,31 +256,31 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             ],
             validator: (value) =>
                 (value == null || value.isEmpty)
-                    ? VN.debtSettlementPaymentSourceRequired
+                    ? ExpensesLabels.debtSettlementPaymentSourceRequired
                     : null,
-            onChanged: (value) =>
-                setState(() => _paymentSource = value ?? VN.paymentSourceDrawerCash),
+            onChanged: (value) => notifier.setPaymentSource(
+                value ?? ExpensesLabels.paymentSourceDrawerCash),
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _noteCtrl,
             maxLines: 2,
             decoration: const InputDecoration(
-              labelText: VN.debtSettlementNoteLabel,
-              hintText: VN.debtSettlementNoteHint,
+              labelText: ExpensesLabels.debtSettlementNoteLabel,
+              hintText: ExpensesLabels.debtSettlementNoteHint,
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _submitting ? null : _submit,
-            child: _submitting
+            onPressed: state.submitting ? null : _submit,
+            child: state.submitting
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.debtSettlementSaveAction),
+                : const Text(ExpensesLabels.debtSettlementSaveAction),
           ),
         ],
       ),

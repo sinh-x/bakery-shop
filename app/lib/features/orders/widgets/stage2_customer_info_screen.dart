@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/customer.dart';
-import '../../../providers/config_provider.dart';
+import '../../../data/providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import 'order_customer_section.dart';
@@ -10,13 +10,13 @@ import 'section_header.dart';
 import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
   const Stage2CustomerInfoScreen({
     super.key,
     required this.onBack,
     required this.onContinue,
     this.posMode = false,
+    this.onFastPath,
     required this.orderStateProvider,
   });
 
@@ -24,6 +24,11 @@ class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
   final VoidCallback onContinue;
   final bool posMode;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-3): optional POS-only "Giao ngay & Thanh toán"
+  /// fast-path callback. When provided (POS checkout), a button is rendered
+  /// between "Quay lại" and "Tiếp tục". Null in the normal order flow.
+  final VoidCallback? onFastPath;
 
   @override
   ConsumerState<Stage2CustomerInfoScreen> createState() =>
@@ -102,7 +107,7 @@ class _Stage2CustomerInfoScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SectionHeader(VN.customer),
+                  const SectionHeader(OrdersLabels.customer),
                   OrderCustomerSection(
                     selectedCustomer: state.wizardData.selectedCustomer,
                     customerTouched: _customerTouched,
@@ -116,7 +121,7 @@ class _Stage2CustomerInfoScreenState
                   ),
                   if (!widget.posMode) ...[
                     const SizedBox(height: 20),
-                    const SectionHeader(VN.orderSource),
+                    const SectionHeader(OrdersLabels.orderSource),
                     const SizedBox(height: 8),
                     _buildSourceSelector(state, sourcesAsync),
                   ],
@@ -205,6 +210,16 @@ class _Stage2CustomerInfoScreenState
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          // DG-370 Phase 5.6-c1 (UX-3): "Giao ngay & Thanh toán" fast-path
+          // button between "Quay lại" and "Tiếp tục" — POS-only.
+          if (widget.onFastPath != null) ...[
+            FilledButton.icon(
+              onPressed: widget.onFastPath,
+              icon: const Icon(Icons.bolt, size: 18),
+              label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: () {
               _syncToState();

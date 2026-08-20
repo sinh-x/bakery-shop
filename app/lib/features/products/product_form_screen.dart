@@ -1,5 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
-import 'dart:typed_data';
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -9,21 +9,22 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/product_service.dart';
-import '../../data/models/catalog_photo.dart';
 import '../../data/models/enum_attribute.dart';
 import '../../data/models/price_chip.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
-import '../../providers/catalog_provider.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/photo_upload_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import '../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-import 'widgets/catalog_photo_viewer.dart';
-import 'widgets/catalog_tag_chips.dart';
-import 'widgets/catalog_tag_edit_sheet.dart';
+import 'providers/product_form_notifier.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'widgets/catalog_gallery_section.dart';
+import 'widgets/enum_attribute_form_section.dart';
+import 'widgets/enum_option_form_row.dart';
+import 'widgets/photo_section.dart';
+import 'widgets/price_chip_form_row.dart';
+import 'widgets/price_chip_validation_errors.dart';
 import 'product_form/widgets/product_form_attributes_section.dart';
 import 'product_form/widgets/product_form_basic_info_section.dart';
 import 'product_form/widgets/product_form_catalog_integration_section.dart';
@@ -53,14 +54,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
   late final List<PriceChip> _originalPriceChips;
-  late final List<_PriceChipFormRow> _priceChipRows;
-  late final List<_EnumAttributeFormSection> _enumSections;
-  late String _category;
-  late bool _rutTien;
-  late bool _trungBay;
-  late bool _tangKem;
-  XFile? _pickedPhoto;
-  bool _saving = false;
+  late final List<PriceChipFormRow> _priceChipRows;
+  late final List<EnumAttributeFormSection> _enumSections;
 
   bool get _isEditing => widget.product != null;
 
@@ -90,7 +85,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     _priceChipRows = _originalPriceChips
         .map(
-          (chip) => _PriceChipFormRow(
+          (chip) => PriceChipFormRow(
             id: chip.id,
             label: chip.label,
             price: chip.price.toInt().toString(),
@@ -98,14 +93,28 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         )
         .toList();
     _enumSections = (p?.enumAttributes ?? const <EnumAttribute>[])
-        .map(_EnumAttributeFormSection.fromAttribute)
+        .map(EnumAttributeFormSection.fromAttribute)
         .toList();
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
-    _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
-    _rutTien = p?.attributes['rut_tien']?.toString() == 'true';
-    _trungBay = p?.attributes['trung_bay']?.toString() == 'true';
-    _tangKem = p?.attributes['tang_kem']?.toString() == 'true';
+    // Seed the notifier with the initial form values derived from the
+    // product (or defaults for new products). All subsequent mutations
+    // go through the notifier; no setState is required.
+    final initialCategory = widget.initialCategory ?? p?.category ?? 'banh_kem';
+    final initialRutTien = p?.attributes['rut_tien']?.toString() == 'true';
+    final initialTrungBay = p?.attributes['trung_bay']?.toString() == 'true';
+    final initialTangKem = p?.attributes['tang_kem']?.toString() == 'true';
+    // Defer provider mutation to a microtask because Riverpod disallows
+    // provider mutation during widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(productFormProvider.notifier).seed(
+            initialCategory: initialCategory,
+            rutTien: initialRutTien,
+            trungBay: initialTrungBay,
+            tangKem: initialTangKem,
+          );
+    });
   }
 
   @override
@@ -126,9 +135,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _addPriceChip() {
     if (_priceChipRows.length >= _maxPriceChips) return;
-    setState(() {
-      _priceChipRows.add(_PriceChipFormRow());
-    });
+    _priceChipRows.add(PriceChipFormRow());
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   Future<void> _removePriceChip(int index) async {
@@ -144,11 +152,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(VN.cancel),
+              child: const Text(SharedLabels.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(VN.remove),
+              child: const Text(SharedLabels.remove),
             ),
           ],
         ),
@@ -156,18 +164,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (confirm != true) return;
     }
 
-    setState(() {
-      row.dispose();
-      _priceChipRows.removeAt(index);
-    });
+    row.dispose();
+    _priceChipRows.removeAt(index);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _reorderPriceChips(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex -= 1;
-    setState(() {
-      final row = _priceChipRows.removeAt(oldIndex);
-      _priceChipRows.insert(newIndex, row);
-    });
+    final row = _priceChipRows.removeAt(oldIndex);
+    _priceChipRows.insert(newIndex, row);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   double? _parseChipPrice(String text) {
@@ -176,8 +182,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return double.tryParse(value);
   }
 
-  Map<int, _PriceChipValidationErrors> _validatePriceChipRows() {
-    final errors = <int, _PriceChipValidationErrors>{};
+  Map<int, PriceChipValidationErrors> _validatePriceChipRows() {
+    final errors = <int, PriceChipValidationErrors>{};
 
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
@@ -185,10 +191,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final priceText = row.priceController.text.trim();
       final parsedPrice = _parseChipPrice(priceText);
 
-      final rowErrors = _PriceChipValidationErrors(
-        labelError: label.isEmpty ? VN.priceChipLabelRequired : null,
+      final rowErrors = PriceChipValidationErrors(
+        labelError: label.isEmpty ? ProductsLabels.priceChipLabelRequired : null,
         priceError: parsedPrice == null || parsedPrice < 0
-            ? VN.priceChipPriceInvalid
+            ? ProductsLabels.priceChipPriceInvalid
             : null,
       );
 
@@ -198,15 +204,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
 
     final changed = _applyPriceChipRowErrors(errors);
-    if (changed) setState(() {});
+    if (changed) ref.read(productFormProvider.notifier).rebuild();
     return errors;
   }
 
-  bool _applyPriceChipRowErrors(Map<int, _PriceChipValidationErrors> errors) {
+  bool _applyPriceChipRowErrors(Map<int, PriceChipValidationErrors> errors) {
     var changed = false;
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
-      final rowErrors = errors[index] ?? const _PriceChipValidationErrors();
+      final rowErrors = errors[index] ?? const PriceChipValidationErrors();
       changed = row.clearErrors() || changed;
       changed =
           row.updateErrors(
@@ -317,12 +323,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+          Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _addPriceChip,
             icon: const Icon(Icons.add),
-            label: const Text(VN.addPriceChip),
+            label: const Text(ProductsLabels.addPriceChip),
           ),
           const SizedBox(height: 16),
         ],
@@ -332,7 +338,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+        Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         ReorderableListView.builder(
           physics: const NeverScrollableScrollPhysics(),
@@ -352,17 +358,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: TextFormField(
                       controller: row.labelController,
                       decoration: InputDecoration(
-                        labelText: VN.priceChipLabel,
+                        labelText: ProductsLabels.priceChipLabel,
                         errorText: row.labelError,
                       ),
                       onChanged: (_) {
                         if (row.labelError != null) {
-                          setState(() {
-                            row.updateErrors(
-                              labelError: null,
-                              priceError: row.priceError,
-                            );
-                          });
+                          row.updateErrors(
+                            labelError: null,
+                            priceError: row.priceError,
+                          );
+                          ref.read(productFormProvider.notifier).rebuild();
                         }
                       },
                     ),
@@ -372,25 +377,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: TextFormField(
                       controller: row.priceController,
                       decoration: InputDecoration(
-                        labelText: VN.priceChipPrice,
-                        suffixText: VN.currency,
+                        labelText: ProductsLabels.priceChipPrice,
+                        suffixText: SharedLabels.currency,
                         errorText: row.priceError,
                       ),
                       keyboardType: TextInputType.number,
                       onChanged: (_) {
                         if (row.priceError != null) {
-                          setState(() {
-                            row.updateErrors(
-                              labelError: row.labelError,
-                              priceError: null,
-                            );
-                          });
+                          row.updateErrors(
+                            labelError: row.labelError,
+                            priceError: null,
+                          );
+                          ref.read(productFormProvider.notifier).rebuild();
                         }
                       },
                     ),
                   ),
                   IconButton(
-                    tooltip: VN.remove,
+                    tooltip: SharedLabels.remove,
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () => _removePriceChip(index),
                   ),
@@ -415,7 +419,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               ? null
               : _addPriceChip,
           icon: const Icon(Icons.add),
-          label: const Text(VN.addPriceChip),
+          label: const Text(ProductsLabels.addPriceChip),
         ),
         const SizedBox(height: 16),
       ],
@@ -424,45 +428,41 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   // ----- Enum attribute options editor (DG-092 Phase 4.5) -----
 
-  void _addEnumOption(_EnumAttributeFormSection section) {
-    setState(() {
-      section.rows.add(_EnumOptionFormRow(sortOrder: section.rows.length));
-    });
+  void _addEnumOption(EnumAttributeFormSection section) {
+    section.rows.add(EnumOptionFormRow(sortOrder: section.rows.length));
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
-  void _toggleRemoveEnumOption(_EnumAttributeFormSection section, int index) {
+  void _toggleRemoveEnumOption(EnumAttributeFormSection section, int index) {
     final row = section.rows[index];
-    setState(() {
-      if (row.id == null) {
-        row.dispose();
-        section.rows.removeAt(index);
-      } else {
-        row.removed = !row.removed;
-        if (row.removed && row.isDefault) {
-          row.isDefault = false;
-        }
+    if (row.id == null) {
+      row.dispose();
+      section.rows.removeAt(index);
+    } else {
+      row.removed = !row.removed;
+      if (row.removed && row.isDefault) {
+        row.isDefault = false;
       }
-    });
+    }
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
-  void _setEnumDefault(_EnumAttributeFormSection section, int index) {
-    setState(() {
-      for (var i = 0; i < section.rows.length; i++) {
-        section.rows[i].isDefault = i == index;
-      }
-    });
+  void _setEnumDefault(EnumAttributeFormSection section, int index) {
+    for (var i = 0; i < section.rows.length; i++) {
+      section.rows[i].isDefault = i == index;
+    }
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   void _reorderEnumOptions(
-    _EnumAttributeFormSection section,
+    EnumAttributeFormSection section,
     int oldIndex,
     int newIndex,
   ) {
     if (newIndex > oldIndex) newIndex -= 1;
-    setState(() {
-      final row = section.rows.removeAt(oldIndex);
-      section.rows.insert(newIndex, row);
-    });
+    final row = section.rows.removeAt(oldIndex);
+    section.rows.insert(newIndex, row);
+    ref.read(productFormProvider.notifier).rebuild();
   }
 
   /// Returns true if all enum sections validate (every section with at least
@@ -477,7 +477,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       var liveRowCount = 0;
       for (final row in section.rows) {
         final newError = !row.removed && row.valueController.text.trim().isEmpty
-            ? VN.enumOptionValueRequired
+            ? ProductsLabels.enumOptionValueRequired
             : null;
         sectionChanged = row.setValueError(newError) || sectionChanged;
         if (row.valueError != null) ok = false;
@@ -488,12 +488,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
       if (liveRowCount > 0 && defaultCount != 1) {
         sectionChanged =
-            section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
+            section.setError(ProductsLabels.enumOptionDefaultRequired) || sectionChanged;
         ok = false;
       }
       changed = changed || sectionChanged;
     }
-    if (changed) setState(() {});
+    if (changed) ref.read(productFormProvider.notifier).rebuild();
     return ok;
   }
 
@@ -571,12 +571,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          VN.enumOptionsSection,
+          ProductsLabels.enumOptionsSection,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(
-          VN.enumOptionsHintAttributeWide,
+          ProductsLabels.enumOptionsHintAttributeWide,
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -585,7 +585,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
   }
 
-  Widget _buildEnumSection(_EnumAttributeFormSection section) {
+  Widget _buildEnumSection(EnumAttributeFormSection section) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -622,7 +622,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      tooltip: VN.enumOptionDefaultLabel,
+                      tooltip: ProductsLabels.enumOptionDefaultLabel,
                       icon: Icon(
                         row.isDefault
                             ? Icons.radio_button_checked
@@ -640,19 +640,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         controller: row.valueController,
                         enabled: !row.removed,
                         decoration: InputDecoration(
-                          labelText: VN.enumOptionValueLabel,
+                          labelText: ProductsLabels.enumOptionValueLabel,
                           errorText: row.valueError,
-                          helperText: row.removed ? VN.enumOptionRemoved : null,
+                          helperText: row.removed ? ProductsLabels.enumOptionRemoved : null,
                         ),
                         onChanged: (_) {
                           if (row.valueError != null) {
-                            setState(() => row.setValueError(null));
+                            row.setValueError(null);
+                            ref.read(productFormProvider.notifier).rebuild();
                           }
                         },
                       ),
                     ),
                     IconButton(
-                      tooltip: row.removed ? VN.enumOptionRestore : VN.remove,
+                      tooltip: row.removed ? ProductsLabels.enumOptionRestore : SharedLabels.remove,
                       icon: Icon(
                         row.removed ? Icons.restore : Icons.delete_outline,
                       ),
@@ -679,7 +680,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           child: OutlinedButton.icon(
             onPressed: () => _addEnumOption(section),
             icon: const Icon(Icons.add),
-            label: const Text(VN.addEnumOption),
+            label: const Text(ProductsLabels.addEnumOption),
           ),
         ),
         const SizedBox(height: 8),
@@ -696,12 +697,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt),
-              title: const Text(VN.takePhoto),
+              title: const Text(ProductsLabels.takePhoto),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text(VN.fromGallery),
+              title: const Text(ProductsLabels.fromGallery),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
           ],
@@ -713,7 +714,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source);
     if (file != null) {
-      setState(() => _pickedPhoto = file);
+      ref.read(productFormProvider.notifier).setPickedPhoto(file);
     }
   }
 
@@ -721,7 +722,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_validatePriceChipRows().isNotEmpty) return;
     if (!_validateEnumOptions()) return;
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    final formState = ref.read(productFormProvider);
+    formNotifier.setSaving(true);
 
     try {
       final notifier = ref.read(productsProvider.notifier);
@@ -736,7 +739,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final prefix =
           cats
               ?.firstWhere(
-                (c) => c.slug == _category,
+                (c) => c.slug == formState.category,
                 orElse: () => const Category(
                   id: 0,
                   slug: '',
@@ -761,24 +764,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final hasEnumOptionChanges = _hasEnumOptionChanges();
         final hasChanges =
             newName != orig.name ||
-            _category != orig.category ||
+            formState.category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
-            _pickedPhoto != null ||
+            formState.pickedPhoto != null ||
             hasPriceChipChanges ||
             hasEnumOptionChanges ||
-            _rutTien != origRutTien ||
-            _trungBay != origTrungBay ||
-            _tangKem != origTangKem;
+            formState.rutTien != origRutTien ||
+            formState.trungBay != origTrungBay ||
+            formState.tangKem != origTangKem;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
         }
         final hasFieldChanges =
             newName != orig.name ||
-            _category != orig.category ||
+            formState.category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
@@ -787,7 +790,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           saved = await notifier.updateProduct(
             orig.id,
             name: newName != orig.name ? newName : null,
-            category: _category != orig.category ? _category : null,
+            category: formState.category != orig.category
+                ? formState.category
+                : null,
             basePrice: price != orig.basePrice ? price : null,
             cost: cost != orig.cost ? cost : null,
             recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
@@ -798,9 +803,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
 
         // Sync rut_tien attribute if changed
-        if (_rutTien != origRutTien) {
+        if (formState.rutTien != origRutTien) {
           final productSvc = ref.read(productServiceProvider);
-          if (_rutTien) {
+          if (formState.rutTien) {
             await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'rut_tien');
@@ -808,9 +813,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await notifier.refresh();
         }
         // Sync trung_bay attribute if changed
-        if (_trungBay != origTrungBay) {
+        if (formState.trungBay != origTrungBay) {
           final productSvc = ref.read(productServiceProvider);
-          if (_trungBay) {
+          if (formState.trungBay) {
             await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'trung_bay');
@@ -818,9 +823,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await notifier.refresh();
         }
         // Sync tang_kem attribute if changed
-        if (_tangKem != origTangKem) {
+        if (formState.tangKem != origTangKem) {
           final productSvc = ref.read(productServiceProvider);
-          if (_tangKem) {
+          if (formState.tangKem) {
             await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'tang_kem');
@@ -830,26 +835,26 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
-          category: _category,
+          category: formState.category,
           basePrice: price,
           cost: cost,
           recipeNotes: _notesCtrl.text.trim(),
           productCode: code.isNotEmpty ? code : null,
         );
         // Sync rut_tien attribute for new products
-        if (_rutTien) {
+        if (formState.rutTien) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           await notifier.refresh();
         }
         // Sync trung_bay attribute for new products
-        if (_trungBay) {
+        if (formState.trungBay) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           await notifier.refresh();
         }
         // Sync tang_kem attribute for new products
-        if (_tangKem) {
+        if (formState.tangKem) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
@@ -865,8 +870,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         await ref.read(productsProvider.notifier).refresh();
       }
 
-      if (_pickedPhoto != null) {
-        await notifier.uploadPhoto(saved.id, _pickedPhoto!);
+      if (formState.pickedPhoto != null) {
+        await notifier.uploadPhoto(saved.id, formState.pickedPhoto!);
       }
 
       ref.invalidate(phuKienProductsProvider);
@@ -874,7 +879,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (mounted) {
         showTopSnackBar(
           context,
-          _isEditing ? VN.productUpdated : VN.productCreated,
+          _isEditing ? ProductsLabels.productUpdated : ProductsLabels.productCreated,
         );
         context.pop();
       }
@@ -883,10 +888,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final detail = e.response?.data is Map
             ? e.response!.data['detail'] as String?
             : null;
-        showTopSnackBar(context, detail ?? e.message ?? VN.apiError);
+        showTopSnackBar(context, detail ?? e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -894,56 +899,58 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.deleteProduct),
-        content: const Text(VN.deleteConfirm),
+        title: const Text(ProductsLabels.deleteProduct),
+        content: const Text(ProductsLabels.deleteConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    formNotifier.setSaving(true);
     try {
       await ref
           .read(productsProvider.notifier)
           .deleteProduct(widget.product!.id);
       if (mounted) {
-        showTopSnackBar(context, VN.productDeleted);
+        showTopSnackBar(context, ProductsLabels.productDeleted);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
   Future<void> _reactivate() async {
-    setState(() => _saving = true);
+    final formNotifier = ref.read(productFormProvider.notifier);
+    formNotifier.setSaving(true);
     try {
       await ref
           .read(productsProvider.notifier)
           .reactivateProduct(widget.product!.id);
       if (mounted) {
-        showTopSnackBar(context, VN.productUpdated);
+        showTopSnackBar(context, ProductsLabels.productUpdated);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) formNotifier.setSaving(false);
     }
   }
 
@@ -952,12 +959,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
+    final formState = ref.watch(productFormProvider);
+    final formNotifier = ref.read(productFormProvider.notifier);
 
     // Compute the read-only prefix for the current category.
     final currentPrefix = categoriesAsync.maybeWhen(
       data: (cats) => cats
           .firstWhere(
-            (c) => c.slug == _category,
+            (c) => c.slug == formState.category,
             orElse: () => const Category(
               id: 0,
               slug: '',
@@ -972,19 +981,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? VN.editProduct : VN.createProduct),
+        title: Text(_isEditing ? ProductsLabels.editProduct : ProductsLabels.createProduct),
         actions: [
           if (_isEditing)
             IconButton(
               tooltip: widget.product!.active == 0
-                  ? VN.showProduct
-                  : VN.deleteProduct,
+                  ? ProductsLabels.showProduct
+                  : ProductsLabels.deleteProduct,
               icon: Icon(
                 widget.product!.active == 0
                     ? Icons.visibility_outlined
                     : Icons.delete_outline,
               ),
-              onPressed: _saving
+              onPressed: formState.saving
                   ? null
                   : widget.product!.active == 0
                   ? _reactivate
@@ -1000,7 +1009,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           children: [
             ProductFormBasicInfoSection(
               productId: widget.product?.id,
-              pickedPhoto: _pickedPhoto,
+              pickedPhoto: formState.pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
               cacheBuster: photoRefreshTick.toString(),
@@ -1008,11 +1017,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               codeController: _codeCtrl,
               currentPrefix: currentPrefix,
               categoriesAsync: categoriesAsync,
-              category: _category,
-              onCategoryChanged: (v) => setState(() => _category = v),
-              photoSection: _PhotoSection(
+              category: formState.category,
+              onCategoryChanged: formNotifier.setCategory,
+              photoSection: PhotoSection(
                 productId: widget.product?.id,
-                pickedPhoto: _pickedPhoto,
+                pickedPhoto: formState.pickedPhoto,
                 baseUrl: baseUrl,
                 onPickPhoto: _pickPhoto,
                 cacheBuster: photoRefreshTick.toString(),
@@ -1028,746 +1037,36 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ProductFormAttributesSection(
               enumOptionsSection: _buildEnumOptionsSection(),
               notesController: _notesCtrl,
-              rutTien: _rutTien,
-              trungBay: _trungBay,
-              tangKem: _tangKem,
+              rutTien: formState.rutTien,
+              trungBay: formState.trungBay,
+              tangKem: formState.tangKem,
               isEditing: _isEditing,
-              onRutTienChanged: (v) => setState(() => _rutTien = v),
-              onTrungBayChanged: (v) => setState(() => _trungBay = v),
-              onTangKemChanged: (v) => setState(() => _tangKem = v),
+              onRutTienChanged: formNotifier.setRutTien,
+              onTrungBayChanged: formNotifier.setTrungBay,
+              onTangKemChanged: formNotifier.setTangKem,
             ),
             const SizedBox(height: 16),
 
             // Save button
             FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
+              onPressed: formState.saving ? null : _save,
+              child: formState.saving
                   ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text(VN.save),
+                  : const Text(SharedLabels.save),
             ),
 
             ProductFormCatalogIntegrationSection(
               isEditing: _isEditing,
               catalogGallery: _isEditing
-                  ? _CatalogGallerySection(productId: widget.product!.id)
+                  ? CatalogGallerySection(productId: widget.product!.id)
                   : const SizedBox.shrink(),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PriceChipFormRow {
-  _PriceChipFormRow({this.id, String label = '', String price = ''})
-    : labelController = TextEditingController(text: label),
-      priceController = TextEditingController(text: price);
-
-  int? id;
-  final TextEditingController labelController;
-  final TextEditingController priceController;
-  String? _labelError;
-  String? _priceError;
-
-  String? get labelError => _labelError;
-  String? get priceError => _priceError;
-
-  bool clearErrors() {
-    if (_labelError == null && _priceError == null) {
-      return false;
-    }
-    _labelError = null;
-    _priceError = null;
-    return true;
-  }
-
-  bool updateErrors({String? labelError, String? priceError}) {
-    if (_labelError == labelError && _priceError == priceError) {
-      return false;
-    }
-    _labelError = labelError;
-    _priceError = priceError;
-    return true;
-  }
-
-  void dispose() {
-    labelController.dispose();
-    priceController.dispose();
-  }
-}
-
-class _PriceChipValidationErrors {
-  const _PriceChipValidationErrors({this.labelError, this.priceError});
-
-  final String? labelError;
-  final String? priceError;
-
-  bool get hasError => labelError != null || priceError != null;
-}
-
-/// Mutable per-row state for an enum attribute option in the product form.
-class _EnumOptionFormRow {
-  _EnumOptionFormRow({
-    this.id,
-    String valueVi = '',
-    this.sortOrder = 0,
-    this.active = 1,
-    this.isDefault = false,
-  }) : valueController = TextEditingController(text: valueVi);
-
-  int? id;
-  final TextEditingController valueController;
-  int sortOrder;
-  int active;
-  bool isDefault;
-  bool removed = false;
-  String? _valueError;
-
-  String? get valueError => _valueError;
-
-  bool setValueError(String? error) {
-    if (_valueError == error) return false;
-    _valueError = error;
-    return true;
-  }
-
-  void dispose() {
-    valueController.dispose();
-  }
-}
-
-/// Per-attribute editor state. Mirrors `_originalPriceChips` / `_priceChipRows`
-/// but for one enum attribute (e.g. `nhan_banh`).
-class _EnumAttributeFormSection {
-  _EnumAttributeFormSection({
-    required this.attribute,
-    required List<EnumOption> originalOptions,
-    required this.originalDefaultId,
-  }) : _originalOptions = List<EnumOption>.of(originalOptions),
-       rows = originalOptions
-           .map(
-             (opt) => _EnumOptionFormRow(
-               id: opt.id,
-               valueVi: opt.valueVi,
-               sortOrder: opt.sortOrder,
-               active: opt.active,
-               isDefault: opt.id == originalDefaultId,
-             ),
-           )
-           .toList();
-
-  factory _EnumAttributeFormSection.fromAttribute(EnumAttribute attribute) {
-    return _EnumAttributeFormSection(
-      attribute: attribute,
-      originalOptions: attribute.options,
-      originalDefaultId: attribute.defaultOptionId,
-    );
-  }
-
-  final EnumAttribute attribute;
-  final List<_EnumOptionFormRow> rows;
-  List<EnumOption> _originalOptions;
-  int? originalDefaultId;
-  String? _error;
-
-  String? get error => _error;
-
-  Map<int, EnumOption> get originalById => {
-    for (final opt in _originalOptions) opt.id: opt,
-  };
-
-  bool clearError() {
-    if (_error == null) return false;
-    _error = null;
-    return true;
-  }
-
-  bool setError(String? error) {
-    if (_error == error) return false;
-    _error = error;
-    return true;
-  }
-
-  bool hasChanges() {
-    final originalMap = originalById;
-    final liveRows = rows.where((r) => !r.removed).toList();
-
-    if (rows.any((r) => r.id != null && r.removed)) return true;
-    if (rows.any((r) => r.id == null && !r.removed)) return true;
-    if (liveRows.length != _originalOptions.length) return true;
-
-    int? selectedDefaultId;
-    for (final r in liveRows) {
-      if (r.isDefault) {
-        selectedDefaultId = r.id;
-        break;
-      }
-    }
-    if (selectedDefaultId != originalDefaultId) return true;
-
-    for (var i = 0; i < liveRows.length; i++) {
-      final row = liveRows[i];
-      final original = originalMap[row.id];
-      if (original == null) return true;
-      if (original.valueVi != row.valueController.text.trim()) return true;
-      if (_originalOptions[i].id != row.id) return true;
-    }
-    return false;
-  }
-
-  void applySaved() {
-    rows.removeWhere((r) {
-      if (r.removed) {
-        r.dispose();
-        return true;
-      }
-      return false;
-    });
-    _originalOptions = [
-      for (var i = 0; i < rows.length; i++)
-        EnumOption(
-          id: rows[i].id ?? -1,
-          valueVi: rows[i].valueController.text.trim(),
-          sortOrder: i,
-          active: rows[i].active,
-          isDefault: rows[i].isDefault,
-        ),
-    ];
-    for (var i = 0; i < rows.length; i++) {
-      rows[i].sortOrder = i;
-    }
-  }
-
-  void dispose() {
-    for (final row in rows) {
-      row.dispose();
-    }
-  }
-}
-
-class _PhotoSection extends StatelessWidget {
-  const _PhotoSection({
-    required this.productId,
-    required this.pickedPhoto,
-    required this.baseUrl,
-    required this.onPickPhoto,
-    this.cacheBuster,
-  });
-
-  final int? productId;
-  final XFile? pickedPhoto;
-  final String baseUrl;
-  final VoidCallback onPickPhoto;
-  final String? cacheBuster;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return GestureDetector(
-      onTap: onPickPhoto,
-      child: Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: _buildContent(),
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    // Show picked photo (not yet uploaded)
-    if (pickedPhoto != null) {
-      return FutureBuilder<Uint8List>(
-        future: pickedPhoto!.readAsBytes(),
-        builder: (ctx, snap) {
-          if (!snap.hasData) return _placeholder();
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.memory(
-                snap.data!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, e, s) => _placeholder(),
-              ),
-              _overlayButton(),
-            ],
-          );
-        },
-      );
-    }
-
-    // Show existing photo from API (always try if product exists)
-    if (productId != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(
-            '$baseUrl/api/products/$productId/photo${cacheBuster != null ? '?v=$cacheBuster' : ''}',
-            fit: BoxFit.cover,
-            errorBuilder: (_, e, s) => _placeholder(),
-          ),
-          _overlayButton(),
-        ],
-      );
-    }
-
-    return _placeholder();
-  }
-
-  Widget _placeholder() {
-    return const Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.add_a_photo, size: 48, color: Colors.grey),
-        SizedBox(height: 8),
-        Text(VN.choosePhoto, style: TextStyle(color: Colors.grey)),
-      ],
-    );
-  }
-
-  Widget _overlayButton() {
-    return Positioned(
-      right: 8,
-      bottom: 8,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: const BoxDecoration(
-          color: Colors.black54,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.edit, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Catalog gallery section
-// ---------------------------------------------------------------------------
-
-class _CatalogGallerySection extends ConsumerStatefulWidget {
-  const _CatalogGallerySection({required this.productId});
-
-  final int productId;
-
-  @override
-  ConsumerState<_CatalogGallerySection> createState() =>
-      _CatalogGallerySectionState();
-}
-
-class _CatalogGallerySectionState
-    extends ConsumerState<_CatalogGallerySection> {
-  bool _promoting = false;
-
-  Future<void> _pickAndUpload() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text(VN.takePhoto),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text(VN.fromGallery),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null) return;
-
-    final picker = ImagePicker();
-    final catalogNotifier = ref.read(
-      catalogProvider(widget.productId).notifier,
-    );
-    final upload = ref.read(photoUploadNotifierProvider.notifier);
-    upload.reset();
-
-    if (source == ImageSource.gallery) {
-      // Multi-select from gallery
-      final files = await picker.pickMultiImage();
-      if (files.isEmpty) return;
-
-      await upload.uploadAll(
-        files,
-        catalogNotifier.addPhoto,
-      );
-      if (!mounted) return;
-      final batch = ref.read(photoUploadNotifierProvider);
-      final added = batch.completedCount;
-      final failed = batch.failedCount;
-      showTopSnackBar(
-        context,
-        failed == 0
-            ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
-            : 'Đã thêm $added ảnh, $failed ảnh lỗi',
-      );
-    } else {
-      // Camera: single photo only
-      final file = await picker.pickImage(source: source);
-      if (file == null) return;
-
-      await upload.uploadAll(
-        [file],
-        catalogNotifier.addPhoto,
-      );
-      if (!mounted) return;
-      final batch = ref.read(photoUploadNotifierProvider);
-      if (batch.hasErrors) {
-        final err = batch.items.firstWhere(
-          (i) => i.state.status == PhotoUploadStatus.error,
-          orElse: () => batch.items.first,
-        );
-        showTopSnackBar(context, err.state.errorMessage ?? VN.apiError);
-      } else {
-        showTopSnackBar(context, VN.catalogPhotoAdded);
-      }
-    }
-  }
-
-  Future<void> _confirmDelete(CatalogPhoto photo) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(VN.deleteCatalogPhoto),
-        content: const Text(VN.deleteCatalogConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .deletePhoto(photo.id);
-      if (mounted) {
-        showTopSnackBar(context, VN.catalogPhotoDeleted);
-      }
-    } on DioException catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
-      }
-    }
-  }
-
-  Future<void> _promotePhoto(CatalogPhoto photo) async {
-    setState(() => _promoting = true);
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .promotePhotoToProductMain(photo.id);
-      if (mounted) {
-        showTopSnackBar(context, VN.productPhotoSetFromCatalog);
-      }
-    } on DioException catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _promoting = false);
-      }
-    }
-  }
-
-  void _openFullScreen(
-    List<CatalogPhoto> photos,
-    int initialIndex,
-    String baseUrl,
-  ) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (ctx) => CatalogPhotoViewer(
-          photos: photos,
-          initialIndex: initialIndex,
-          productId: widget.productId,
-          baseUrl: baseUrl,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final catalogAsync = ref.watch(catalogProvider(widget.productId));
-    final baseUrl = ref.watch(apiBaseUrlProvider);
-    final theme = Theme.of(context);
-    final uploadState = ref.watch(photoUploadNotifierProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_promoting) ...[
-                const SizedBox(width: 12),
-                const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ],
-            ],
-          ),
-        ),
-        UploadProgressIndicator(states: uploadState.states),
-        catalogAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Text(
-            VN.errorLoading,
-            style: TextStyle(color: theme.colorScheme.error),
-          ),
-          data: (photos) => Column(
-            children: [
-              if (photos.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    VN.noCatalogPhotos,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: photos.length + 1,
-                itemBuilder: (ctx, index) {
-                  if (index == photos.length) {
-                    return _AddPhotoCard(
-                      uploading: uploadState.isUploading,
-                      onTap: _pickAndUpload,
-                    );
-                  }
-                  final photo = photos[index];
-                  final url =
-                      '$baseUrl/api/products/${widget.productId}/catalog/${photo.id}/photo';
-                  return _CatalogPhotoCard(
-                    photo: photo,
-                    productId: widget.productId,
-                    url: url,
-                    onTap: () => _openFullScreen(photos, index, baseUrl),
-                    onDelete: () => _confirmDelete(photo),
-                    onPromote: () => _promotePhoto(photo),
-                    promoting: _promoting,
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AddPhotoCard extends StatelessWidget {
-  const _AddPhotoCard({required this.uploading, required this.onTap});
-
-  final bool uploading;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: uploading ? null : onTap,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              uploading
-                  ? const CircularProgressIndicator()
-                  : const Icon(Icons.add_photo_alternate_outlined, size: 36),
-              const SizedBox(height: 8),
-              Text(
-                VN.addCatalogPhoto,
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CatalogPhotoCard extends StatelessWidget {
-  const _CatalogPhotoCard({
-    required this.photo,
-    required this.productId,
-    required this.url,
-    required this.onTap,
-    required this.onDelete,
-    required this.onPromote,
-    required this.promoting,
-  });
-
-  final CatalogPhoto photo;
-  final int productId;
-  final String url;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-  final VoidCallback onPromote;
-  final bool promoting;
-
-  void _openEditSheet(BuildContext context) {
-    showEditCatalogTagsSheet(
-      context: context,
-      photo: photo,
-      productId: productId,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onDelete,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, e, s) => Container(
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
-                    ),
-                  ),
-                  // Label edit button
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: GestureDetector(
-                      onTap: () => _openEditSheet(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Icon(
-                          Icons.label_outline,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Delete button
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: GestureDetector(
-                      onTap: onDelete,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 4,
-                    bottom: 4,
-                    child: Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: promoting ? null : onPromote,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.star_outline,
-                                color: Colors.white,
-                                size: 12,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                VN.setAsProductPhoto,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Tag chips row (max 3)
-          if (photo.tags.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            CatalogTagChips(tags: photo.tags, maxChips: 3),
-          ],
-        ],
       ),
     );
   }

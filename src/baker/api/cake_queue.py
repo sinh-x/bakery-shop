@@ -1,12 +1,33 @@
 """Cake queue API — cross-order work item list for the cake team."""
 
+import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
 
 from baker.db.connection import get_db
 
+logger = logging.getLogger("baker.server")
+
 router = APIRouter(prefix="/api/work-items", tags=["cake-queue"])
+
+
+def _parse_attributes(raw: str) -> dict:
+    """Parse the work-item attributes JSON column defensively.
+
+    Malformed JSON in the DB should never crash the `/api/work-items`
+    endpoint — return an empty dict and log a warning so the bad row
+    is still discoverable.
+    """
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "cake_queue: malformed attributes JSON ignored (raw=%r)", raw,
+        )
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 @router.get("")
@@ -50,6 +71,7 @@ def list_work_items_queue(
                 oi.status,
                 oi.is_birthday,
                 oi.age,
+                oi.attributes,
                 oi.created_at,
                 o.order_ref,
                 o.customer_name,
@@ -65,30 +87,40 @@ def list_work_items_queue(
               AND COALESCE(oi.is_gift, 0) = 0
             ORDER BY o.due_date ASC NULLS LAST, o.due_time ASC NULLS LAST, oi.id ASC
             LIMIT ? OFFSET ?
-            """,
+            """,  # nosec B608
             params + [limit, offset],
         ).fetchall()
 
-        return [
-            {
-                "id": str(row["id"]),
-                "orderId": str(row["order_id"]),
-                "orderRef": row["order_ref"],
-                "customerName": row["customer_name"],
-                "productId": row["product_id"] or "",
-                "productName": row["product_name"],
-                "quantity": row["quantity"],
-                "unitPrice": row["unit_price"],
-                "notes": row["notes"] or "",
-                "position": row["position"],
-                "status": row["status"],
-                "isBirthday": bool(row["is_birthday"]),
-                "age": row["age"],
-                "dueDate": row["due_date"],
-                "dueTime": row["due_time"],
-                "createdAt": row["created_at"],
-                "orderStatus": row["order_status"],
-                "blankCount": row["blank_count"],
-            }
-            for row in rows
-        ]
+        result = []
+        for row in rows:
+            attrs = (
+                _parse_attributes(row["attributes"])
+                if row["attributes"] and row["attributes"] != "{}"
+                else {}
+            )
+            candle_type = attrs.get("candle_type")
+            result.append(
+                {
+                    "id": str(row["id"]),
+                    "orderId": str(row["order_id"]),
+                    "orderRef": row["order_ref"],
+                    "customerName": row["customer_name"],
+                    "productId": row["product_id"] or "",
+                    "productName": row["product_name"],
+                    "quantity": row["quantity"],
+                    "unitPrice": row["unit_price"],
+                    "notes": row["notes"] or "",
+                    "position": row["position"],
+                    "status": row["status"],
+                    "isBirthday": bool(row["is_birthday"]),
+                    "age": row["age"],
+                    "attributes": attrs,
+                    "candleType": candle_type if isinstance(candle_type, str) and candle_type else None,
+                    "dueDate": row["due_date"],
+                    "dueTime": row["due_time"],
+                    "createdAt": row["created_at"],
+                    "orderStatus": row["order_status"],
+                    "blankCount": row["blank_count"],
+                }
+            )
+        return result

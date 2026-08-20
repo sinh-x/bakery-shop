@@ -11,6 +11,14 @@ class DraftOrderItem {
   String notes;
   bool isBirthday;
   String age;
+  /// Selected candle type for cake items (DG-340 Phase 1).
+  ///
+  /// Persisted under `attributes['candle_type']` when non-null. Values:
+  /// `nen_so`, `nen_xoan`, `nen_nho`, `khong_nen`. Null/absent means no
+  /// candle was selected (FR2, AC7). Mirrors the `isBirthday`/`age` pattern
+  /// — a plain optional field on the draft model; downstream phases wire it
+  /// into `attributes` at the submission boundary.
+  String? candleType;
   List<XFile> pendingPhotos;
   double? customUnitPrice;
   bool isExtra;
@@ -29,6 +37,7 @@ class DraftOrderItem {
     this.notes = '',
     this.isBirthday = false,
     this.age = '',
+    this.candleType,
     List<XFile>? pendingPhotos,
     this.customUnitPrice,
     this.isExtra = false,

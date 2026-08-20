@@ -2,6 +2,7 @@ import 'package:bakery_app/features/orders/widgets/date_filter_chips.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/events.dart';
 
 void main() {
   Future<void> pumpChips(
@@ -35,19 +36,19 @@ void main() {
           .map((c) => (c.label as Text).data)
           .toList();
       expect(labels, [
-        VN.filterToday,
+        EventsLabels.filterToday,
         OrdersLabels.dateFilterTomorrow,
         OrdersLabels.dateFilterTodayTomorrow,
-        VN.filterAll,
+        EventsLabels.filterAll,
       ]);
     });
   });
 
   group('DateFilterChips — NF3 (VN labels centralized)', () {
-    testWidgets('today chip shows VN.filterToday label', (tester) async {
+    testWidgets('today chip shows EventsLabels.filterToday label', (tester) async {
       await pumpChips(tester,
           selected: DateFilterOption.all, onChanged: (_) {});
-      expect(find.text(VN.filterToday), findsOneWidget);
+      expect(find.text(EventsLabels.filterToday), findsOneWidget);
     });
 
     testWidgets('tomorrow chip shows OrdersLabels.dateFilterTomorrow label',
@@ -64,10 +65,10 @@ void main() {
       expect(find.text(OrdersLabels.dateFilterTodayTomorrow), findsOneWidget);
     });
 
-    testWidgets('all chip shows VN.filterAll label', (tester) async {
+    testWidgets('all chip shows EventsLabels.filterAll label', (tester) async {
       await pumpChips(tester,
           selected: DateFilterOption.all, onChanged: (_) {});
-      expect(find.text(VN.filterAll), findsOneWidget);
+      expect(find.text(EventsLabels.filterAll), findsOneWidget);
     });
   });
 
@@ -77,7 +78,7 @@ void main() {
           selected: DateFilterOption.today, onChanged: (_) {});
       final chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
       final labels = chips.map((c) => (c.label as Text).data).toList();
-      final selectedIdx = labels.indexOf(VN.filterToday);
+      final selectedIdx = labels.indexOf(EventsLabels.filterToday);
       for (var i = 0; i < chips.length; i++) {
         expect(chips[i].selected, i == selectedIdx,
             reason: 'chip $i (${labels[i]}) selected state wrong');
@@ -91,7 +92,7 @@ void main() {
       var chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
       final labels = chips.map((c) => (c.label as Text).data).toList();
       expect(chips[labels.indexOf(OrdersLabels.dateFilterTomorrow)].selected, true);
-      expect(chips[labels.indexOf(VN.filterToday)].selected, false);
+      expect(chips[labels.indexOf(EventsLabels.filterToday)].selected, false);
     });
 
     testWidgets('all-selected state: only the all chip is selected',
@@ -100,7 +101,7 @@ void main() {
           selected: DateFilterOption.all, onChanged: (_) {});
       final chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
       final labels = chips.map((c) => (c.label as Text).data).toList();
-      final allIdx = labels.indexOf(VN.filterAll);
+      final allIdx = labels.indexOf(EventsLabels.filterAll);
       for (var i = 0; i < chips.length; i++) {
         expect(chips[i].selected, i == allIdx);
       }
@@ -114,7 +115,7 @@ void main() {
       await pumpChips(tester,
           selected: DateFilterOption.all,
           onChanged: (o) => picked = o);
-      await tester.tap(find.text(VN.filterToday));
+      await tester.tap(find.text(EventsLabels.filterToday));
       await tester.pump();
       expect(picked, DateFilterOption.today);
     });
@@ -147,7 +148,7 @@ void main() {
       await pumpChips(tester,
           selected: DateFilterOption.today,
           onChanged: (o) => picked = o);
-      await tester.tap(find.text(VN.filterAll));
+      await tester.tap(find.text(EventsLabels.filterAll));
       await tester.pump();
       expect(picked, DateFilterOption.all);
     });
@@ -158,7 +159,7 @@ void main() {
       await pumpChips(tester,
           selected: DateFilterOption.today,
           onChanged: (o) => picked = o);
-      await tester.tap(find.text(VN.filterToday));
+      await tester.tap(find.text(EventsLabels.filterToday));
       await tester.pump();
       expect(picked, DateFilterOption.today);
     });

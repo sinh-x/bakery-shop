@@ -62,6 +62,9 @@ from ._drawing import (  # noqa: F401
 )
 from ._helpers import (  # noqa: F401
     _shop_config,
+    CANDLE_TYPE_LABELS,
+    _candle_type_label,
+    _candle_type_value,
     _enum_attribute_labels,
     _enum_attribute_lines,
     _wrapped_enum_attribute_lines,
@@ -79,6 +82,7 @@ from ._helpers import (  # noqa: F401
     _draw_compact_reference_box,
     _header,
     _get_photo,
+    _get_photos,
 )
 from .renderers import (  # noqa: F401
     _render_work_ticket,
@@ -141,6 +145,9 @@ __all__ = [
     '_cash_amount_value',
     '_ensure_canvas_capacity',
     '_shop_config',
+    'CANDLE_TYPE_LABELS',
+    '_candle_type_label',
+    '_candle_type_value',
     '_enum_attribute_labels',
     '_enum_attribute_lines',
     '_wrapped_enum_attribute_lines',
@@ -167,5 +174,6 @@ __all__ = [
     'router',
     '_order_detail',
     '_get_photo',
+    '_get_photos',
     'get_receipt',
 ]

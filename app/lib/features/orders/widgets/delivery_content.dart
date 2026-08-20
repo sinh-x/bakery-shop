@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../data/api/staff_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
-import '../../../providers/staff_provider.dart';
+import '../../../data/providers/staff_provider.dart';
+import '../providers/delivery_content_notifier.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'delivery/status_group_header.dart';
@@ -15,7 +16,7 @@ import 'delivery/workload_summary.dart';
 import 'delivery_day_calendar_view.dart';
 import 'delivery_order_card.dart';
 import 'delivery_week_calendar_view.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Delivery tab content: status-grouped delivery order list with day/week
 /// calendar views, today/all filter, and (DG-304 Phase 4) a staff filter
 /// dropdown + per-staff workload summary.
@@ -36,16 +37,6 @@ class DeliveryContent extends ConsumerStatefulWidget {
 }
 
 class _DeliveryContentState extends ConsumerState<DeliveryContent> {
-  bool _showToday = true;
-
-  /// View mode for the delivery tab: 'day' (default), 'week', or 'list'.
-  /// Defaults to 'day' per FR1/AC1 so the day calendar is shown on open.
-  String _viewMode = 'day';
-
-  /// Selected delivery-staff filter id (FR2/FR3). `null` = "All" (FR4).
-  /// Session-only: reset to `null` on tab leave (AC7).
-  String? _selectedStaffId;
-
   TabController? _observedTabController;
 
   @override
@@ -81,16 +72,16 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
 
   /// Resets the staff filter to "All" (null) whenever the delivery tab is
   /// not the active tab (AC7). The delivery tab is index 2 in
-  /// `OrderListScreen`'s 3-tab controller. The `setState` is a no-op when
-  /// the filter is already null, so it is safe to call on every tab
+  /// `OrderListScreen`'s 3-tab controller. The notifier reset is a no-op
+  /// when the filter is already null, so it is safe to call on every tab
   /// notification. The host `OrderListScreen` also rebuilds on tab changes,
   /// so `_maybeResetStaffFilterOnTabLeave` (called from `build`) catches
   /// any transition the listener misses.
   void _handleTabChange() {
     final controller = _observedTabController;
     if (controller == null) return;
-    if (controller.index != 2 && _selectedStaffId != null) {
-      setState(() => _selectedStaffId = null);
+    if (controller.index != 2 && ref.read(deliveryContentProvider).selectedStaffId != null) {
+      ref.read(deliveryContentProvider.notifier).resetStaffFilter();
     }
   }
 
@@ -99,8 +90,8 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   void _maybeResetStaffFilterOnTabLeave() {
     final controller = _observedTabController;
     if (controller == null) return;
-    if (controller.index != 2 && _selectedStaffId != null) {
-      _selectedStaffId = null;
+    if (controller.index != 2 && ref.read(deliveryContentProvider).selectedStaffId != null) {
+      ref.read(deliveryContentProvider.notifier).resetStaffFilter();
     }
   }
 
@@ -119,6 +110,10 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
     _maybeResetStaffFilterOnTabLeave();
     final ordersAsync = ref.watch(orderListProvider);
     final staffAsync = ref.watch(staffListProvider);
+    final deliveryState = ref.watch(deliveryContentProvider);
+    final showToday = deliveryState.showToday;
+    final viewMode = deliveryState.viewMode;
+    final selectedStaffId = deliveryState.selectedStaffId;
     final deliveryStaff = staffAsync.maybeWhen(
       data: _deliveryStaff,
       orElse: () => const <StaffMember>[],
@@ -130,17 +125,17 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _onRefresh,
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
       ),
       data: (orders) {
-        final isCalendar = _viewMode != 'list';
+        final isCalendar = viewMode != 'list';
         // The week/day grid has its own "Hôm nay" navigation (FR5/AC2/AC3),
         // so it always receives all non-terminal delivery orders regardless
         // of the Today/All filter. The Today/All filter only applies to the
@@ -148,11 +143,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         // list views.
         final calendarOrders = filterDeliveryOrdersByStaff(
           filterDeliveryOrders(orders, todayOnly: false),
-          staffId: _selectedStaffId,
+          staffId: selectedStaffId,
         );
         final listOrders = filterDeliveryOrdersByStaff(
-          filterDeliveryOrders(orders, todayOnly: _showToday),
-          staffId: _selectedStaffId,
+          filterDeliveryOrders(orders, todayOnly: showToday),
+          staffId: selectedStaffId,
         );
         // Auto-focus the WEEK calendar on the next upcoming non-terminal
         // delivery order (FR2/FR3/AC2); fall back to today when none
@@ -171,28 +166,34 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
                   if (!isCalendar) ...[
                     FilterChip(
                       label: const Text(OrdersLabels.deliveryFilterToday),
-                      selected: _showToday,
-                      onSelected: (v) => setState(() => _showToday = v),
+                      selected: showToday,
+                      onSelected: (v) => ref
+                          .read(deliveryContentProvider.notifier)
+                          .setShowToday(v),
                     ),
                     const SizedBox(width: 8),
                     FilterChip(
                       label: const Text(OrdersLabels.deliveryFilterAll),
-                      selected: !_showToday,
-                      onSelected: (v) => setState(() => _showToday = !v),
+                      selected: !showToday,
+                      onSelected: (v) => ref
+                          .read(deliveryContentProvider.notifier)
+                          .setShowToday(!v),
                     ),
                     const SizedBox(width: 8),
                   ],
                   StaffFilterDropdown(
                     deliveryStaff: deliveryStaff,
-                    selectedStaffId: _selectedStaffId,
-                    onChanged: (id) =>
-                        setState(() => _selectedStaffId = id),
+                    selectedStaffId: selectedStaffId,
+                    onChanged: (id) => ref
+                        .read(deliveryContentProvider.notifier)
+                        .setSelectedStaffId(id),
                   ),
                   const Spacer(),
                   ViewModeToggle(
-                    viewMode: _viewMode,
-                    onChanged: (mode) =>
-                        setState(() => _viewMode = mode),
+                    viewMode: viewMode,
+                    onChanged: (mode) => ref
+                        .read(deliveryContentProvider.notifier)
+                        .setViewMode(mode),
                   ),
                 ],
               ),
@@ -215,7 +216,10 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
     List<Order> listOrders,
     DateTime nextDueWeekStart,
   ) {
-    switch (_viewMode) {
+    final deliveryState = ref.watch(deliveryContentProvider);
+    final viewMode = deliveryState.viewMode;
+    final showToday = deliveryState.showToday;
+    switch (viewMode) {
       case 'week':
         return DeliveryWeekCalendarView(
           orders: calendarOrders,
@@ -236,7 +240,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         if (listOrders.isEmpty) {
           return Center(
             child: Text(
-              _showToday
+              showToday
                   ? OrdersLabels.deliveryEmptyToday
                   : OrdersLabels.deliveryEmptyAll,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(

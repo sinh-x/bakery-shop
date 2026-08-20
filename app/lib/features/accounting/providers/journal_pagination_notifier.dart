@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
 import '../../../data/models/journal_entry.dart';
-import '../../../providers/accounting_provider.dart';
+import '../../../data/providers/accounting_provider.dart';
 
 /// Pagination-accumulation state for a journal filter view (DG-189 Phase 5.6-c1, CQ-1).
 ///

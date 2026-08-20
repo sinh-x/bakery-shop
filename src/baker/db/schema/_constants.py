@@ -458,6 +458,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_sale_rows (
     payment_method      TEXT NOT NULL,
     linked_order_ref    TEXT DEFAULT NULL,
     linked_payment_ref  TEXT DEFAULT NULL,
+    linked_order_refs   TEXT DEFAULT NULL,
     created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_sale_rows_line ON reconciliation_sale_rows(line_id);
@@ -761,18 +762,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_name_parent
 
 CASH_DRAWER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cash_drawer (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    opened_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
-    closed_at       TEXT,
-    status          TEXT NOT NULL DEFAULT 'open',
-    opening_balance INTEGER NOT NULL DEFAULT 0,
-    closing_balance INTEGER DEFAULT NULL,
-    counted_amount  INTEGER,
-    discrepancy     INTEGER
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    opened_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    closed_at               TEXT,
+    status                  TEXT NOT NULL DEFAULT 'open',
+    opening_balance         INTEGER NOT NULL DEFAULT 0,
+    counted_opening_balance INTEGER DEFAULT NULL,
+    closing_balance         INTEGER DEFAULT NULL,
+    counted_amount          INTEGER,
+    discrepancy             INTEGER,
+    reconciled              INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_status ON cash_drawer(status);
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_opened_at ON cash_drawer(opened_at);
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_reconciled ON cash_drawer(reconciled);
 """
 
 CASH_DRAWER_JOURNAL_ENTRIES_SCHEMA = """
@@ -1224,6 +1228,172 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_order_item_blanks_item_blank_unique
 """
 
 
+MESSAGE_TEMPLATES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS message_templates (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario            TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    body                TEXT NOT NULL,
+    is_system           INTEGER NOT NULL DEFAULT 0,
+    created_by_staff_id INTEGER REFERENCES staff(id) ON DELETE SET NULL,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    active              INTEGER NOT NULL DEFAULT 1,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+CREATE INDEX IF NOT EXISTS idx_message_templates_scenario ON message_templates(scenario);
+CREATE INDEX IF NOT EXISTS idx_message_templates_is_system ON message_templates(is_system);
+CREATE INDEX IF NOT EXISTS idx_message_templates_created_by_staff ON message_templates(created_by_staff_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_message_templates_system_scenario_name_unique
+    ON message_templates(scenario, name) WHERE is_system = 1;
+"""
+
+# Default built-in message templates (DG-375 FR9 / AC9).
+# 8 templates across 6 scenarios. All seeded as system templates (is_system=1).
+# Template bodies use placeholder syntax ({customer_name}, {order_code}, …)
+# resolved client-side; the backend stores the raw body verbatim (FR4).
+SEED_MESSAGE_TEMPLATES = [
+    (
+        "ask_info",
+        "Hỏi thông tin đặt bánh",
+        "Dạ mình đặt bánh khi nào lấy ạ? Cho shop xin nội dung ghi kèm bánh và số điện thoại để ghi đơn nhé.",
+        1,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Pickup",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Mình nhận bánh ở tiệm Đoàn Gia - Ninh Diêm, 61 Hòn Khói vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        2,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Delivery",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Shop sẽ giao bánh tới {delivery_address} vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        3,
+    ),
+    (
+        "confirm_order",
+        "Xác nhận đơn — Gửi xe buýt",
+        "Dạ shop gửi xác nhận đơn bánh mã {public_order_code} của mình ạ:\n"
+        "{items_list}\n"
+        "Tổng cộng: {total_price}\n"
+        "Shop sẽ gửi bánh qua xe buýt vào {due_date} {due_time} ạ.\n"
+        "Mình xem lại giúp shop nha.",
+        4,
+    ),
+    (
+        "final_message",
+        "Bánh đã sẵn sàng",
+        "Dạ bánh của mình đã sẵn sàng ạ. Mã đơn {public_order_code}.\n"
+        "{items_list}\n"
+        "{delivery_type, select: pickup: Mình qua tiệm Đoàn Gia - Ninh Diêm, 61 Hòn Khói nhận bánh nha. | delivery: Shop đang giao bánh tới {delivery_address} ạ.}\n"
+        "Mình nhận bánh kiểm tra giúp shop nha. Cảm ơn mình nhiều ạ!",
+        5,
+    ),
+    (
+        "follow_up",
+        "Cảm ơn khách hàng",
+        "Dạ shop cảm ơn mình đã ủng hộ Đoàn Gia ạ. Bánh mình dùng có ngon không ạ? "
+        "Có gì mình góp ý giúp shop nha. Lần sau mình cần bánh cứ nhắn shop ạ!",
+        6,
+    ),
+    (
+        "status_update",
+        "Cập nhật trạng thái đơn",
+        "Dạ shop cập nhật đơn bánh mã {public_order_code} của mình: "
+        "{status, select: confirmed: đã xác nhận | in_progress: đang làm | ready: đã sẵn sàng | delivering: đang giao} ạ.\n"
+        "Dự kiến {delivery_type, select: pickup: mình qua nhận lúc {due_date} {due_time} | delivery: giao tới {delivery_address} lúc {due_date} {due_time}} ạ.",
+        7,
+    ),
+    (
+    "payment_request",
+    "Yêu cầu thanh toán",
+    "Dạ shop gửi mình thông tin thanh toán đơn bánh mã {public_order_code} ạ:\n"
+    "{items_list}\n"
+    "Tổng cộng: {total_price}\n"
+    "{notes, if: Đã ghi chú: {notes}}\n"
+    "Mình chuyển khoản giúp shop qua:\n"
+    "- Ngân hàng: ...\n"
+    "- Số tài khoản: ...\n"
+    "- Chủ tài khoản: ...\n"
+    "Mình chuyển xong nhắn shop xác nhận nha. Cảm ơn mình ạ!",
+    8,
+    ),
+]
+
+
+# DG-385 Phase 1: address library + customer_addresses junction.
+# `address_library` stores normalized delivery addresses paired with their
+# Google Maps share links so the autocomplete endpoint (Phase 2) can match
+# typed text against `normalized_address` and return the original
+# `display_address` + `google_maps_url` for binding to an order (FR1/FR2).
+# The unique constraint on (normalized_address, google_maps_url) gives the
+# Phase 3 upsert an idempotent target: a re-save of the same address+link
+# pair resolves to the existing row instead of creating a duplicate.
+# `customer_addresses` tracks which customers use which addresses so the
+# autocomplete endpoint can prioritize the caller's own addresses (FR4).
+ADDRESS_LIBRARY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS address_library (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    normalized_address  TEXT NOT NULL,
+    display_address     TEXT NOT NULL,
+    google_maps_url     TEXT,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_address_library_normalized_address
+    ON address_library(normalized_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_address_library_normalized_url_unique
+    ON address_library(normalized_address, google_maps_url);
+
+CREATE TABLE IF NOT EXISTS customer_addresses (
+    customer_id         INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    address_library_id  INTEGER NOT NULL REFERENCES address_library(id) ON DELETE CASCADE,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    PRIMARY KEY (customer_id, address_library_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_customer
+    ON customer_addresses(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_address
+    ON customer_addresses(address_library_id);
+"""
+
+
+# DG-410 Phase 1: per-transaction photo link join table.
+# `payment_transaction_photos` links a single photo to an individual payment
+# transaction. The UNIQUE constraint on `payment_transaction_id` enforces the
+# single-photo-per-transaction rule (FR1) at the DB level — the API layer
+# uses INSERT OR REPLACE to swap an existing link. The `photos` table and
+# `save_photo` storage layer are reused unchanged (no new storage); this
+# table only records the (transaction ↔ photo) edge. Order-level
+# `order_photos` remain independent and unaffected (FR5).
+# Follows the v095 idempotency pattern: `CREATE TABLE IF NOT EXISTS` makes
+# re-running v104 on an already-migrated DB a no-op (NFR2).
+PAYMENT_TRANSACTION_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS payment_transaction_photos (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_transaction_id  INTEGER NOT NULL REFERENCES payment_transactions(id) ON DELETE CASCADE,
+    photo_id                INTEGER NOT NULL REFERENCES photos(id),
+    created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    UNIQUE(payment_transaction_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_transaction_photos_txn
+    ON payment_transaction_photos(payment_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transaction_photos_photo
+    ON payment_transaction_photos(photo_id);
+"""
+
 __all__ = [
     'INITIAL_SCHEMA',
     'STAFF_AND_PEOPLE_SCHEMA',
@@ -1310,4 +1480,8 @@ __all__ = [
     'SESSIONS_SCHEMA',
     'BLANKS_SCHEMA',
     'ORDER_ITEM_BLANKS_SCHEMA',
+    'MESSAGE_TEMPLATES_SCHEMA',
+    'SEED_MESSAGE_TEMPLATES',
+    'ADDRESS_LIBRARY_SCHEMA',
+    'PAYMENT_TRANSACTION_PHOTOS_SCHEMA',
 ]

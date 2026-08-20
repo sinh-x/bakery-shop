@@ -1,10 +1,12 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/blanks_provider.dart';
 import '../../../data/providers/bom_provider.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
+import '../providers/bom_add_sheet_notifier.dart';
 /// Show the add-BOM-mapping bottom sheet for [priceChipId].
 ///
 /// The sheet lists available blanks (excluding any already mapped to this
@@ -31,8 +33,6 @@ class _BomAddSheet extends ConsumerStatefulWidget {
 class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
   final _formKey = GlobalKey<FormState>();
   final _qtyCtrl = TextEditingController(text: '1');
-  int? _selectedBlankId;
-  bool _saving = false;
 
   @override
   void dispose() {
@@ -42,7 +42,8 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedBlankId == null) {
+    final selectedBlankId = ref.read(bomAddSheetProvider).selectedBlankId;
+    if (selectedBlankId == null) {
       showTopSnackBar(context, BlanksLabels.messageBomSelectBlank);
       return;
     }
@@ -51,18 +52,18 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
       showTopSnackBar(context, BlanksLabels.messageBomInvalidQuantity);
       return;
     }
-    setState(() => _saving = true);
+    ref.read(bomAddSheetProvider.notifier).setSaving(true);
     try {
       await ref
           .read(bomProvider(widget.priceChipId).notifier)
-          .addBom(_selectedBlankId!, qty);
+          .addBom(selectedBlankId, qty);
       if (mounted) {
         Navigator.of(context).pop();
         showTopSnackBar(context, BlanksLabels.messageBomCreateSuccess);
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
+        ref.read(bomAddSheetProvider.notifier).setSaving(false);
         showTopSnackBar(context, e.toString());
       }
     }
@@ -72,6 +73,9 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
   Widget build(BuildContext context) {
     final blanksAsync = ref.watch(blanksProvider);
     final bomAsync = ref.watch(bomProvider(widget.priceChipId));
+    final sheetState = ref.watch(bomAddSheetProvider);
+    final selectedBlankId = sheetState.selectedBlankId;
+    final saving = sheetState.saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -81,7 +85,7 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
       ),
       child: blanksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => const Text(VN.apiError),
+        error: (e, _) => const Text(SharedLabels.apiError),
         data: (blanks) {
           final mappedIds = bomAsync.maybeWhen(
             data: (boms) => boms.map((b) => b.blankId).toSet(),
@@ -101,7 +105,7 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
                   ),
                   const SizedBox(height: 20),
                   DropdownButtonFormField<int>(
-                    initialValue: _selectedBlankId,
+                    initialValue: selectedBlankId,
                     decoration: const InputDecoration(
                       labelText: BlanksLabels.fieldBlank,
                       border: OutlineInputBorder(),
@@ -114,9 +118,11 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
                           ),
                         )
                         .toList(),
-                    onChanged: _saving
+                    onChanged: saving
                         ? null
-                        : (v) => setState(() => _selectedBlankId = v),
+                        : (v) => ref
+                            .read(bomAddSheetProvider.notifier)
+                            .selectBlank(v),
                     validator: (v) =>
                         v == null ? BlanksLabels.messageBomSelectBlank : null,
                   ),
@@ -141,15 +147,15 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton(
-                        onPressed: _saving
+                        onPressed: saving
                             ? null
                             : () => Navigator.of(context).pop(),
                         child: const Text(BlanksLabels.actionCancel),
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
-                        onPressed: _saving ? null : _save,
-                        child: _saving
+                        onPressed: saving ? null : _save,
+                        child: saving
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,

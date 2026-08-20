@@ -1,18 +1,20 @@
-import 'dart:io';
-import 'dart:typed_data';
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gal/gal.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
-import '../../../providers/catalog_provider.dart';
+import '../../../data/providers/catalog_provider.dart';
+import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import '../providers/catalog_photo_viewer_notifier.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'catalog_tag_chips.dart';
 import 'catalog_tag_edit_sheet.dart';
 
@@ -40,14 +42,19 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
 
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   late PageController _pageController;
-  late int _currentIndex;
-  bool _downloading = false;
-  bool _sharing = false;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
+    // Seed the viewer's current index from the initial photo. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(catalogPhotoViewerProvider.notifier)
+          .setCurrentIndex(widget.initialIndex);
+    });
     _pageController = PageController(initialPage: widget.initialIndex);
   }
 
@@ -58,9 +65,14 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   }
 
   Future<void> _downloadPhoto(List<CatalogPhoto> photos) async {
-    if (_downloading || _currentIndex >= photos.length) return;
-    setState(() => _downloading = true);
-    final photo = photos[_currentIndex];
+    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
+    final viewerState = ref.read(catalogPhotoViewerProvider);
+    if (viewerState.downloading ||
+        viewerState.currentIndex >= photos.length) {
+      return;
+    }
+    viewerNotifier.setDownloading(true);
+    final photo = photos[viewerState.currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
@@ -71,18 +83,23 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       );
       if (resp.data == null) throw Exception('No data');
       await Gal.putImageBytes(Uint8List.fromList(resp.data!));
-      if (mounted) showTopSnackBar(context, VN.daLuuAnh);
+      if (mounted) showTopSnackBar(context, ProductsLabels.daLuuAnh);
     } catch (e) {
-      if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+      if (mounted) showTopSnackBar(context, ProductsLabels.khongTheTaiAnh);
     } finally {
-      if (mounted) setState(() => _downloading = false);
+      if (mounted) viewerNotifier.setDownloading(false);
     }
   }
 
   Future<void> _sharePhoto(List<CatalogPhoto> photos) async {
-    if (_sharing || _currentIndex >= photos.length) return;
-    setState(() => _sharing = true);
-    final photo = photos[_currentIndex];
+    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
+    final viewerState = ref.read(catalogPhotoViewerProvider);
+    if (viewerState.sharing ||
+        viewerState.currentIndex >= photos.length) {
+      return;
+    }
+    viewerNotifier.setSharing(true);
+    final photo = photos[viewerState.currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
@@ -92,19 +109,19 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) throw Exception('No data');
-      final tmpDir = await getTemporaryDirectory();
-      final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
-      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      final bytes = Uint8List.fromList(resp.data!);
+      final xfile = await createXFileFromBytes(
+        bytes,
+        fileName: 'catalog_photo_${photo.id}.jpg',
+        mimeType: 'image/jpeg',
+      );
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(tmpFile.path)],
-          text: 'Tiệm Bánh Ninh Diêm',
-        ),
+        ShareParams(files: [xfile], text: 'Tiệm Bánh Ninh Diêm'),
       );
     } catch (e) {
-      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+      if (mounted) showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) viewerNotifier.setSharing(false);
     }
   }
 
@@ -120,6 +137,8 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   Widget build(BuildContext context) {
     final catalogAsync = ref.watch(catalogProvider(widget.productId));
     final photos = catalogAsync.value ?? widget.photos;
+    final viewerState = ref.watch(catalogPhotoViewerProvider);
+    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -129,13 +148,13 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
         title: photos.isEmpty
             ? null
             : Text(
-                '${_currentIndex + 1} / ${photos.length}',
+                '${viewerState.currentIndex + 1} / ${photos.length}',
                 style: const TextStyle(color: Colors.white),
               ),
         actions: [
           if (photos.isNotEmpty) ...[
             IconButton(
-              icon: _downloading
+              icon: viewerState.downloading
                   ? const SizedBox(
                       height: 20,
                       width: 20,
@@ -145,11 +164,13 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                       ),
                     )
                   : const Icon(Icons.download, color: Colors.white),
-              tooltip: VN.taiAnh,
-              onPressed: _downloading ? null : () => _downloadPhoto(photos),
+              tooltip: ProductsLabels.taiAnh,
+              onPressed: viewerState.downloading
+                  ? null
+                  : () => _downloadPhoto(photos),
             ),
             IconButton(
-              icon: _sharing
+              icon: viewerState.sharing
                   ? const SizedBox(
                       height: 20,
                       width: 20,
@@ -159,14 +180,17 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                       ),
                     )
                   : const Icon(Icons.share, color: Colors.white),
-              tooltip: VN.chiaSe,
-              onPressed: _sharing ? null : () => _sharePhoto(photos),
+              tooltip: ProductsLabels.chiaSe,
+              onPressed: viewerState.sharing
+                  ? null
+                  : () => _sharePhoto(photos),
             ),
           ],
           AppBarOverflowMenu(
             onSelected: (value) {
-              if (value == 'edit_photo' && _currentIndex < photos.length) {
-                _openEditSheet(photos[_currentIndex]);
+              if (value == 'edit_photo' &&
+                  viewerState.currentIndex < photos.length) {
+                _openEditSheet(photos[viewerState.currentIndex]);
               }
             },
             items: photos.isEmpty
@@ -174,7 +198,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 : const [
                     PopupMenuItem<String>(
                       value: 'edit_photo',
-                      child: Text(VN.editCatalogPhoto),
+                      child: Text(ProductsLabels.editCatalogPhoto),
                     ),
                   ],
           ),
@@ -191,9 +215,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
           : PageView.builder(
               controller: _pageController,
               itemCount: photos.length,
-              onPageChanged: (index) {
-                setState(() => _currentIndex = index);
-              },
+              onPageChanged: viewerNotifier.setCurrentIndex,
               itemBuilder: (ctx, index) {
                 final photo = photos[index];
                 final url =
@@ -275,21 +297,19 @@ class _EditCaptionSheet extends ConsumerStatefulWidget {
 
 class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
   late final TextEditingController _captionCtrl;
-  final Set<String> _selectedTags = {};
-  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(text: widget.photo.caption);
-    if (widget.photo.tags.isNotEmpty) {
-      _selectedTags.addAll(
-        widget.photo.tags
-            .split(',')
-            .map((t) => t.trim())
-            .where((t) => t.isNotEmpty),
-      );
-    }
+    // Seed the notifier with the photo's existing tags so the chip
+    // selector reflects the initial selection without setState. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(catalogEditCaptionProvider.notifier).seed(widget.photo);
+    });
   }
 
   @override
@@ -299,31 +319,34 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    final notifier = ref.read(catalogEditCaptionProvider.notifier);
+    notifier.setSaving(true);
     try {
       await ref
           .read(catalogProvider(widget.productId).notifier)
           .updatePhoto(
             widget.photo.id,
             caption: _captionCtrl.text.trim(),
-            tags: _selectedTags.join(','),
+            tags: ref.read(catalogEditCaptionProvider).selectedTags.join(','),
           );
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.catalogPhotoUpdated);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoUpdated);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) notifier.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
+    final captionState = ref.watch(catalogEditCaptionProvider);
+    final notifier = ref.read(catalogEditCaptionProvider.notifier);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -337,20 +360,20 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            VN.editCatalogPhoto,
+            ProductsLabels.editCatalogPhoto,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _captionCtrl,
-            decoration: const InputDecoration(labelText: VN.captionLabel),
+            decoration: const InputDecoration(labelText: ProductsLabels.captionLabel),
             maxLines: 2,
           ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -359,39 +382,31 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Row(
               children: [
-                const Expanded(child: Text(VN.apiError)),
+                const Expanded(child: Text(SharedLabels.apiError)),
                 TextButton.icon(
                   onPressed: () =>
                       ref.read(catalogTagDefsProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),
             data: (tagDefs) => _TagChipSelector(
               tagDefs: tagDefs,
-              selectedTags: _selectedTags,
-              onToggle: (tag) {
-                setState(() {
-                  if (_selectedTags.contains(tag)) {
-                    _selectedTags.remove(tag);
-                  } else {
-                    _selectedTags.add(tag);
-                  }
-                });
-              },
+              selectedTags: captionState.selectedTags,
+              onToggle: notifier.toggleTag,
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
+            onPressed: captionState.saving ? null : _save,
+            child: captionState.saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           const SizedBox(height: 8),
         ],
@@ -423,7 +438,7 @@ class _TagChipSelector extends StatelessWidget {
       children: [
         if (audience.isNotEmpty) ...[
           const Text(
-            VN.doiTuong,
+            ProductsLabels.doiTuong,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...audience.map(
@@ -437,7 +452,7 @@ class _TagChipSelector extends StatelessWidget {
         ],
         if (occasion.isNotEmpty) ...[
           const Text(
-            VN.dip,
+            ProductsLabels.dip,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...occasion.map(
@@ -451,7 +466,7 @@ class _TagChipSelector extends StatelessWidget {
         ],
         if (style.isNotEmpty) ...[
           const Text(
-            VN.phongCach,
+            ProductsLabels.phongCach,
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
           ...style.map(

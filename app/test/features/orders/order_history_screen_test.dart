@@ -1,12 +1,12 @@
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/features/orders/order_history_screen.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Map<String, dynamic> _orderJson({
   required String id,
@@ -50,6 +50,26 @@ class _OrderHistoryInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     if (options.path == '/api/orders') {
+      // DG-409 Phase 4: the order history screen opts into the paginated
+      // envelope (paginated=true). Return {items,total,has_more,...} when
+      // requested; otherwise return the bare array (backward-compatible).
+      final paginated = options.queryParameters['paginated'] == true;
+      if (paginated) {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'items': orders,
+              'total': orders.length,
+              'has_more': false,
+              'limit': options.queryParameters['limit'] ?? 50,
+              'offset': options.queryParameters['offset'] ?? 0,
+            },
+          ),
+        );
+        return;
+      }
       handler.resolve(
         Response(requestOptions: options, statusCode: 200, data: orders),
       );
@@ -122,8 +142,8 @@ void main() {
 
     expect(find.text('Nguyen Van A'), findsOneWidget);
     expect(find.text('Tran Thi B'), findsOneWidget);
-    expect(find.text(VN.statusNew), findsOneWidget);
-    expect(find.text(VN.statusDelivered), findsOneWidget);
+    expect(find.text(OrdersLabels.statusNew), findsOneWidget);
+    expect(find.text(OrdersLabels.statusDelivered), findsOneWidget);
   });
 
   testWidgets('search filters orders and shows not-found empty state', (tester) async {
@@ -154,31 +174,31 @@ void main() {
 
     await tester.enterText(find.byType(TextField), 'not-found');
     await tester.pumpAndSettle();
-    expect(find.text(VN.lichSuDonHangKhongTimThay), findsOneWidget);
+    expect(find.text(OrdersLabels.lichSuDonHangKhongTimThay), findsOneWidget);
   });
 
   testWidgets('shows empty state when no history items', (tester) async {
     await tester.pumpWidget(await _buildScreen(orders: const []));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.lichSuDonHangTrong), findsOneWidget);
+    expect(find.text(OrdersLabels.lichSuDonHangTrong), findsOneWidget);
   });
 
   testWidgets('supports switching between single-day and range modes', (tester) async {
     await tester.pumpWidget(await _buildScreen(orders: const []));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.lichSuDonHangLocMotNgay));
+    await tester.tap(find.text(OrdersLabels.lichSuDonHangLocMotNgay));
     await tester.pumpAndSettle();
     var singleChip = tester.widget<ChoiceChip>(
-      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay),
+      find.widgetWithText(ChoiceChip, OrdersLabels.lichSuDonHangLocMotNgay),
     );
     expect(singleChip.selected, isTrue);
 
-    await tester.tap(find.text(VN.lichSuDonHangLocKhoangNgay));
+    await tester.tap(find.text(OrdersLabels.lichSuDonHangLocKhoangNgay));
     await tester.pumpAndSettle();
     singleChip = tester.widget<ChoiceChip>(
-      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay),
+      find.widgetWithText(ChoiceChip, OrdersLabels.lichSuDonHangLocMotNgay),
     );
     expect(singleChip.selected, isFalse);
   });

@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/api_client.dart';
 import '../../../../data/models/order_draft.dart';
+import '../../../../shared/labels/templates.dart';
 import '../order_photo_section.dart';
 import '../order_wizard.dart';
 import '../section_header.dart';
 import '../stage1_responsive_content.dart';
 import '../stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Stage 4 of the order edit wizard — review (summary + order photos + save).
 ///
 /// FR13/FR14: aligned with create's Stage 4 layout — wrapped in
@@ -27,6 +28,7 @@ class EditStage4Review extends ConsumerWidget {
     required this.onSave,
     required this.onBack,
     required this.isProcessing,
+    this.onOpenTemplates,
   });
 
   final String orderRef;
@@ -37,6 +39,11 @@ class EditStage4Review extends ConsumerWidget {
   final VoidCallback onSave;
   final VoidCallback onBack;
   final bool isProcessing;
+
+  /// DG-375 Phase 4.3 / FR3 / AC3: optional callback that opens the message
+  /// template picker. When non-null a "Mẫu tin nhắn" button is rendered next
+  /// to the save button in the review stage.
+  final VoidCallback? onOpenTemplates;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,7 +75,7 @@ class EditStage4Review extends ConsumerWidget {
                     dueTime: dueTime,
                   ),
                   const SizedBox(height: 20),
-                  const SectionHeader(VN.orderPhotos),
+                  const SectionHeader(OrdersLabels.orderPhotos),
                   OrderPhotoSection(
                     orderRef: orderRef,
                     baseUrl: ref.watch(apiBaseUrlProvider),
@@ -95,6 +102,14 @@ class EditStage4Review extends ConsumerWidget {
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          if (onOpenTemplates != null) ...[
+            OutlinedButton.icon(
+              onPressed: onOpenTemplates,
+              icon: const Icon(Icons.message_outlined, size: 18),
+              label: const Text(TemplatesLabels.reviewStageButton),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: isProcessing ? null : onSave,
             child: isProcessing
@@ -103,7 +118,7 @@ class EditStage4Review extends ConsumerWidget {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
         ],
       ),

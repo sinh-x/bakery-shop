@@ -91,8 +91,15 @@ class PaymentTransaction:
         cursor = conn.execute(
             """INSERT INTO payment_transactions (order_id, amount, type, method, note, payment_source, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (self.order_id, self.amount, self.type, self.method, self.note,
-             self.payment_source or "", now_utc()),
+            (
+                self.order_id,
+                self.amount,
+                self.type,
+                self.method,
+                self.note,
+                self.payment_source or "",
+                now_utc(),
+            ),
         )
         self.id = cursor.lastrowid
         return self.id
@@ -106,10 +113,16 @@ class PaymentTransaction:
             type=row["type"],
             method=row["method"],
             note=row["note"] or "",
-            payment_source=row["payment_source"] if "payment_source" in row.keys() else "",
+            payment_source=row["payment_source"]
+            if "payment_source" in row.keys()
+            else "",
             created_at=row["created_at"],
-            invalidated_at=row["invalidated_at"] if "invalidated_at" in row.keys() else None,
-            invalidated_by=row["invalidated_by"] if "invalidated_by" in row.keys() else "",
+            invalidated_at=row["invalidated_at"]
+            if "invalidated_at" in row.keys()
+            else None,
+            invalidated_by=row["invalidated_by"]
+            if "invalidated_by" in row.keys()
+            else "",
         )
 
     def to_api_dict(self) -> dict:
@@ -134,7 +147,7 @@ class PaymentTransaction:
         must not contribute to any payment total.
         """
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? {_invalidation_filter(conn)}",
             (order_id,),
         ).fetchone()
@@ -163,12 +176,41 @@ class PaymentTransaction:
         """
         placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type NOT IN ({placeholders}) "
             f"{_invalidation_filter(conn)}",
             (order_id, *_OUTFLOW_TYPES),
         ).fetchone()
         return float(row[0]) if row else 0.0
+
+    @staticmethod
+    def sum_paid_excl_outflows_batch(conn, order_ids: list[int]) -> dict[int, float]:
+        """Batched version of :meth:`total_paid_excl_outflows` (CQ-2).
+
+        Computes ``amount_paid`` (excluding outflow types and invalidated
+        rows) for every order in [order_ids] in a **single** grouped SUM
+        query, returning ``{order_id: amount_paid}``. Orders with no
+        transactions are absent from the result (callers should treat a
+        missing key as ``0.0``). Eliminates the N+1 per-order SUM query the
+        badge counts endpoint previously issued via
+        ``total_paid_excl_outflows`` per delivered row.
+
+        Returns an empty dict when [order_ids] is empty (no query issued).
+        """
+        if not order_ids:
+            return {}
+        outflow_placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
+        id_placeholders = ",".join("?" * len(order_ids))
+        rows = conn.execute(
+            f"SELECT order_id, COALESCE(SUM(amount), 0) AS total "  # nosec B608
+            f"FROM payment_transactions "
+            f"WHERE order_id IN ({id_placeholders}) "
+            f"AND type NOT IN ({outflow_placeholders}) "
+            f"{_invalidation_filter(conn)} "
+            f"GROUP BY order_id",
+            (*order_ids, *_OUTFLOW_TYPES),
+        ).fetchall()
+        return {int(r["order_id"]): float(r["total"]) for r in rows}
 
     @staticmethod
     def total_outflows(conn, order_id: int) -> float:
@@ -183,7 +225,7 @@ class PaymentTransaction:
         """
         placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type IN ({placeholders}) "
             f"{_invalidation_filter(conn)}",
             (order_id, *_OUTFLOW_TYPES),
@@ -204,7 +246,7 @@ class PaymentTransaction:
         Invalidated (soft-deleted) transactions are excluded.
         """
         row = conn.execute(
-            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "  # nosec B608
             f"WHERE order_id = ? AND type = 'tien_rut' "
             f"{_invalidation_filter(conn)}",
             (order_id,),

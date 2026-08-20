@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-
 /// Shared customer profile card used across order detail, create, and edit
 /// screens (DG-206 FR1/FR8).
 ///
@@ -91,7 +90,7 @@ class CustomerProfileCard extends StatelessWidget {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                '${entry.phone}${entry.isPrimary ? ' (${VN.customerPrimaryPhone})' : ''}',
+                '${entry.phone}${entry.isPrimary ? ' (${CustomersLabels.customerPrimaryPhone})' : ''}',
                 style: entry.isPrimary
                     ? theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.bold)
@@ -157,7 +156,7 @@ class CustomerProfileCard extends StatelessWidget {
                     _buildOrderCountLine(theme),
                     const SizedBox(height: 2),
                     Text(
-                      '${VN.customerCreatedAt}: ${formatDisplayDate(customer.createdAt)}',
+                      '${CustomersLabels.customerCreatedAt}: ${formatDisplayDate(customer.createdAt)}',
                       style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
                     ),
                   ],
@@ -166,7 +165,7 @@ class CustomerProfileCard extends StatelessWidget {
             ),
             if (onUnlink != null)
               IconButton(
-                tooltip: VN.customerSearchClear,
+                tooltip: CustomersLabels.customerSearchClear,
                 icon: const Icon(Icons.close, size: 20),
                 onPressed: onUnlink,
               )

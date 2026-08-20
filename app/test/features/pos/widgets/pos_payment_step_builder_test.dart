@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/features/pos/widgets/pos_checkout_payment_controller.dart';
 import 'package:bakery_app/features/pos/widgets/pos_payment_step.dart';
 import 'package:bakery_app/features/pos/widgets/pos_payment_step_builder.dart';
+import 'package:bakery_app/providers/order/order_create_state_provider.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class _BuilderHost extends ConsumerWidget {
@@ -38,7 +40,12 @@ class _BuilderHost extends ConsumerWidget {
 
     return MaterialApp(
       home: Scaffold(
-        body: PosPaymentStepBuilder(controller: controller).build(
+        body: PosPaymentStepBuilder(
+          controller: controller,
+          // DG-370 Phase 2: forward the POS order state provider so Stage 5
+          // can render the order summary cards (FR2/AC2/AC6).
+          orderStateProvider: posOrderStateProvider,
+        ).build(
           context,
           deliverImmediately: deliverImmediately,
           mounted: mountedFlag,
@@ -66,7 +73,7 @@ void main() {
 
       expect(find.byType(PosPaymentStep), findsOneWidget);
       // The transfer method reveals the target-account dropdown (FR7).
-      expect(find.text(VN.paymentTargetAccountLabel), findsOneWidget);
+      expect(find.text(ExpensesLabels.paymentTargetAccountLabel), findsOneWidget);
     });
 
     testWidgets('onChanged fires after a payment-method change',
@@ -83,8 +90,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // DG-370 Phase 2: the order summary section now precedes the payment
+      // method selector; ensure the cash option is visible before tapping.
+      await tester.ensureVisible(find.text(OrdersLabels.tienMat).first);
+      await tester.pumpAndSettle();
       // Tap the cash option in the payment method selector.
-      await tester.tap(find.text(VN.tienMat).first);
+      await tester.tap(find.text(OrdersLabels.tienMat).first);
       await tester.pumpAndSettle();
 
       expect(changed, isTrue);

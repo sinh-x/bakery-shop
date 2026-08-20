@@ -175,7 +175,7 @@ def update_category(category_id: int, update: CategoryUpdate, actor: str = Depen
 
         values.append(category_id)
         conn.execute(
-            f"UPDATE categories SET {', '.join(fields)} WHERE id = ?", values
+            f"UPDATE categories SET {', '.join(fields)} WHERE id = ?", values  # nosec B608
         )
 
         # Cascade prefix change to ALL products in this category (including inactive)

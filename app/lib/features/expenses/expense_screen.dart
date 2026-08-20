@@ -1,11 +1,17 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
+import 'package:bakery_app/features/expenses/providers/expense_filter_notifier.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
-import 'package:bakery_app/providers/events_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/data/providers/events_provider.dart';
+import 'package:bakery_app/shared/providers/logged_by_provider.dart';
+import 'package:bakery_app/shared/labels/blanks.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
@@ -49,18 +55,6 @@ class ExpenseScreen extends ConsumerStatefulWidget {
 class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
-  bool _deleting = false;
-  bool _initialHistoryLoading = true;
-  DateTime? _since;
-  DateTime? _until;
-  ExpenseDateFilterMode _dateFilterMode = ExpenseDateFilterMode.range;
-  String _filterCategory = '';
-  String _filterPaidByName = '';
-  String _filterLoggedByName = '';
-  String _filterPaymentSource = '';
-  String _filterSubcategory = '';
-  ExpenseDebtStatusFilter _filterDebtStatus = ExpenseDebtStatusFilter.all;
-  List<BakeryEvent> _history = <BakeryEvent>[];
 
   @override
   String screenRoutePath() => '/expenses';
@@ -72,11 +66,15 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
   void initState() {
     super.initState();
     onAutoRefresh = _refreshHistory;
-    final today = DateTime.now();
-    _until = DateTime(today.year, today.month, today.day);
-    _since = _until!.subtract(const Duration(days: 6));
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
     initAutoRefresh();
+    _searchCtrl.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    ref
+        .read(expenseFilterProvider.notifier)
+        .setSearchText(_searchCtrl.text);
   }
 
   @override
@@ -85,50 +83,17 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
     setupAutoRefreshRouteListener();
   }
 
-  void _setDeleting(bool value) {
-    if (!mounted) return;
-    setState(() => _deleting = value);
-  }
-
-  void _setHistory(List<BakeryEvent> events) {
-    if (!mounted) return;
-    setState(() {
-      _history = events;
-      _initialHistoryLoading = false;
-    });
-  }
-
-  void _setInitialHistoryLoading(bool value) {
-    if (!mounted) return;
-    setState(() => _initialHistoryLoading = value);
-  }
-
-  void _clearFilterState() {
-    if (!mounted) return;
-    setState(() {
-      _since = null;
-      _until = null;
-      _dateFilterMode = ExpenseDateFilterMode.range;
-      _filterCategory = '';
-      _filterPaidByName = '';
-      _filterLoggedByName = '';
-      _filterPaymentSource = '';
-      _filterSubcategory = '';
-      _filterDebtStatus = ExpenseDebtStatusFilter.all;
-      _searchCtrl.clear();
-    });
-  }
-
   @override
   void dispose() {
     disposeAutoRefresh();
+    _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  List<String> _paidByFilterOptions() {
+  List<String> _paidByFilterOptions(List<BakeryEvent> history, String current) {
     final names =
-        _history
+        history
             .map(ExpenseEventMapper.fromEvent)
             .whereType<ExpenseEventData>()
             .map((event) => event.paidByName.trim())
@@ -136,15 +101,15 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             .toSet()
             .toList()
           ..sort();
-    if (_filterPaidByName.isNotEmpty && !names.contains(_filterPaidByName)) {
-      names.insert(0, _filterPaidByName);
+    if (current.isNotEmpty && !names.contains(current)) {
+      names.insert(0, current);
     }
     return names;
   }
 
-  List<String> _loggedByFilterOptions() {
+  List<String> _loggedByFilterOptions(List<BakeryEvent> history, String current) {
     final names =
-        _history
+        history
             .map(ExpenseEventMapper.fromEvent)
             .whereType<ExpenseEventData>()
             .map((event) => event.loggedBy.trim())
@@ -152,14 +117,16 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             .toSet()
             .toList()
           ..sort();
-    if (_filterLoggedByName.isNotEmpty && !names.contains(_filterLoggedByName)) {
-      names.insert(0, _filterLoggedByName);
+    if (current.isNotEmpty && !names.contains(current)) {
+      names.insert(0, current);
     }
     return names;
   }
 
   @override
   Widget build(BuildContext context) {
+    final filter = ref.watch(expenseFilterProvider);
+    final filterNotifier = ref.read(expenseFilterProvider.notifier);
     final categoriesAsync = ref.watch(expenseCategoriesProvider);
     final categoryTree = categoriesAsync.whenOrNull<List<ExpenseCategory>>(
           data: (tree) => tree,
@@ -167,77 +134,69 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
         const <ExpenseCategory>[];
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.expenseTitle),
+        title: const Text(ExpensesLabels.expenseTitle),
         actions: [
           if (widget.onOpenDebts != null)
             IconButton(
               onPressed: widget.onOpenDebts,
-              tooltip: VN.debtListTitle,
+              tooltip: ExpensesLabels.debtListTitle,
               icon: const Icon(Icons.account_balance),
             ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAdd,
-        tooltip: VN.expenseAddAction,
+        tooltip: ExpensesLabels.expenseAddAction,
         child: const Icon(Icons.add),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            VN.expenseHistorySection,
+            ExpensesLabels.expenseHistorySection,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
           ExpenseFilterCard(
             searchCtrl: _searchCtrl,
-            since: _since,
-            until: _until,
-            dateFilterMode: _dateFilterMode,
+            since: filter.since,
+            until: filter.until,
+            dateFilterMode: filter.dateFilterMode,
             categories: expenseCategories,
             paymentSources: expensePaymentSources,
-            paidByNames: _paidByFilterOptions(),
-            loggedByNames: _loggedByFilterOptions(),
-            filterCategory: _filterCategory,
-            filterPaymentSource: _filterPaymentSource,
-            filterPaidByName: _filterPaidByName,
-            filterLoggedByName: _filterLoggedByName,
-            filterDebtStatus: _filterDebtStatus,
+            paidByNames: _paidByFilterOptions(filter.history, filter.filterPaidByName),
+            loggedByNames: _loggedByFilterOptions(filter.history, filter.filterLoggedByName),
+            filterCategory: filter.filterCategory,
+            filterPaymentSource: filter.filterPaymentSource,
+            filterPaidByName: filter.filterPaidByName,
+            filterLoggedByName: filter.filterLoggedByName,
+            filterDebtStatus: filter.filterDebtStatus,
             onFilterDebtStatusChanged: (value) {
-              setState(() => _filterDebtStatus = value);
+              filterNotifier.setDebtStatus(value);
               _refreshHistory();
             },
             categoryTree: categoryTree,
-            filterSubcategory: _filterSubcategory,
+            filterSubcategory: filter.filterSubcategory,
             onFilterSubcategoryChanged: (value) {
-              setState(() => _filterSubcategory = value);
+              filterNotifier.setSubcategory(value);
               _refreshHistory();
             },
-            onDateFilterModeChanged: (value) => setState(() {
-              _dateFilterMode = value;
-              if (value == ExpenseDateFilterMode.single && _since != null) {
-                _until = _since;
-              }
-            }),
+            onDateFilterModeChanged: filterNotifier.setDateFilterMode,
             onPickDate: _pickDate,
             onFilterCategoryChanged: (value) {
-              setState(() {
-                _filterCategory = value;
-                _filterSubcategory = '';
-              });
+              filterNotifier.setCategory(value);
               _refreshHistory();
             },
             onFilterPaymentSourceChanged: (value) {
-              setState(() => _filterPaymentSource = value);
+              filterNotifier.setPaymentSource(value);
               _refreshHistory();
             },
             onFilterPaidByNameChanged: (value) {
-              setState(() => _filterPaidByName = value);
+              filterNotifier.setPaidByName(value);
               _refreshHistory();
             },
             onFilterLoggedByNameChanged: (value) {
-              setState(() => _filterLoggedByName = value);
+              filterNotifier.setLoggedByName(value);
               _refreshHistory();
             },
             onClearFilters: _clearFilters,
@@ -245,7 +204,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             formatDate: _isoDate,
           ),
           const SizedBox(height: 8),
-          if (_initialHistoryLoading)
+          if (filter.initialHistoryLoading)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
@@ -253,19 +212,19 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
               ),
             )
           else
-            ..._history.map(
+            ...filter.history.map(
               (e) => ExpenseHistoryCard(
                 key: ValueKey(e.id),
                 event: e,
-                onEdit: _deleting ? null : () => _openEdit(e),
-                onDelete: _deleting ? null : () => _confirmDelete(e.id),
+                onEdit: filter.deleting ? null : () => _openEdit(e),
+                onDelete: filter.deleting ? null : () => _confirmDelete(e.id),
               ),
             ),
-          if (!_initialHistoryLoading && _history.isEmpty)
+          if (!filter.initialHistoryLoading && filter.history.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
-                child: Text(VN.expenseNoHistory),
+                child: Text(ExpensesLabels.expenseNoHistory),
               ),
             ),
         ],
@@ -291,46 +250,48 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
   }
 
   Future<void> _refreshHistory() async {
-    final shouldToggleInitialLoading = _initialHistoryLoading;
-    final debtStatusApi = expenseDebtStatusFilterApiValue(_filterDebtStatus);
+    final filter = ref.read(expenseFilterProvider);
+    final notifier = ref.read(expenseFilterProvider.notifier);
+    final shouldToggleInitialLoading = filter.initialHistoryLoading;
+    final debtStatusApi = expenseDebtStatusFilterApiValue(filter.filterDebtStatus);
     try {
       final loader = widget.loadHistory;
       final events = await (loader != null
           ? loader(
-              since: _since == null ? null : _localDayStartIso(_since!),
-              until: _until == null ? null : _localDayEndIso(_until!),
-              category: _filterCategory,
+              since: filter.since == null ? null : _localDayStartIso(filter.since!),
+              until: filter.until == null ? null : _localDayEndIso(filter.until!),
+              category: filter.filterCategory,
               paymentMethod: null,
-              paymentSource: _filterPaymentSource,
-              paidByName: _filterPaidByName,
-              loggedBy: _filterLoggedByName,
+              paymentSource: filter.filterPaymentSource,
+              paidByName: filter.filterPaidByName,
+              loggedBy: filter.filterLoggedByName,
               searchText: _searchCtrl.text.trim(),
               debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
-              subcategory: _filterSubcategory,
+              subcategory: filter.filterSubcategory,
             )
           : ref
-                 .read(eventsProvider.notifier)
-                 .loadExpenseHistory(
-                    since: _since == null ? null : _localDayStartIso(_since!),
-                    until: _until == null ? null : _localDayEndIso(_until!),
-                    category: _filterCategory,
-                    paymentMethod: null,
-                    paymentSource: _filterPaymentSource,
-                    paidByName: _filterPaidByName,
-                    loggedBy: _filterLoggedByName,
-                    searchText: _searchCtrl.text.trim(),
-                    debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
-                    subcategory: _filterSubcategory,
-                  ));
-      _setHistory(events);
+                  .read(eventsProvider.notifier)
+                  .loadExpenseHistory(
+                     since: filter.since == null ? null : _localDayStartIso(filter.since!),
+                     until: filter.until == null ? null : _localDayEndIso(filter.until!),
+                     category: filter.filterCategory,
+                     paymentMethod: null,
+                     paymentSource: filter.filterPaymentSource,
+                     paidByName: filter.filterPaidByName,
+                     loggedBy: filter.filterLoggedByName,
+                     searchText: _searchCtrl.text.trim(),
+                     debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
+                     subcategory: filter.filterSubcategory,
+                   ));
+      notifier.setHistory(events);
     } catch (e) {
       if (shouldToggleInitialLoading) {
-        _setInitialHistoryLoading(false);
+        notifier.setInitialHistoryLoading(false);
       }
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
         );
       }
     }
@@ -340,22 +301,23 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text(VN.deleteEvent),
-        content: const Text(VN.deleteEventConfirm),
+        title: const Text(EventsLabels.deleteEvent),
+        content: const Text(EventsLabels.deleteEventConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(VN.actionCancel),
+            child: const Text(BlanksLabels.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(VN.deleteEvent),
+            child: const Text(EventsLabels.deleteEvent),
           ),
         ],
       ),
     );
     if (ok != true) return;
-    _setDeleting(true);
+    final notifier = ref.read(expenseFilterProvider.notifier);
+    notifier.setDeleting(true);
     try {
       final custom = widget.deleteExpense;
       if (custom != null) {
@@ -365,43 +327,43 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
         await ref.read(eventsProvider.notifier).deleteEvent(id, deletedBy: deletedBy);
       }
       await _refreshHistory();
-      if (mounted) showTopSnackBar(context, VN.eventDeleted);
+      if (mounted) showTopSnackBar(context, EventsLabels.eventDeleted);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
         );
       }
     } finally {
-      _setDeleting(false);
+      notifier.setDeleting(false);
     }
   }
 
   void _clearFilters() {
-    _clearFilterState();
+    ref.read(expenseFilterProvider.notifier).clearFilters();
+    _searchCtrl.clear();
     _refreshHistory();
   }
 
   Future<void> _pickDate() async {
+    final filter = ref.read(expenseFilterProvider);
+    final notifier = ref.read(expenseFilterProvider.notifier);
     final now = DateTime.now();
-    if (_dateFilterMode == ExpenseDateFilterMode.single) {
+    if (filter.dateFilterMode == ExpenseDateFilterMode.single) {
       final picked = await showDatePicker(
         context: context,
         firstDate: DateTime(2020),
         lastDate: DateTime(2100),
-        initialDate: _since ?? _until ?? now,
+        initialDate: filter.since ?? filter.until ?? now,
       );
       if (picked == null || !mounted) return;
-      setState(() {
-        _since = picked;
-        _until = picked;
-      });
+      notifier.setSingleDate(picked);
       return;
     }
 
-    final start = _since ?? _until ?? now.subtract(const Duration(days: 6));
-    final end = _until ?? _since ?? now;
+    final start = filter.since ?? filter.until ?? now.subtract(const Duration(days: 6));
+    final end = filter.until ?? filter.since ?? now;
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
@@ -409,10 +371,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
       initialDateRange: DateTimeRange(start: start, end: end),
     );
     if (picked == null || !mounted) return;
-    setState(() {
-      _since = picked.start;
-      _until = picked.end;
-    });
+    notifier.setDateRange(picked.start, picked.end);
   }
 
   String _isoDate(DateTime input) => formatApiDate(input);

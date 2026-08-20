@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
 import 'package:bakery_app/shared/labels/orders.dart';
-
 // ── Hour picker dialog (F5) ───────────────────────────────────────────────────
 
 class HourPickerDialog extends StatelessWidget {
@@ -14,7 +12,7 @@ class HourPickerDialog extends StatelessWidget {
       initialScrollOffset: (initialHour * 48.0).clamp(0.0, 22 * 48.0),
     );
     return AlertDialog(
-      title: const Text(VN.dueTime),
+      title: const Text(OrdersLabels.dueTime),
       contentPadding: const EdgeInsets.symmetric(vertical: 8),
       content: SizedBox(
         width: 120,
@@ -52,7 +50,7 @@ class HourPresetChips extends StatelessWidget {
       children: [
         ChoiceChip(
           // ignore: prefer_const_constructors
-          label: Text('${VN.timeSlotMorning} 8:00'),
+          label: Text('${OrdersLabels.timeSlotMorning} 8:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 8 &&
               selectedTime!.minute == 0,
@@ -60,7 +58,7 @@ class HourPresetChips extends StatelessWidget {
         ),
         ChoiceChip(
           // ignore: prefer_const_constructors
-          label: Text('${VN.timeSlotAfternoon} 14:00'),
+          label: Text('${OrdersLabels.timeSlotAfternoon} 14:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 14 &&
               selectedTime!.minute == 0,
@@ -68,7 +66,7 @@ class HourPresetChips extends StatelessWidget {
         ),
         ChoiceChip(
           // ignore: prefer_const_constructors
-          label: Text('${VN.timeSlotEvening} 18:00'),
+          label: Text('${OrdersLabels.timeSlotEvening} 18:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 18 &&
               selectedTime!.minute == 0,

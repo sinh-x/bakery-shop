@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
+import '../../providers/printer_picker_notifier.dart';
 import '../../providers/printer_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
 /// Result of the printer picker dialog.
 enum PrinterPickerResult {
   cancelled,
@@ -51,72 +51,57 @@ class PrinterPickerBottomSheet extends ConsumerStatefulWidget {
 
 class _PrinterPickerBottomSheetState
     extends ConsumerState<PrinterPickerBottomSheet> {
-  _PickerState _state = _PickerState.loading;
-  List<DiscoveredPrinter> _devices = [];
-  String? _errorMessage;
-  String? _connectingToName;
-
   @override
   void initState() {
     super.initState();
-    _loadBondedDevices();
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(_loadBondedDevices);
   }
 
   Future<void> _loadBondedDevices() async {
-    setState(() {
-      _state = _PickerState.loading;
-      _errorMessage = null;
-    });
+    final notifier = ref.read(printerPickerProvider.notifier);
+    notifier.startLoading();
 
     try {
       // Check Bluetooth permission (Android 12+)
       final hasPermission =
           await PrintBluetoothThermal.isPermissionBluetoothGranted;
       if (!hasPermission) {
-        setState(() {
-          _state = _PickerState.error;
-          _errorMessage =
-              'Cần cấp quyền Bluetooth. Vào Cài đặt > Ứng dụng > Đoàn Gia > Quyền > Bluetooth';
-        });
+        notifier.setError(
+          'Cần cấp quyền Bluetooth. Vào Cài đặt > Ứng dụng > Đoàn Gia > Quyền > Bluetooth',
+        );
         return;
       }
 
       final btEnabled = await widget.printerService.isBluetoothEnabled();
       if (!btEnabled) {
-        setState(() {
-          _state = _PickerState.error;
-          _errorMessage = printerErrorMessage(PrinterError.bluetoothDisabled);
-        });
+        notifier.setError(
+          printerErrorMessage(PrinterError.bluetoothDisabled),
+        );
         return;
       }
 
       final devices = await widget.printerService.getBondedDevices();
       if (!mounted) return;
 
-      setState(() {
-        _devices = devices;
-        _state =
-            devices.isEmpty ? _PickerState.noDevices : _PickerState.deviceList;
-      });
+      notifier.setDevices(devices);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _state = _PickerState.error;
-        _errorMessage = printerErrorMessage(PrinterError.bluetoothScanFailed);
-      });
+      notifier.setError(
+        printerErrorMessage(PrinterError.bluetoothScanFailed),
+      );
     }
   }
 
   Future<void> _onDeviceSelected(DiscoveredPrinter device, {bool testOnly = false}) async {
-    setState(() {
-      _state = _PickerState.connecting;
-      _connectingToName = device.name;
-    });
+    final notifier = ref.read(printerPickerProvider.notifier);
+    notifier.startConnecting(device.name);
 
     try {
       await widget.printerService.connect(device.address);
 
-      setState(() => _state = _PickerState.printing);
+      notifier.setPrinting();
 
       if (testOnly) {
         await widget.printerService.printTest();
@@ -126,10 +111,9 @@ class _PrinterPickerBottomSheetState
 
         if (!success) {
           final printerStatus = ref.read(printerProvider).asData?.value;
-          setState(() {
-            _state = _PickerState.error;
-            _errorMessage = printerStatus?.errorMessage ?? VN.printerConnectionFailed;
-          });
+          notifier.setError(
+            printerStatus?.errorMessage ?? SharedLabels.printerConnectionFailed,
+          );
           return;
         }
       }
@@ -139,25 +123,22 @@ class _PrinterPickerBottomSheetState
       }
     } on PrinterException catch (e) {
       if (mounted) {
-        setState(() {
-          _state = _PickerState.error;
-          _errorMessage =
-              '${printerErrorMessage(e.error)}\n\nKiểm tra máy in đã bật và không kết nối với ứng dụng khác';
-        });
+        notifier.setError(
+          '${printerErrorMessage(e.error)}\n\nKiểm tra máy in đã bật và không kết nối với ứng dụng khác',
+        );
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _state = _PickerState.error;
-          _errorMessage =
-              '${VN.printerConnectionFailed}\n\nLỗi: $e';
-        });
+        notifier.setError(
+          '${SharedLabels.printerConnectionFailed}\n\nLỗi: $e',
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final pickerState = ref.watch(printerPickerProvider);
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -170,8 +151,8 @@ class _PrinterPickerBottomSheetState
             _buildHandle(),
             _buildHeader(),
             const Divider(height: 1),
-            _buildContent(),
-            _buildActions(),
+            _buildContent(pickerState),
+            _buildActions(pickerState),
           ],
         ),
       ),
@@ -198,7 +179,7 @@ class _PrinterPickerBottomSheetState
           const Icon(Icons.bluetooth, size: 24),
           const SizedBox(width: 8),
           Text(
-            VN.selectPrinter,
+            SharedLabels.selectPrinter,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const Spacer(),
@@ -212,20 +193,20 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildContent() {
-    switch (_state) {
-      case _PickerState.loading:
+  Widget _buildContent(PrinterPickerDialogState pickerState) {
+    switch (pickerState.phase) {
+      case PrinterPickerPhase.loading:
         return _buildLoadingContent();
-      case _PickerState.deviceList:
-        return _buildDeviceList();
-      case _PickerState.noDevices:
+      case PrinterPickerPhase.deviceList:
+        return _buildDeviceList(pickerState);
+      case PrinterPickerPhase.noDevices:
         return _buildNoDevicesContent();
-      case _PickerState.connecting:
-        return _buildConnectingContent();
-      case _PickerState.printing:
+      case PrinterPickerPhase.connecting:
+        return _buildConnectingContent(pickerState);
+      case PrinterPickerPhase.printing:
         return _buildPrintingContent();
-      case _PickerState.error:
-        return _buildErrorContent();
+      case PrinterPickerPhase.error:
+        return _buildErrorContent(pickerState);
     }
   }
 
@@ -242,16 +223,16 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildDeviceList() {
+  Widget _buildDeviceList(PrinterPickerDialogState pickerState) {
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.4,
       ),
       child: ListView.builder(
         shrinkWrap: true,
-        itemCount: _devices.length,
+        itemCount: pickerState.devices.length,
         itemBuilder: (context, index) {
-          final device = _devices[index];
+          final device = pickerState.devices[index];
           return ListTile(
             leading: const Icon(Icons.bluetooth),
             title: Text(device.name),
@@ -285,7 +266,7 @@ class _PrinterPickerBottomSheetState
           ),
           const SizedBox(height: 16),
           Text(
-            VN.noDevicesFound,
+            SharedLabels.noDevicesFound,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 8),
@@ -301,7 +282,7 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildConnectingContent() {
+  Widget _buildConnectingContent(PrinterPickerDialogState pickerState) {
     return Container(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -309,13 +290,13 @@ class _PrinterPickerBottomSheetState
           const CircularProgressIndicator(strokeWidth: 2),
           const SizedBox(height: 16),
           Text(
-            VN.connectingTo,
+            SharedLabels.connectingTo,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
-          if (_connectingToName != null) ...[
+          if (pickerState.connectingToName != null) ...[
             const SizedBox(height: 8),
             Text(
-              _connectingToName!,
+              pickerState.connectingToName!,
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ],
@@ -332,7 +313,7 @@ class _PrinterPickerBottomSheetState
           const CircularProgressIndicator(strokeWidth: 2),
           const SizedBox(height: 16),
           Text(
-            VN.printing,
+            SharedLabels.printing,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
         ],
@@ -340,7 +321,7 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildErrorContent() {
+  Widget _buildErrorContent(PrinterPickerDialogState pickerState) {
     return Container(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -352,7 +333,7 @@ class _PrinterPickerBottomSheetState
           ),
           const SizedBox(height: 16),
           Text(
-            _errorMessage ?? VN.printerConnectionFailed,
+            pickerState.errorMessage ?? SharedLabels.printerConnectionFailed,
             style: Theme.of(context).textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -361,10 +342,10 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildActions() {
-    if (_state == _PickerState.loading ||
-        _state == _PickerState.connecting ||
-        _state == _PickerState.printing) {
+  Widget _buildActions(PrinterPickerDialogState pickerState) {
+    if (pickerState.phase == PrinterPickerPhase.loading ||
+        pickerState.phase == PrinterPickerPhase.connecting ||
+        pickerState.phase == PrinterPickerPhase.printing) {
       return const SizedBox.shrink();
     }
 
@@ -372,31 +353,22 @@ class _PrinterPickerBottomSheetState
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          if (_state == _PickerState.error ||
-              _state == _PickerState.noDevices) ...[
+          if (pickerState.phase == PrinterPickerPhase.error ||
+              pickerState.phase == PrinterPickerPhase.noDevices) ...[
             FilledButton.icon(
               onPressed: _loadBondedDevices,
               icon: const Icon(Icons.refresh),
-              label: const Text(VN.tapToRetry),
+              label: const Text(SharedLabels.tapToRetry),
             ),
           ],
           const SizedBox(height: 8),
           TextButton(
             onPressed: () =>
                 Navigator.of(context).pop(PrinterPickerResult.cancelled),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
         ],
       ),
     );
   }
-}
-
-enum _PickerState {
-  loading,
-  deviceList,
-  noDevices,
-  connecting,
-  printing,
-  error,
 }

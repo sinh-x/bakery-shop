@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/customer.dart';
 import '../../customers/widgets/customer_search_field.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Customer search modal host (DG-218 Phase 1 — FR-8).
 ///
 /// Replaces the inline `CustomerSearchField` in Stage 2 of create/edit/POS
@@ -122,7 +122,7 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(VN.cancel),
+          child: const Text(SharedLabels.cancel),
         ),
       ],
     );

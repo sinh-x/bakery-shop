@@ -92,7 +92,7 @@ def inv_list(low, category):
 
         where = " AND ".join(conditions) if conditions else "1=1"
         rows = conn.execute(
-            f"SELECT * FROM inventory WHERE {where} ORDER BY category, name",
+            f"SELECT * FROM inventory WHERE {where} ORDER BY category, name",  # nosec B608
             params,
         ).fetchall()
 

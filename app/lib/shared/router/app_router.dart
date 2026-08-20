@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import '../../features/auth/force_change_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/password_change_screen.dart';
-import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/dashboard/management_dashboard_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/knowledge_base/knowledge_base_screen.dart';
@@ -15,6 +15,7 @@ import '../../features/cash_drawer/cash_drawer_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/knowledge/knowledge_list_screen.dart';
 import '../../features/pos/pos_screen.dart';
+import '../../features/today_sales/today_sales_screen.dart';
 import '../widgets/admin_guard.dart';
 import 'auth_guard.dart';
 import 'routes/blanks_routes.dart';
@@ -23,6 +24,7 @@ import 'routes/expenses_routes.dart';
 import 'routes/misc_routes.dart';
 import 'routes/orders_routes.dart';
 import 'routes/products_routes.dart';
+import 'routes/templates_routes.dart';
 import 'widgets/shell_scaffold.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -74,7 +76,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/dashboard',
             pageBuilder: (context, state) =>
-                const NoTransitionPage(child: DashboardScreen()),
+                const NoTransitionPage(child: ManagementDashboardScreen()),
           ),
           GoRoute(
             path: '/orders',
@@ -119,6 +121,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: PosScreen()),
           ),
+          GoRoute(
+            path: '/today-sales',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: TodaySalesScreen()),
+          ),
         ],
       ),
       // Per-feature route modules (DG-308 Phase 4.2 / FR-FL-4).
@@ -127,6 +134,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ...eventsRoutes(),
       ...expensesRoutes(),
       ...blanksRoutes(),
+      ...templatesRoutes(),
       ...miscRoutes(),
     ],
   );

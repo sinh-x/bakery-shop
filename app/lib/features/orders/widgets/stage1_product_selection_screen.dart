@@ -11,7 +11,6 @@ import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
 import 'stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 /// Stage 1 of the order creation wizard — product selection.
 ///
 /// Two-step flow (DG-214):
@@ -27,10 +26,17 @@ class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
     super.key,
     required this.onContinue,
     required this.orderStateProvider,
+    this.onFastPath,
   });
 
   final VoidCallback onContinue;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-2): optional POS-only "Giao ngay & Thanh toán"
+  /// fast-path callback. When provided (POS checkout), a button is rendered
+  /// next to "Tiếp tục" that jumps directly to Stage 5 with Giao ngay walk-in
+  /// defaults. Null in the normal order flow (no button shown).
+  final VoidCallback? onFastPath;
 
   @override
   ConsumerState<Stage1ProductSelectionScreen> createState() =>
@@ -150,7 +156,7 @@ class _Stage1ProductSelectionScreenState
             child: OutlinedButton.icon(
               onPressed: _onAddProduct,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text(VN.addProduct),
+              label: const Text(OrdersLabels.addProduct),
             ),
           ),
         ),
@@ -163,9 +169,26 @@ class _Stage1ProductSelectionScreenState
           Expanded(child: content),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: FilledButton(
-              onPressed: items.isEmpty ? null : widget.onContinue,
-              child: const Text(OrdersLabels.continueLabel),
+            child: Row(
+              children: [
+                // DG-370 Phase 5.6-c1 (UX-2): "Giao ngay & Thanh toán" fast-path
+                // button next to "Tiếp tục" — POS-only (onFastPath is null in
+                // the normal order flow).
+                if (widget.onFastPath != null) ...[
+                  FilledButton.icon(
+                    onPressed: items.isEmpty ? null : widget.onFastPath,
+                    icon: const Icon(Icons.bolt, size: 18),
+                    label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: FilledButton(
+                    onPressed: items.isEmpty ? null : widget.onContinue,
+                    child: const Text(OrdersLabels.continueLabel),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -183,7 +206,7 @@ class _ExtrasHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 6),
       child: Text(
-        VN.addExtra,
+        OrdersLabels.addExtra,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: Theme.of(context).colorScheme.primary,
             ),

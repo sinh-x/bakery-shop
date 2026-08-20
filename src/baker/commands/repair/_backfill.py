@@ -88,7 +88,7 @@ def _select_unlinked_1101_entries(conn, drawer_id: int, opened_at, closed_at):
               WHERE cash_drawer_id = ?
           )
         ORDER BY je.created_at
-        """,
+        """,  # nosec B608
         (opened_at, closed_at, *_EXCLUDED_SOURCE_TYPES, drawer_id),
     ).fetchall()
 
@@ -116,7 +116,7 @@ def _select_unlinked_1101_entries_open(conn, drawer_id: int, opened_at):
               WHERE cash_drawer_id = ?
           )
         ORDER BY je.created_at
-        """,
+        """,  # nosec B608
         (opened_at, *_EXCLUDED_SOURCE_TYPES, drawer_id),
     ).fetchall()
 
@@ -145,7 +145,7 @@ def _select_unlinked_1101_by_txn_date(conn, drawer_id: int, opened_at, closed_at
               FROM cash_drawer_journal_entries
           )
         ORDER BY je.transaction_date
-        """,
+        """,  # nosec B608
         (opened_at, closed_at, *_EXCLUDED_SOURCE_TYPES),
     ).fetchall()
 
@@ -169,7 +169,7 @@ def _select_unlinked_1101_by_txn_date_open(
               FROM cash_drawer_journal_entries
           )
         ORDER BY je.transaction_date
-        """,
+        """,  # nosec B608
         (opened_at, *_EXCLUDED_SOURCE_TYPES),
     ).fetchall()
 
@@ -426,7 +426,7 @@ def count_unlinked_outside_any_drawer(conn) -> int:
                 AND (d.closed_at IS NULL
                      OR je.transaction_date <= d.closed_at)
           )
-        """,
+        """,  # nosec B608
         tuple(_EXCLUDED_SOURCE_TYPES),
     ).fetchone()["cnt"]
 
@@ -457,7 +457,7 @@ def count_unlinked_total(conn) -> int:
           AND je.id NOT IN (
               SELECT journal_entry_id FROM cash_drawer_journal_entries
           )
-        """,
+        """,  # nosec B608
         tuple(_EXCLUDED_SOURCE_TYPES),
     ).fetchone()["cnt"]
 

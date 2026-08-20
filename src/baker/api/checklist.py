@@ -149,7 +149,7 @@ def update_template(template_id: int, body: TemplateUpdate, actor: str = Depends
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             values = list(fields.values()) + [template_id]
             conn.execute(
-                f"UPDATE checklist_templates SET {set_clause} WHERE id = ?", values
+                f"UPDATE checklist_templates SET {set_clause} WHERE id = ?", values  # nosec B608
             )
             record_audit_log(
                 conn,

@@ -7,7 +7,10 @@ import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/providers/photo_upload_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +78,7 @@ BakeryEvent _expenseEvent({
   required String staff,
   String vendor = '',
   String note = '',
-  String paymentSource = VN.paymentSourceDrawerCash,
+  String paymentSource = ExpensesLabels.paymentSourceDrawerCash,
   String paidByName = '',
   String loggedBy = '',
   bool reimbursed = false,
@@ -191,7 +194,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseAddAction), findsOneWidget);
+    expect(find.text(ExpensesLabels.expenseAddAction), findsOneWidget);
   });
 
   testWidgets('edit opens dedicated form route with prepopulated data', (
@@ -203,8 +206,8 @@ void main() {
     final event = _expenseEvent(
       id: 9,
       amount: 150000,
-      category: VN.expenseCategoryIngredient,
-      paymentMethod: VN.methodCash,
+      category: ExpensesLabels.expenseCategoryIngredient,
+      paymentMethod: OrdersLabels.methodCash,
       vendor: 'NCC A',
       note: 'Bot mi',
       staff: 'Lan',
@@ -251,11 +254,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text(VN.editEvent));
-    await tester.tap(find.text(VN.editEvent));
+    await tester.ensureVisible(find.text(EventsLabels.editEvent));
+    await tester.tap(find.text(EventsLabels.editEvent));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseUpdateAction), findsWidgets);
+    expect(find.text(ExpensesLabels.expenseUpdateAction), findsWidgets);
     expect(find.text('150000'), findsOneWidget);
     expect(find.text('NCC A'), findsOneWidget);
     expect(find.text('Bot mi'), findsOneWidget);
@@ -288,8 +291,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.expenseUpdateAction), findsWidgets);
-      expect(find.text(VN.expenseAddAction), findsNothing);
+      expect(find.text(ExpensesLabels.expenseUpdateAction), findsWidgets);
+      expect(find.text(ExpensesLabels.expenseAddAction), findsNothing);
     },
   );
 
@@ -303,8 +306,8 @@ void main() {
     final event = _expenseEvent(
       id: 3,
       amount: 20000,
-      category: VN.expenseCategoryOther,
-      paymentMethod: VN.methodCash,
+      category: ExpensesLabels.expenseCategoryOther,
+      paymentMethod: OrdersLabels.methodCash,
       staff: 'Minh',
     );
 
@@ -335,11 +338,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.deleteEvent).first);
+    await tester.tap(find.text(EventsLabels.deleteEvent).first);
     await tester.pumpAndSettle();
-    expect(find.text(VN.deleteEventConfirm), findsOneWidget);
+    expect(find.text(EventsLabels.deleteEventConfirm), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.deleteEvent));
+    await tester.tap(find.widgetWithText(FilledButton, EventsLabels.deleteEvent));
     await tester.pumpAndSettle();
 
     expect(deletedId, 3);
@@ -405,8 +408,8 @@ void main() {
       _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
         staff: 'Lan',
         paidByName: 'Lan',
       ),
@@ -437,15 +440,15 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'bot');
-    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Lan').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseResetFiltersAction));
+    await tester.tap(find.text(ExpensesLabels.expenseResetFiltersAction));
     await tester.pumpAndSettle();
 
     expect(find.text('bot'), findsNothing);
-    final allChips = find.widgetWithText(FilterChip, VN.filterAll);
+    final allChips = find.widgetWithText(FilterChip, EventsLabels.filterAll);
     expect(tester.widget<FilterChip>(allChips.at(0)).selected, isTrue);
     expect(tester.widget<FilterChip>(allChips.at(1)).selected, isTrue);
     expect(tester.widget<FilterChip>(allChips.at(2)).selected, isTrue);
@@ -462,14 +465,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay),
+      find.widgetWithText(ChoiceChip, OrdersLabels.lichSuDonHangLocMotNgay),
       findsOneWidget,
     );
     expect(
-      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocKhoangNgay),
+      find.widgetWithText(ChoiceChip, OrdersLabels.lichSuDonHangLocKhoangNgay),
       findsOneWidget,
     );
-    expect(find.text(VN.expensePaymentMethodLabel), findsNothing);
+    expect(find.text(ExpensesLabels.expensePaymentMethodLabel), findsNothing);
   });
 
   testWidgets('apply filters uses category and paid_by chips', (tester) async {
@@ -479,8 +482,8 @@ void main() {
       _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
         staff: 'Lan',
         paidByName: 'Lan',
       ),
@@ -514,14 +517,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Lan').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseApplyFiltersAction));
+    await tester.tap(find.text(ExpensesLabels.expenseApplyFiltersAction));
     await tester.pumpAndSettle();
 
-    expect(capturedCategory, VN.expenseCategoryIngredient);
+    expect(capturedCategory, ExpensesLabels.expenseCategoryIngredient);
     expect(capturedPaidByName, 'Lan');
   });
 
@@ -533,8 +536,8 @@ void main() {
       _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
         staff: 'Lan',
       ),
     ];
@@ -566,10 +569,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).first);
     await tester.pumpAndSettle();
 
-    expect(capturedCategory, VN.expenseCategoryIngredient);
+    expect(capturedCategory, ExpensesLabels.expenseCategoryIngredient);
   });
 
   testWidgets('shows empty history state when no expense item', (tester) async {
@@ -582,12 +585,12 @@ void main() {
     // The empty-history card may sit below the fold once the debt status
     // filter strip is present; scroll it into view before asserting.
     await tester.scrollUntilVisible(
-      find.text(VN.expenseNoHistory),
+      find.text(ExpensesLabels.expenseNoHistory),
       200,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
-    expect(find.text(VN.expenseNoHistory), findsOneWidget);
+    expect(find.text(ExpensesLabels.expenseNoHistory), findsOneWidget);
   });
 
   testWidgets('history card shows reimbursed badge when true', (tester) async {
@@ -597,9 +600,9 @@ void main() {
     final event = _expenseEvent(
       id: 1,
       amount: 120000,
-      category: VN.expenseCategoryIngredient,
-      paymentMethod: VN.methodCash,
-      paymentSource: VN.paymentSourceStaffAdvance,
+      category: ExpensesLabels.expenseCategoryIngredient,
+      paymentMethod: OrdersLabels.methodCash,
+      paymentSource: ExpensesLabels.paymentSourceStaffAdvance,
       staff: 'Lan',
       reimbursed: true,
     );
@@ -628,8 +631,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.reimbursedYes), findsOneWidget);
-    expect(find.text(VN.reimbursedNo), findsNothing);
+    expect(find.text(ExpensesLabels.reimbursedYes), findsOneWidget);
+    expect(find.text(ExpensesLabels.reimbursedNo), findsNothing);
   });
 
   testWidgets(
@@ -641,9 +644,9 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourceStaffAdvance,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
+        paymentSource: ExpensesLabels.paymentSourceStaffAdvance,
         staff: 'Lan',
         reimbursed: false,
       );
@@ -672,8 +675,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.reimbursedNo), findsOneWidget);
-      expect(find.text(VN.reimbursedYes), findsNothing);
+      expect(find.text(ExpensesLabels.reimbursedNo), findsOneWidget);
+      expect(find.text(ExpensesLabels.reimbursedYes), findsNothing);
     },
   );
 
@@ -686,9 +689,9 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourceDrawerCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
+        paymentSource: ExpensesLabels.paymentSourceDrawerCash,
         staff: 'Lan',
         reimbursed: false,
       );
@@ -717,8 +720,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.reimbursedYes), findsNothing);
-      expect(find.text(VN.reimbursedNo), findsNothing);
+      expect(find.text(ExpensesLabels.reimbursedYes), findsNothing);
+      expect(find.text(ExpensesLabels.reimbursedNo), findsNothing);
     },
   );
 
@@ -731,9 +734,9 @@ void main() {
     final event = _expenseEvent(
       id: 1,
       amount: 120000,
-      category: VN.expenseCategoryIngredient,
-      paymentMethod: VN.methodCash,
-      paymentSource: VN.paymentSourcePhuongVCB,
+      category: ExpensesLabels.expenseCategoryIngredient,
+      paymentMethod: OrdersLabels.methodCash,
+      paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
       staff: 'Lan',
     );
 
@@ -763,7 +766,7 @@ void main() {
 
     final infoText = find.descendant(
       of: find.byType(ExpenseHistoryCard),
-      matching: find.textContaining(VN.paymentSourcePhuongVCB),
+      matching: find.textContaining(ExpensesLabels.paymentSourcePhuongVCB),
     );
     expect(infoText, findsOneWidget);
   });
@@ -776,12 +779,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
+    expect(find.text(ExpensesLabels.expensePaymentSourceLabel), findsOneWidget);
     final paymentSourceChips = find.byWidgetPredicate(
       (widget) =>
           widget is FilterChip &&
           widget.label is Text &&
-          (widget.label as Text).data == VN.paymentSourceDrawerCash,
+          (widget.label as Text).data == ExpensesLabels.paymentSourceDrawerCash,
     );
     await tester.dragUntilVisible(
       paymentSourceChips,
@@ -802,9 +805,9 @@ void main() {
       _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourcePhuongVCB,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
+        paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
         staff: 'Lan',
       ),
     ];
@@ -840,7 +843,7 @@ void main() {
       (widget) =>
           widget is FilterChip &&
           widget.label is Text &&
-          (widget.label as Text).data == VN.paymentSourcePhuongVCB,
+          (widget.label as Text).data == ExpensesLabels.paymentSourcePhuongVCB,
     );
     await tester.dragUntilVisible(
       chip,
@@ -850,7 +853,7 @@ void main() {
     await tester.tap(chip);
     await tester.pumpAndSettle();
 
-    expect(capturedPaymentSource, VN.paymentSourcePhuongVCB);
+    expect(capturedPaymentSource, ExpensesLabels.paymentSourcePhuongVCB);
   });
 
   testWidgets('clear filters resets payment source chip', (tester) async {
@@ -861,9 +864,9 @@ void main() {
       _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
-        paymentSource: VN.paymentSourcePhuongVCB,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
+        paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
         staff: 'Lan',
       ),
     ];
@@ -896,7 +899,7 @@ void main() {
       (widget) =>
           widget is FilterChip &&
           widget.label is Text &&
-          (widget.label as Text).data == VN.paymentSourcePhuongVCB,
+          (widget.label as Text).data == ExpensesLabels.paymentSourcePhuongVCB,
     );
     await tester.dragUntilVisible(
       chip,
@@ -905,10 +908,10 @@ void main() {
     );
     await tester.tap(chip);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseResetFiltersAction));
+    await tester.tap(find.text(ExpensesLabels.expenseResetFiltersAction));
     await tester.pumpAndSettle();
 
-    final allChips = find.widgetWithText(FilterChip, VN.filterAll);
+    final allChips = find.widgetWithText(FilterChip, EventsLabels.filterAll);
     expect(tester.widget<FilterChip>(allChips.at(1)).selected, isTrue);
   });
 
@@ -928,8 +931,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
-    expect(find.text(VN.paymentSourceDrawerCash), findsOneWidget);
+    expect(find.text(ExpensesLabels.expensePaymentSourceLabel), findsOneWidget);
+    expect(find.text(ExpensesLabels.paymentSourceDrawerCash), findsOneWidget);
   });
 
   testWidgets('history card shows logged_by and paid_by roles', (
@@ -946,9 +949,9 @@ void main() {
       loggedBy: 'Sinh',
       data: {
         'amount_vnd': 120000,
-        'category': VN.expenseCategoryIngredient,
-        'payment_method': VN.methodCash,
-        'payment_source': VN.paymentSourceDrawerCash,
+        'category': ExpensesLabels.expenseCategoryIngredient,
+        'payment_method': OrdersLabels.methodCash,
+        'payment_source': ExpensesLabels.paymentSourceDrawerCash,
         'vendor': '',
         'note': '',
         'staff_name': 'Lan',
@@ -981,8 +984,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('${VN.expenseLoggedByLabel}: Sinh'), findsOneWidget);
-    expect(find.textContaining('${VN.expensePaidByNameLabel}: Minh'), findsOneWidget);
+    expect(find.textContaining('${ExpensesLabels.expenseLoggedByLabel}: Sinh'), findsOneWidget);
+    expect(find.textContaining('${ExpensesLabels.expensePaidByNameLabel}: Minh'), findsOneWidget);
   });
 
   testWidgets('history card shows fallback for missing paid_by_name', (
@@ -994,8 +997,8 @@ void main() {
     final event = _expenseEvent(
       id: 1,
       amount: 120000,
-      category: VN.expenseCategoryIngredient,
-      paymentMethod: VN.methodCash,
+      category: ExpensesLabels.expenseCategoryIngredient,
+      paymentMethod: OrdersLabels.methodCash,
       staff: 'Lan',
     );
 
@@ -1023,7 +1026,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('${VN.expensePaidByNameLabel}: Lan'), findsOneWidget);
+    expect(find.textContaining('${ExpensesLabels.expensePaidByNameLabel}: Lan'), findsOneWidget);
   });
 
   testWidgets('form screen hides nhan vien label and shows payer dropdown', (
@@ -1044,8 +1047,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseStaffNameLabel), findsNothing);
-    expect(find.text(VN.expensePaidByNameLabel), findsOneWidget);
+    expect(find.text(ExpensesLabels.expenseStaffNameLabel), findsNothing);
+    expect(find.text(ExpensesLabels.expensePaidByNameLabel), findsOneWidget);
   });
 
   testWidgets(
@@ -1061,8 +1064,8 @@ void main() {
       final event = _expenseEvent(
         id: 15,
         amount: 150000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
         vendor: 'NCC A',
         note: 'Bot mi',
         staff: 'Lan',
@@ -1077,8 +1080,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.expenseStaffNameLabel), findsNothing);
-      expect(find.text(VN.expenseUpdateAction), findsWidgets);
+      expect(find.text(ExpensesLabels.expenseStaffNameLabel), findsNothing);
+      expect(find.text(ExpensesLabels.expenseUpdateAction), findsWidgets);
       expect(find.text('150000'), findsOneWidget);
       expect(find.text('NCC A'), findsOneWidget);
       expect(find.text('Bot mi'), findsOneWidget);
@@ -1110,21 +1113,21 @@ void main() {
 
     await tester.tap(find.byType(DropdownButtonFormField<String>).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).last);
     await tester.pumpAndSettle();
 
     // Select subcategory (required when category has children — DG-302).
     await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+    await tester.tap(find.text(ExpensesLabels.expenseSubcategoryEggs).last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.tap(find.text(ExpensesLabels.expenseSaveAction));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expensePayerConfirmTitle), findsOneWidget);
-    expect(find.textContaining('${VN.expensePayerUseStaff}:'), findsOneWidget);
-    expect(find.text(VN.expensePayerEnterCustom), findsOneWidget);
+    expect(find.text(ExpensesLabels.expensePayerConfirmTitle), findsOneWidget);
+    expect(find.textContaining('${ExpensesLabels.expensePayerUseStaff}:'), findsOneWidget);
+    expect(find.text(ExpensesLabels.expensePayerEnterCustom), findsOneWidget);
   });
 
   testWidgets(
@@ -1152,23 +1155,23 @@ void main() {
 
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+      await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
       // Select subcategory (required when category has children — DG-302).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.tap(find.text(ExpensesLabels.expenseSubcategoryEggs).last);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(VN.expenseSaveAction));
+      await tester.tap(find.text(ExpensesLabels.expenseSaveAction));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(VN.cancel));
+      await tester.tap(find.text(SharedLabels.cancel));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
-      expect(find.text(VN.expenseSaveAction), findsOneWidget);
+      expect(find.text(ExpensesLabels.expensePayerConfirmTitle), findsNothing);
+      expect(find.text(ExpensesLabels.expenseSaveAction), findsOneWidget);
     },
   );
 
@@ -1193,19 +1196,19 @@ void main() {
 
     await tester.tap(find.byType(DropdownButtonFormField<String>).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).last);
     await tester.pumpAndSettle();
 
     // Select subcategory (required when category has children — DG-302).
     await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+    await tester.tap(find.text(ExpensesLabels.expenseSubcategoryEggs).last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.tap(find.text(ExpensesLabels.expenseSaveAction));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseEmptyStaffWarning), findsOneWidget);
+    expect(find.text(ExpensesLabels.expenseEmptyStaffWarning), findsOneWidget);
   });
 
   testWidgets(
@@ -1217,8 +1220,8 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 500000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodDebt,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'Nhà cung cấp A',
         staff: 'Lan',
       );
@@ -1249,15 +1252,15 @@ void main() {
 
       final card = find.byType(ExpenseHistoryCard);
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusUnpaid)),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPaid)),
         findsNothing,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPartial)),
         findsNothing,
       );
     },
@@ -1272,8 +1275,8 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 500000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodDebt,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'Nhà cung cấp A',
         staff: 'Lan',
         settlements: [
@@ -1307,11 +1310,11 @@ void main() {
 
       final card = find.byType(ExpenseHistoryCard);
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPaid)),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusUnpaid)),
         findsNothing,
       );
     },
@@ -1326,8 +1329,8 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 500000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodDebt,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'Nhà cung cấp A',
         staff: 'Lan',
         settlements: [
@@ -1361,15 +1364,15 @@ void main() {
 
       final card = find.byType(ExpenseHistoryCard);
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPartial)),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPaid)),
         findsNothing,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusUnpaid)),
         findsNothing,
       );
     },
@@ -1384,8 +1387,8 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 120000,
-        category: VN.expenseCategoryIngredient,
-        paymentMethod: VN.methodCash,
+        category: ExpensesLabels.expenseCategoryIngredient,
+        paymentMethod: OrdersLabels.methodCash,
         staff: 'Lan',
       );
 
@@ -1415,15 +1418,15 @@ void main() {
 
       final card = find.byType(ExpenseHistoryCard);
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusUnpaid)),
         findsNothing,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPaid)),
         findsNothing,
       );
       expect(
-        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        find.descendant(of: card, matching: find.text(ExpensesLabels.debtStatusPartial)),
         findsNothing,
       );
     },
@@ -1448,17 +1451,17 @@ void main() {
       await tester.pumpAndSettle();
 
       // Initially cash method — payment source visible.
-      expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
+      expect(find.text(ExpensesLabels.expensePaymentSourceLabel), findsOneWidget);
 
       // Select Nợ payment method (second DropdownButtonFormField).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.methodDebt).last);
+      await tester.tap(find.text(OrdersLabels.methodDebt).last);
       await tester.pumpAndSettle();
 
       // Payment source dropdown hidden, creditor label visible.
-      expect(find.text(VN.expensePaymentSourceLabel), findsNothing);
-      expect(find.text(VN.expenseCreditorLabel), findsOneWidget);
+      expect(find.text(ExpensesLabels.expensePaymentSourceLabel), findsNothing);
+      expect(find.text(ExpensesLabels.expenseCreditorLabel), findsOneWidget);
     },
   );
 
@@ -1489,29 +1492,29 @@ void main() {
       // Select category.
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+      await tester.tap(find.text(ExpensesLabels.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
       // Select subcategory (required when category has children — DG-302).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.tap(find.text(ExpensesLabels.expenseSubcategoryEggs).last);
       await tester.pumpAndSettle();
 
       // Select Nợ (payment method dropdown — index 2 now that subcategory
       // dropdown is rendered between category and payment method).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(2));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.methodDebt).last);
+      await tester.tap(find.text(OrdersLabels.methodDebt).last);
       await tester.pumpAndSettle();
 
       // Tap save — vendor (creditor) empty should trigger validation.
-      await tester.tap(find.text(VN.expenseSaveAction));
+      await tester.tap(find.text(ExpensesLabels.expenseSaveAction));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.expenseDebtVendorRequired), findsOneWidget);
+      expect(find.text(ExpensesLabels.expenseDebtVendorRequired), findsOneWidget);
       // No payer confirm dialog because debt bypasses it.
-      expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
+      expect(find.text(ExpensesLabels.expensePayerConfirmTitle), findsNothing);
     },
   );
 
@@ -1531,18 +1534,18 @@ void main() {
       // partial/paid). Use the label as the anchor to prove the strip is
       // present; the chip text may collide with history card chips so we
       // count FilterChip widgets whose label text matches.
-      expect(find.text(VN.debtListFilterStatusLabel), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtListFilterStatusLabel), findsOneWidget);
       final unpaidChips = find.widgetWithText(
         FilterChip,
-        VN.debtStatusUnpaid,
+        ExpensesLabels.debtStatusUnpaid,
       );
       expect(unpaidChips, findsOneWidget);
       expect(
-        find.widgetWithText(FilterChip, VN.debtStatusPartial),
+        find.widgetWithText(FilterChip, ExpensesLabels.debtStatusPartial),
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(FilterChip, VN.debtStatusPaid),
+        find.widgetWithText(FilterChip, ExpensesLabels.debtStatusPaid),
         findsOneWidget,
       );
     },
@@ -1586,7 +1589,7 @@ void main() {
       // There may be multiple widgets with this text (e.g. history cards);
       // find the FilterChip with this label.
       final unpaidChip = find.ancestor(
-        of: find.text(VN.debtStatusUnpaid),
+        of: find.text(ExpensesLabels.debtStatusUnpaid),
         matching: find.byType(FilterChip),
       );
       await tester.ensureVisible(unpaidChip.first);
@@ -1613,7 +1616,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final debtsBtn = find.byTooltip(VN.debtListTitle);
+      final debtsBtn = find.byTooltip(ExpensesLabels.debtListTitle);
       expect(debtsBtn, findsOneWidget);
       await tester.tap(debtsBtn);
       await tester.pumpAndSettle();
@@ -1662,7 +1665,7 @@ void main() {
 
       expect(find.byType(UploadProgressIndicator, skipOffstage: false),
           findsOneWidget);
-      expect(find.text(VN.photoUploadComplete(2), skipOffstage: false),
+      expect(find.text(SharedLabels.photoUploadComplete(2), skipOffstage: false),
           findsOneWidget);
     },
   );

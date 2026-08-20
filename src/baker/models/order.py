@@ -29,7 +29,11 @@ TRANSITIONS = {
     OrderStatus.NEW: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
     OrderStatus.CONFIRMED: [OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED],
     OrderStatus.IN_PROGRESS: [OrderStatus.READY, OrderStatus.CANCELLED],
-    OrderStatus.READY: [OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    OrderStatus.READY: [
+        OrderStatus.DELIVERED,
+        OrderStatus.COMPLETED,
+        OrderStatus.CANCELLED,
+    ],
     OrderStatus.DELIVERED: [OrderStatus.COMPLETED],
     OrderStatus.COMPLETED: [],
     OrderStatus.CANCELLED: [],
@@ -50,7 +54,10 @@ _ORDER_STATUS_RANK = {
 def is_backward_transition(current: str, target: str) -> bool:
     """Return True if transitioning to a lower-ranked status."""
     try:
-        return _ORDER_STATUS_RANK[OrderStatus(target)] < _ORDER_STATUS_RANK[OrderStatus(current)]
+        return (
+            _ORDER_STATUS_RANK[OrderStatus(target)]
+            < _ORDER_STATUS_RANK[OrderStatus(current)]
+        )
     except (ValueError, KeyError):
         return False
 
@@ -107,6 +114,72 @@ def is_junk_phone(phone: str) -> bool:
     return False
 
 
+def compute_missing_fields(
+    *,
+    customer_name: str,
+    items_present: bool,
+    total_price: float,
+    due_date: Optional[str],
+    due_time: Optional[str],
+    delivery_type: str,
+    delivery_address: str,
+    customer_phone: str,
+    delivery_phone: str,
+    source: str,
+) -> list[str]:
+    """Shared required-field checks for order completeness (CQ-4).
+
+    Single source of truth for the required-field rules used by both
+    :meth:`Order.compute_completeness` (typed model attributes) and the
+    lightweight row-based ``_is_row_incomplete`` check in the counts
+    endpoint. Returns the list of missing field names (camelCase keys
+    matching the API ``missingFields`` shape); empty means complete.
+
+    The rules:
+    - ``customer_name`` missing or equal to the walk-in sentinel.
+    - ``items`` empty (callers pass ``items_present`` so the row-based path
+      can inspect the raw JSON string without parsing it).
+    - ``total_price`` missing or ≤ 0.
+    - ``due_date`` / ``due_time`` empty.
+    - ``delivery_address`` empty for transit (delivery/bus/door) orders.
+    - ``customer_phone`` missing or junk.
+    - ``delivery_phone`` missing or junk ONLY when the customer phone is
+      also missing/junk (one reachable phone suffices).
+    - ``source`` empty.
+    """
+    missing: list[str] = []
+
+    if not customer_name or customer_name.strip() == WALK_IN_CUSTOMER_NAME:
+        missing.append("customer_name")
+
+    if not items_present:
+        missing.append("items")
+
+    if not total_price or float(total_price) <= 0:
+        missing.append("total_price")
+
+    if not due_date:
+        missing.append("due_date")
+
+    if not due_time:
+        missing.append("due_time")
+
+    if delivery_type in TRANSIT_DELIVERY_TYPES and not (delivery_address or "").strip():
+        missing.append("delivery_address")
+
+    if not customer_phone or is_junk_phone(customer_phone):
+        missing.append("customer_phone")
+
+    if not delivery_phone or is_junk_phone(delivery_phone):
+        if not customer_phone or is_junk_phone(customer_phone):
+            missing.append("delivery_phone")
+
+    if not source:
+        missing.append("source")
+
+    return missing
+
+
 def compute_urgency(
     due_date: Optional[str],
     due_time: Optional[str],
@@ -121,8 +194,8 @@ def compute_urgency(
     - ``critical`` = past due datetime and not delivered/completed/cancelled,
       OR (delivery/bus/door only) due within the configurable early critical
       threshold (default 60 min) — prep/transit buffer.
-    - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
-      OR status in (new, confirmed) and due today.
+    - ``urgent`` = due ≤ 2h from now AND due today,
+      OR status is non-terminal and due today.
     - ``normal`` = everything else.
 
     ``delivery_type`` defaults to ``"pickup"`` for backward compatibility.
@@ -141,6 +214,7 @@ def compute_urgency(
         return UrgencyTier.NORMAL.value
 
     now = datetime.now(timezone.utc)
+    today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
 
     # Build due datetime
     due_dt = None
@@ -176,14 +250,10 @@ def compute_urgency(
                 effective_threshold = 1
             if due_dt - now <= timedelta(minutes=effective_threshold):
                 return UrgencyTier.CRITICAL.value
-        if due_dt - now <= timedelta(hours=2):
+        if due_dt - now <= timedelta(hours=2) and due_date == today_str:
             return UrgencyTier.URGENT.value
 
-    if status == "new" and not acknowledged_at:
-        return UrgencyTier.URGENT.value
-
-    if status in ("new", "confirmed") and due_date:
-        today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+    if status not in terminal and due_date:
         if due_date == today_str:
             return UrgencyTier.URGENT.value
 
@@ -220,7 +290,9 @@ def delivery_type_to_public_suffix(delivery_type: str) -> str:
     return suffix_map.get(delivery_type, "S")
 
 
-def generate_public_order_code_candidate(delivery_type: str, reference_len: int = 3) -> str:
+def generate_public_order_code_candidate(
+    delivery_type: str, reference_len: int = 3
+) -> str:
     if reference_len < 3:
         reference_len = 3
     if reference_len > PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN:
@@ -229,7 +301,9 @@ def generate_public_order_code_candidate(delivery_type: str, reference_len: int 
     randomizer = random.SystemRandom()
     letter = randomizer.choice(PUBLIC_ORDER_CODE_LETTERS)
     digits_count = reference_len - 1
-    digits = "".join(randomizer.choice(PUBLIC_ORDER_CODE_DIGITS) for _ in range(digits_count))
+    digits = "".join(
+        randomizer.choice(PUBLIC_ORDER_CODE_DIGITS) for _ in range(digits_count)
+    )
     return f"{letter}{digits}-{delivery_type_to_public_suffix(delivery_type)}"
 
 
@@ -301,7 +375,7 @@ class OrderItem:
         if " x" in parts.lower():
             idx = parts.lower().rfind(" x")
             try:
-                qty = int(parts[idx + 2:].strip())
+                qty = int(parts[idx + 2 :].strip())
                 parts = parts[:idx].strip()
             except ValueError:
                 pass
@@ -356,9 +430,12 @@ class Order:
     @staticmethod
     def exists(order_id: int, conn=None) -> bool:
         from baker.db.connection import get_db
+
         if conn is None:
             with get_db() as conn:
-                row = conn.execute("SELECT 1 FROM orders WHERE id = ?", (order_id,)).fetchone()
+                row = conn.execute(
+                    "SELECT 1 FROM orders WHERE id = ?", (order_id,)
+                ).fetchone()
                 return row is not None
         row = conn.execute("SELECT 1 FROM orders WHERE id = ?", (order_id,)).fetchone()
         return row is not None
@@ -370,7 +447,8 @@ class Order:
         cash_fee = sum(
             float(item.attributes.get("cash_fee", 0))
             for item in self.items
-            if item.attributes.get("rut_tien") == "true" and item.attributes.get("cash_fee")
+            if item.attributes.get("rut_tien") == "true"
+            and item.attributes.get("cash_fee")
         )
         self.total_price = subtotal + cash_fee + self.shipping_fee
 
@@ -388,20 +466,44 @@ class Order:
                customer_id, created_at, updated_at, created_staff_name,
                latitude, longitude, google_maps_url, delivery_time_slot)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
-              items_json, self.total_price, self.status, self.due_date,
-              self.due_time, self.delivery_type, self.delivery_address, self.notes,
-              self.source, self.created_by, self.shipping_fee, self.public_order_code,
-              self.customer_id, now_utc(), now_utc(), self.created_staff_name,
-              self.latitude, self.longitude, self.google_maps_url, self.delivery_time_slot),
+            (
+                self.order_ref,
+                self.customer_name,
+                self.customer_phone,
+                self.delivery_phone,
+                items_json,
+                self.total_price,
+                self.status,
+                self.due_date,
+                self.due_time,
+                self.delivery_type,
+                self.delivery_address,
+                self.notes,
+                self.source,
+                self.created_by,
+                self.shipping_fee,
+                self.public_order_code,
+                self.customer_id,
+                now_utc(),
+                now_utc(),
+                self.created_staff_name,
+                self.latitude,
+                self.longitude,
+                self.google_maps_url,
+                self.delivery_time_slot,
+            ),
         )
         self.id = cursor.lastrowid
 
         Event(
             summary=f"Order {self.order_ref} created for {self.customer_name}",
             type="order",
-            data={"order_ref": self.order_ref, "action": "created",
-                  "customer": self.customer_name, "total": self.total_price},
+            data={
+                "order_ref": self.order_ref,
+                "action": "created",
+                "customer": self.customer_name,
+                "total": self.total_price,
+            },
         ).save(conn)
 
         return self.id
@@ -432,7 +534,11 @@ class Order:
             (new_status, now_utc(), row["id"]),
         )
 
-        data = {"order_ref": row["order_ref"], "from_status": current, "to_status": new_status}
+        data = {
+            "order_ref": row["order_ref"],
+            "from_status": current,
+            "to_status": new_status,
+        }
         if reason:
             data["reason"] = reason
         Event(
@@ -481,32 +587,60 @@ class Order:
         items = [OrderItem(**i) for i in items_data]
 
         from baker.models.payment_transaction import PaymentTransaction
+
         if amount_paid is None:
             amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
 
         order = Order(
-            id=row["id"], order_ref=row["order_ref"],
-            customer_name=row["customer_name"], customer_phone=row["customer_phone"],
-            delivery_phone=(row["delivery_phone"] if "delivery_phone" in row.keys() and row["delivery_phone"] is not None else ""),
-            items=items, total_price=row["total_price"], status=row["status"],
-            due_date=row["due_date"], due_time=row["due_time"],
-            delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
+            id=row["id"],
+            order_ref=row["order_ref"],
+            customer_name=row["customer_name"],
+            customer_phone=row["customer_phone"],
+            delivery_phone=(
+                row["delivery_phone"]
+                if "delivery_phone" in row.keys() and row["delivery_phone"] is not None
+                else ""
+            ),
+            items=items,
+            total_price=row["total_price"],
+            status=row["status"],
+            due_date=row["due_date"],
+            due_time=row["due_time"],
+            delivery_type=row["delivery_type"],
+            delivery_address=row["delivery_address"],
             notes=row["notes"],
             source=row["source"] or "",
             created_by=row["created_by"] if "created_by" in row.keys() else "",
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
-            public_order_code=row["public_order_code"] if "public_order_code" in row.keys() else "",
+            public_order_code=row["public_order_code"]
+            if "public_order_code" in row.keys()
+            else "",
             customer_id=row["customer_id"] if "customer_id" in row.keys() else None,
-            created_at=row["created_at"], updated_at=row["updated_at"],
-            work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
-            work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
-            acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
-            created_staff_name=row["created_staff_name"] if "created_staff_name" in row.keys() else "",
-            work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"] if "work_ticket_printed_staff_name" in row.keys() else "",
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            work_ticket_printed_at=row["work_ticket_printed_at"]
+            if "work_ticket_printed_at" in row.keys()
+            else None,
+            work_ticket_printed_by=row["work_ticket_printed_by"]
+            if "work_ticket_printed_by" in row.keys()
+            else "",
+            acknowledged_at=row["acknowledged_at"]
+            if "acknowledged_at" in row.keys()
+            else None,
+            created_staff_name=row["created_staff_name"]
+            if "created_staff_name" in row.keys()
+            else "",
+            work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"]
+            if "work_ticket_printed_staff_name" in row.keys()
+            else "",
             latitude=row["latitude"] if "latitude" in row.keys() else None,
             longitude=row["longitude"] if "longitude" in row.keys() else None,
-            google_maps_url=row["google_maps_url"] if "google_maps_url" in row.keys() else None,
-            delivery_time_slot=row["delivery_time_slot"] if "delivery_time_slot" in row.keys() else None,
+            google_maps_url=row["google_maps_url"]
+            if "google_maps_url" in row.keys()
+            else None,
+            delivery_time_slot=row["delivery_time_slot"]
+            if "delivery_time_slot" in row.keys()
+            else None,
         )
         order.amount_paid = amount_paid
         order.assigned_staff_id = (
@@ -534,43 +668,37 @@ class Order:
     def compute_completeness(self) -> tuple[list[str], str]:
         """Check required fields and return (missing_fields, completeness_tier).
 
+        Delegates the required-field rules to :func:`compute_missing_fields`
+        (CQ-4 — single source of truth shared with the lightweight row-based
+        completeness check in the counts endpoint).
+
         Required: customer_name, items, total_price, due_date, due_time,
         delivery_address (door/bus only), customer_phone, delivery_phone, source.
         """
-        missing: list[str] = []
-
-        if not self.customer_name or self.customer_name.strip() == WALK_IN_CUSTOMER_NAME:
-            missing.append("customer_name")
-
-        if not self.items or len(self.items) == 0:
-            missing.append("items")
-
-        if not self.total_price or self.total_price <= 0:
-            missing.append("total_price")
-
-        if not self.due_date:
-            missing.append("due_date")
-
-        if not self.due_time:
-            missing.append("due_time")
-
-        if self.delivery_type in TRANSIT_DELIVERY_TYPES and not self.delivery_address:
-            missing.append("delivery_address")
-
-        if not self.customer_phone or is_junk_phone(self.customer_phone):
-            missing.append("customer_phone")
-
-        if not self.delivery_phone or is_junk_phone(self.delivery_phone):
-            if not self.customer_phone or is_junk_phone(self.customer_phone):
-                missing.append("delivery_phone")
-
-        if not self.source:
-            missing.append("source")
-
-        tier = CompletenessTier.INCOMPLETE.value if missing else CompletenessTier.COMPLETE.value
+        missing = compute_missing_fields(
+            customer_name=self.customer_name,
+            items_present=bool(self.items) and len(self.items) > 0,
+            total_price=self.total_price,
+            due_date=self.due_date,
+            due_time=self.due_time,
+            delivery_type=self.delivery_type,
+            delivery_address=self.delivery_address,
+            customer_phone=self.customer_phone,
+            delivery_phone=self.delivery_phone,
+            source=self.source,
+        )
+        tier = (
+            CompletenessTier.INCOMPLETE.value
+            if missing
+            else CompletenessTier.COMPLETE.value
+        )
         return (missing, tier)
 
-    def to_api_dict(self, threshold_minutes: Optional[int] = None) -> dict:
+    def to_api_dict(
+        self,
+        threshold_minutes: Optional[int] = None,
+        payment_methods: Optional[list[str]] = None,
+    ) -> dict:
         """Return Dart-compatible camelCase JSON representation.
 
         ``threshold_minutes`` is forwarded to ``compute_urgency`` so callers
@@ -623,4 +751,5 @@ class Order:
             ),
             "missingFields": missing_fields,
             "completeness": completeness,
+            "paymentMethods": payment_methods or [],
         }

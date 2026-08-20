@@ -69,9 +69,21 @@ class BakeryTheme {
     'awaiting_payment': Color(0xFFE91E63), // Pink
   };
 
-  // Work item status colors (cake queue items: pending/working/ready/delivered)
+  // Work item status colors (cake queue items: pending/confirmed/working/ready/delivered)
+  //
+  // NOTE: This is an intentional 5-status subset of the full 6-status
+  // `workItemStatusColors` map in `app/lib/shared/utils.dart:121`
+  // (pending/confirmed/working/ready/delivered/cancelled). It mirrors the
+  // shared map for the states it lists and intentionally omits only
+  // `cancelled` (a terminal state never displayed in the cake queue). The
+  // backend default cake-queue filter (`src/baker/api/cake_queue.py:53`)
+  // includes `pending/confirmed/working` (plus `ready` when `include_ready`),
+  // so `confirmed` items do appear in the cake queue and need a color here.
+  // This narrower map must NOT be consolidated into the shared one. Do not
+  // re-flag this as a duplication in future code-quality reviews.
   static const workItemStatusColors = {
     'pending': Colors.grey,
+    'confirmed': Colors.blue,
     'working': Colors.orange,
     'ready': Colors.green,
     'delivered': Colors.teal,

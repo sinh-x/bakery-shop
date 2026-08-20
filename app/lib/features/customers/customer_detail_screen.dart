@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, showTopSnackBar, statusMap;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,15 +7,16 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
-import '../../features/auth/auth_provider.dart';
-import '../../providers/customers_provider.dart';
+import '../../shared/providers/auth_provider.dart';
+import '../../data/providers/customers_provider.dart';
+import '../../shared/services/session_cache.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'customer_form.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Customer detail screen (FR13/AC4).
 ///
 /// Shows the customer profile (name + phone + created date), their linked
@@ -29,15 +31,15 @@ class CustomerDetailScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            content: const Text(VN.deleteCustomerConfirm),
+            content: const Text(CustomersLabels.deleteCustomerConfirm),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text(VN.cancel),
+                child: const Text(SharedLabels.cancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(VN.deleteCustomer),
+                child: const Text(CustomersLabels.deleteCustomer),
               ),
             ],
           ),
@@ -47,8 +49,13 @@ class CustomerDetailScreen extends ConsumerWidget {
     try {
       await ref.read(customerServiceProvider).deleteCustomer(customerId);
       ref.invalidate(customerListProvider);
+      // DG-409 Phase 5 (FR13, AC6): invalidate the session cache so the
+      // paginated customer list re-fetches after a delete.
+      ref
+          .read(sessionCacheProvider)
+          .invalidateEntityType(SessionCacheEntity.customers);
       if (context.mounted) {
-        showTopSnackBar(context, VN.customerDeleted);
+        showTopSnackBar(context, CustomersLabels.customerDeleted);
         Navigator.of(context).pop();
       }
     } on DioException catch (e) {
@@ -93,18 +100,18 @@ class CustomerDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.customerListTitle),
+        title: const Text(CustomersLabels.customerListTitle),
         actions: [
           AppBarOverflowMenu(
             items: [
               const PopupMenuItem<String>(
                 value: 'edit_customer',
-                child: Text(VN.editCustomer),
+                child: Text(CustomersLabels.editCustomer),
               ),
               if (isAdmin)
                 const PopupMenuItem<String>(
                   value: 'delete_customer',
-                  child: Text(VN.deleteCustomer),
+                  child: Text(CustomersLabels.deleteCustomer),
                 ),
             ],
             onSelected: (value) {
@@ -126,13 +133,13 @@ class CustomerDetailScreen extends ConsumerWidget {
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 12),
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: () =>
                     ref.invalidate(customerProvider(customerId)),
                 icon: const Icon(Icons.refresh),
-                label: const Text(VN.retry),
+                label: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -149,7 +156,7 @@ class CustomerDetailScreen extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: Text(
-                  VN.customerOrderHistory,
+                  CustomersLabels.customerOrderHistory,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
@@ -160,13 +167,13 @@ class CustomerDetailScreen extends ConsumerWidget {
                 ),
                 error: (e, _) => const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text(VN.apiError),
+                  child: Text(SharedLabels.apiError),
                 ),
                 data: (orderJsonList) {
                   if (orderJsonList.isEmpty) {
                     return const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Center(child: Text(VN.customerNoOrders)),
+                      child: Center(child: Text(CustomersLabels.customerNoOrders)),
                     );
                   }
                   final orders = orderJsonList.map(Order.fromJson).toList();
@@ -230,7 +237,7 @@ class _CustomerProfileCard extends StatelessWidget {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                '${entry.phone}${entry.isPrimary ? ' (${VN.customerPrimaryPhone})' : ''}',
+                '${entry.phone}${entry.isPrimary ? ' (${CustomersLabels.customerPrimaryPhone})' : ''}',
                 style: entry.isPrimary
                     ? theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.bold)
@@ -273,7 +280,7 @@ class _CustomerProfileCard extends StatelessWidget {
                   ..._buildPhoneLines(theme),
                   const SizedBox(height: 4),
                   Text(
-                    '${VN.customerCreatedAt}: ${formatDisplayDate(customer.createdAt)}',
+                    '${CustomersLabels.customerCreatedAt}: ${formatDisplayDate(customer.createdAt)}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.grey,
                     ),

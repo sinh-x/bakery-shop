@@ -37,6 +37,9 @@ services:
       #   python -c "import secrets; print(secrets.token_urlsafe(32))"
       BAKER_AUTH_REQUIRED: ${BAKER_AUTH_REQUIRED:-false}
       BAKER_JWT_SECRET: ${BAKER_JWT_SECRET:-}
+      # CORS allowed origins (DG-345). Comma-separated list of origins; unset
+      # falls back to the default production origin in baker.config.
+      BAKER_CORS_ORIGINS: ${BAKER_CORS_ORIGINS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -124,6 +127,9 @@ services:
       # Auth RBAC (DG-029). See baker-prod above for secret generation guidance.
       BAKER_AUTH_REQUIRED: ${BAKER_AUTH_REQUIRED:-false}
       BAKER_JWT_SECRET: ${BAKER_JWT_SECRET:-}
+      # CORS allowed origins (DG-345). Comma-separated list of origins; unset
+      # falls back to the default production origin in baker.config.
+      BAKER_CORS_ORIGINS: ${BAKER_CORS_ORIGINS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]

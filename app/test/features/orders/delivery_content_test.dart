@@ -9,7 +9,7 @@ import 'package:bakery_app/features/orders/widgets/delivery_content.dart';
 import 'package:bakery_app/features/orders/widgets/delivery_week_calendar_components.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
-import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 Order _order({

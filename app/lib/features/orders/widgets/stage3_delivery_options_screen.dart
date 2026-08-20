@@ -1,24 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../providers/config_provider.dart';
+import '../../../data/models/address.dart';
+import '../../../data/providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/config_parsers.dart';
+import 'address_autocomplete_field.dart';
 import 'order_delivery_section.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/address_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
   const Stage3DeliveryOptionsScreen({
     super.key,
     required this.onBack,
     required this.onContinue,
+    this.onFastPath,
     required this.orderStateProvider,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+
+  /// DG-370 Phase 5.6-c1 (UX-5): optional POS-only "Giao ngay & Thanh toán"
+  /// fast-path callback. When provided (POS checkout), a button is rendered
+  /// between "Quay lại" and "Tiếp tục". Null in the normal order flow.
+  final VoidCallback? onFastPath;
 
   @override
   ConsumerState<Stage3DeliveryOptionsScreen> createState() =>
@@ -134,6 +143,39 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
+  /// DG-385 Phase 4 / FR2 / AC2: auto-bind the selected suggestion's
+  /// `googleMapsUrl` to the order when the user picks an address from the
+  /// autocomplete dropdown. The address text is written into the address
+  /// controller by the field; this callback only updates the map link on
+  /// the order state and surfaces a non-blocking snackbar so the operator
+  /// knows the link was bound (or that the library entry has no link yet).
+  ///
+  /// DG-388 Phase 5.6-c5 (FB-1): bind to the top-level
+  /// `OrderCreateState.googleMapsUrl` (read at submit) via
+  /// `updateGpsFields`, NOT the nested `wizardData.googleMapsUrl` which
+  /// was never read by the submission path and silently dropped the link.
+  void _onAddressSelected(AddressSuggestion suggestion) {
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    notifier.updateGpsFields(
+      googleMapsUrl: suggestion.googleMapsUrl,
+      clearGoogleMapsUrl: suggestion.googleMapsUrl == null,
+      clearLatitude: true,
+      clearLongitude: true,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            suggestion.googleMapsUrl != null
+                ? AddressLabels.mapsLinkBoundSnack
+                : AddressLabels.mapsLinkNoLinkSnack,
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _retryShippingFeeConfig(String type) {
     switch (type) {
       case 'bus':
@@ -183,6 +225,17 @@ class _Stage3DeliveryOptionsScreenState
               notesCtrl: data.needsNotes ? _notesCtrl : null,
               onDeliveryTypeChanged: _updateDeliveryType,
               onShippingFeeChanged: _setShippingFee,
+              // DG-385 Phase 4 / FR1/FR2/FR5: autocomplete address field with
+              // library suggestions, customer-prioritized ordering, and
+              // auto-bind of `googleMapsUrl` on selection (AC1/AC2/AC5).
+              addressField: AddressAutocompleteField(
+                controller: _addressCtrl,
+                customerId: data.selectedCustomer?.id,
+                onSelected: _onAddressSelected,
+                validator: (v) => data.needsAddress && (v == null || v.trim().isEmpty)
+                    ? SharedLabels.fieldRequired
+                    : null,
+              ),
               dueDate: state.dueDate,
               dueTime: state.dueTime,
               onDueDateChanged: (d) => ref
@@ -193,7 +246,7 @@ class _Stage3DeliveryOptionsScreenState
                   .updateDueTime(t),
               shippingFeeConfigLoading: feeConfig?.isLoading ?? false,
               shippingFeeConfigError:
-                  (feeConfig?.hasError ?? false) ? VN.errorLoading : null,
+                  (feeConfig?.hasError ?? false) ? SharedLabels.errorLoading : null,
               onRetryShippingFeeConfig: () =>
                   _retryShippingFeeConfig(data.deliveryType),
               summaryCardSlots: [
@@ -226,6 +279,16 @@ class _Stage3DeliveryOptionsScreenState
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          // DG-370 Phase 5.6-c1 (UX-5): "Giao ngay & Thanh toán" fast-path
+          // button between "Quay lại" and "Tiếp tục" — POS-only.
+          if (widget.onFastPath != null) ...[
+            FilledButton.icon(
+              onPressed: widget.onFastPath,
+              icon: const Icon(Icons.bolt, size: 18),
+              label: const Text(OrdersLabels.posGiaoNgayThanhToan),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton(
             onPressed: _onContinue,
             child: const Text(OrdersLabels.continueLabel),

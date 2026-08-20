@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import baker.config
 from baker.api.auth import RequireRole, record_audit_log
 from baker.code_gen import generate_code, get_category_prefix
+from baker.db.queries import paginate_params, paginated_envelope
 from baker.utils.db import escape_like as _escape_like, row_to_dict as _row_to_dict
 from baker.utils.time import InvalidEffectiveFrom, format_effective_from
 from baker.db.connection import get_db
@@ -40,7 +41,8 @@ class ProductUpdate(BaseModel):
 def _product_price_chips(conn, product_id: int) -> list[dict]:
     """Get ordered price chips for a product."""
     rows = conn.execute(
-        "SELECT pc.id, pc.label, pc.price, pc.position, COALESCE(ps.quantity, 0) AS stock_qty "
+        "SELECT pc.id, pc.label, pc.price, pc.position, "
+        "COALESCE(ps.quantity, 0) - COALESCE(nb.qty, 0) AS stock_qty "
         "FROM product_price_chips pc "
         "LEFT JOIN ("
         "  SELECT sl.price_chip_id, COUNT(ii.id) AS quantity "
@@ -49,6 +51,7 @@ def _product_price_chips(conn, product_id: int) -> list[dict]:
         "  WHERE sl.product_id = ? "
         "  GROUP BY sl.price_chip_id"
         ") ps ON ps.price_chip_id = pc.id "
+        "LEFT JOIN negative_balance nb ON nb.product_id = pc.product_id AND nb.price_chip_id = pc.id "
         "WHERE pc.product_id = ? "
         "ORDER BY pc.position, pc.id",
         (product_id, product_id),
@@ -178,8 +181,16 @@ def list_products(
     active: int = Query(1, description="1 = đang bán, 0 = ngừng bán"),
     code: str | None = Query(None, description="Lọc theo mã sản phẩm (partial match)"),
     trung_bay: int = Query(0, description="1 = chỉ sản phẩm trưng bày"),
+    limit: int | None = Query(None, ge=1, le=500, description="Số lượng tối đa (mặc định 50)"),
+    offset: int = Query(0, ge=0, description="Bỏ qua N sản phẩm đầu"),
+    paginated: bool = Query(False, description="Trả envelope {items,total,has_more} thay vì mảng trần (DG-409 FR3)"),
 ):
-    """Danh sách sản phẩm."""
+    """Danh sách sản phẩm.
+
+    Mặc định trả về mảng trần (backward-compatible, NFR6). Khi ``paginated=true``
+    hoặc ``limit`` được cung cấp, trả về envelope ``{items, total, has_more,
+    limit, offset}`` (FR3, FR14, DG-409 Phase 3).
+    """
     with get_db() as conn:
         conditions = ["p.active = ?"]
         params: list = [active]
@@ -202,7 +213,14 @@ def list_products(
                    GROUP BY sl.product_id
                ) ps ON ps.product_id = p.id"""
         )
-        select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
+        joins.append(
+            """LEFT JOIN (
+                   SELECT nb.product_id, SUM(nb.qty) AS qty
+                   FROM negative_balance nb
+                   GROUP BY nb.product_id
+               ) nb ON nb.product_id = p.id"""
+        )
+        select_cols = "p.*, COALESCE(ps.quantity, 0) - COALESCE(nb.qty, 0) AS stock_qty"
         if trung_bay:
             joins.append(
                 """LEFT JOIN product_attribute_values pav
@@ -212,15 +230,34 @@ def list_products(
 
         where = " AND ".join(conditions)
         join_sql = "\n".join(joins)
-        rows = conn.execute(
-            f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY p.category, p.name",
-            params,
-        ).fetchall()
+        order_by = "p.category, p.name"
+
+        use_envelope = paginated or limit is not None
+        if use_envelope:
+            lim, off = paginate_params(limit, offset)
+            count_row = conn.execute(
+                f"SELECT COUNT(*) AS c FROM products p {join_sql} WHERE {where}",  # nosec B608
+                params,
+            ).fetchone()
+            total = int(count_row["c"]) if count_row is not None else 0
+            rows = conn.execute(
+                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} "  # nosec B608
+                f"ORDER BY {order_by} LIMIT ? OFFSET ?",
+                params + [lim, off],
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY {order_by}",  # nosec B608
+                params,
+            ).fetchall()
 
         result = []
         for r in rows:
             prod = _enrich_product(conn, r)
             result.append(prod)
+
+        if use_envelope:
+            return paginated_envelope(result, total, lim, off)
         return result
 
 
@@ -393,7 +430,7 @@ def update_product(product_id: int, product: ProductUpdate, actor: str = Depends
 
         params.append(product_id)
         conn.execute(
-            f"UPDATE products SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE products SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
 

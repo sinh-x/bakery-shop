@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../../../shared/labels/shared.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Displays the surplus inflow quantity for a reconciliation option.
 ///
 /// When `counted > expected`, the surplus will be converted into a `restock`
@@ -28,7 +26,7 @@ class ReconciliationSurplusIndicator extends StatelessWidget {
           const Icon(Icons.south_west, size: 14, color: Colors.teal),
           const SizedBox(width: 4),
           Text(
-            '${VN.soLuongBu}: +$surplus',
+            '${StockLabels.soLuongBu}: +$surplus',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: color,
               fontWeight: FontWeight.w600,
@@ -36,7 +34,7 @@ class ReconciliationSurplusIndicator extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            VN.nhapBuTonKho,
+            StockLabels.nhapBuTonKho,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: color,
               fontWeight: FontWeight.w600,

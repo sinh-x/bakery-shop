@@ -3,6 +3,7 @@
 // threshold (NFR4). Owns the stage-5 payment state (method, amount, tien_rut,
 // target account, transfer photo, skipPayment flag) and the pay-now /
 // pay-later submit paths that drive the shared orchestrator's submitOrder.
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,11 +14,10 @@ import '../../../data/api/payment_transaction_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../providers/products_provider.dart';
-import '../../../shared/labels/orders.dart';
+import '../../../data/providers/products_provider.dart';
 import '../../../features/stock/stock_screen.dart';
 import 'pos_checkout_dialogs.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Callback the controller uses to invoke the shared orchestrator's
 /// submission spine. Returns `true` when the order was created and
 /// navigation fired.
@@ -47,12 +47,18 @@ class PosCheckoutPaymentController {
     required this.resolveDeliveryType,
     required this.goToStage,
     required this.writeBackToCart,
+    this.backFromPaymentStepOverride,
   });
 
   final SubmitOrderFn submitOrder;
   final ResolveDeliveryTypeFn resolveDeliveryType;
   final GoToStageFn goToStage;
   final WriteBackToCartFn writeBackToCart;
+
+  /// Optional override for the Stage 5 "Quay lại" action. When provided
+  /// (e.g. by the Giao ngay fast-path, DG-370 Phase 1), this is called
+  /// instead of the default [backFromPaymentStep] which returns to Stage 4.
+  final VoidCallback? backFromPaymentStepOverride;
 
   bool _isProcessing = false;
   bool get isProcessing => _isProcessing;
@@ -84,6 +90,13 @@ class PosCheckoutPaymentController {
   // pre-refactor `skipPayment` branch in `_createOrderInternal`).
   bool _skipPayment = false;
   bool get skipPayment => _skipPayment;
+
+  // DG-370 Phase 3 — the fast-path "Giao ngay & Thanh toán" sets this so the
+  // order is created with status "delivered" on BOTH pay-now and pay-later
+  // (FR4). The normal 5-stage flow leaves this false (Stage 3 "Giao hàng sau"
+  // / Stage 4 review path) and only pay-now flips it via the
+  // `deliverImmediately` argument on [handlePayNow] / [enterPaymentStep].
+  bool deliverImmediately = false;
 
   /// Enters the payment step from the Stage 4 review: writes the wizard items
   /// back to the cart, computes the cart total / tien_rut defaults, and
@@ -119,7 +132,13 @@ class PosCheckoutPaymentController {
         isProcessing: _isProcessing,
       );
 
-  void backFromPaymentStep() => goToStage(4);
+  void backFromPaymentStep() {
+    if (backFromPaymentStepOverride != null) {
+      backFromPaymentStepOverride!();
+      return;
+    }
+    goToStage(4);
+  }
 
   void onPaymentMethodChanged(String paymentMethod) {
     if (_selectedPaymentMethod == paymentMethod) return;
@@ -147,8 +166,8 @@ class PosCheckoutPaymentController {
     return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.excessPaymentWarningTitle),
-        content: const Text(VN.excessPaymentWarningMessage),
+        title: const Text(OrdersLabels.excessPaymentWarningTitle),
+        content: const Text(OrdersLabels.excessPaymentWarningMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -197,7 +216,7 @@ class PosCheckoutPaymentController {
       await _submit(
         context,
         paymentMethod: '',
-        deliverImmediately: false,
+        deliverImmediately: deliverImmediately,
         mounted: mounted,
       );
     } finally {
@@ -269,7 +288,7 @@ class PosCheckoutPaymentController {
     // provider invalidation; onNavigateAfterSubmit fires pushReplacement.
     // _pendingTransferPhoto is consumed by the onUploadPendingPhotos hook.
     if (showSuccessSnackbar) {
-      showTopSnackBar(context, VN.thanhToanThanhCong);
+      showTopSnackBar(context, OrdersLabels.thanhToanThanhCong);
     }
     _pendingTransferPhoto = null;
   }

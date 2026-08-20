@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/auth.dart';
-import '../auth_provider.dart';
+import '../../../shared/providers/auth_provider.dart';
+import '../providers/password_change_notifier.dart';
 
 /// Reusable password-change form (DG-319 Phase 5 / FR5).
 ///
@@ -40,11 +41,6 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
   final _oldCtrl = TextEditingController();
   final _newCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  bool _obscureOld = true;
-  bool _obscureNew = true;
-  bool _obscureConfirm = true;
-  bool _submitting = false;
-  String? _errorMessage;
 
   @override
   void dispose() {
@@ -56,10 +52,8 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() {
-      _submitting = true;
-      _errorMessage = null;
-    });
+    final notifier = ref.read(passwordChangeFormProvider.notifier);
+    notifier.startSubmitting();
     try {
       await ref.read(authProvider.notifier).changePassword(
             oldPassword: _oldCtrl.text,
@@ -70,12 +64,12 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
       widget.onSuccess();
     } on DioException catch (e) {
       if (!mounted) return;
-      setState(() => _errorMessage = _mapDioError(e));
+      notifier.setErrorMessage(_mapDioError(e));
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorMessage = AuthLabels.changePasswordFailed);
+      notifier.setErrorMessage(AuthLabels.changePasswordFailed);
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) notifier.setSubmitting(false);
     }
   }
 
@@ -89,6 +83,13 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final formState = ref.watch(passwordChangeFormProvider);
+    final obscureOld = formState.obscureOld;
+    final obscureNew = formState.obscureNew;
+    final obscureConfirm = formState.obscureConfirm;
+    final submitting = formState.submitting;
+    final errorMessage = formState.errorMessage;
+    final notifier = ref.read(passwordChangeFormProvider.notifier);
     return Form(
       key: _formKey,
       child: Column(
@@ -105,9 +106,8 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
             controller: _oldCtrl,
             label: AuthLabels.oldPasswordLabel,
             hint: AuthLabels.oldPasswordHint,
-            obscure: _obscureOld,
-            onToggleObscure: () =>
-                setState(() => _obscureOld = !_obscureOld),
+            obscure: obscureOld,
+            onToggleObscure: notifier.toggleObscureOld,
             validator: (value) => (value == null || value.isEmpty)
                 ? AuthLabels.passwordRequired
                 : null,
@@ -117,9 +117,8 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
             controller: _newCtrl,
             label: AuthLabels.newPasswordLabel,
             hint: AuthLabels.newPasswordHint,
-            obscure: _obscureNew,
-            onToggleObscure: () =>
-                setState(() => _obscureNew = !_obscureNew),
+            obscure: obscureNew,
+            onToggleObscure: notifier.toggleObscureNew,
             validator: (value) => (value == null || value.isEmpty)
                 ? AuthLabels.passwordRequired
                 : null,
@@ -129,9 +128,8 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
             controller: _confirmCtrl,
             label: AuthLabels.confirmPasswordLabel,
             hint: AuthLabels.confirmPasswordHint,
-            obscure: _obscureConfirm,
-            onToggleObscure: () =>
-                setState(() => _obscureConfirm = !_obscureConfirm),
+            obscure: obscureConfirm,
+            onToggleObscure: notifier.toggleObscureConfirm,
             // AC3: new != confirm → validation error before submission.
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -143,14 +141,14 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
               return null;
             },
           ),
-          if (_errorMessage != null) ...[
+          if (errorMessage != null) ...[
             const SizedBox(height: 12),
-            _ErrorBanner(message: _errorMessage!),
+            _ErrorBanner(message: errorMessage),
           ],
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: _submitting ? null : _submit,
-            child: _submitting
+            onPressed: submitting ? null : _submit,
+            child: submitting
                 ? SizedBox(
                     height: 20,
                     width: 20,

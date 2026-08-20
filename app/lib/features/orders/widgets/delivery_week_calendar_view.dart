@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/order.dart';
+import '../providers/delivery_calendar_notifiers.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'delivery_week_calendar_components.dart';
@@ -36,21 +39,30 @@ class DeliveryWeekCalendarView extends ConsumerStatefulWidget {
 
 class _DeliveryWeekCalendarViewState
     extends ConsumerState<DeliveryWeekCalendarView> {
-  late DateTime _weekStart =
-      widget.initialWeekStart ?? startOfWeek(DateTime.now());
+  @override
+  void initState() {
+    super.initState();
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(deliveryWeekCalendarProvider.notifier)
+            .seedInitialWeekStart(widget.initialWeekStart);
+      }
+    });
+  }
 
-  void _shift(int weeks) => setState(() {
-        _weekStart = _weekStart.add(Duration(days: 7 * weeks));
-      });
+  void _shift(int weeks) =>
+      ref.read(deliveryWeekCalendarProvider.notifier).shift(weeks);
 
-  void _goToday() => setState(() {
-        _weekStart = startOfWeek(DateTime.now());
-      });
+  void _goToday() =>
+      ref.read(deliveryWeekCalendarProvider.notifier).goToday();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final days = daysOfWeek(_weekStart);
+    final weekStart = ref.watch(deliveryWeekCalendarProvider);
+    final days = daysOfWeek(weekStart);
     final grouped = groupDeliveryOrdersByDayAndSlot(widget.orders);
     final today = DateTime.now();
     final todayKey = _formatDayKey(today);
@@ -62,7 +74,7 @@ class _DeliveryWeekCalendarViewState
     return Column(
       children: [
         WeekCalendarNav(
-          weekStart: _weekStart,
+          weekStart: weekStart,
           weekEnd: days.last,
           onPrev: () => _shift(-1),
           onNext: () => _shift(1),

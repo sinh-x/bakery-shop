@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +8,7 @@ import '../../data/providers/bom_provider.dart';
 import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'providers/bom_row_notifier.dart';
 import 'widgets/blanks_states.dart';
 import 'widgets/bom_add_sheet.dart';
 
@@ -109,8 +111,6 @@ class _BomRow extends ConsumerStatefulWidget {
 
 class _BomRowState extends ConsumerState<_BomRow> {
   late final TextEditingController _qtyCtrl;
-  bool _editing = false;
-  bool _saving = false;
 
   @override
   void initState() {
@@ -130,10 +130,7 @@ class _BomRowState extends ConsumerState<_BomRow> {
       showTopSnackBar(context, BlanksLabels.messageBomInvalidQuantity);
       return;
     }
-    setState(() {
-      _saving = true;
-      _editing = false;
-    });
+    ref.read(bomRowStateProvider(widget.bom.id).notifier).startSaving();
     try {
       await ref
           .read(bomProvider(widget.priceChipId).notifier)
@@ -144,7 +141,9 @@ class _BomRowState extends ConsumerState<_BomRow> {
     } catch (e) {
       if (mounted) showTopSnackBar(context, e.toString());
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        ref.read(bomRowStateProvider(widget.bom.id).notifier).finishSaving();
+      }
     }
   }
 
@@ -180,9 +179,12 @@ class _BomRowState extends ConsumerState<_BomRow> {
 
   @override
   Widget build(BuildContext context) {
+    final rowState = ref.watch(bomRowStateProvider(widget.bom.id));
+    final editing = rowState.editing;
+    final saving = rowState.saving;
     return ListTile(
       title: Text(widget.blankName),
-      subtitle: _editing
+      subtitle: editing
           ? TextField(
               controller: _qtyCtrl,
               keyboardType:
@@ -200,17 +202,19 @@ class _BomRowState extends ConsumerState<_BomRow> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_editing)
+          if (editing)
             IconButton(
               icon: const Icon(Icons.check),
               tooltip: BlanksLabels.actionSave,
-              onPressed: _saving ? null : _saveQuantity,
+              onPressed: saving ? null : _saveQuantity,
             )
           else
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: BlanksLabels.actionEdit,
-              onPressed: () => setState(() => _editing = true),
+              onPressed: () => ref
+                  .read(bomRowStateProvider(widget.bom.id).notifier)
+                  .beginEdit(),
             ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),

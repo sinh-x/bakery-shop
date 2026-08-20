@@ -2,7 +2,7 @@
 
 
 
-from typing import Optional
+from typing import List, Optional
 
 import baker.config
 from ._drawing import *  # noqa: F401,F403
@@ -16,6 +16,43 @@ def _shop_config(conn) -> dict:
         if r["config_key"] in cfg:
             cfg[r["config_key"]] = r["config_value"]
     return cfg
+
+# DG-361 Phase 4.3: candle type display labels for backend receipt renderers.
+# Mirrors `VN.candleTypeLabel()` in `vietnamese_labels.dart`. Raw value is
+# returned for unknown keys so unexpected stored values remain visible rather
+# than blank.
+CANDLE_TYPE_LABELS = {
+    "nen_so": "Nến số",
+    "nen_xoan": "Nến xoắn",
+    "nen_nho": "Nến nhỏ",
+    "khong_nen": "Không nến",
+}
+
+
+def _candle_type_label(value) -> str:
+    """Return the Vietnamese display label for a stored `candle_type` value.
+
+    Returns empty string when `value` is None/empty/`khong_nen` so callers can
+    skip rendering the candle line entirely (AC8, AC9).
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s == "khong_nen":
+        return ""
+    return CANDLE_TYPE_LABELS.get(s, s)
+
+
+def _candle_type_value(item: dict) -> str:
+    """Return the trimmed candle_type stored on an item, or empty string.
+
+    Reads from `attributes['candle_type']` (camelCase or snake_case `attributes`
+    keys are both supported via `.get`).
+    """
+    attrs = item.get("attributes") or {}
+    raw = attrs.get("candle_type") or attrs.get("candleType") or ""
+    return str(raw).strip()
+
 
 def _enum_attribute_labels(conn) -> dict:
     """Map enum attribute_type → label_vi for receipt rendering."""
@@ -205,22 +242,64 @@ def _header(draw, y, cfg):
     return y
 
 
-def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
-    """Get first photo bytes attached to a specific work item only."""
-    row = conn.execute(
-        "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id "
-        "WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1",
-        (order_id, work_item_id),
-    ).fetchone()
-    if row:
-        photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
+# DG-412 review cycle 4: the SQL ``LIMIT`` bound is ``limit * _PHOTO_FETCH_MULTIPLIER``.
+# The multiplier is a deliberate, greppable invariant: a work item never has more
+# than ``limit * _PHOTO_FETCH_MULTIPLIER`` attachments, so the bounded window always
+# contains every valid photo even when leading files are missing on disk. If the
+# per-item attachment cap ever changes, adjust this constant accordingly.
+_PHOTO_FETCH_MULTIPLIER = 4
+
+
+def _get_photos(conn, order_id: int, work_item_id: int, limit: int = 2) -> List[bytes]:
+    """Get up to ``limit`` photo bytes attached to a specific work item, ordered by ``position``.
+
+    DG-412 Phase 1 / FR1: customer receipt renders up to 2 photos per item
+    side by side. Returns an empty list when no photos are attached. Missing
+    files on disk are skipped silently (same convention as ``_get_photo``).
+    The query is ordered by ``position`` ascending with ``id`` as a stable
+    tiebreaker (AC4, AC5).
+
+    OPS-1 (DG-412 review cycle 1): rows are fetched with a bounded SQL
+    ``LIMIT`` (``limit * _PHOTO_FETCH_MULTIPLIER``) and the existence check is
+    applied while iterating; collection stops after ``limit`` existing files
+    have been gathered. This prevents a missing leading file from suppressing
+    later valid photos. CQ-2 (DG-412 review cycle 3): the SQL ``LIMIT`` caps
+    row retrieval so the work-ticket path (``_get_photo`` delegates with
+    ``limit=1``) does not regress to a full fetch.
+    """
+    rows = conn.execute(
+        "SELECT p.hash FROM photos p "
+        "JOIN order_photos op ON p.id = op.photo_id "
+        "WHERE op.order_id = ? AND op.work_item_id = ? "
+        "ORDER BY op.position, op.id "
+        "LIMIT ?",
+        (order_id, work_item_id, limit * _PHOTO_FETCH_MULTIPLIER),
+    ).fetchall()
+    out: List[bytes] = []
+    for r in rows:
+        photo_path = baker.config.PHOTOS_DIR / f"{r['hash']}.jpg"
         if photo_path.exists():
-            return photo_path.read_bytes()
-    return None
+            out.append(photo_path.read_bytes())
+            if len(out) >= limit:
+                break
+    return out
+
+
+def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
+    """Get first photo bytes attached to a specific work item only.
+
+    CQ-1 (DG-412 review cycle 1): implemented in terms of ``_get_photos`` to
+    remove duplicated query/file-read logic and keep ordering consistent.
+    """
+    photos = _get_photos(conn, order_id, work_item_id, limit=1)
+    return photos[0] if photos else None
 
 
 __all__ = [
     '_shop_config',
+    'CANDLE_TYPE_LABELS',
+    '_candle_type_label',
+    '_candle_type_value',
     '_enum_attribute_labels',
     '_enum_attribute_lines',
     '_wrapped_enum_attribute_lines',
@@ -238,4 +317,5 @@ __all__ = [
     '_draw_compact_reference_box',
     '_header',
     '_get_photo',
+    '_get_photos',
 ]

@@ -76,10 +76,6 @@ void main() {
         'openingBalance': 1000000,
         'note': 'mở ca sáng',
         'carryOverConfirmed': false,
-        'transferConfirmed': false,
-        'stockReconciliationConfirmed': false,
-        'unidentifiedSaleConfirmed': false,
-        'ownerCapitalConfirmed': false,
       });
       expect(drawer.id, '1');
       expect(drawer.openingBalance, 1000000);
@@ -108,11 +104,150 @@ void main() {
         'openingBalance': 1550000,
         'note': 'mang sang',
         'carryOverConfirmed': true,
-        'transferConfirmed': false,
-        'stockReconciliationConfirmed': false,
-        'unidentifiedSaleConfirmed': false,
-        'ownerCapitalConfirmed': false,
       });
+    });
+
+    test('openDrawer sends surplusConfirmed + surplusSource when requested',
+        () async {
+      final interceptor =
+          _RecordingInterceptor(_drawerJson(journalEntry: {
+        'id': '5',
+        'sourceType': 'cash_drawer_open',
+        'lines': <Map<String, dynamic>>[],
+      }));
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = CashDrawerService(dio);
+
+      await service.openDrawer(
+        openingBalance: 1550000,
+        surplusConfirmed: true,
+        surplusSource: 'owner_cash',
+      );
+
+      expect(interceptor.lastBody, {
+        'openingBalance': 1550000,
+        'note': '',
+        'carryOverConfirmed': false,
+        'surplusConfirmed': true,
+        'surplusSource': 'owner_cash',
+      });
+    });
+
+    test('openDrawer sends shortageConfirmed + shortageSource when requested',
+        () async {
+      final interceptor =
+          _RecordingInterceptor(_drawerJson(journalEntry: {
+        'id': '5',
+        'sourceType': 'cash_drawer_open',
+        'lines': <Map<String, dynamic>>[],
+      }));
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = CashDrawerService(dio);
+
+      await service.openDrawer(
+        openingBalance: 1000000,
+        shortageConfirmed: true,
+        shortageSource: 'equity_loss',
+      );
+
+      expect(interceptor.lastBody, {
+        'openingBalance': 1000000,
+        'note': '',
+        'carryOverConfirmed': false,
+        'shortageConfirmed': true,
+        'shortageSource': 'equity_loss',
+      });
+    });
+
+    test(
+        'DG-360 Phase 2: openDrawer throws CloseSurplusProposalException on '
+        '409 surplusProposal (reuses close exception type)', () async {
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  response: Response(
+                    requestOptions: options,
+                    statusCode: 409,
+                    data: {
+                      'detail': {
+                        'message':
+                            'Chênh lệch thỺ 700000 VND. Số dư kế toán 1101: '
+                            '-200000. Số tiền mở quầy: 500000.',
+                        'surplusProposal': {
+                          'referenceBalance': -200000,
+                          'openingBalance': 500000,
+                          'surplus': 700000,
+                        },
+                      },
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      try {
+        await service.openDrawer(openingBalance: 500000);
+        fail('expected CloseSurplusProposalException');
+      } on CloseSurplusProposalException catch (e) {
+        // Open proposal's referenceBalance maps to expectedBalance; the
+        // openingBalance maps to countedAmount — so the existing
+        // showCloseSurplusDialog can render the proposal unchanged.
+        expect(e.expectedBalance, -200000);
+        expect(e.countedAmount, 500000);
+        expect(e.surplus, 700000);
+        expect(e.message, contains('Chênh lệch thỺ'));
+      }
+    });
+
+    test(
+        'DG-360 Phase 2: openDrawer throws CloseShortageProposalException on '
+        '409 shortageProposal (reuses close exception type)', () async {
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  response: Response(
+                    requestOptions: options,
+                    statusCode: 409,
+                    data: {
+                      'detail': {
+                        'message':
+                            'Chênh lệch thiếu 400000 VND. Số dư kế toán 1101: '
+                            '500000. Số tiền mở quầy: 100000.',
+                        'shortageProposal': {
+                          'referenceBalance': 500000,
+                          'openingBalance': 100000,
+                          'shortage': 400000,
+                        },
+                      },
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      try {
+        await service.openDrawer(openingBalance: 100000);
+        fail('expected CloseShortageProposalException');
+      } on CloseShortageProposalException catch (e) {
+        expect(e.expectedBalance, 500000);
+        expect(e.countedAmount, 100000);
+        expect(e.shortage, 400000);
+        expect(e.message, contains('Chênh lệch thiếu'));
+      }
     });
 
     test('openDrawer throws CarryOverProposalException on 409 proposal',
@@ -368,6 +503,285 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       expect(cashDrawerServiceProvider, isNotNull);
+    });
+  });
+
+  group('getDrawerTransactions (DG-343 Phase 2)', () {
+    test('GETs /{drawerId}/transactions with limit + offset query', () async {
+      String? capturedPath;
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedPath = options.path;
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'total': 2,
+                    'limit': 50,
+                    'offset': 0,
+                    'items': [
+                      {
+                        'id': '1',
+                        'type': 'cash_drawer_open',
+                        'amount': 1000000,
+                        'timestamp': '2026-08-01T08:00:00Z',
+                        'note': 'open',
+                      },
+                      {
+                        'id': '2',
+                        'type': 'payment_transaction',
+                        'amount': 50000,
+                        'timestamp': '2026-08-01T09:00:00Z',
+                        'note': 'sale',
+                      },
+                    ],
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      final resp = await service.getDrawerTransactions(
+        7,
+        limit: 50,
+        offset: 0,
+      );
+
+      expect(capturedPath, '/api/cash-drawer/7/transactions');
+      expect(capturedQuery!['limit'], 50);
+      expect(capturedQuery!['offset'], 0);
+      expect(resp.total, 2);
+      expect(resp.items, hasLength(2));
+      expect(resp.items.first.id, '1');
+      expect(resp.items.first.amount, 1000000);
+      expect(resp.items.last.type, 'payment_transaction');
+    });
+
+    test('uses default limit=50 offset=0 when omitted', () async {
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {'total': 0, 'limit': 50, 'offset': 0, 'items': []},
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.getDrawerTransactions(3);
+
+      expect(capturedQuery!['limit'], 50);
+      expect(capturedQuery!['offset'], 0);
+    });
+
+    test('passes custom pagination params through to the query', () async {
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedQuery = options.queryParameters;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {'total': 100, 'limit': 20, 'offset': 40, 'items': []},
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.getDrawerTransactions(11, limit: 20, offset: 40);
+
+      expect(capturedQuery!['limit'], 20);
+      expect(capturedQuery!['offset'], 40);
+    });
+  });
+
+  group('editTransaction (DG-379 Phase 4.3)', () {
+    test('PATCHes /{drawerId}/transactions/{entryId} with amount + notes',
+        () async {
+      String? capturedPath;
+      Map<String, dynamic>? capturedBody;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedPath = options.path;
+              capturedBody = options.data is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(options.data as Map)
+                  : null;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'drawerId': '1',
+                    'entryId': '12',
+                    'sourceType': 'cash_drawer_open',
+                    'amount': 1500000,
+                    'notes': 'Mở quầy sáng sửa',
+                    'drawer': _drawerJson(expectedBalance: 1500000),
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      final result = await service.editTransaction(
+        1,
+        12,
+        amount: 1500000,
+        notes: 'Mở quầy sáng sửa',
+      );
+
+      expect(capturedPath, '/api/cash-drawer/1/transactions/12');
+      expect(capturedBody, {
+        'amount': 1500000,
+        'notes': 'Mở quầy sáng sửa',
+      });
+      expect(result.drawerId, '1');
+      expect(result.entryId, '12');
+      expect(result.sourceType, 'cash_drawer_open');
+      expect(result.amount, 1500000);
+      expect(result.notes, 'Mở quầy sáng sửa');
+      expect(result.drawer.id, '1');
+      expect(result.drawer.expectedBalance, 1500000);
+    });
+
+    test('omits null fields from the PATCH body (edit notes only)', () async {
+      Map<String, dynamic>? capturedBody;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedBody = options.data is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(options.data as Map)
+                  : null;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'drawerId': '1',
+                    'entryId': '12',
+                    'sourceType': 'cash_drawer_open',
+                    'amount': null,
+                    'notes': 'ghi chú mới',
+                    'drawer': _drawerJson(),
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.editTransaction(1, 12, notes: 'ghi chú mới');
+
+      expect(capturedBody, {'notes': 'ghi chú mới'});
+    });
+
+    test('omits null fields from the PATCH body (edit amount only)', () async {
+      Map<String, dynamic>? capturedBody;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedBody = options.data is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(options.data as Map)
+                  : null;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'drawerId': '1',
+                    'entryId': '12',
+                    'sourceType': 'cash_drawer_open',
+                    'amount': 2000000,
+                    'notes': '',
+                    'drawer': _drawerJson(expectedBalance: 2000000),
+                  },
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      await service.editTransaction(1, 12, amount: 2000000);
+
+      expect(capturedBody, {'amount': 2000000});
+    });
+  });
+
+  group('reconcileDrawer (DG-379 Phase 4.3)', () {
+    test('PATCHes /{drawerId}/reconcile and returns reconciled bool',
+        () async {
+      String? capturedPath;
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              capturedPath = options.path;
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {'id': '1', 'reconciled': true},
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      final reconciled = await service.reconcileDrawer(1);
+
+      expect(capturedPath, '/api/cash-drawer/1/reconcile');
+      expect(reconciled, isTrue);
+    });
+
+    test('returns false when response body is not a map', () async {
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: null,
+                ),
+              );
+            },
+          ),
+        );
+      final service = CashDrawerService(dio);
+
+      final reconciled = await service.reconcileDrawer(1);
+
+      expect(reconciled, isFalse);
     });
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/enum_attribute.dart';
+import '../models/paginated_response.dart';
 import '../models/price_chip.dart';
 import '../models/product.dart';
 import 'api_client.dart';
@@ -28,6 +29,29 @@ class ProductService {
     return list
         .map((json) => Product.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Paginated products fetch (DG-409 Phase 4 / FR10). Opts into the backend
+  /// envelope via ``paginated=true`` and returns ``{items, total, has_more,
+  /// limit, offset}`` (FR14). Page size defaults to 50.
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final params = <String, dynamic>{
+      'active': active,
+      'paginated': true,
+      'limit': limit,
+      'offset': offset,
+    };
+    if (category != null) params['category'] = category;
+    final response = await _dio.get('/api/products', queryParameters: params);
+    return PaginatedResponse.fromJson(
+      response.data as Map<String, dynamic>,
+      Product.fromJson,
+    );
   }
 
   Future<Product> getProduct(int id) async {

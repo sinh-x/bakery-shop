@@ -56,6 +56,7 @@ def test_cli_registers_expected_commands():
         "repair-order-revenue",
         "repair-tien-rut-gap",
         "check-revenue-gaps",
+        "check-shipping-release-gaps",
         "repair-payment-journal",
         "repair-ar-entries",
         "repair-future-dates",

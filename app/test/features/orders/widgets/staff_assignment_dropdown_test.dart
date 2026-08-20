@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/data/api/staff_service.dart';
 import 'package:bakery_app/features/orders/widgets/order_edit/staff_assignment_dropdown.dart';
-import 'package:bakery_app/providers/staff_provider.dart';
+import 'package:bakery_app/data/providers/staff_provider.dart';
 
 class _FakeStaffListNotifier extends StaffListNotifier {
   final List<StaffMember> staff;

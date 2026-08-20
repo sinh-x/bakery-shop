@@ -1,12 +1,14 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_crud_providers.dart';
+import '../providers/google_maps_modal_notifier.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/api_error.dart';
 import '../../../shared/utils/launch_external_url.dart';
 import 'section_header.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Google Maps URL viewer/editor modal (DG-306 Phase 3 / FR6 / AC6).
 ///
 /// Opened from the order detail screen's context menu. Displays the current
@@ -30,7 +32,6 @@ class GoogleMapsModal extends ConsumerStatefulWidget {
 
 class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
   late final TextEditingController _urlCtrl;
-  bool _saving = false;
 
   @override
   void initState() {
@@ -45,7 +46,7 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
   }
 
   Future<void> _save({bool clear = false}) async {
-    setState(() => _saving = true);
+    ref.read(googleMapsModalProvider.notifier).setSaving(true);
     try {
       final value = clear ? null : _urlCtrl.text.trim();
       await ref
@@ -60,16 +61,17 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: ${normalizeApiError(e).message}');
+        showTopSnackBar(context, '${SharedLabels.apiError}: ${normalizeApiError(e).message}');
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(googleMapsModalProvider.notifier).setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final saving = ref.watch(googleMapsModalProvider);
     final hasUrl = _urlCtrl.text.trim().isNotEmpty;
 
     return Padding(
@@ -102,7 +104,17 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
             ),
             keyboardType: TextInputType.url,
             maxLines: 3,
-            onChanged: (_) => setState(() {}),
+            // onChanged no longer needs setState — the hasUrl derivation
+            // re-runs on every rebuild triggered by the controller's
+            // internal notification through the FormField's rebuild scope.
+            // The `setState(() {})` previously here was a pure rebuild
+            // signal for `hasUrl`; the TextFormField already rebuilds its
+            // own subtree on text changes, and the outer Column is
+            // rebuilt via the `saving` watch on every notifier change.
+            // To preserve the hasUrl-driven button visibility, trigger a
+            // rebuild via the saving notifier (a no-op bump).
+            onChanged: (_) =>
+                ref.read(googleMapsModalProvider.notifier).setSaving(saving),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -121,7 +133,7 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
                   style: TextButton.styleFrom(
                     foregroundColor: theme.colorScheme.error,
                   ),
-                  onPressed: _saving ? null : () => _save(clear: true),
+                  onPressed: saving ? null : () => _save(clear: true),
                   icon: const Icon(Icons.link_off, size: 18),
                   label: const Text(OrdersLabels.googleMapsModalClear),
                 ),
@@ -129,10 +141,10 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: _saving
+            onPressed: saving
                 ? null
                 : () => _save(clear: _urlCtrl.text.trim().isEmpty),
-            icon: _saving
+            icon: saving
                 ? const SizedBox(
                     width: 18,
                     height: 18,

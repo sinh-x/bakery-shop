@@ -1,15 +1,20 @@
 // EXEMPT: 200-line threshold exceeded because DG-150 blocker: splitting tile/viewer/upload/empty state now would duplicate provider-driven upload state and photo deletion guards across modal boundaries. Reviewed 2026-05-29.
+import 'dart:async';
+
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
+import '../providers/order_photo_tag_edit_notifier.dart';
 import '../../../providers/photo_upload_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
+import 'package:bakery_app/shared/utils/order_photo_tags.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 // ── Predefined tag definitions ─────────────────────────────────────────────────
 
 class OrderPhotoTagDef {
@@ -56,15 +61,6 @@ const kOrderPhotoTags = [
     color: Color(0xFF00897B),
   ),
 ];
-
-Set<String> _parseTags(String tags) {
-  if (tags.isEmpty) return {};
-  return tags
-      .split(',')
-      .map((t) => t.trim())
-      .where((t) => t.isNotEmpty)
-      .toSet();
-}
 
 // ── Main gallery section ───────────────────────────────────────────────────────
 
@@ -134,11 +130,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
         showTopSnackBar(
           context,
           firstError == null || firstError.isEmpty
-              ? VN.apiError
-              : '${VN.apiError}: $firstError',
+              ? SharedLabels.apiError
+              : '${SharedLabels.apiError}: $firstError',
         );
       } else {
-        showTopSnackBar(context, VN.orderPhotoAdded);
+        showTopSnackBar(context, OrdersLabels.orderPhotoAdded);
       }
     }
   }
@@ -147,18 +143,18 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.deleteOrderPhotoConfirm),
+        title: const Text(OrdersLabels.deleteOrderPhotoConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(ctx).colorScheme.error,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.remove),
+            child: const Text(SharedLabels.remove),
           ),
         ],
       ),
@@ -169,11 +165,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
           .read(orderPhotosProvider(widget.orderRef).notifier)
           .delete(photo.id);
       if (mounted) {
-        showTopSnackBar(context, VN.orderPhotoDeleted);
+        showTopSnackBar(context, OrdersLabels.orderPhotoDeleted);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -212,7 +208,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              VN.orderPhotos,
+              OrdersLabels.orderPhotos,
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
@@ -229,7 +225,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
             else
               IconButton(
                 icon: const Icon(Icons.add_photo_alternate_outlined),
-                tooltip: VN.addOrderPhoto,
+                tooltip: OrdersLabels.addOrderPhoto,
                 onPressed: _pickAndUpload,
                 iconSize: 20,
                 visualDensity: VisualDensity.compact,
@@ -249,7 +245,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
           error: (e, _) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Text(
-              VN.apiError,
+              SharedLabels.apiError,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),
@@ -267,7 +263,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  VN.noOrderPhotos,
+                  OrdersLabels.noOrderPhotos,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
                   ),
@@ -285,7 +281,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
                   final photo = photos[index];
                   final url =
                       '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
-                  final tagKeys = _parseTags(photo.tags);
+                  final tagKeys = parseOrderPhotoTags(photo.tags);
 
                   return GestureDetector(
                     onTap: () => _openViewer(photos, index),
@@ -449,7 +445,7 @@ class _OrderPhotoViewerState extends State<OrderPhotoViewer> {
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];
           final url = '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
-          final tagKeys = _parseTags(photo.tags);
+          final tagKeys = parseOrderPhotoTags(photo.tags);
 
           return Stack(
             fit: StackFit.expand,
@@ -537,37 +533,41 @@ class _TagEditSheet extends ConsumerStatefulWidget {
 }
 
 class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
-  late Set<String> _selectedTags;
-  bool _saving = false;
-
   @override
   void initState() {
     super.initState();
-    _selectedTags = _parseTags(widget.photo.tags);
+    final tags = parseOrderPhotoTags(widget.photo.tags);
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderPhotoTagEditProvider.notifier).seedTags(tags);
+      }
+    });
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    ref.read(orderPhotoTagEditProvider.notifier).setSaving(true);
     try {
-      final tags = _selectedTags.join(',');
+      final tags = ref.read(orderPhotoTagEditProvider).selectedTags.join(',');
       await ref
           .read(orderPhotosProvider(widget.orderRef).notifier)
           .updateTags(widget.photo.id, tags);
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.photoTagsUpdated);
+        showTopSnackBar(context, OrdersLabels.photoTagsUpdated);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) ref.read(orderPhotoTagEditProvider.notifier).setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(orderPhotoTagEditProvider);
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -580,7 +580,7 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            VN.editPhotoTags,
+            OrdersLabels.editPhotoTags,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
@@ -588,19 +588,13 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
             spacing: 8,
             runSpacing: 8,
             children: kOrderPhotoTags.map((tag) {
-              final selected = _selectedTags.contains(tag.key);
+              final selected = state.selectedTags.contains(tag.key);
               return FilterChip(
                 label: Text(tag.label),
                 selected: selected,
-                onSelected: (val) {
-                  setState(() {
-                    if (val) {
-                      _selectedTags.add(tag.key);
-                    } else {
-                      _selectedTags.remove(tag.key);
-                    }
-                  });
-                },
+                onSelected: (val) => ref
+                    .read(orderPhotoTagEditProvider.notifier)
+                    .toggleTag(tag.key, val),
                 selectedColor: tag.color.withAlpha(50),
                 checkmarkColor: tag.color,
                 side: BorderSide(
@@ -611,14 +605,14 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
+            onPressed: state.saving ? null : _save,
+            child: state.saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           const SizedBox(height: 8),
         ],

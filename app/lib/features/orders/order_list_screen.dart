@@ -1,6 +1,6 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting filter/search/tile/empty/loading widgets now would require broad state-lift changes across persisted filter and refresh flows. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/utils.dart' show statusMap;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import 'providers/order_list_filter_notifier.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -22,6 +23,12 @@ import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
+import 'widgets/kanban_board.dart';
+import 'widgets/date_header.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+
+export 'widgets/kanban_helpers.dart' show kanbanStatuses, groupOrdersByKanbanStatus;
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
@@ -49,17 +56,7 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver, AutoRefreshMixin {
   late final TabController _tabController;
-  String _statusFilter = 'new';
-  String _searchQuery = '';
-  final bool _urgencyFilterEnabled = false;
   final _searchController = TextEditingController();
-
-  // View mode: 'list' or 'kanban'
-  String _viewMode = 'list';
-
-  // Date filter for order list (DG-193 Phase 2 — FR1, FR2).
-  // Default is [DateFilterOption.all] so the initial view shows every order.
-  DateFilterOption _dateFilter = DateFilterOption.all;
 
   @override
   String screenRoutePath() => '/orders';
@@ -78,18 +75,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
   Future<void> _loadViewMode() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _viewMode = prefs.getString('order_view_mode') ?? 'list';
-    });
+    ref
+        .read(orderListFilterProvider.notifier)
+        .setViewMode(prefs.getString('order_view_mode') ?? 'list');
   }
 
   Future<void> _toggleViewMode() async {
-    final newMode = _viewMode == 'list' ? 'kanban' : 'list';
+    final current = ref.read(orderListFilterProvider).viewMode;
+    final newMode = current == 'list' ? 'kanban' : 'list';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('order_view_mode', newMode);
-    setState(() {
-      _viewMode = newMode;
-    });
+    ref.read(orderListFilterProvider.notifier).setViewMode(newMode);
   }
 
   void _onAppBarMenuSelected(String value) {
@@ -125,7 +121,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() => setState(() {}));
+    _tabController.addListener(() {
+      // Rebuild the AppBar title (urgency/incomplete badge visibility)
+      // when the user switches tabs. Previously an empty `setState(() {})`;
+      // now a counter bump the title watches.
+      ref.read(orderListTabRebuildProvider.notifier).bump();
+    });
     _loadViewMode();
     initAutoRefresh();
   }
@@ -148,8 +149,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     await ref.read(orderListProvider.notifier).refresh();
   }
 
-  List<Order> _applyStatusFilter(List<Order> orders) {
-    switch (_statusFilter) {
+  List<Order> _applyStatusFilter(List<Order> orders, String statusFilter) {
+    switch (statusFilter) {
       case 'ready':
         // Pickup-only ready orders (same as Kanban "Sẵn sàng" column)
         return orders
@@ -174,13 +175,13 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where((o) => o.status == 'delivered' && !o.isPaid)
             .toList();
       default:
-        return orders.where((o) => o.status == _statusFilter).toList();
+        return orders.where((o) => o.status == statusFilter).toList();
     }
   }
 
-  List<Order> _applySearchFilter(List<Order> orders) {
-    if (_searchQuery.isEmpty) return orders;
-    final q = _searchQuery.toLowerCase();
+  List<Order> _applySearchFilter(List<Order> orders, String searchQuery) {
+    if (searchQuery.isEmpty) return orders;
+    final q = searchQuery.toLowerCase();
     return orders
         .where(
           (o) =>
@@ -192,35 +193,16 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
-  List<Order> _applyUrgencyFilter(List<Order> orders) {
-    if (!_urgencyFilterEnabled) return orders;
-    return orders
-        .where((o) => o.urgency == urgencyCritical || o.urgency == urgencyUrgent)
-        .toList();
-  }
-
-  /// Filters orders by [dueDate] (YYYY-MM-DD) against the selected
-  /// [_dateFilter] option (DG-193 Phase 2 — FR2).
-  ///
-  /// - [DateFilterOption.all] returns every order (filter cleared).
-  /// - The other options compare each order's parsed `dueDate` against today
-  ///   and/or tomorrow. Orders without a `dueDate` (null or empty) are
-  ///   excluded from non-`all` date filters — they only reappear when the
-  ///   user selects "Tất cả".
-  ///
-  /// Date comparison is day-precision: the `dueDate` string (`yyyy-MM-dd`)
-  /// is parsed via [parseApiDate] and compared to `today`/`tomorrow` produced
-  /// from `DateTime.now()`. This keeps filtering O(n) and client-side only
-  /// (NFR2).
-  List<Order> _applyDateFilter(List<Order> orders) {
-    return applyDateFilter(orders, _dateFilter);
+  List<Order> _applyDateFilter(List<Order> orders, DateFilterOption dateFilter) {
+    return applyDateFilter(orders, dateFilter);
   }
 
   List<Order> _applyFilters(List<Order> orders) {
-    // Pipeline: status → search → date → urgency (DG-193 Phase 2 — FR3).
-    var filtered = _applySearchFilter(_applyStatusFilter(orders));
-    filtered = _applyDateFilter(filtered);
-    filtered = _applyUrgencyFilter(filtered);
+    final filterState = ref.read(orderListFilterProvider);
+    // Pipeline: status → search → date (DG-193 Phase 2 — FR3).
+    var filtered = _applySearchFilter(
+        _applyStatusFilter(orders, filterState.statusFilter), filterState.searchQuery);
+    filtered = _applyDateFilter(filtered, filterState.dateFilter);
     return filtered;
   }
 
@@ -262,6 +244,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
+    final filterState = ref.watch(orderListFilterProvider);
+    final viewMode = filterState.viewMode;
+    final searchQuery = filterState.searchQuery;
+    final statusFilter = filterState.statusFilter;
+    final dateFilter = filterState.dateFilter;
+    // Watch the tab rebuild counter so the AppBar title (urgency/incomplete
+    // badges) re-renders on tab switches.
+    ref.watch(orderListTabRebuildProvider);
     final isOrdersTab = _tabController.index == 0;
 
     return Scaffold(
@@ -337,7 +327,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   ),
                 const Expanded(
                   child: Center(
-                    child: Text(VN.tabOrders),
+                    child: Text(SharedLabels.tabOrders),
                   ),
                 ),
               ],
@@ -347,16 +337,16 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: () => ref.read(orderListProvider.notifier).refresh(),
           ),
           IconButton(
             icon: Icon(
-              _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
+              viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
-            tooltip: _viewMode == 'list'
-                ? VN.switchToKanbanView
-                : VN.switchToListView,
+            tooltip: viewMode == 'list'
+                ? SharedLabels.switchToKanbanView
+                : SharedLabels.switchToListView,
             onPressed: _toggleViewMode,
           ),
           AppBarOverflowMenu(
@@ -364,11 +354,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             items: const [
               PopupMenuItem<String>(
                 value: 'orders_history',
-                child: Text(VN.openOrderHistory),
+                child: Text(SharedLabels.openOrderHistory),
               ),
               PopupMenuItem<String>(
                 value: 'manage_customers',
-                child: Text(VN.openCustomerManagement),
+                child: Text(CustomersLabels.openCustomerManagement),
               ),
               PopupMenuItem<String>(
                 value: 'manage_blanks',
@@ -388,14 +378,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(text: VN.orderListTab),
-            const Tab(text: VN.cakeQueue),
+            const Tab(text: OrdersLabels.orderListTab),
+            const Tab(text: OrdersLabels.cakeQueue),
             Tab(
               text: () {
                 final orders = ordersAsync.asData?.value ?? [];
                 final todayCount =
                     filterDeliveryOrders(orders, todayOnly: true).length;
-                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : VN.deliveryTab;
+                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : OrdersLabels.deliveryTab;
               }(),
             ),
           ],
@@ -404,7 +394,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       floatingActionButton: isOrdersTab
           ? FloatingActionButton(
               onPressed: () => context.push('/orders/new'),
-              tooltip: VN.createOrder,
+              tooltip: OrdersLabels.createOrder,
               child: const Icon(Icons.add),
             )
           : null,
@@ -420,14 +410,16 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: VN.searchOrders,
+                    hintText: SharedLabels.searchOrders,
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
+                    suffixIcon: searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
                             onPressed: () {
                               _searchController.clear();
-                              setState(() => _searchQuery = '');
+                              ref
+                                  .read(orderListFilterProvider.notifier)
+                                  .clearSearchQuery();
                             },
                           )
                         : null,
@@ -437,18 +429,22 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     isDense: true,
                   ),
-                  onChanged: (v) => setState(() => _searchQuery = v),
+                  onChanged: (v) => ref
+                      .read(orderListFilterProvider.notifier)
+                      .setSearchQuery(v),
                 ),
               ),
 
               // Date filter chips (visible in both list and kanban view — DG-193 Phase 2, FR4)
               DateFilterChips(
-                selected: _dateFilter,
-                onChanged: (option) => setState(() => _dateFilter = option),
+                selected: dateFilter,
+                onChanged: (option) => ref
+                    .read(orderListFilterProvider.notifier)
+                    .setDateFilter(option),
               ),
 
               // Status filter chips (hidden in Kanban — columns already group by status)
-              if (_viewMode == 'list')
+              if (viewMode == 'list')
                 SizedBox(
                   height: 44,
                   child: ListView(
@@ -460,7 +456,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     children: _statusFilters.map((s) {
                       final color = BakeryTheme.statusColors[s] ?? Colors.grey;
                       final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
-                      final selected = _statusFilter == s;
+                      final selected = statusFilter == s;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterChip(
@@ -475,7 +471,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           label: Text(label),
                           selected: selected,
                           selectedColor: color.withAlpha(30),
-                          onSelected: (_) => setState(() => _statusFilter = s),
+                          onSelected: (_) => ref
+                              .read(orderListFilterProvider.notifier)
+                              .setStatusFilter(s),
                         ),
                       );
                     }).toList(),
@@ -484,11 +482,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
               // Order list / Kanban view
               Expanded(
-                child: _viewMode == 'kanban'
-                    ? _KanbanBoard(
+                child: viewMode == 'kanban'
+                    ? KanbanBoard(
                         filteredOrders: ordersAsync.maybeWhen(
                           data: (orders) =>
-                              _applyDateFilter(_applySearchFilter(orders)),
+                              _applyDateFilter(_applySearchFilter(orders, searchQuery), dateFilter),
                           orElse: () => <Order>[],
                         ),
                       )
@@ -499,11 +497,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(VN.apiError),
+                              const Text(SharedLabels.apiError),
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _onRefresh,
-                                child: const Text(VN.retry),
+                                child: const Text(SharedLabels.retry),
                               ),
                             ],
                           ),
@@ -513,11 +511,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                _urgencyFilterEnabled
-                                    ? OrdersLabels.urgencyFilterEmpty
-                                    : _searchQuery.isNotEmpty
-                                            ? 'Không có đơn hàng phù hợp'
-                                            : 'Không có đơn hàng',
+                                searchQuery.isNotEmpty
+                                    ? 'Không có đơn hàng phù hợp'
+                                    : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );
@@ -531,7 +527,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                               itemBuilder: (context, index) {
                                 final item = grouped[index];
                                 if (item is String) {
-                                  return _DateHeader(label: item);
+                                  return DateHeader(label: item);
                                 }
                                 final order = item as Order;
                                 return OrderCard(
@@ -558,38 +554,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     );
   }
 }
-
-class _DateHeader extends StatelessWidget {
-  const _DateHeader({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 4),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-/// Active Kanban columns in order workflow
-/// 'to_deliver' is a virtual status for ready orders with bus/door delivery
-/// 'awaiting_payment' is a virtual status for delivered+unpaid orders
-const _kanbanStatuses = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'ready',
-  'to_deliver',
-  'awaiting_payment',
-];
 
 /// Filters [orders] by [dueDate] (YYYY-MM-DD) against the selected [option]
 /// (DG-193 Phase 2 — FR2; extracted as a top-level function in Phase 4 for
@@ -627,355 +591,4 @@ List<Order> applyDateFilter(List<Order> orders, DateFilterOption option) {
     }
   }
   return orders.where((o) => matches(o.dueDate)).toList();
-}
-
-/// Groups active orders into Kanban columns.
-///
-/// Handles virtual columns:
-/// - 'ready' = status=ready AND is pickup (not bus/door)
-/// - 'to_deliver' = status=ready AND deliveryType is bus or door
-/// - 'awaiting_payment' = status=delivered AND not paid
-///
-/// Terminal statuses (completed, cancelled) are not included in any column.
-///
-/// Within each column orders are sorted by `dueDate` ascending; orders with
-/// a null `dueDate` sort last (FR5 / AC5 / AC6).
-Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
-  DateTime? dueDateOf(Order o) => parseApiDate(o.dueDate);
-  int compareByDueDate(Order a, Order b) {
-    final da = dueDateOf(a);
-    final db = dueDateOf(b);
-    if (da == null && db == null) return 0;
-    if (da == null) return 1; // nulls last
-    if (db == null) return -1;
-    return da.compareTo(db);
-  }
-
-  List<Order> sorted(Iterable<Order> input) =>
-      input.toList()..sort(compareByDueDate);
-
-  final result = <String, List<Order>>{};
-  for (final status in _kanbanStatuses) {
-    if (status == 'to_deliver') {
-      // Ready orders that need delivery (bus/door-to-door)
-      result[status] = sorted(orders.where(
-        (o) =>
-            o.status == 'ready' &&
-            isDeliveryType(o.deliveryType),
-      ));
-    } else if (status == 'ready') {
-      // Ready orders excluding delivery ones (pickup only)
-      result[status] = sorted(orders.where(
-        (o) =>
-            o.status == 'ready' &&
-            !isDeliveryType(o.deliveryType),
-      ));
-    } else if (status == 'awaiting_payment') {
-      result[status] = sorted(
-          orders.where((o) => o.status == 'delivered' && !o.isPaid));
-    } else {
-      result[status] = sorted(orders.where((o) => o.status == status));
-    }
-  }
-  return result;
-}
-
-class _KanbanBoard extends ConsumerWidget {
-  const _KanbanBoard({required this.filteredOrders});
-
-  final List<Order> filteredOrders;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ordersByStatus = groupOrdersByKanbanStatus(filteredOrders);
-
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      itemCount: _kanbanStatuses.length,
-      itemBuilder: (context, index) {
-        final status = _kanbanStatuses[index];
-        final orders = ordersByStatus[status] ?? [];
-        return _KanbanColumn(status: status, orders: orders);
-      },
-    );
-  }
-}
-
-class _KanbanColumn extends ConsumerWidget {
-  const _KanbanColumn({required this.status, required this.orders});
-
-  final String status;
-  final List<Order> orders;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final statusColor = BakeryTheme.statusColors[status] ?? Colors.grey;
-    final statusLabel = status == 'awaiting_payment'
-        ? 'Xác nhận thanh toán'
-        : status == 'to_deliver'
-        ? 'Giao hàng'
-        : (statusMap[status] ?? status);
-    final targetIndex = _kanbanStatuses.indexOf(status);
-
-    return Container(
-      width: 280,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        children: [
-          // Column header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: statusColor.withAlpha(30),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(12),
-              ),
-              border: Border.all(color: statusColor.withAlpha(100)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    statusLabel,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withAlpha(50),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${orders.length}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Order cards list with DragTarget
-          Expanded(
-            child: DragTarget<Order>(
-              onWillAcceptWithDetails: (details) {
-                // Don't accept drops on virtual columns
-                if (status == 'awaiting_payment' || status == 'to_deliver') {
-                  return false;
-                }
-                // Only accept forward transitions
-                final sourceIndex = _kanbanStatuses.indexOf(
-                  details.data.status,
-                );
-                return targetIndex > sourceIndex;
-              },
-              onAcceptWithDetails: (details) async {
-                final order = details.data;
-                final targetStatusLabel = statusMap[status] ?? status;
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Chuyển trạng thái'),
-                    content: Text(
-                      'Chuyển đơn hàng "${order.customerName}" sang trạng thái "$targetStatusLabel"?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Hủy'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Xác nhận'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true && context.mounted) {
-                  await ref
-                      .read(orderDetailProvider(order.orderRef).notifier)
-                      .transitionTo(status);
-                }
-              },
-              builder: (context, candidateData, rejectedData) {
-                // Highlight column when a valid drag is hovering over it
-                final isHovering = candidateData.isNotEmpty;
-                return Container(
-                  decoration: BoxDecoration(
-                    color: isHovering
-                        ? statusColor.withAlpha(15)
-                        : Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(12),
-                    ),
-                    border: Border.all(
-                      color: isHovering
-                          ? statusColor.withAlpha(150)
-                          : Theme.of(context).colorScheme.outlineVariant,
-                      width: isHovering ? 2 : 1,
-                    ),
-                  ),
-                  child: orders.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Không có đơn',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outline,
-                                  ),
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(8),
-                          itemCount: orders.length,
-                          itemBuilder: (context, index) {
-                            final order = orders[index];
-                            return LongPressDraggable<Order>(
-                              data: order,
-                              onDragStarted: HapticFeedback.mediumImpact,
-                              feedback: Material(
-                                elevation: 8,
-                                borderRadius: BorderRadius.circular(8),
-                                child: SizedBox(
-                                  width: 260,
-                                  child: _DragFeedbackCard(order: order),
-                                ),
-                              ),
-                              childWhenDragging: Opacity(
-                                opacity: 0.4,
-                                child: OrderCard(order: order),
-                              ),
-                              child: OrderCard(
-                                order: order,
-                                onTap: () =>
-                                    context.push('/orders/${order.orderRef}'),
-                              ),
-                            );
-                          },
-                        ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Simplified card shown as floating feedback during drag.
-class _DragFeedbackCard extends StatelessWidget {
-  const _DragFeedbackCard({required this.order});
-
-  final Order order;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
-
-    return Card(
-      color: theme.colorScheme.surface,
-      elevation: 8,
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    order.customerName,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            if (order.items.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                _productSummary(order),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            if (order.dueDate != null) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    Icons.schedule,
-                    size: 12,
-                    color: theme.colorScheme.outline,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      order.dueTime != null
-                          ? '${order.dueDate} ${order.dueTime}'
-                          : order.dueDate!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _productSummary(Order order) {
-    if (order.items.isEmpty) return '';
-    final first = order.items.first;
-    final name = first.productName;
-    if (order.items.length == 1) return name;
-    return '$name +${order.items.length - 1}';
-  }
 }

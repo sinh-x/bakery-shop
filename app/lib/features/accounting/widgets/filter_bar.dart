@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/account.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/accounting.dart';
 /// Filter bar for the accounting journal tab.
 ///
 /// Extracted from journal_tab.dart (DG-189 Phase 1, finding M-2). Hosts the
@@ -46,12 +45,12 @@ class FilterBar extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           DateChip(
-            label: VN.accountingFilterSince,
+            label: AccountingLabels.accountingFilterSince,
             value: since,
             onSelected: onSinceChanged,
           ),
           DateChip(
-            label: VN.accountingFilterUntil,
+            label: AccountingLabels.accountingFilterUntil,
             value: until,
             onSelected: onUntilChanged,
           ),
@@ -64,11 +63,11 @@ class FilterBar extends StatelessWidget {
             error: (_, _) => const SizedBox.shrink(),
             data: (accounts) => DropdownButton<int?>(
               value: accountId,
-              hint: const Text(VN.accountingFilterAccount),
+              hint: const Text(AccountingLabels.accountingFilterAccount),
               items: [
                 const DropdownMenuItem<int?>(
                   value: null,
-                  child: Text(VN.accountingFilterAccount),
+                  child: Text(AccountingLabels.accountingFilterAccount),
                 ),
                 ...accounts.map(
                   (a) => DropdownMenuItem<int?>(
@@ -82,47 +81,47 @@ class FilterBar extends StatelessWidget {
           ),
           DropdownButton<String?>(
             value: sourceType,
-            hint: const Text(VN.accountingFilterSourceType),
+            hint: const Text(AccountingLabels.accountingFilterSourceType),
             items: const [
               DropdownMenuItem<String?>(
                 value: null,
-                child: Text(VN.accountingSourceTypeAll),
+                child: Text(AccountingLabels.accountingSourceTypeAll),
               ),
               DropdownMenuItem<String?>(
                 value: 'expense',
-                child: Text(VN.accountingSourceTypeExpense),
+                child: Text(AccountingLabels.accountingSourceTypeExpense),
               ),
               DropdownMenuItem<String?>(
                 value: 'payment_transaction',
-                child: Text(VN.accountingSourceTypePayment),
+                child: Text(AccountingLabels.accountingSourceTypePayment),
               ),
               DropdownMenuItem<String?>(
                 value: 'order',
-                child: Text(VN.accountingSourceTypeOrder),
+                child: Text(AccountingLabels.accountingSourceTypeOrder),
               ),
               DropdownMenuItem<String?>(
                 value: 'order_cogs',
-                child: Text(VN.accountingSourceTypeCogs),
+                child: Text(AccountingLabels.accountingSourceTypeCogs),
               ),
               DropdownMenuItem<String?>(
                 value: 'order_shipping_hold',
-                child: Text(VN.accountingSourceTypeShippingHold),
+                child: Text(AccountingLabels.accountingSourceTypeShippingHold),
               ),
               DropdownMenuItem<String?>(
                 value: 'order_shipping_release',
-                child: Text(VN.accountingSourceTypeShippingRelease),
+                child: Text(AccountingLabels.accountingSourceTypeShippingRelease),
               ),
               DropdownMenuItem<String?>(
                 value: 'owner_capital',
-                child: Text(VN.accountingOwnerCapital),
+                child: Text(AccountingLabels.accountingOwnerCapital),
               ),
               DropdownMenuItem<String?>(
                 value: 'owner_draw',
-                child: Text(VN.accountingOwnerDraw),
+                child: Text(AccountingLabels.accountingOwnerDraw),
               ),
               DropdownMenuItem<String?>(
                 value: 'staff_reimburse',
-                child: Text(VN.accountingStaffReimburse),
+                child: Text(AccountingLabels.accountingStaffReimburse),
               ),
             ],
             onChanged: onSourceTypeChanged,
@@ -130,7 +129,7 @@ class FilterBar extends StatelessWidget {
           FilledButton.tonalIcon(
             onPressed: onLock,
             icon: const Icon(Icons.lock_outline),
-            label: const Text(VN.accountingLockJournal),
+            label: const Text(AccountingLabels.accountingLockJournal),
           ),
         ],
       ),

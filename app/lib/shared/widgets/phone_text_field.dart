@@ -31,8 +31,8 @@ class PhoneTextField extends StatelessWidget {
   /// Owns the phone text. Callers retain ownership and must dispose it.
   final TextEditingController controller;
 
-  /// Per-screen VN label (e.g. [VN.customerPhone], [OrdersLabels.deliveryPhone],
-  /// [VN.customerPhoneField]).
+  /// Per-screen VN label (e.g. [OrdersLabels.customerPhone], [OrdersLabels.deliveryPhone],
+  /// [CustomersLabels.customerPhoneField]).
   final String labelText;
 
   /// Optional keyboard action (e.g. [TextInputAction.next] for customer-form

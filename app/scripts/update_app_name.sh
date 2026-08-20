@@ -47,8 +47,12 @@ sed -i "s|\"FileDescription\", \"[^\"]*\"|\"FileDescription\", \"$APP_NAME\"|" \
 sed -i "s|\"ProductName\", \"[^\"]*\"|\"ProductName\", \"$APP_NAME\"|" \
   "$APP_DIR/windows/runner/Runner.rc"
 
-# Dart - VN.appName
+# Dart - SharedLabels.appName
+if [[ ! -f "$APP_DIR/lib/shared/labels/shared.dart" ]]; then
+  echo "Error: $APP_DIR/lib/shared/labels/shared.dart not found" >&2
+  exit 1
+fi
 sed -i "s|static const appName = '[^']*';|static const appName = '$APP_NAME';|" \
-  "$APP_DIR/lib/shared/widgets/vietnamese_labels.dart"
+  "$APP_DIR/lib/shared/labels/shared.dart"
 
 echo "Done. Updated all platform configs to: $APP_NAME"

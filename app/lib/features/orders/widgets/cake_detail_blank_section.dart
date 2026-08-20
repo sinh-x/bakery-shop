@@ -1,11 +1,13 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/work_item.dart';
 import '../../../data/providers/blanks_provider.dart';
+import '../providers/cake_detail_blank_notifier.dart';
 import '../../../shared/labels/blanks.dart';
 import 'add_blank_modal.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///
 /// Shows a "Thêm phôi bánh" button that opens the [showAddBlankModal] and a
@@ -54,19 +56,17 @@ class CakeDetailBlankSection extends ConsumerStatefulWidget {
 
 class _CakeDetailBlankSectionState
     extends ConsumerState<CakeDetailBlankSection> {
-  bool _busy = false;
-
   Future<void> _withBusy(Future<void> Function() action) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+    if (ref.read(cakeDetailBlankBusyProvider)) return;
+    ref.read(cakeDetailBlankBusyProvider.notifier).setBusy(true);
     try {
       await action();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) ref.read(cakeDetailBlankBusyProvider.notifier).setBusy(false);
     }
   }
 
@@ -117,7 +117,7 @@ class _CakeDetailBlankSectionState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -142,6 +142,7 @@ class _CakeDetailBlankSectionState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final blanks = widget.item.blanks;
+    final busy = ref.watch(cakeDetailBlankBusyProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -160,15 +161,15 @@ class _CakeDetailBlankSectionState
             child: _BlankLineItem(
               assignment: assignment,
               blankName: _resolveBlankName(assignment),
-              busy: _busy,
+              busy: busy,
               onEdit: () => _openEditModal(assignment),
               onDelete: () => _confirmDelete(assignment),
             ),
           ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: _busy ? null : _openAddModal,
-          icon: _busy
+          onPressed: busy ? null : _openAddModal,
+          icon: busy
               ? const SizedBox(
                   width: 16,
                   height: 16,

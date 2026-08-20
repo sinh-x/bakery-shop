@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Interceptor serving the order-detail endpoint and related sub-resources.
 class _OrderDetailInterceptor extends Interceptor {
@@ -82,6 +84,50 @@ class _OrderDetailInterceptor extends Interceptor {
       );
       return;
     }
+    // Customer detail: GET /api/customers/{id}
+    if (RegExp(r'^/api/customers/\d+$').hasMatch(options.path) &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response<Map<String, dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 42,
+            'name': 'Nguyễn Văn B',
+            'phone': '0901234567',
+            'phones': <Map<String, dynamic>>[
+              {'phone': '0901234567', 'isPrimary': true},
+            ],
+            'createdAt': '2026-01-01T00:00:00Z',
+            'sharedPhoneCustomers': <Map<String, dynamic>>[],
+          },
+        ),
+      );
+      return;
+    }
+    // Customer orders: GET /api/customers/{id}/orders
+    if (RegExp(r'^/api/customers/\d+/orders$').hasMatch(options.path) &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response<List<dynamic>>(
+          requestOptions: options,
+          statusCode: 200,
+          data: <dynamic>[
+            {
+              'id': '100',
+              'orderRef': 'ORD-100',
+              'customerName': 'Nguyễn Văn B',
+              'items': <Map<String, dynamic>>[],
+              'totalPrice': 150000.0,
+              'status': 'completed',
+              'createdAt': '2026-06-01T08:00:00Z',
+              'updatedAt': '2026-06-01T08:00:00Z',
+            },
+          ],
+        ),
+      );
+      return;
+    }
     handler.next(options);
   }
 }
@@ -92,6 +138,7 @@ Map<String, dynamic> _orderJson({
   double totalPrice = 200000,
   String? dueDate,
   String dueTime = '10:00',
+  int? customerId,
 }) {
   return {
     'id': '1',
@@ -99,6 +146,7 @@ Map<String, dynamic> _orderJson({
     'status': status,
     'customerName': customerName,
     'customerPhone': '',
+    'customerId': customerId,
     'dueDate': dueDate,
     'dueTime': dueTime,
     'deliveryType': 'pickup',
@@ -162,7 +210,7 @@ Future<void> _pump(
 void main() {
   testWidgets('renders app bar with order-detail title', (tester) async {
     await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
-    expect(find.text(VN.orderDetail), findsOneWidget);
+    expect(find.text(OrdersLabels.orderDetail), findsOneWidget);
   });
 
   testWidgets('renders edit and print app bar actions when data loaded',
@@ -178,8 +226,8 @@ void main() {
       tester,
       interceptor: _OrderDetailInterceptor(null, fail: true),
     );
-    expect(find.text(VN.apiError), findsOneWidget);
-    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(SharedLabels.apiError), findsOneWidget);
+    expect(find.text(SharedLabels.retry), findsOneWidget);
   });
 
   testWidgets('overflow menu shows add-incident and google-maps items',
@@ -187,7 +235,7 @@ void main() {
     await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
-    expect(find.text(VN.addOrderIncident), findsOneWidget);
+    expect(find.text(EventsLabels.addOrderIncident), findsOneWidget);
     expect(find.text(OrdersLabels.googleMapsContextMenuLabel), findsOneWidget);
   });
 
@@ -214,6 +262,48 @@ void main() {
       interceptor: _OrderDetailInterceptor(_orderJson(status: 'confirmed')),
     );
     // The status banner shows the Vietnamese status label.
-    expect(find.text(VN.statusConfirmed, skipOffstage: false), findsAtLeast(1));
+    expect(find.text(OrdersLabels.statusConfirmed, skipOffstage: false), findsAtLeast(1));
+  });
+
+  testWidgets('renders 4 tabs in the TabBar (Phase 5)', (tester) async {
+    await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
+    // The TabBar contains 4 Tab widgets.
+    expect(find.byType(Tab), findsNWidgets(4));
+  });
+
+  testWidgets('customer tab shows empty state when customerId is null (AC8)',
+      (tester) async {
+    await _pump(tester, interceptor: _OrderDetailInterceptor(_orderJson()));
+    // Navigate to the customer tab (index 3) via the TabController.
+    final tabBar = find.byType(TabBar);
+    await tester.tap(tabBar);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(TabBar));
+    // Tap the 4th tab by offsetting from the TabBar center.
+    final tabBarBox = tester.getRect(find.byType(TabBar));
+    await tester.tapAt(
+      Offset(tabBarBox.left + tabBarBox.width * 7 / 8, tabBarBox.center.dy),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(OrdersLabels.orderDetailCustomerEmpty), findsOneWidget);
+    expect(find.byIcon(Icons.person_off_outlined), findsOneWidget);
+  });
+
+  testWidgets('customer tab shows customer info and history when customerId present (AC7)',
+      (tester) async {
+    await _pump(
+      tester,
+      interceptor: _OrderDetailInterceptor(_orderJson(customerId: 42)),
+    );
+    // Navigate to the customer tab (index 3) by tapping the far-right edge of the TabBar.
+    final tabBarBox = tester.getRect(find.byType(TabBar));
+    await tester.tapAt(
+      Offset(tabBarBox.left + tabBarBox.width * 7 / 8, tabBarBox.center.dy),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Nguyễn Văn B'), findsAtLeast(1));
+    expect(find.textContaining('0901234567'), findsAtLeast(1));
+    // Historical order rendered via OrderCard shows its orderRef.
+    expect(find.text('ORD-100'), findsOneWidget);
   });
 }

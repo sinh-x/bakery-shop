@@ -26,12 +26,23 @@ STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
 journal_sync_failures: int = 0
 
 
+def _table_exists(conn, table_name: str) -> bool:
+    """Return True if a table with the given name exists in the DB."""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
 def _active_drawer_id(conn) -> int | None:
     """Return the active cash drawer ID, or None if no drawer is open.
 
     DG-347 Phase 2 (FR4): journal entries touching 1101 must be linked to the
     active drawer so expected_balance() can filter per-drawer.
     """
+    if not _table_exists(conn, "cash_drawer"):
+        return None
     drawer = CashDrawer.get_active(conn)
     return drawer.id if drawer else None
 
@@ -140,6 +151,8 @@ def _is_locked(conn, entry_id: int) -> bool:
 def _delete_journal_entry_cascade(conn, entry_id: int) -> None:
     """Delete a journal entry and its lines (CASCADE handled by DB, but be explicit)."""
     conn.execute("DELETE FROM journal_lines WHERE journal_entry_id = ?", (entry_id,))
+    if _table_exists(conn, "cash_drawer_journal_entries"):
+        conn.execute("DELETE FROM cash_drawer_journal_entries WHERE journal_entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM journal_entries WHERE id = ?", (entry_id,))
 
 def _reverse_journal_entry(conn, entry_id: int) -> Optional[int]:

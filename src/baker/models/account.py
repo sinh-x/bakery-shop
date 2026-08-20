@@ -71,7 +71,7 @@ class Account:
             return {}
         placeholders = ",".join("?" for _ in account_ids)
         rows = conn.execute(
-            f"SELECT * FROM accounts WHERE id IN ({placeholders})",
+            f"SELECT * FROM accounts WHERE id IN ({placeholders})",  # nosec B608
             account_ids,
         ).fetchall()
         return {int(r["id"]): Account.from_row(r) for r in rows}

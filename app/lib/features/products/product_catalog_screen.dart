@@ -1,18 +1,19 @@
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, categoryMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/category.dart';
-import '../../data/models/product.dart';
-import '../../features/auth/auth_provider.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../shared/providers/auth_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
+import '../../shared/labels/shared.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-import 'widgets/product_card.dart';
-
+import 'providers/product_catalog_screen_notifier.dart';
+import 'widgets/product_grid_skeleton.dart';
+import 'widgets/product_tabs.dart';
 class ProductCatalogScreen extends ConsumerStatefulWidget {
   const ProductCatalogScreen({super.key});
 
@@ -23,8 +24,6 @@ class ProductCatalogScreen extends ConsumerStatefulWidget {
 
 class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     with WidgetsBindingObserver, AutoRefreshMixin {
-  bool _showInactiveProducts = false;
-
   @override
   String screenRoutePath() => '/products';
 
@@ -79,7 +78,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     return categoriesAsync.when(
       loading: () => Scaffold(
         appBar: AppBar(
-          title: const Text(VN.tabProducts),
+          title: const Text(SharedLabels.tabProducts),
           actions: const [AppBarOverflowMenu()],
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -112,7 +111,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     WidgetRef ref,
     List<Category> categories,
   ) {
-    final productsAsync = ref.watch(productsProvider);
+    // DG-409 Phase 4 (FR10, AC3): paginated active products. The legacy
+    // productsProvider stays for non-catalog consumers (POS, order edit,
+    // cake queue, product picker); the catalog screen reads the paginated
+    // state so 200+ products load in pages of 50 with load-more.
+    final productsAsync = ref.watch(productsPaginationProvider);
     final inactiveProductsAsync = ref.watch(inactiveProductsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
@@ -122,12 +125,13 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
       child: Builder(
         builder: (innerContext) => Scaffold(
           appBar: AppBar(
-            title: const Text(VN.tabProducts),
+            title: const Text(SharedLabels.tabProducts),
             actions: [
               IconButton(
                 icon: const Icon(Icons.refresh),
-                tooltip: VN.lamMoi,
+                tooltip: SharedLabels.lamMoi,
                 onPressed: () {
+                  ref.invalidate(productsPaginationProvider);
                   ref.invalidate(productsProvider);
                   ref.invalidate(categoriesProvider);
                 },
@@ -138,11 +142,11 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   if (ref.watch(authProvider).isAdmin)
                     const PopupMenuItem<String>(
                       value: 'manage_categories',
-                      child: Text(VN.openCategoryManagement),
+                      child: Text(SharedLabels.openCategoryManagement),
                     ),
                   const PopupMenuItem<String>(
                     value: 'browse_catalog',
-                    child: Text(VN.openCatalogBrowse),
+                    child: Text(SharedLabels.openCatalogBrowse),
                   ),
                 ],
               ),
@@ -159,7 +163,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
             ),
           ),
           body: productsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const ProductGridSkeleton(),
             error: (error, _) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -167,35 +171,42 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                   const SizedBox(height: 16),
                   Text(
-                    VN.apiError,
+                    SharedLabels.apiError,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: () {
+                      ref.invalidate(productsPaginationProvider);
                       ref.invalidate(productsProvider);
                       ref.invalidate(categoriesProvider);
                     },
                     icon: const Icon(Icons.refresh),
-                    label: const Text(VN.retry),
+                    label: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
             ),
-            data: (products) => _ProductTabs(
-              products: products,
-              inactiveProductsAsync: inactiveProductsAsync,
-              categories: categories,
-              baseUrl: baseUrl,
-              cacheBuster: photoRefreshTick.toString(),
-              showInactiveProducts: _showInactiveProducts,
-              onShowInactiveProductsChanged: (value) {
-                setState(() => _showInactiveProducts = value);
-              },
-              onRetryInactiveProducts: () {
-                ref.invalidate(inactiveProductsProvider);
-              },
-            ),
+            data: (state) {
+              final catalogState = ref.watch(productCatalogScreenProvider);
+              final catalogNotifier =
+                  ref.read(productCatalogScreenProvider.notifier);
+              return ProductTabs(
+                state: state,
+                inactiveProductsAsync: inactiveProductsAsync,
+                categories: categories,
+                baseUrl: baseUrl,
+                cacheBuster: photoRefreshTick.toString(),
+                showInactiveProducts: catalogState.showInactiveProducts,
+                onShowInactiveProductsChanged:
+                    catalogNotifier.setShowInactiveProducts,
+                onRetryInactiveProducts: () {
+                  ref.invalidate(inactiveProductsProvider);
+                },
+                onLoadMore: () =>
+                    ref.read(productsPaginationProvider.notifier).loadMore(),
+              );
+            },
           ),
           floatingActionButton: FloatingActionButton(
             onPressed: () {
@@ -207,151 +218,6 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
             },
             child: const Icon(Icons.add),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductTabs extends StatelessWidget {
-  const _ProductTabs({
-    required this.products,
-    required this.inactiveProductsAsync,
-    required this.categories,
-    required this.baseUrl,
-    required this.cacheBuster,
-    required this.showInactiveProducts,
-    required this.onShowInactiveProductsChanged,
-    required this.onRetryInactiveProducts,
-  });
-
-  final List<Product> products;
-  final AsyncValue<List<Product>> inactiveProductsAsync;
-  final List<Category> categories;
-  final String baseUrl;
-  final String cacheBuster;
-  final bool showInactiveProducts;
-  final ValueChanged<bool> onShowInactiveProductsChanged;
-  final VoidCallback onRetryInactiveProducts;
-
-  @override
-  Widget build(BuildContext context) {
-    final grouped = <String, List<Product>>{};
-    for (final cat in categories) {
-      grouped[cat.slug] = products
-          .where((p) => p.category == cat.slug)
-          .toList();
-    }
-
-    final inactiveGrouped = inactiveProductsAsync.maybeWhen(
-      data: (inactiveProducts) {
-        final grouped = <String, List<Product>>{};
-        for (final cat in categories) {
-          grouped[cat.slug] = inactiveProducts
-              .where((p) => p.category == cat.slug)
-              .toList();
-        }
-        return grouped;
-      },
-      orElse: () => <String, List<Product>>{},
-    );
-
-    return Column(
-      children: [
-        SwitchListTile(
-          dense: true,
-          value: showInactiveProducts,
-          onChanged: onShowInactiveProductsChanged,
-          secondary: Icon(
-            showInactiveProducts
-                ? Icons.visibility_outlined
-                : Icons.visibility_off_outlined,
-          ),
-          title: const Text(VN.hiddenProducts),
-        ),
-        if (showInactiveProducts)
-          inactiveProductsAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (error, _) => Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud_off, size: 18),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text(VN.apiError)),
-                  TextButton(
-                    onPressed: onRetryInactiveProducts,
-                    child: const Text(VN.retry),
-                  ),
-                ],
-              ),
-            ),
-            data: (_) => const SizedBox.shrink(),
-          ),
-        Expanded(
-          child: TabBarView(
-            children: categories.map((cat) {
-              final items = [
-                ...(grouped[cat.slug] ?? const <Product>[]),
-                if (showInactiveProducts)
-                  ...(inactiveGrouped[cat.slug] ?? const <Product>[]),
-              ];
-              if (items.isEmpty) {
-                return Center(
-                  child: Text(
-                    VN.noProducts,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
-                  ),
-                );
-              }
-              return _ProductGrid(
-                items: items,
-                baseUrl: baseUrl,
-                cacheBuster: cacheBuster,
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProductGrid extends ConsumerWidget {
-  const _ProductGrid({
-    required this.items,
-    required this.baseUrl,
-    required this.cacheBuster,
-  });
-
-  final List<Product> items;
-  final String baseUrl;
-  final String cacheBuster;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(productsProvider);
-        ref.invalidate(categoriesProvider);
-        ref.invalidate(inactiveProductsProvider);
-      },
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
-        ),
-        itemCount: items.length,
-        itemBuilder: (context, index) => ProductCard(
-          product: items[index],
-          photoBaseUrl: baseUrl,
-          cacheBuster: cacheBuster,
-          onTap: () => context.push('/products/${items[index].id}/edit'),
         ),
       ),
     );

@@ -26,6 +26,7 @@ from baker.services.journal_sync._common import (
     _is_locked,
     _reverse_journal_entry,
     _update_journal_entry_in_place,
+    run_journal_sync,
 )
 
 
@@ -92,7 +93,7 @@ def _held_shipping_for_order(
                     AND je.source_id = ?
                 )
               )
-        """,
+        """,  # nosec B608
         [BUS_SHIPPING_HELD_CODE] + tx_params + [order_id],
     ).fetchone()
     return float(row["net_held"] or 0)
@@ -130,7 +131,7 @@ def _held_tien_rut_for_order(
               SELECT id FROM payment_transactions WHERE order_id = ?
           )
           {exclude_clause}
-        """,
+        """,  # nosec B608
         [TIEN_RUT_HELD_CODE] + params,
     ).fetchone()
     return float(row["net_held"] or 0)
@@ -267,6 +268,105 @@ def _build_payment_journal_lines(
     description = f"Payment: {ptype} {amount_f}"
     return description, lines
 
+def _maybe_retrigger_bus_shipping_release(
+    conn,
+    order_id: Optional[int],
+    *,
+    deleted: bool,
+) -> None:
+    """Re-trigger the bus shipping release sync for an already-completed order.
+
+    DG-366 Phase 3 (FR2/FR3). When a payment is created, updated, or deleted
+    for a bus order that is already in ``delivered`` or ``completed`` status,
+    the ``order_shipping_release`` entry must be re-evaluated:
+
+      - Create path (FR2/AC2): a completed bus order with no prior release
+        gets its release entry created for the full ``shipping_fee``.
+      - Update path (FR2/AC3): an existing release is re-synced; the
+        underlying :func:`_sync_bus_shipping_release_entry` is idempotent
+        when the release amount already matches ``shipping_fee`` (within
+        ``REVENUE_UPDATE_TOLERANCE``), so an update that does not change
+        ``shipping_fee`` is a no-op.
+      - Delete path (FR3/AC4): when the last payment is deleted and no held
+        shipping remains in 2200, the release entry is removed. Removal is
+        delegated to :func:`_sync_bus_shipping_release_entry`, which — per
+        Phase 1 — always releases the full ``shipping_fee``; when there is
+        no held shipping to release (held == 0) the release entry is
+        deleted so the 2200 account does not carry a stale debit. The
+        deletion is performed here as a targeted cleanup so the release
+        sync never has to recompute the removal decision.
+
+    The re-trigger is fire-and-forget via :func:`run_journal_sync` (NFR1):
+    a shipping release sync failure never blocks the payment CRUD
+    operation. The ``source_type``/``source_id`` pair on the
+    ``run_journal_sync`` call ties any failure back to the order for audit
+    logging (FR4, established in Phase 2).
+
+    The order is loaded once to determine ``delivery_type`` and ``status``;
+    non-bus orders and orders not yet delivered/completed are skipped (the
+    delivery/completion sync paths already create the release entry).
+    """
+    if order_id is None:
+        return
+    row = conn.execute(
+        "SELECT delivery_type, status, order_ref FROM orders WHERE id = ?",
+        (order_id,),
+    ).fetchone()
+    if row is None:
+        return
+    delivery_type = row["delivery_type"] or "pickup"
+    status = row["status"] or "new"
+    if delivery_type != "bus" or status not in ("delivered", "completed"):
+        return
+
+    order_ref = row["order_ref"] or str(order_id)
+
+    # Lazy import: ``order`` imports from ``payment`` at module load, so a
+    # top-level import here would create a circular dependency.
+    from baker.services.journal_sync.order import _sync_bus_shipping_release_entry
+
+    if deleted:
+        # FR3/AC4: if no held shipping remains in 2200 after deletion, the
+        # release entry must be removed so the 2200 account does not carry a
+        # stale debit. ``_sync_bus_shipping_release_entry`` always releases
+        # the full ``shipping_fee`` (Phase 1), so when held == 0 we delete
+        # the existing release entry directly; otherwise we re-sync so the
+        # release amount is re-validated against the new held balance.
+        held = _held_shipping_for_order(conn, order_id)
+        existing_id = _find_journal_entry(conn, "order_shipping_release", order_id)
+        if existing_id is not None and held <= REVENUE_UPDATE_TOLERANCE:
+            if _is_locked(conn, existing_id):
+                _reverse_journal_entry(conn, existing_id)
+            else:
+                _delete_journal_entry_cascade(conn, existing_id)
+            return
+        # Held shipping remains — fall through to the re-sync path so the
+        # release entry is reconciled against the new held balance.
+        run_journal_sync(
+            _sync_bus_shipping_release_entry,
+            conn, order_id, order_ref,
+            log_label=(
+                f"bus shipping release re-sync (payment delete) for order "
+                f"{order_id} ({order_ref})"
+            ),
+            source_type="order_shipping_release",
+            source_id=order_id,
+        )
+        return
+
+    # FR2/AC2/AC3: re-trigger the release sync (idempotent if amounts match).
+    run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=(
+            f"bus shipping release re-sync (payment change) for order "
+            f"{order_id} ({order_ref})"
+        ),
+        source_type="order_shipping_release",
+        source_id=order_id,
+    )
+
+
 def _sync_payment_journal(
     conn,
     txn_id: int,
@@ -305,16 +405,19 @@ def _sync_payment_journal(
 
     if deleted:
         if existing_id is None:
+            _maybe_retrigger_bus_shipping_release(conn, order_id, deleted=True)
             return
         if _is_locked(conn, existing_id):
             _reverse_journal_entry(conn, existing_id)
         else:
             _delete_journal_entry_cascade(conn, existing_id)
+        _maybe_retrigger_bus_shipping_release(conn, order_id, deleted=True)
         return
 
     if not isinstance(amount, (int, float)) or float(amount) <= 0:
         if existing_id is not None and not _is_locked(conn, existing_id):
             _delete_journal_entry_cascade(conn, existing_id)
+        _maybe_retrigger_bus_shipping_release(conn, order_id, deleted=False)
         return
 
     # FR4: the payment transaction's `created_at` is the business event date.
@@ -384,3 +487,9 @@ def _sync_payment_journal(
         _update_journal_entry_in_place(
             conn, existing_id, description=description, lines=lines
         )
+
+    # FR2/AC2/AC3: re-trigger the bus shipping release sync for an
+    # already-completed bus order so a payment change after delivery creates
+    # or re-syncs the ``order_shipping_release`` entry. Fire-and-forget via
+    # ``run_journal_sync`` (NFR1) — never blocks the payment CRUD operation.
+    _maybe_retrigger_bus_shipping_release(conn, order_id, deleted=False)

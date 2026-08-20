@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/models/customer.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/features/customers/customer_list_screen.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:dio/dio.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakeCustomerService extends CustomerService {
   _FakeCustomerService(this._customers, {this.searchResults = const {}})
@@ -29,6 +31,30 @@ class _FakeCustomerService extends CustomerService {
           (c) => c.name.toLowerCase().contains(lower) || c.phone.contains(q),
         )
         .toList();
+  }
+
+  /// DG-409 Phase 4: paginated customer list with server-side search.
+  /// Mirrors [listCustomers] then slices the result page so the paginated
+  /// screen renders the same canned data.
+  @override
+  Future<PaginatedResponse<Customer>> listCustomersPaginated({
+    String? search,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final all = await listCustomers(search: search);
+    final total = all.length;
+    final end = offset + limit;
+    final page = offset >= total
+        ? const <Customer>[]
+        : all.sublist(offset, end > total ? total : end);
+    return PaginatedResponse<Customer>(
+      items: page,
+      total: total,
+      hasMore: offset + page.length < total,
+      limit: limit,
+      offset: offset,
+    );
   }
 }
 
@@ -71,7 +97,7 @@ Future<void> _pumpScreen(
 void main() {
   testWidgets('renders customers and shows empty state', (tester) async {
     await _pumpScreen(tester, _FakeCustomerService(const []));
-    expect(find.text(VN.noCustomers), findsOneWidget);
+    expect(find.text(CustomersLabels.noCustomers), findsOneWidget);
   });
 
   testWidgets('lists customers with name and phone', (tester) async {
@@ -172,7 +198,7 @@ void main() {
     // duplicate-warning dialog.
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
     await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
-    await tester.tap(find.text(VN.save));
+    await tester.tap(find.text(SharedLabels.save));
     await tester.pumpAndSettle();
 
     expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);

@@ -1,6 +1,6 @@
 """``baker report`` CLI group — accounting financial reports (FR5).
 
-Provides six read-only subcommands that aggregate ``journal_entries`` /
+Provides nine read-only subcommands that aggregate ``journal_entries`` /
 ``journal_lines`` into human-readable text reports printed to stdout:
 
 - ``trial-balance``      — per-account debit/credit/balance totals for a date range
@@ -10,6 +10,8 @@ Provides six read-only subcommands that aggregate ``journal_entries`` /
 - ``account-ledger``     — per-account journal line history (requires ``--account-code``)
 - ``expense-by-category``— expense totals grouped by source event category
 - ``cogs-audit``         — per-order COGS completeness and ratio audit (FR4)
+- ``order-status``       — order counts and total value grouped by status and delivery type
+- ``cashflow``           — direct-method cash-flow statement (operating / investing / financing)
 
 All commands accept ``--since`` and ``--until`` in ``YYYY-MM-DD`` format.
 ``--until`` is treated inclusively (end-of-day). Exit code is 0 on success
@@ -109,6 +111,7 @@ from baker.labels.report_labels import (
     LBL_RECONCILE_MISMATCH,
 )
 from baker.models.order import OrderStatus
+from baker.services.expense_categories import aggregate_categories
 from baker.utils.time import utc_to_local
 
 
@@ -236,7 +239,7 @@ def trial_balance_cmd(since, until):
             GROUP BY a.id
             HAVING a.is_active = 1
             ORDER BY a.code
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -312,7 +315,7 @@ def _income_statement_transaction(since_b: str | None, until_b: str | None) -> N
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             {date_filter}
             GROUP BY a.type
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -341,7 +344,7 @@ def _income_statement_transaction(since_b: str | None, until_b: str | None) -> N
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             JOIN accounts a ON a.id = jl.account_id
             {cogs_sql}
-            """,
+            """,  # nosec B608
             cogs_params,
         ).fetchone()
     cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
@@ -395,7 +398,7 @@ def _income_statement_due_date(since_b: str | None, until_b: str | None) -> None
             LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
             {date_filter}
             GROUP BY a.type
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -434,7 +437,7 @@ def _income_statement_due_date(since_b: str | None, until_b: str | None) -> None
             JOIN accounts a ON a.id = jl.account_id
             LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
             WHERE {" AND ".join(cogs_filter_parts)}
-            """,
+            """,  # nosec B608
             cogs_params,
         ).fetchone()
     cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
@@ -477,7 +480,7 @@ def _compute_markup_total(
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE {where_sql}
-            """,
+            """,  # nosec B608
             params,
         ).fetchone()
     return float(row["markup"]) if row else 0.0
@@ -540,7 +543,7 @@ def balance_sheet_cmd(until):
             GROUP BY a.id
             HAVING a.is_active = 1
             ORDER BY a.code
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -602,7 +605,7 @@ def general_ledger_cmd(since, until):
             FROM journal_entries je
             {where_sql}
             ORDER BY je.transaction_date ASC, je.id ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -678,7 +681,7 @@ def account_ledger_cmd(account_code, since, until):
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             {where_sql}
             ORDER BY je.transaction_date ASC, je.id ASC, jl.id ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -745,7 +748,7 @@ def expense_by_category_cmd(since, until):
             JOIN accounts a ON a.id = jl.account_id
             {where_sql}
             ORDER BY je.transaction_date ASC
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -775,12 +778,10 @@ def expense_by_category_cmd(since, until):
 
         # Aggregate by category (and subcategory when present) from
         # events.data JSON, falling back to the debited account name when
-        # the event/data is unavailable.
-        # totals[parent_category] = total (incl. all subcategories)
-        # sub_totals[parent_category][subcategory] = subtotal
-        totals: dict[str, float] = {}
-        sub_totals: dict[str, dict[str, float]] = {}
-        uncategorized = 0.0
+        # the event/data is unavailable. The legacy normalization and
+        # totals/sub_totals/uncategorized accumulation are delegated to
+        # the shared aggregate_categories helper (DG-386 review Mn3).
+        triples: list[tuple[str | None, str | None, float]] = []
         for r in rows:
             category = None
             subcategory = None
@@ -800,27 +801,11 @@ def expense_by_category_cmd(since, until):
                             subcategory = sub
                     except (json.JSONDecodeError, TypeError):
                         pass
-            if category:
-                # If the "category" itself is a subcategory name (legacy
-                # rows where subcategory was stored in category), normalize
-                # it back to the parent so it lands in the right bucket.
-                if category in parent_of:
-                    parent = parent_of[category]
-                    sub_totals.setdefault(parent, {})
-                    sub_totals[parent][category] = (
-                        sub_totals[parent].get(category, 0.0) + float(r["debit"])
-                    )
-                    totals[parent] = totals.get(parent, 0.0) + float(r["debit"])
-                else:
-                    totals[category] = totals.get(category, 0.0) + float(r["debit"])
-                    if subcategory:
-                        sub_totals.setdefault(category, {})
-                        sub_totals[category][subcategory] = (
-                            sub_totals[category].get(subcategory, 0.0)
-                            + float(r["debit"])
-                        )
-            else:
-                uncategorized += float(r["debit"])
+            triples.append((category, subcategory, float(r["debit"])))
+
+        totals, sub_totals, uncategorized = aggregate_categories(
+            triples, parent_of
+        )
 
         click.echo(f"{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
         click.echo("-" * 52)
@@ -928,7 +913,7 @@ def cogs_audit_cmd(since, until):
             FROM orders o
             WHERE {order_sql}
             ORDER BY o.id ASC
-            """,
+            """,  # nosec B608
             [ORDER_REVENUE_CODE, COGS_CODE, *params],
         ).fetchall()
 
@@ -1041,7 +1026,7 @@ def order_status_cmd(since, until):
             FROM orders o
             {where_sql}
             GROUP BY o.status, COALESCE(o.delivery_type, '')
-            """,
+            """,  # nosec B608
             params,
         ).fetchall()
 
@@ -1092,104 +1077,22 @@ def order_status_cmd(since, until):
 # ---------------------------------------------------------------------------
 # cashflow (DG-300 Phase 1)
 # ---------------------------------------------------------------------------
-
-# Cash accounts tracked by the direct-method cashflow statement. Cash held in
-# 1200 (the parent bank account, used by the expense flow and owner-capital
-# transfers) is included alongside the DG-244 Phase 4 bank sub-accounts so the
-# report matches the cash-flow integrity check in accounting_validation.py.
-CASH_ACCOUNT_CODES = ("1100", "1101", "1102", "1200", "1210", "1220", "1290")
-
-# Fixed-asset account seeded by DG-300 Phase 1 — investing-activity cash flows
-# land on this account.
-FIXED_ASSETS_CODE = "1600"
-
-# Reconciliation tolerance (VND). Matches DEBIT_CREDIT_TOLERANCE used by the
-# accounting-validation cash-flow integrity check.
-CASHFLOW_RECONCILIATION_TOLERANCE = 0.01
-
-# source_type values that represent operating-activity cash inflows on cash
-# accounts. ``payment_transaction`` covers customer deposits/payments and
-# refunds (refunds credit cash → outflow, but they still belong to operating).
-OPERATING_INFLOW_SOURCE_TYPES = ("payment_transaction",)
-
-# source_type values that represent operating-activity cash outflows on cash
-# accounts. ``expense`` debits an expense/inventory account and credits a
-# cash account; ``expense_settlement`` debits Accounts Payable (2500) and
-# credits a cash account when a debt expense is paid off.
-# ``order_shipping_release`` releases a held bus shipping fee back to the bus
-# driver/supplier (DR 2200 / CR 1100) — crediting cash is an operating outflow,
-# i.e. cash paid to suppliers/services, so it belongs with the other outflows.
-OPERATING_OUTFLOW_SOURCE_TYPES = (
-    "expense",
-    "expense_settlement",
-    "order_shipping_release",
+# Constants and operating-activity query helpers live in the shared
+# ``baker.services.cashflow`` module (DG-386 review Mn-2) so the reporting API
+# and this CLI share a single source of truth. Re-imported here for the
+# CLI-only cashflow command below; behavior is unchanged.
+from baker.services.cashflow import (  # noqa: E402
+    CASH_ACCOUNT_CODES,
+    CASHFLOW_RECONCILIATION_TOLERANCE,
+    FINANCING_SOURCE_TYPES,
+    FIXED_ASSETS_CODE,
+    OPERATING_INFLOW_SOURCE_TYPES,
+    OPERATING_OUTFLOW_SOURCE_TYPES,
+    cash_account_placeholders,
+    query_cash_period_activity,
+    query_supplier_category_breakdown,
+    sum_section,
 )
-
-# source_type values that represent financing-activity cash movements.
-FINANCING_SOURCE_TYPES = ("owner_capital", "owner_draw")
-
-
-def _cash_account_placeholders(codes: tuple[str, ...]) -> str:
-    """Return a SQL ``IN (...)`` placeholder list for the given account codes."""
-    return ",".join("?" * len(codes))
-
-
-def _query_cash_period_activity(
-    conn, since_b: str | None, until_b: str | None,
-) -> dict[str, dict[str, dict[str, float]]]:
-    """Aggregate period cash-account movements grouped by ``source_type``.
-
-    Returns ``{source_type: {cash_account_code: {"inflow": float, "outflow": float}}}``.
-    Only journal lines whose account is one of ``CASH_ACCOUNT_CODES`` and whose
-    journal entry's ``transaction_date`` falls within ``[since_b, until_b]`` are
-    summed. Entries that also touch the fixed-asset account 1600 are excluded —
-    those are reported under investing activities to avoid double-counting.
-    """
-    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
-    params: list = list(CASH_ACCOUNT_CODES)
-    where_clauses = [f"a.code IN ({placeholders})"]
-    if since_b:
-        where_clauses.append("je.transaction_date >= ?")
-        params.append(since_b)
-    if until_b:
-        where_clauses.append("je.transaction_date <= ?")
-        params.append(until_b)
-    # Exclude entries that touch the fixed-asset account — those are investing.
-    where_clauses.append(
-        "NOT EXISTS ("
-        " SELECT 1 FROM journal_lines jl2"
-        " JOIN accounts a2 ON a2.id = jl2.account_id"
-        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
-        ")"
-    )
-    params.append(FIXED_ASSETS_CODE)
-    where_sql = " AND ".join(where_clauses)
-
-    rows = conn.execute(
-        f"""
-        SELECT je.source_type AS source_type,
-               a.code         AS account_code,
-               COALESCE(SUM(jl.debit), 0)  AS inflow,
-               COALESCE(SUM(jl.credit), 0) AS outflow
-        FROM journal_entries je
-        JOIN journal_lines jl ON jl.journal_entry_id = je.id
-        JOIN accounts a ON a.id = jl.account_id
-        WHERE {where_sql}
-        GROUP BY je.source_type, a.code
-        """,
-        params,
-    ).fetchall()
-
-    activity: dict[str, dict[str, dict[str, float]]] = {}
-    for r in rows:
-        source_type = r["source_type"] or ""
-        code = r["account_code"]
-        activity.setdefault(source_type, {}).setdefault(
-            code, {"inflow": 0.0, "outflow": 0.0}
-        )
-        activity[source_type][code]["inflow"] += float(r["inflow"])
-        activity[source_type][code]["outflow"] += float(r["outflow"])
-    return activity
 
 
 def _query_investing_cash_activity(
@@ -1203,7 +1106,7 @@ def _query_investing_cash_activity(
     for purchase) is reported here. Returns
     ``(total_inflow, total_outflow, per_account)``.
     """
-    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    placeholders = cash_account_placeholders(CASH_ACCOUNT_CODES)
     params: list = list(CASH_ACCOUNT_CODES)
     where_clauses = [f"a.code IN ({placeholders})"]
     if since_b:
@@ -1232,7 +1135,7 @@ def _query_investing_cash_activity(
         JOIN accounts a ON a.id = jl.account_id
         WHERE {where_sql}
         GROUP BY a.code
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
 
@@ -1251,13 +1154,13 @@ def _query_investing_cash_activity(
 
 def _query_cash_account_names(conn) -> dict[str, str]:
     """Return ``{code: name}`` for all cash accounts (DG-300 Phase 2)."""
-    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    placeholders = cash_account_placeholders(CASH_ACCOUNT_CODES)
     rows = conn.execute(
         f"""
         SELECT a.code AS code, a.name AS name
         FROM accounts a
         WHERE a.code IN ({placeholders})
-        """,
+        """,  # nosec B608
         list(CASH_ACCOUNT_CODES),
     ).fetchall()
     return {r["code"]: r["name"] for r in rows}
@@ -1274,7 +1177,7 @@ def _query_cash_balance(
     ``transaction_date <= until_b`` are summed. A ``None`` ``until_b`` means
     "all time" (no upper bound).
     """
-    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    placeholders = cash_account_placeholders(CASH_ACCOUNT_CODES)
     params: list = list(CASH_ACCOUNT_CODES)
     where_clauses = [f"a.code IN ({placeholders})"]
     if until_b:
@@ -1292,34 +1195,10 @@ def _query_cash_balance(
         LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
         WHERE {where_sql}
         GROUP BY a.code
-        """,
+        """,  # nosec B608
         params,
     ).fetchall()
     return {r["account_code"]: float(r["balance"]) for r in rows}
-
-
-def _sum_section(
-    activity: dict[str, dict[str, dict[str, float]]],
-    source_types: tuple[str, ...],
-) -> tuple[float, float, dict[str, dict[str, float]]]:
-    """Sum inflow/outflow across the given ``source_types``.
-
-    Returns ``(total_inflow, total_outflow, per_account)`` where
-    ``per_account`` is ``{cash_account_code: {"inflow": float, "outflow": float}}``.
-    """
-    total_in = 0.0
-    total_out = 0.0
-    per_account: dict[str, dict[str, float]] = {}
-    for st in source_types:
-        for code, mov in activity.get(st, {}).items():
-            inflow = mov["inflow"]
-            outflow = mov["outflow"]
-            total_in += inflow
-            total_out += outflow
-            per_account.setdefault(code, {"inflow": 0.0, "outflow": 0.0})
-            per_account[code]["inflow"] += inflow
-            per_account[code]["outflow"] += outflow
-    return total_in, total_out, per_account
 
 
 def _echo_cashflow_subsection(
@@ -1343,6 +1222,59 @@ def _echo_cashflow_subsection(
         f"{indent}  {LBL_SUBTOTAL_UPPER:<8}{total_inflow:>20,.2f}"
         f"{total_outflow:>20,.2f}{(total_inflow - total_outflow):>20,.2f}"
     )
+    click.echo("")
+
+
+def _echo_supplier_category_breakdown(
+    breakdown: dict, children_of: dict[str, list[str]], indent: str = "    ",
+) -> None:
+    """Print the category/subcategory tree for cash paid to suppliers.
+
+    Mirrors the formatting pattern of ``expense_by_category_cmd``
+    (report.py:825-848): a header row, one line per parent category (with
+    its total), indented subcategory lines for parents that have children
+    defined in ``expense_categories``, an uncategorized line when present,
+    and a grand-total row. ``indent`` shifts the whole block right so it
+    aligns with the cashflow subsection's per-account lines (4 spaces).
+
+    The breakdown totals are purely additive — they do NOT replace the
+    section subtotal printed by ``_echo_cashflow_subsection`` (which comes
+    from ``sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES`` and
+    includes ``order_shipping_release`` entries that carry no category
+    data).
+    """
+    totals: dict[str, float] = breakdown["totals"]
+    sub_totals: dict[str, dict[str, float]] = breakdown["sub_totals"]
+    uncategorized: float = breakdown["uncategorized"]
+
+    if not totals and not uncategorized:
+        return
+
+    click.echo(f"{indent}{LBL_CATEGORY:<32}{LBL_TOTAL:>20}")
+    click.echo(f"{indent}{'-' * 52}")
+    grand_total = 0.0
+    for category in sorted(totals):
+        amount = totals[category]
+        grand_total += amount
+        click.echo(f"{indent}{category[:31]:<32}{amount:>20,.2f}")
+        # FR5/AC5: subcategory breakdown for parent categories that have
+        # children defined in the expense_categories table.
+        subs = sub_totals.get(category, {})
+        if category in children_of:
+            for sub_name in children_of[category]:
+                sub_amount = subs.get(sub_name, 0.0)
+                click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+            # Legacy/other subcategory values not in the seed tree (AC6).
+            known = set(children_of[category])
+            for sub_name in sorted(subs):
+                if sub_name not in known:
+                    sub_amount = subs[sub_name]
+                    click.echo(f"{indent}  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+    if uncategorized:
+        grand_total += uncategorized
+        click.echo(f"{indent}{LBL_UNCATEGORIZED:<32}{uncategorized:>20,.2f}")
+    click.echo(f"{indent}{'-' * 52}")
+    click.echo(f"{indent}{LBL_TOTAL_UPPER:<32}{grand_total:>20,.2f}")
     click.echo("")
 
 
@@ -1401,25 +1333,39 @@ def cashflow_cmd(since, until):
         # --until (inclusive upper bound). None until_b → all-time balance.
         closing_by_account = _query_cash_balance(conn, until_b, inclusive=True)
         # Period activity grouped by source_type (excludes 1600-touching entries).
-        period_activity = _query_cash_period_activity(conn, since_b, until_b)
+        period_activity = query_cash_period_activity(conn, since_b, until_b)
         # Investing activity: cash side of entries that touch account 1600.
         investing_in, investing_out, investing_per = _query_investing_cash_activity(
             conn, since_b, until_b
         )
         # Account names for the per-account breakdown table (DG-300 Phase 2).
         account_names = _query_cash_account_names(conn)
+        # Category/subcategory tree for the supplier section (DG-327 Phase 2).
+        # ``children_of`` maps parent category -> sorted list of child
+        # subcategory names; only categories with children get an indented
+        # subcategory block (FR5/AC5). ``supplier_breakdown`` is the
+        # totals/sub_totals/uncategorized tree from
+        # ``query_supplier_category_breakdown`` (Phase 1), which also
+        # returns ``children_of`` so we do not re-issue the identical
+        # ``expense_categories`` parent/child query here (DG-327
+        # deduplication — previously this block ran a second query at
+        # report.py:1648-1662).
+        supplier_breakdown = query_supplier_category_breakdown(
+            conn, since_b, until_b,
+        )
+        children_of: dict[str, list[str]] = supplier_breakdown["children_of"]
 
     # ---- Aggregate sections ----
-    cust_in, cust_out, cust_per = _sum_section(
+    cust_in, cust_out, cust_per = sum_section(
         period_activity, OPERATING_INFLOW_SOURCE_TYPES,
     )
-    sup_in, sup_out, sup_per = _sum_section(
+    sup_in, sup_out, sup_per = sum_section(
         period_activity, OPERATING_OUTFLOW_SOURCE_TYPES,
     )
     oper_in = cust_in + sup_in
     oper_out = cust_out + sup_out
 
-    fin_in, fin_out, fin_per = _sum_section(
+    fin_in, fin_out, fin_per = sum_section(
         period_activity, FINANCING_SOURCE_TYPES,
     )
 
@@ -1452,6 +1398,11 @@ def cashflow_cmd(since, until):
     _echo_cashflow_subsection(
         LBL_CASH_PAID_SUPPLIERS, sup_per, sup_in, sup_out, indent="  ",
     )
+    # Category/subcategory tree for cash paid to suppliers (DG-327 Phase 2,
+    # FR1/FR5/FR6). Purely additive output — the section subtotal above
+    # comes from ``sum_section`` over ``OPERATING_OUTFLOW_SOURCE_TYPES``
+    # (includes ``order_shipping_release``) and is unchanged.
+    _echo_supplier_category_breakdown(supplier_breakdown, children_of)
     click.echo(
         f"  {LBL_NET_OPERATING_CASHFLOW:<28}{oper_in:>20,.2f}"
         f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"

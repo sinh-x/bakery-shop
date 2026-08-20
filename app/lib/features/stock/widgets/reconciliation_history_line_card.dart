@@ -1,34 +1,35 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
-import '../../../shared/labels/shared.dart';
+import '../providers/reconciliation_history_line_card_notifier.dart';
 import 'reconciliation_history_sale_rows.dart';
 import 'reconciliation_history_summary_card.dart';
-
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Collapsible card for a single reconciliation history line.
 ///
 /// Collapsed: shows product name + key quantity chips (expected, counted,
 /// sale, waste). Expanded: shows full details (price option, chip labels,
 /// waste reason, manual unit price, linked references) and a collapsible
 /// sale-rows section.
-class ReconciliationHistoryLineCard extends StatefulWidget {
+class ReconciliationHistoryLineCard extends ConsumerStatefulWidget {
   const ReconciliationHistoryLineCard({required this.line, super.key});
 
   final ReconciliationHistoryLine line;
 
   @override
-  State<ReconciliationHistoryLineCard> createState() =>
+  ConsumerState<ReconciliationHistoryLineCard> createState() =>
       _ReconciliationHistoryLineCardState();
 }
 
 class _ReconciliationHistoryLineCardState
-    extends State<ReconciliationHistoryLineCard> {
-  bool _isExpanded = false;
-  bool _saleRowsExpanded = false;
-
+    extends ConsumerState<ReconciliationHistoryLineCard> {
   @override
   Widget build(BuildContext context) {
     final line = widget.line;
+    final cardState =
+        ref.watch(reconciliationHistoryLineCardProvider(line.id));
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -37,7 +38,10 @@ class _ReconciliationHistoryLineCardState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
-              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              onTap: () => ref
+                  .read(reconciliationHistoryLineCardProvider(line.id)
+                      .notifier)
+                  .toggleExpanded(),
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -50,7 +54,7 @@ class _ReconciliationHistoryLineCardState
                       ),
                     ),
                     Icon(
-                      _isExpanded
+                      cardState.isExpanded
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
                     ),
@@ -64,33 +68,34 @@ class _ReconciliationHistoryLineCardState
               runSpacing: 6,
               children: [
                 ReconciliationSummaryChip(
-                  label: VN.tonDuKien,
+                  label: StockLabels.tonDuKien,
                   value: line.expectedQty,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.tonDaDem,
+                  label: StockLabels.tonDaDem,
                   value: line.countedQty,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.soLuongBan,
+                  label: StockLabels.soLuongBan,
                   value: line.saleQty,
                 ),
                 ReconciliationSummaryChip(
-                  label: VN.soLuongHaoHut,
+                  label: StockLabels.soLuongHaoHut,
                   value: line.wasteQty,
                 ),
               ],
             ),
-            if (_isExpanded) ...[
+            if (cardState.isExpanded) ...[
               const SizedBox(height: 10),
               _ExpandedDetails(line: line),
               if (line.saleRows.isNotEmpty)
                 ReconciliationHistorySaleRowsSection(
                   saleRows: line.saleRows,
-                  expanded: _saleRowsExpanded,
-                  onToggle: () => setState(
-                    () => _saleRowsExpanded = !_saleRowsExpanded,
-                  ),
+                  expanded: cardState.saleRowsExpanded,
+                  onToggle: () => ref
+                      .read(reconciliationHistoryLineCardProvider(line.id)
+                          .notifier)
+                      .toggleSaleRowsExpanded(),
                 ),
             ],
           ],
@@ -115,25 +120,25 @@ class _ExpandedDetails extends StatelessWidget {
       children: [
         Text(
           line.normalizedPrice != null
-              ? '${VN.tuyChonGia}: ${line.normalizedPrice}'
-              : '${VN.tuyChon}: ${line.chipLabel}',
+              ? '${StockLabels.tuyChonGia}: ${line.normalizedPrice}'
+              : '${StockLabels.tuyChon}: ${line.chipLabel}',
         ),
-        Text('${VN.tuyChon}: $sourceChipLabels'),
+        Text('${StockLabels.tuyChon}: $sourceChipLabels'),
         if (line.wasteQty > 0)
           Text(
-            '${VN.lyDoHaoHut}: ${(line.wasteReason?.trim().isNotEmpty == true) ? line.wasteReason! : VN.khongCo}',
+            '${StockLabels.lyDoHaoHut}: ${(line.wasteReason?.trim().isNotEmpty == true) ? line.wasteReason! : StockLabels.khongCo}',
           ),
         Text(
-          '${VN.donGiaNhapTay}: ${line.manualUnitPrice != null ? formatVND(line.manualUnitPrice!) : VN.khongCo}',
+          '${StockLabels.donGiaNhapTay}: ${line.manualUnitPrice != null ? formatVND(line.manualUnitPrice!) : StockLabels.khongCo}',
         ),
         Text(
-          '${VN.thamChieuDongDonHang}: ${line.linkedOrderItemId?.toString() ?? VN.khongCo}',
+          '${StockLabels.thamChieuDongDonHang}: ${line.linkedOrderItemId?.toString() ?? StockLabels.khongCo}',
         ),
         Text(
-          '${VN.thamChieuXuatBan}: ${line.linkedStockMovementSaleId?.toString() ?? VN.khongCo}',
+          '${StockLabels.thamChieuXuatBan}: ${line.linkedStockMovementSaleId?.toString() ?? StockLabels.khongCo}',
         ),
         Text(
-          '${VN.thamChieuXuatHaoHut}: ${line.linkedStockMovementWasteId?.toString() ?? VN.khongCo}',
+          '${StockLabels.thamChieuXuatHaoHut}: ${line.linkedStockMovementWasteId?.toString() ?? StockLabels.khongCo}',
         ),
       ],
     );

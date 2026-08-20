@@ -1,20 +1,24 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/customer_service.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
+import 'providers/order_submission_guard_notifier.dart';
 import '../../providers/order/order_draft_provider.dart';
+import '../../shared/labels/templates.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import '../templates/widgets/template_picker_modal.dart';
+import 'template_context_builder.dart';
 import 'widgets/order_creation_config.dart';
 import 'widgets/order_creation_orchestrator.dart';
 import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
 import 'widgets/stage4_review_screen.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Normal order creation wizard.
 ///
 /// Thin wrapper over [OrderCreationOrchestrator] (Phase 3 of DG-322). The
@@ -43,6 +47,17 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   @override
   void initState() {
     super.initState();
+    // DG-404 review CQ-1: reset the post-submit latch so each new order
+    // starts with `submitted=false`. The latch is a global non-autoDispose
+    // `NotifierProvider` that would otherwise stay `true` after the first
+    // successful submission and silently disable FR6 draft auto-save for
+    // every subsequent order. Deferred via `Future.microtask` to match the
+    // existing seed pattern (see `order_edit_screen._initFrom`).
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(orderSubmissionLatchProvider.notifier).resetSubmitted();
+      }
+    });
     // Sync the PageController's initial page with the draft-restored stage so
     // the PageView opens on the right stage when a draft is hydrated by the
     // orchestrator. The orchestrator owns the full restore; this only reads
@@ -56,6 +71,22 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// DG-375 Phase 4.3 / FR2 / AC2: opens the template picker modal filled
+  /// from the current create-wizard state. Used by the overflow menu and the
+  /// review-stage button.
+  void _openTemplatePicker() {
+    final state = ref.read(orderCreateStateProvider);
+    final ctx = buildTemplateContextFromCreateWizard(
+      items: state.items,
+      wizardData: state.wizardData,
+      dueDate: state.dueDate,
+      dueTime: state.dueTime,
+      source: state.source,
+      createdBy: ref.read(loggedByProvider),
+    );
+    TemplatePickerModal.show(context, templateContext: ctx);
   }
 
   OrderCreationConfig _buildConfig() {
@@ -94,6 +125,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         onSubmit: controller.submit,
         isProcessing: controller.isSubmitting,
         orderStateProvider: orderCreateStateProvider,
+        onOpenTemplates: _openTemplatePicker,
       ),
       stageContainerBuilder: (ctx, stages, _) => PageView(
         controller: _pageController,
@@ -122,7 +154,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       onAfterSubmit: (hookCtx, order) async {
         hookCtx.ref.read(orderDraftProvider.notifier).clear();
         hookCtx.ref.read(orderCreateStateProvider.notifier).reset();
-        showTopSnackBar(hookCtx.context, VN.orderCreated);
+        showTopSnackBar(hookCtx.context, OrdersLabels.orderCreated);
       },
       onNavigateAfterSubmit: (ctx, orderRef) {
         ctx.pushReplacement('/orders/$orderRef');
@@ -134,8 +166,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.createOrder),
-        actions: const [AppBarOverflowMenu()],
+        title: const Text(OrdersLabels.createOrder),
+        actions: [
+          AppBarOverflowMenu(
+            items: const [
+              PopupMenuItem<String>(
+                value: 'messageTemplates',
+                child: Text(TemplatesLabels.overflowMenuOpenPicker),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'messageTemplates') _openTemplatePicker();
+            },
+          ),
+        ],
       ),
       body: OrderCreationOrchestrator(
         config: _buildConfig(),

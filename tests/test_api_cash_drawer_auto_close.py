@@ -231,7 +231,10 @@ def test_auto_close_idempotent_no_stale_drawers(api_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "open"
-    assert body["openingBalance"] == 1_000_000
+    # DG-354 Phase 3: openingBalance is the 1101 accounting reference (0 for
+    # the first open); countedOpeningBalance holds the user's physical count.
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
 
 
 def test_auto_close_only_closes_previous_day_drawers(api_client):
@@ -266,15 +269,21 @@ def test_auto_close_multiple_stale_drawers_all_closed(api_client):
     # Create two drawers directly with backdated timestamps. (The API
     # enforces single-active-drawer, so insert them at the DB layer.) Link
     # a 1101/3100 opening journal entry to each so the journal-derived
-    # expected_balance equals the opening_balance.
+    # expected_balance equals opening_balance + linked 1101 sum.
+    #
+    # DG-354 Phase 3: opening_balance now stores the 1101 reference at open
+    # time. For directly-inserted test drawers we seed opening_balance = 0
+    # (no prior 1101 activity) and link a DR 1101 entry for the counted
+    # opening amount, so expected_balance = 0 + linked sum = counted opening.
     with get_db() as conn:
         for opened_at, opening in (
             ("2026-07-27T08:00:00Z", 1_000_000),
             ("2026-07-28T08:00:00Z", 500_000),
         ):
             cur = conn.execute(
-                "INSERT INTO cash_drawer (opened_at, opening_balance, status) "
-                "VALUES (?, ?, 'open')",
+                "INSERT INTO cash_drawer "
+                "(opened_at, opening_balance, counted_opening_balance, status) "
+                "VALUES (?, 0, ?, 'open')",
                 (opened_at, opening),
             )
             _adjust_drawer_balance(conn, cur.lastrowid, opening)
@@ -290,7 +299,10 @@ def test_auto_close_multiple_stale_drawers_all_closed(api_client):
             row = _drawer_row(conn, did)
             assert row.status == "closed"
             assert row.discrepancy == 0
-            assert row.counted_amount == row.opening_balance
+            # auto-close sets counted_amount = expected_balance =
+            # opening_balance (0) + linked 1101 sum (the inserted opening
+            # adjustment) = the seeded counted_opening_balance.
+            assert row.counted_amount == row.counted_opening_balance
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +386,15 @@ def _auto_transfer_lines(conn):
 def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_client):
     """AC17: opening with carry-over confirmed and opening balance < previous
     expected balance creates a balanced journal entry DR 1102, CR 1101 for the
-    difference (excess cash transferred to owner's cash)."""
+    difference (excess cash transferred to owner's cash).
+
+    DG-354 Phase 3: ``openingBalance`` in the response is the 1101 accounting
+    reference (1,550,000 — the carry-over amount), and
+    ``countedOpeningBalance`` is the user's physical cash count (1,000,000).
+
+    DG-360 Phase 1: the auto-transfer now ships as ``journalEntry`` with
+    source_type ``cash_drawer_open`` (shortage default = owner_withdraw).
+    The journal lines are identical (DR 1102 / CR 1101 for the delta)."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
@@ -388,11 +408,13 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["openingBalance"] == 1_000_000
-    # AC17: an auto-transfer journal entry is created.
-    assert "autoTransfer" in body, "expected autoTransfer block in response"
-    transfer = body["autoTransfer"]
-    assert transfer["sourceType"] == "cash_drawer_auto_transfer"
+    # openingBalance = 1101 reference (1,550,000); countedOpeningBalance = user input.
+    assert body["openingBalance"] == 1_550_000
+    assert body["countedOpeningBalance"] == 1_000_000
+    # AC17: a journal entry is created for the shortage delta (owner_withdraw).
+    assert "journalEntry" in body, "expected journalEntry block in response"
+    transfer = body["journalEntry"]
+    assert transfer["sourceType"] == "cash_drawer_open"
     lines = transfer["lines"]
     assert len(lines) == 2
     debit_line = next(l for l in lines if l["debit"] > 0)
@@ -406,10 +428,8 @@ def test_open_with_carry_over_and_lower_balance_auto_transfers_to_1102(api_clien
         assert _account_id(conn, "1101") == int(credit_line["accountId"])
     # The transfer entry is balanced (NFR2).
     with get_db() as conn:
-        rows = _auto_transfer_lines(conn)
-        debit_sum = sum(float(r["debit"]) for r in rows)
-        credit_sum = sum(float(r["credit"]) for r in rows)
-        assert debit_sum == credit_sum
+        debit, credit = _sums(conn, "cash_drawer_open")
+        assert abs(debit - credit) < 0.005
 
 
 def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
@@ -435,7 +455,11 @@ def test_open_with_carry_over_and_equal_balance_no_auto_transfer(api_client):
 
 def test_open_with_carry_over_and_higher_balance_no_auto_transfer(api_client):
     """FR10: when opening balance > previous expected balance, no
-    auto-transfer is created (the owner added cash, no excess to move)."""
+    auto-transfer is created (the owner added cash, no excess to move).
+
+    DG-360 Phase 1: carry-over + surplus defaults to an equity-injection
+    journal entry (DR 1101 / CR 3100 for the delta) instead of an
+    auto-transfer. The ``autoTransfer`` block is absent."""
     api_client.post("/api/cash-drawer/open", json={"openingBalance": 1_000_000})
     with get_db() as conn:
         drawer = CashDrawer.get_active(conn)
@@ -477,7 +501,10 @@ def test_open_without_stale_drawer_does_not_propose_carry_over(api_client):
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["openingBalance"] == 1_000_000
+    # DG-354 Phase 3: openingBalance = 1101 reference (0 for first open);
+    # countedOpeningBalance = user input (1,000,000).
+    assert body["openingBalance"] == 0
+    assert body["countedOpeningBalance"] == 1_000_000
     assert "carryOver" not in body
 
 

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 
 const kDefaultApiUrl = 'http://localhost:8000';
 const kApiUrlKey = 'api_base_url';

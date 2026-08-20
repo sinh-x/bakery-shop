@@ -9,6 +9,7 @@
 ///     "closedAt": null,
 ///     "status": "open",
 ///     "openingBalance": 1000000,
+///     "countedOpeningBalance": 950000,  // DG-354 Phase 4: physical count
 ///     "countedAmount": null,
 ///     "discrepancy": null,
 ///     "expectedBalance": 1000000,
@@ -43,6 +44,20 @@ class CashDrawer {
   final DateTime? closedAt;
   final String status;
   final int openingBalance;
+
+  /// DG-354 Phase 4 FR7: the user's physical cash count at open time.
+  /// The backend returns this separately from `openingBalance` (which
+  /// stores the 1101 accounting balance). The Flutter UI displays this
+  /// field as the opening balance. Nullable for backward compatibility
+  /// with older backends/rows; falls back to [openingBalance] when null
+  /// via [displayedOpeningBalance].
+  final int? countedOpeningBalance;
+
+  /// DG-354 Phase 4 FR7: the opening balance to display in the UI — the
+  /// physical count when available, otherwise the accounting opening
+  /// balance. Avoids null-check churn at call sites.
+  int get displayedOpeningBalance => countedOpeningBalance ?? openingBalance;
+
   final int? countedAmount;
   final int? discrepancy;
 
@@ -64,9 +79,31 @@ class CashDrawer {
   /// responses, history rows).
   final int accountingBalance1101;
 
+  /// DG-379 Phase 4.1 (FR7): whether the drawer has been reconciled. The
+  /// backend persists `cash_drawer.reconciled` (0/1) and exposes it as
+  /// `reconciled` (bool) in `to_api_dict`. Reconciled drawers are locked —
+  /// transaction edits are rejected with 409 by the backend and the edit
+  /// affordance is hidden in the UI (AC5). Defaults to `false` for older
+  /// responses that omit the field.
+  final bool reconciled;
+
   /// Optional journal entry returned by mutation endpoints (open, cash-in,
   /// cash-out, close-with-discrepancy). Null for the status/history GETs.
   final JournalEntry? journalEntry;
+
+  /// DG-363 Phase 4 / FR7: persisted breakdown snapshot for a closed drawer.
+  /// The backend (`CashDrawer.get_breakdown_snapshot`) returns one row per
+  /// canonical category (8 total) with `category`, `totalAmount` (float), and
+  /// `count` (int), captured at close time. An empty list means no snapshot
+  /// is available (open drawer, or a closed drawer that predates the v097
+  /// migration and was not backfilled) — the UI renders an "N/A" placeholder
+  /// in that case. Open drawers return `[]` from the backend; the History
+  /// tab only renders the snapshot for closed drawers.
+  ///
+  /// Parsed from the `breakdownSnapshot` field embedded in `/status` and
+  /// `/history` responses (Phase 2). Defaults to empty for older responses
+  /// that omit the field.
+  final List<CashDrawerBreakdownSnapshotRow> breakdownSnapshot;
 
   const CashDrawer({
     required this.id,
@@ -74,12 +111,15 @@ class CashDrawer {
     this.closedAt,
     required this.status,
     required this.openingBalance,
+    this.countedOpeningBalance,
     this.countedAmount,
     this.discrepancy,
     required this.expectedBalance,
     this.closingBalance,
     this.accountingBalance1101 = 0,
+    this.reconciled = false,
     this.journalEntry,
+    this.breakdownSnapshot = const [],
   });
 
   /// Whether this drawer is currently open (status == 'open').
@@ -94,21 +134,30 @@ class CashDrawer {
 
   factory CashDrawer.fromJson(Map<String, dynamic> json) {
     final journalJson = json['journalEntry'];
+    final rawSnapshot = json['breakdownSnapshot'];
     return CashDrawer(
       id: json['id'] as String,
       openedAt: parseApiDateTime(json['openedAt'] as String?),
       closedAt: parseApiDateTime(json['closedAt'] as String?),
       status: (json['status'] as String?) ?? 'open',
       openingBalance: (json['openingBalance'] as num?)?.toInt() ?? 0,
+      countedOpeningBalance: (json['countedOpeningBalance'] as num?)?.toInt(),
       countedAmount: (json['countedAmount'] as num?)?.toInt(),
       discrepancy: (json['discrepancy'] as num?)?.toInt(),
       expectedBalance: (json['expectedBalance'] as num?)?.toInt() ?? 0,
       closingBalance: (json['closingBalance'] as num?)?.toInt(),
       accountingBalance1101:
           (json['accountingBalance1101'] as num?)?.toInt() ?? 0,
+      reconciled: (json['reconciled'] as bool?) ?? false,
       journalEntry: journalJson is Map<String, dynamic>
           ? JournalEntry.fromJson(journalJson)
           : null,
+      breakdownSnapshot: rawSnapshot is List
+          ? rawSnapshot
+              .map((e) => CashDrawerBreakdownSnapshotRow.fromJson(
+                  e as Map<String, dynamic>))
+              .toList()
+          : const <CashDrawerBreakdownSnapshotRow>[],
     );
   }
 
@@ -118,12 +167,17 @@ class CashDrawer {
         'closedAt': timestampToJson(closedAt),
         'status': status,
         'openingBalance': openingBalance,
+        'countedOpeningBalance': countedOpeningBalance,
         'countedAmount': countedAmount,
         'discrepancy': discrepancy,
         'expectedBalance': expectedBalance,
         'closingBalance': closingBalance,
         'accountingBalance1101': accountingBalance1101,
+        'reconciled': reconciled,
         if (journalEntry != null) 'journalEntry': journalEntry!.toJson(),
+        'breakdownSnapshot': [
+          for (final r in breakdownSnapshot) r.toJson(),
+        ],
       };
 
   @override
@@ -168,4 +222,69 @@ class CashDrawerHistoryResponse {
           : const <CashDrawer>[],
     );
   }
+}
+
+/// DG-363 Phase 4 / FR7: one row of the persisted breakdown snapshot for a
+/// closed drawer. Mirrors the backend `CashDrawer.get_breakdown_snapshot`
+/// dict shape: `category` (one of the 8 canonical `CashDrawerBreakdownCategory`
+/// names), `totalAmount` (float VND, signed), and `count` (int). The backend
+/// stores `total_amount` as REAL (float) to preserve any fractional value,
+/// but in practice amounts are whole VND; we coerce to int for display so
+/// the snapshot renders through the same `formatVND` path as the live
+/// breakdown.
+///
+/// Parsed from the `breakdownSnapshot` array embedded in `/status` and
+/// `/history` responses. An empty list on [CashDrawer.breakdownSnapshot]
+/// means "no snapshot available" (open drawer, or pre-v097 closed drawer).
+class CashDrawerBreakdownSnapshotRow {
+  const CashDrawerBreakdownSnapshotRow({
+    required this.category,
+    required this.totalAmount,
+    required this.count,
+  });
+
+  /// Canonical category name as stored by the backend
+  /// (`BREAKDOWN_SNAPSHOT_CATEGORIES` in v097): `sale`, `refund`, `expense`,
+  /// `cashIn`, `cashOut`, `open`, `close`, `busShipping`. Matches the
+  /// `CashDrawerBreakdownCategory` enum names in
+  /// `cash_drawer_breakdown_card.dart`.
+  final String category;
+
+  /// Signed total amount for this category (VND). Positive = inflow,
+  /// negative = outflow. Coerced to int from the backend's float value.
+  final int totalAmount;
+
+  /// Number of transactions that contributed to this category's total.
+  final int count;
+
+  factory CashDrawerBreakdownSnapshotRow.fromJson(Map<String, dynamic> json) {
+    return CashDrawerBreakdownSnapshotRow(
+      category: (json['category'] as String?) ?? '',
+      totalAmount: (json['totalAmount'] as num?)?.toInt() ?? 0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'category': category,
+        'totalAmount': totalAmount,
+        'count': count,
+      };
+
+  @override
+  String toString() =>
+      'CashDrawerBreakdownSnapshotRow(category: $category, totalAmount: '
+      '$totalAmount, count: $count)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CashDrawerBreakdownSnapshotRow &&
+          runtimeType == other.runtimeType &&
+          category == other.category &&
+          totalAmount == other.totalAmount &&
+          count == other.count;
+
+  @override
+  int get hashCode => Object.hash(category, totalAmount, count);
 }

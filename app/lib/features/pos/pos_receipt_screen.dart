@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,10 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
+import 'providers/pos_receipt_notifier.dart';
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
 class PosReceiptScreen extends ConsumerStatefulWidget {
@@ -22,11 +22,6 @@ class PosReceiptScreen extends ConsumerStatefulWidget {
 }
 
 class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
-  Uint8List? _imageBytes;
-  String? _error;
-  bool _loading = true;
-  bool _printing = false;
-
   @override
   void initState() {
     super.initState();
@@ -41,23 +36,17 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         type: ReceiptType.customer,
       );
       if (mounted) {
-        setState(() {
-          _imageBytes = bytes;
-          _loading = false;
-        });
+        ref.read(posReceiptProvider.notifier).setLoaded(bytes);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
+        ref.read(posReceiptProvider.notifier).setError(e.toString());
       }
     }
   }
 
   Future<void> _printReceipt() async {
-    setState(() => _printing = true);
+    ref.read(posReceiptProvider.notifier).startPrinting();
     try {
       final receiptService = ref.read(receiptServiceProvider);
       final printedBy = ref.read(loggedByProvider);
@@ -69,13 +58,13 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         printedBy: printedBy,
       );
       if (!mounted) return;
-      showTopSnackBar(context, VN.printSuccess);
+      showTopSnackBar(context, SharedLabels.printSuccess);
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _printing = false);
+      if (mounted) ref.read(posReceiptProvider.notifier).stopPrinting();
     }
   }
 
@@ -84,21 +73,22 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   }
 
   Future<void> _shareImage() async {
-    if (_imageBytes == null) return;
+    final imageBytes = ref.read(posReceiptProvider).imageBytes;
+    if (imageBytes == null) return;
     try {
       const fileName = 'receipt_customer.png';
 
       await SharePlus.instance.share(
         ShareParams(
           files: [
-            XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
+            XFile.fromData(imageBytes, mimeType: 'image/png', name: fileName),
           ],
           text: '${ReceiptType.customer.label} - ${widget.orderRef}',
         ),
       );
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     }
   }
@@ -106,13 +96,17 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   @override
   // ignore: prefer_const_constructors
   Widget build(BuildContext context) {
+    final receiptState = ref.watch(posReceiptProvider);
+    final imageBytes = receiptState.imageBytes;
+    final printing = receiptState.printing;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Biên nhận'),
         leading: IconButton(icon: const Icon(Icons.close), onPressed: _skip),
         actions: const [AppBarOverflowMenu()],
       ),
-      body: _buildBody(),
+      body: _buildBody(receiptState),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -128,18 +122,18 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _imageBytes == null ? null : _shareImage,
+                  onPressed: imageBytes == null ? null : _shareImage,
                   icon: const Icon(Icons.share),
-                  label: const Text(VN.share),
+                  label: const Text(SharedLabels.share),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _printing || _imageBytes == null
+                  onPressed: printing || imageBytes == null
                       ? null
                       : _printReceipt,
-                  icon: _printing
+                  icon: printing
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -149,7 +143,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
                           ),
                         )
                       : const Icon(Icons.print),
-                  label: Text(_printing ? 'Đang in...' : 'In'),
+                  label: Text(printing ? 'Đang in...' : 'In'),
                 ),
               ),
             ],
@@ -159,41 +153,38 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     );
   }
 
-  Widget _buildBody() {
-    if (_loading) {
+  Widget _buildBody(PosReceiptState receiptState) {
+    if (receiptState.loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null) {
+    if (receiptState.error != null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(VN.apiError),
+            const Text(SharedLabels.apiError),
             const SizedBox(height: 8),
             Text(
-              _error!,
+              receiptState.error!,
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () {
-                setState(() {
-                  _loading = true;
-                  _error = null;
-                });
+                ref.read(posReceiptProvider.notifier).resetForRetry();
                 _fetchReceipt();
               },
-              child: const Text(VN.retry),
+              child: const Text(SharedLabels.retry),
             ),
           ],
         ),
       );
     }
 
-    if (_imageBytes == null) {
-      return const Center(child: Text(VN.errorLoading));
+    if (receiptState.imageBytes == null) {
+      return const Center(child: Text(SharedLabels.errorLoading));
     }
 
     return Center(
@@ -201,7 +192,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         minScale: 0.5,
         maxScale: 3.0,
         child: Image.memory(
-          _imageBytes!,
+          receiptState.imageBytes!,
           fit: BoxFit.contain,
           width: double.infinity,
         ),

@@ -1,7 +1,7 @@
 import 'package:bakery_app/data/api/accounting_service.dart';
 import 'package:bakery_app/data/models/journal_entry.dart';
 import 'package:bakery_app/features/accounting/providers/journal_pagination_notifier.dart';
-import 'package:bakery_app/providers/accounting_provider.dart';
+import 'package:bakery_app/data/providers/accounting_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

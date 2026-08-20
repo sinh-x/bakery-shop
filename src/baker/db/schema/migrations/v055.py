@@ -19,7 +19,7 @@ def _migrate_v55_utc_timestamp_standardization(conn):
                   AND "{column}" != ''
                   AND "{column}" NOT LIKE '%Z'
                   AND "{column}" NOT LIKE '%+%'
-                  AND "{column}" LIKE '%T%'""",
+                  AND "{column}" LIKE '%T%'""",  # nosec B608
         )
         # 2) +07:00-suffixed timestamps: subtract 7 hours and append 'Z'.
         #    Preserve fractional seconds when present (re-append the original
@@ -35,5 +35,5 @@ def _migrate_v55_utc_timestamp_standardization(conn):
                         ELSE
                             strftime('%Y-%m-%dT%H:%M:%SZ', substr("{column}", 1, 19), '-7 hours')
                     END
-                WHERE "{column}" LIKE '%+07:00'""",
+                WHERE "{column}" LIKE '%+07:00'""",  # nosec B608
         )

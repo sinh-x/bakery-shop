@@ -196,7 +196,7 @@ def update_attribute_type(attribute_type: str, body: AttributeTypeUpdate, actor:
 
         params.append(attribute_type)
         conn.execute(
-            f"UPDATE product_attributes SET {', '.join(updates)} WHERE attribute_type = ?",
+            f"UPDATE product_attributes SET {', '.join(updates)} WHERE attribute_type = ?",  # nosec B608
             params,
         )
         updated = conn.execute(

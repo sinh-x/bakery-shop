@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/auth/auth_provider.dart';
+import '../../shared/providers/auth_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
 /// A widget that hides its [child] unless the authenticated user is an admin.
 ///
 /// Used for UI gating (FR16/AC10): admin-only navigation entries, menu items,
@@ -40,7 +39,7 @@ class AdminAccessScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.accessDeniedTitle)),
+      appBar: AppBar(title: const Text(SharedLabels.accessDeniedTitle)),
       body: const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -50,12 +49,12 @@ class AdminAccessScreen extends StatelessWidget {
               Icon(Icons.lock_outline, size: 56, color: Colors.grey),
               SizedBox(height: 16),
               Text(
-                VN.accessDeniedTitle,
+                SharedLabels.accessDeniedTitle,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
               SizedBox(height: 8),
               Text(
-                VN.accessDeniedBody,
+                SharedLabels.accessDeniedBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),

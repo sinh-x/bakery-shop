@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/features/orders/widgets/order_item_markup_line.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -14,7 +14,7 @@ void main() {
         assignedPrice: 200000,
       )));
       await tester.pump();
-      expect(find.textContaining(VN.markupAmount), findsOneWidget);
+      expect(find.textContaining(OrdersLabels.markupAmount), findsOneWidget);
       // 250000 - 200000 = 50000 → "50.000đ"
       expect(find.text('Phần cộng thêm: 50.000đ'), findsOneWidget);
     });
@@ -26,7 +26,7 @@ void main() {
       )));
       await tester.pump();
       expect(find.byType(SizedBox), findsOneWidget);
-      expect(find.textContaining(VN.markupAmount), findsNothing);
+      expect(find.textContaining(OrdersLabels.markupAmount), findsNothing);
     });
 
     testWidgets('renders nothing when assignedPrice == unitPrice (no markup)', (tester) async {
@@ -36,7 +36,7 @@ void main() {
       )));
       await tester.pump();
       expect(find.byType(SizedBox), findsOneWidget);
-      expect(find.textContaining(VN.markupAmount), findsNothing);
+      expect(find.textContaining(OrdersLabels.markupAmount), findsNothing);
     });
 
     testWidgets('renders nothing when assignedPrice > unitPrice (invalid/upward)', (tester) async {
@@ -46,7 +46,7 @@ void main() {
       )));
       await tester.pump();
       expect(find.byType(SizedBox), findsOneWidget);
-      expect(find.textContaining(VN.markupAmount), findsNothing);
+      expect(find.textContaining(OrdersLabels.markupAmount), findsNothing);
     });
   });
 }

@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,8 +6,10 @@ import '../../../data/api/order_service.dart';
 import '../../../data/api/work_item_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
-import '../../../providers/order/order_list_providers.dart';
+import '../providers/order_submission_guard_notifier.dart';
+import '../../../data/providers/order/order_list_providers.dart';
 import '../../../shared/labels/orders.dart';
+import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/api_error.dart';
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/utils/delivery_helpers.dart';
@@ -48,22 +51,15 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// `_submitting` flag in `order_create_screen.dart` and `_isProcessing` in
   /// `pos_checkout_screen.dart`). The host screen reads this via
   /// [OrderCreationController.isSubmitting] to drive its submit button's
-  /// `onPressed: null` disabled state.
-  bool _isSubmitting = false;
-
-  /// Set to `true` once `onAfterSubmit` + `onNavigateAfterSubmit` complete so
-  /// the draft-save helper invoked from `deactivate` does not overwrite a
-  /// cleared draft (FR6). Mirrors `_submitted` in `order_create_screen.dart`.
-  bool _submitted = false;
-
-  /// Whether the shared submission spine is currently in progress. Read by
-  /// the orchestrator's `_controller` getter to populate
-  /// [OrderCreationController.isSubmitting].
-  bool get isSubmitting => _isSubmitting;
+  /// `onPressed: null` disabled state. Now backed by
+  /// [orderSubmissionGuardProvider].
+  bool get isSubmitting => ref.read(orderSubmissionGuardProvider);
 
   /// Post-submit latch read by the host's `_saveDraft` helper so it
   /// skips persisting a draft after a successful submission (FR6).
-  bool get submitted => _submitted;
+  /// Mirrors `_submitted` in `order_create_screen.dart`. Now backed by
+  /// [orderSubmissionLatchProvider].
+  bool get submitted => ref.read(orderSubmissionLatchProvider);
 
   /// Shared submission entrypoint invoked by the stage-4 review widget's
   /// submit button (normal order) or the POS payment step's pay-later/pay-now
@@ -76,7 +72,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     String? status,
     String? paymentMethod,
   }) async {
-    if (_isSubmitting) return false;
+    if (ref.read(orderSubmissionGuardProvider)) return false;
     final state = ref.read(provider);
     if (state.items.isEmpty) {
       if (mounted) {
@@ -85,7 +81,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
       return false;
     }
 
-    setState(() => _isSubmitting = true);
+    ref.read(orderSubmissionGuardProvider.notifier).setSubmitting(true);
     try {
       final hookCtx = SubmitHookContext(state: state, ref: ref, context: context);
       final prep = await _validateAndPrepare(state, hookCtx);
@@ -103,7 +99,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
       }
       return false;
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) ref.read(orderSubmissionGuardProvider.notifier).setSubmitting(false);
     }
   }
 
@@ -209,10 +205,16 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     if (config.enableOrderListRefresh) {
       await ref.read(orderListProvider.notifier).refresh();
     }
+    // DG-409 Phase 5 (FR13, AC6): a new order is a mutation on the order
+    // entity type, so invalidate the session-level order-history cache so
+    // the next history-tab visit re-fetches fresh data.
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.orderHistory);
 
     if (!mounted) return false;
 
-    _submitted = true;
+    ref.read(orderSubmissionLatchProvider.notifier).setSubmitted();
     await config.onAfterSubmit?.call(hookCtx, order);
 
     if (!mounted) return false;
@@ -227,6 +229,18 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// encoded in `DraftOrderItem.attributes` by the cart-sync layer).
   List<Map<String, dynamic>> buildOrderItemsPayload(OrderCreateState state) {
     return state.items.map((i) {
+      // Bridge `DraftOrderItem.candleType` into `attributes['candle_type']`
+      // for API persistence (DG-340 Phase 4 / FR2, NFR2). Only include a real
+      // candle type — null/empty/`khong_nen` map to "no candle" and are omitted
+      // so the attributes map stays clean (AC7). Follows the existing
+      // `is_birthday`/`age` pattern of conditionally attaching fields.
+      final attrs = Map<String, dynamic>.from(i.attributes);
+      final candle = i.candleType;
+      if (candle != null && candle.isNotEmpty && candle != 'khong_nen') {
+        attrs['candle_type'] = candle;
+      } else {
+        attrs.remove('candle_type');
+      }
       final m = <String, dynamic>{
         'productId': i.product.id.toString(),
         'productName': i.product.name,
@@ -236,7 +250,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
         'isBirthday': i.isBirthday,
         'isExtra': i.isExtra,
         'isGift': i.isGift,
-        'attributes': i.attributes,
+        'attributes': attrs,
         'priceChipId': i.priceChipId,
         if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
       };

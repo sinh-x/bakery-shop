@@ -1,12 +1,14 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_models.dart';
-import '../../../data/providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
+import '../../../providers/reconciliation_provider.dart';
+import '../providers/reconciliation_sell_waste_modal_notifier.dart';
 import 'reconciliation_shared_widgets.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Opens the reconciliation sale modal bottom sheet for a single product
 /// option.
 ///
@@ -131,8 +133,6 @@ class _ReconciliationSaleModalContentState
   late final TextEditingController _qtyController;
   late final TextEditingController _priceController;
   final FocusNode _priceFocusNode = FocusNode();
-  String? _paymentMethod;
-  bool _paymentMethodError = false;
 
   @override
   void initState() {
@@ -141,7 +141,15 @@ class _ReconciliationSaleModalContentState
     _priceController = TextEditingController(
       text: reconciliationPriceToText(widget.initialUnitPrice),
     );
-    _paymentMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
+    final seedMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
+    // Deferred to a microtask so we don't mutate providers during the
+    // widget-tree build phase (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .seedPaymentMethod(seedMethod);
+    });
   }
 
   @override
@@ -161,13 +169,19 @@ class _ReconciliationSaleModalContentState
 
   void _submit() {
     final editingIndex = widget.editingRowIndex;
+    final modalState =
+        ref.read(reconciliationSellWasteModalProvider(widget.optionKey));
+    final paymentMethod = modalState.paymentMethod;
     if (editingIndex == null) {
       if (_qty <= 0) {
         Navigator.of(context).pop(true);
         return;
       }
-      if (_qty > 0 && _paymentMethod == null) {
-        setState(() => _paymentMethodError = true);
+      if (_qty > 0 && paymentMethod == null) {
+        ref
+            .read(reconciliationSellWasteModalProvider(widget.optionKey)
+                .notifier)
+            .setPaymentMethodError(true);
         return;
       }
       widget.notifier.addSaleRow(
@@ -189,7 +203,7 @@ class _ReconciliationSaleModalContentState
         widget.notifier.setSaleRowPaymentMethod(
           widget.optionKey,
           rowIndex,
-          _paymentMethod,
+          paymentMethod,
         );
       }
     } else {
@@ -202,7 +216,7 @@ class _ReconciliationSaleModalContentState
       widget.notifier.setSaleRowPaymentMethod(
         widget.optionKey,
         editingIndex,
-        _paymentMethod,
+        paymentMethod,
       );
     }
     Navigator.of(context).pop(true);
@@ -265,7 +279,7 @@ class _ReconciliationSaleModalContentState
 
   Widget _buildTitle(BuildContext context) {
     return Text(
-      widget.editingRowIndex == null ? VN.banHang : '${VN.banHang} - ${VN.sua}',
+      widget.editingRowIndex == null ? OrdersLabels.banHang : '${OrdersLabels.banHang} - ${StockLabels.sua}',
       style: Theme.of(context).textTheme.titleLarge,
       textAlign: TextAlign.center,
     );
@@ -295,7 +309,7 @@ class _ReconciliationSaleModalContentState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${VN.dongBan} ${rowIndex + 1}',
+                    '${StockLabels.dongBan} ${rowIndex + 1}',
                     style: Theme.of(context)
                         .textTheme
                         .titleSmall
@@ -303,15 +317,15 @@ class _ReconciliationSaleModalContentState
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${VN.soLuongBan}: ${saleRows[rowIndex].quantity}',
+                    '${StockLabels.soLuongBan}: ${saleRows[rowIndex].quantity}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   Text(
-                    '${VN.donGiaNhapTay}: ${formatVND(saleRows[rowIndex].unitPrice?.toDouble() ?? 0)}',
+                    '${StockLabels.donGiaNhapTay}: ${formatVND(saleRows[rowIndex].unitPrice?.toDouble() ?? 0)}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   Text(
-                    '${VN.phuongThucThanhToan}: ${saleRows[rowIndex].paymentMethod == null ? "" : paymentMethodLabel(saleRows[rowIndex].paymentMethod!)}',
+                    '${StockLabels.phuongThucThanhToan}: ${saleRows[rowIndex].paymentMethod == null ? "" : paymentMethodLabel(saleRows[rowIndex].paymentMethod!)}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],
@@ -348,6 +362,8 @@ class _ReconciliationSaleModalContentState
   }
 
   Widget _buildSaleForm(BuildContext context) {
+    final modalState =
+        ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -358,7 +374,7 @@ class _ReconciliationSaleModalContentState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ReconciliationQuantityStepperField(
-            label: VN.soLuongBan,
+            label: StockLabels.soLuongBan,
             controller: _qtyController,
             onChanged: (value) {},
             onDecrement: () {
@@ -381,25 +397,25 @@ class _ReconciliationSaleModalContentState
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],
             decoration: const InputDecoration(
-              labelText: VN.donGiaNhapTay,
+              labelText: StockLabels.donGiaNhapTay,
               border: OutlineInputBorder(),
               isDense: true,
             ),
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            initialValue: _paymentMethod,
+            initialValue: modalState.paymentMethod,
             decoration: InputDecoration(
-              labelText: VN.phuongThucThanhToan,
+              labelText: StockLabels.phuongThucThanhToan,
               border: const OutlineInputBorder(),
               isDense: true,
-              errorText: _paymentMethodError ? VN.chonPhuongThucThanhToan : null,
+              errorText: modalState.paymentMethodError ? StockLabels.chonPhuongThucThanhToan : null,
             ),
             items: kReconciliationPaymentMethodItems,
-            onChanged: (value) => setState(() {
-              _paymentMethod = value;
-              _paymentMethodError = false;
-            }),
+            onChanged: (value) => ref
+                .read(reconciliationSellWasteModalProvider(widget.optionKey)
+                    .notifier)
+                .setPaymentMethod(value),
           ),
         ],
       ),
@@ -437,7 +453,6 @@ class _ReconciliationWasteModalContentState
     extends ConsumerState<_ReconciliationWasteModalContent> {
   late final TextEditingController _wasteController;
   late final TextEditingController _wasteReasonController;
-  bool _wasteReasonError = false;
 
   @override
   void initState() {
@@ -451,7 +466,9 @@ class _ReconciliationWasteModalContentState
 
   void _onWasteQtyChanged() {
     if (mounted) {
-      setState(() {});
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .rebuild();
     }
   }
 
@@ -467,7 +484,9 @@ class _ReconciliationWasteModalContentState
 
   void _submit() {
     if (_qty > 0 && _wasteReasonController.text.trim().isEmpty) {
-      setState(() => _wasteReasonError = true);
+      ref
+          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .setWasteReasonError(true);
       return;
     }
     widget.notifier.setWasteQty(widget.optionKey, _qty);
@@ -481,6 +500,10 @@ class _ReconciliationWasteModalContentState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
+    // Watch the modal form state so rebuilds triggered by the
+    // waste-qty controller listener (via `rebuild()`) refresh the
+    // conditional reason field, and so `wasteReasonError` updates.
+    ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
     final counted =
         state.countedQtyByOption[widget.optionKey] ?? widget.initialCounted;
     final saleRows =
@@ -537,7 +560,7 @@ class _ReconciliationWasteModalContentState
 
   Widget _buildTitle(BuildContext context) {
     return Text(
-      VN.haoHutSheet,
+      StockLabels.haoHutSheet,
       style: Theme.of(context).textTheme.titleLarge,
       textAlign: TextAlign.center,
     );
@@ -557,13 +580,13 @@ class _ReconciliationWasteModalContentState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${VN.soLuongHaoHut}: $waste',
+            '${StockLabels.soLuongHaoHut}: $waste',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           if (wasteReason.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              '${VN.lyDoHaoHut}: $wasteReason',
+              '${StockLabels.lyDoHaoHut}: $wasteReason',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
@@ -583,7 +606,7 @@ class _ReconciliationWasteModalContentState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ReconciliationQuantityStepperField(
-            label: VN.soLuongHaoHut,
+            label: StockLabels.soLuongHaoHut,
             controller: _wasteController,
             onChanged: (value) {},
             onDecrement: () {
@@ -600,14 +623,26 @@ class _ReconciliationWasteModalContentState
             const SizedBox(height: 8),
             TextField(
               decoration: InputDecoration(
-                labelText: VN.lyDoHaoHut,
+                labelText: StockLabels.lyDoHaoHut,
                 border: const OutlineInputBorder(),
-                errorText: _wasteReasonError ? VN.lyDoRequired : null,
+                errorText: ref
+                            .watch(reconciliationSellWasteModalProvider(
+                                widget.optionKey))
+                            .wasteReasonError
+                        ? StockLabels.lyDoRequired
+                        : null,
               ),
               controller: _wasteReasonController,
               onChanged: (_) {
-                if (_wasteReasonError) {
-                  setState(() => _wasteReasonError = false);
+                if (ref
+                    .read(reconciliationSellWasteModalProvider(
+                        widget.optionKey))
+                    .wasteReasonError) {
+                  ref
+                      .read(reconciliationSellWasteModalProvider(
+                              widget.optionKey)
+                          .notifier)
+                      .clearWasteReasonError();
                 }
               },
             ),
@@ -632,14 +667,14 @@ Widget _buildSummaryChips(
     spacing: 6,
     runSpacing: 6,
     children: [
-      ReconciliationSummaryChip(label: VN.tonDuKien, value: expectedQty),
-      ReconciliationSummaryChip(label: VN.tonDaDem, value: counted),
+      ReconciliationSummaryChip(label: StockLabels.tonDuKien, value: expectedQty),
+      ReconciliationSummaryChip(label: StockLabels.tonDaDem, value: counted),
       ReconciliationSummaryChip(
-        label: VN.soLuongThieu,
+        label: StockLabels.soLuongThieu,
         value: missing < 0 ? 0 : missing,
       ),
-      ReconciliationSummaryChip(label: VN.soLuongBan, value: saleQty),
-      ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+      ReconciliationSummaryChip(label: StockLabels.soLuongBan, value: saleQty),
+      ReconciliationSummaryChip(label: StockLabels.soLuongHaoHut, value: wasteQty),
       ReconciliationVarianceChip(variance: variance),
     ],
   );

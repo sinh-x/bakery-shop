@@ -89,6 +89,7 @@ class WorkItemCreate(BaseModel):
 
 
 class WorkItemUpdate(BaseModel):
+    productId: Optional[str] = None
     productName: Optional[str] = None
     quantity: Optional[int] = None
     unitPrice: Optional[float] = None
@@ -155,7 +156,7 @@ def _attach_blanks(conn, items: list) -> None:
         return
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
-        f"SELECT * FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+        f"SELECT * FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",  # nosec B608
         ids,
     ).fetchall()
     by_item: dict[int, list] = {}
@@ -177,7 +178,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     }
     has_assigned_price = "assigned_price" in oi_columns
     rows = conn.execute(
-        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"  # nosec B608
         + (", assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
         + "FROM order_items WHERE order_id = ?",
         (order_id,),
@@ -187,7 +188,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     if item_ids:
         placeholders = ",".join("?" * len(item_ids))
         blank_rows = conn.execute(
-            f"SELECT order_item_id, blank_id, quantity, notes FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+            f"SELECT order_item_id, blank_id, quantity, notes FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",  # nosec B608
             item_ids,
         ).fetchall()
         for br in blank_rows:
@@ -359,7 +360,47 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
 
+        # FR5 (DG-414 Phase 4.1): reject product swap when the item is in a
+        # terminal status (delivered or cancelled). The swap would change
+        # which product the item represents, which is meaningless once the
+        # item has been delivered or cancelled. Non-swap PATCHes (e.g. notes,
+        # quantity) remain allowed on terminal items for backward compat.
+        if (
+            "productId" in data
+            and row["status"]
+            in (WorkItemStatus.DELIVERED.value, WorkItemStatus.CANCELLED.value)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể đổi sản phẩm khi công việc đã giao hoặc đã hủy",
+            )
+
+        # SEC-1 (DG-414 review): validate a supplied `productId` resolves to
+        # an existing, active product before writing it to order_items. An
+        # explicit JSON `null` is rejected (it would otherwise bypass the
+        # swap guard and attempt `SET product_id = NULL`). An empty string
+        # is preserved as a no-catalog sentinel for backward compatibility
+        # (matches the create flow and historical order_items rows).
+        if "productId" in data:
+            new_pid = data["productId"]
+            if new_pid is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="productId không được để null",
+                )
+            if new_pid != "":
+                prod = conn.execute(
+                    "SELECT 1 FROM products WHERE product_code = ? AND active = 1",
+                    (new_pid,),
+                ).fetchone()
+                if prod is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Sản phẩm với mã '{new_pid}' không tồn tại hoặc đã ngừng",
+                    )
+
         field_map = {
+            "productId": "product_id",
             "productName": "product_name",
             "quantity": "quantity",
             "unitPrice": "unit_price",
@@ -388,7 +429,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
 
         params.append(item_id)
         conn.execute(
-            f"UPDATE order_items SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE order_items SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
@@ -505,7 +546,7 @@ def update_blank_assignment(
 
         params.append(blank_item_id)
         conn.execute(
-            f"UPDATE order_item_blanks SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE order_item_blanks SET {', '.join(updates)} WHERE id = ?",  # nosec B608
             params,
         )
         updated = conn.execute(

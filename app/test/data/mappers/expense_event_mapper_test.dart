@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 BakeryEvent _expenseEvent({
@@ -40,21 +40,21 @@ void main() {
       final event = _expenseEvent(
         id: 1,
         amount: 500000,
-        paymentMethod: VN.methodDebt,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'Nhà cung cấp A',
       );
       final data = ExpenseEventMapper.fromEvent(event)!;
 
       expect(data.isDebt, isTrue);
       expect(data.creditorName, 'Nhà cung cấp A');
-      expect(data.paymentMethod, VN.methodDebt);
+      expect(data.paymentMethod, OrdersLabels.methodDebt);
     });
 
     test('fromEvent leaves creditorName empty for non-debt expenses', () {
       final event = _expenseEvent(
         id: 2,
         amount: 120000,
-        paymentMethod: VN.methodCash,
+        paymentMethod: OrdersLabels.methodCash,
         vendor: 'NCC A',
       );
       final data = ExpenseEventMapper.fromEvent(event)!;
@@ -67,7 +67,7 @@ void main() {
       final event = _expenseEvent(
         id: 3,
         amount: 500000,
-        paymentMethod: VN.methodDebt,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'NCC A',
         settlements: [
           {'id': 1, 'amount': 200000},
@@ -85,7 +85,7 @@ void main() {
       final event = _expenseEvent(
         id: 4,
         amount: 500000,
-        paymentMethod: VN.methodDebt,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'NCC A',
       );
       final data = ExpenseEventMapper.fromEvent(event)!;
@@ -97,7 +97,7 @@ void main() {
       final event = _expenseEvent(
         id: 5,
         amount: 500000,
-        paymentMethod: VN.methodDebt,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'NCC A',
         settlements: [
           {'amount': 300000},
@@ -112,7 +112,7 @@ void main() {
       final event = _expenseEvent(
         id: 6,
         amount: 500000,
-        paymentMethod: VN.methodDebt,
+        paymentMethod: OrdersLabels.methodDebt,
         vendor: 'NCC A',
         settlements: [
           {'amount': 500000},
@@ -128,7 +128,7 @@ void main() {
       final event = _expenseEvent(
         id: 7,
         amount: 120000,
-        paymentMethod: VN.methodCash,
+        paymentMethod: OrdersLabels.methodCash,
       );
       final data = ExpenseEventMapper.fromEvent(event)!;
 

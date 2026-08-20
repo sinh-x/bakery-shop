@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../data/providers/reconciliation_provider.dart';
-import '../../../shared/labels/shared.dart';
-
+import '../../../data/api/reconciliation_models.dart';
+import '../../../providers/reconciliation_provider.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 Future<bool> showSubmitReviewDialog({
   required BuildContext context,
   required ReconciliationState state,
@@ -21,6 +23,7 @@ Future<bool> showSubmitReviewDialog({
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final rows =
           state.saleRowsByOption[optionKey] ??
@@ -35,20 +38,20 @@ Future<bool> showSubmitReviewDialog({
     context: context,
     builder: (context) {
       return AlertDialog(
-        title: const Text(VN.xacNhanGuiDoiSoat),
+        title: const Text(StockLabels.xacNhanGuiDoiSoat),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${VN.nhanVien}: ${staffName.isEmpty ? VN.chuaChonNhanVien : staffName}',
+              '${StockLabels.nhanVien}: ${staffName.isEmpty ? StockLabels.chuaChonNhanVien : staffName}',
             ),
             const SizedBox(height: 4),
-            Text('${VN.tongSoLuongBan}: $totalSale'),
-            Text('${VN.tongSoLuongHaoHut}: $totalWaste'),
+            Text('${StockLabels.tongSoLuongBan}: $totalSale'),
+            Text('${StockLabels.tongSoLuongHaoHut}: $totalWaste'),
             const SizedBox(height: 8),
             Text(
-              VN.vanDeCanXuLyTruocKhiGui,
+              StockLabels.vanDeCanXuLyTruocKhiGui,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.error,
                 fontWeight: FontWeight.w700,
@@ -56,7 +59,7 @@ Future<bool> showSubmitReviewDialog({
             ),
             if (issues.isEmpty)
               Text(
-                VN.daSanSangGuiDoiSoat,
+                StockLabels.daSanSangGuiDoiSoat,
                 style: TextStyle(color: Colors.green[700]),
               )
             else
@@ -71,7 +74,7 @@ Future<bool> showSubmitReviewDialog({
               ),
             if (!canSubmit)
               Text(
-                VN.daTatGuiDoiSoatKhiCoLoi,
+                StockLabels.daTatGuiDoiSoatKhiCoLoi,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.error,
                   fontWeight: FontWeight.w600,
@@ -82,11 +85,11 @@ Future<bool> showSubmitReviewDialog({
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(VN.huy),
+            child: const Text(SharedLabels.huy),
           ),
           FilledButton(
             onPressed: canSubmit ? () => Navigator.of(context).pop(true) : null,
-            child: const Text(VN.guiDoiSoat),
+            child: const Text(StockLabels.guiDoiSoat),
           ),
         ],
       );
@@ -104,8 +107,17 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
   final optionNameByKey = <String, String>{};
   for (final product in draft.products) {
     for (final option in product.options) {
-      final key = reconciliationOptionKey(product.productId, option.normalizedPrice);
-      optionNameByKey[key] = '${product.name} - Gia ${option.normalizedPrice}';
+      final key = reconciliationOptionKey(
+        product.productId,
+        option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
+      );
+      // Mirror the "Giá gốc" badge already added to `_OptionHeader`
+      // (DG-413 UI-1) so a colliding product's base and chip options do not
+      // render identical labels in the submit-review issue list (UI-2).
+      final discriminatorSuffix = _discriminatorSuffixForOption(option, product);
+      optionNameByKey[key] =
+          '${product.name} - Giá ${option.normalizedPrice}$discriminatorSuffix';
     }
   }
 
@@ -125,9 +137,27 @@ List<String> _collectUnresolvedIssues(ReconciliationState state) {
         if (rowError.paymentMethod != null) rowError.paymentMethod!,
       ];
       if (parts.isNotEmpty) {
-        issues.add('$optionLabel - ${VN.dongBan} ${index + 1}: ${parts.join(', ')}');
+        issues.add('$optionLabel - ${StockLabels.dongBan} ${index + 1}: ${parts.join(', ')}');
       }
     }
   }
   return issues;
+}
+
+/// Builds the per-option discriminator suffix appended to the submit-review
+/// issue label so colliding base and chip options stay distinguishable
+/// (DG-413 UI-2). Mirrors the "Giá gốc" badge / chip label lines already
+/// rendered by `_OptionHeader` (UI-1).
+String _discriminatorSuffixForOption(
+  ReconciliationDraftOption option,
+  ReconciliationDraftProduct product,
+) {
+  if (option.isCollidingBaseBucket) {
+    return ' (${OrdersLabels.giaGoc})';
+  }
+  final chipLabels = visibleChipLabelsForOption(product, option);
+  if (chipLabels.isEmpty) {
+    return '';
+  }
+  return ' ($chipLabels)';
 }

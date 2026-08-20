@@ -1,11 +1,15 @@
 // EXEMPT: 200-line threshold exceeded because DG-150 blocker: safe extraction of shell/collapsed/expanded sections risks cross-field validation regressions in active order draft wiring. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
+import 'package:bakery_app/shared/utils/chip_stock_display.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
+import 'candle_type_radio_group.dart';
 import 'rut_tien_editor.dart';
 
 class ExpandableItemCard extends StatefulWidget {
@@ -31,6 +35,19 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   bool _isBirthday = false;
   bool _isTrungBayMarkup = false;
   String? _floorWarning;
+  // Local candle type state (CQ-3): initialized read-only from the draft
+  // model in initState, written back to the model only on explicit user
+  // selection. Avoids the previous `widget.item.candleType ??= ...` model
+  // mutation in initState that could affect other widgets holding the same
+  // draft reference. The default lives in the local field only, so the
+  // radio group renders a default selection without persisting it until the
+  // user actually picks an option (AC7: absent = no candle).
+  //
+  // DG-361 Phase 1 — FR2/AC2: the default is `nen_so` (Nến số) when birthday
+  // is checked and no prior selection exists, instead of the previous
+  // `khong_nen`. The default is NOT persisted until the user explicitly
+  // picks an option.
+  String? _candleType;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
@@ -40,6 +57,29 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   void initState() {
     super.initState();
     _isBirthday = widget.item.isBirthday;
+    // AC1/AC7: default candle type so the radio group renders a default
+    // selection once is_birthday is checked. The default is applied to the
+    // LOCAL field only — the shared draft model is not mutated in initState
+    // (CQ-3 fix). FR6 (auto-check is_birthday for new cake items) is
+    // intentionally NOT applied here: re-checking on every card build would
+    // override restored drafts where the user explicitly unchecked
+    // birthday, violating the Phase 2 guardrail ("Do NOT change existing
+    // birthday checkbox behavior") and AC6. FR6 belongs at the
+    // item-creation boundary (`product_picker_page._createDraftItem`),
+    // which is outside the three files in scope for this phase.
+    //
+    // DG-361 Phase 1 — FR2/AC2: default to `nen_so` (Nến số) when birthday
+    // is checked and no prior selection exists; otherwise default to
+    // `khong_nen` so the radio group still renders a selection when
+    // birthday is off.
+    final storedCandle = widget.item.candleType;
+    if (storedCandle != null && storedCandle.isNotEmpty) {
+      _candleType = storedCandle;
+    } else if (_isBirthday) {
+      _candleType = 'nen_so';
+    } else {
+      _candleType = 'khong_nen';
+    }
     _isTrungBayMarkup = widget.item.product.isTrungBay;
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(text: widget.item.age);
@@ -78,9 +118,6 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   }
 
   void _updateManualPrice(String text) {
-    final selectedLabel = widget.item.attributes['price_chip_label']
-        ?.toString();
-
     if (_isTrungBayMarkup) {
       // Trưng bày markup flow (DG-296 Phase 4): the price field is in thousands
       // of đồng (same style as the POS chip picker). Selling price may be set
@@ -100,27 +137,11 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       final clamped = selling < assigned ? assigned : selling;
       widget.item.customUnitPrice = clamped;
       setState(() {
-        _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+        _floorWarning = selling < assigned ? OrdersLabels.markupFloorWarning : null;
       });
     } else {
       widget.item.customUnitPrice =
           double.tryParse(text.trim()) ?? widget.item.product.basePrice;
-    }
-
-    final manuallyClearPreset =
-        selectedLabel != null &&
-        !widget.item.product.priceChips.any(
-          (chip) =>
-              chip.label == selectedLabel &&
-              chip.price == widget.item.customUnitPrice,
-        );
-
-    if (manuallyClearPreset) {
-      widget.item.attributes.remove('price_chip_label');
-      widget.item.priceChipId = null;
-      if (mounted) {
-        showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
-      }
     }
 
     setState(() {});
@@ -134,12 +155,14 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   String get _stockInlineText {
     final selectedChipId = widget.item.priceChipId;
     if (selectedChipId == null) return widget.item.product.stockInlineText;
-    final selectedChip = widget.item.product.priceChips
+    final product = widget.item.product;
+    final selectedChip = product.priceChips
         .where((chip) => chip.id == selectedChipId)
         .firstOrNull;
-    final chipQty = selectedChip?.stockQty;
-    if (chipQty == null) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $chipQty';
+    if (selectedChip == null) return StockLabels.stockUnknown;
+    final displayQty = chipDisplayStockQty(product, selectedChip);
+    if (displayQty <= 0) return StockLabels.stockUnknown;
+    return '${StockLabels.stockRemaining}: $displayQty';
   }
 
   @override
@@ -227,10 +250,11 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       children: widget.item.product.priceChips.map((chip) {
                         final isSelected =
                             widget.item.attributes['price_chip_label'] ==
-                                chip.label &&
-                            widget.item.customUnitPrice == chip.price;
-                        final stockLabel = chip.stockQty != null
-                            ? ' (${chip.stockQty})'
+                                chip.label;
+                        final displayStock =
+                            chipDisplayStockQty(widget.item.product, chip);
+                        final stockLabel = displayStock > 0
+                            ? ' ($displayStock)'
                             : '';
                         return ChoiceChip(
                           label: Text(
@@ -268,7 +292,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        '${VN.giaGoc}: ${formatVND(widget.item.assignedPrice ?? widget.item.product.basePrice)}',
+                        '${OrdersLabels.giaGoc}: ${formatVND(widget.item.assignedPrice ?? widget.item.product.basePrice)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -278,8 +302,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.giaBan,
-                        helperText: VN.markupThousandsHint,
+                        labelText: OrdersLabels.giaBan,
+                        helperText: OrdersLabels.markupThousandsHint,
                         border: OutlineInputBorder(),
                         suffixText: ',000đ',
                         isDense: true,
@@ -301,7 +325,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _priceCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.itemPrice,
+                        labelText: OrdersLabels.itemPrice,
                         border: OutlineInputBorder(),
                         suffixText: 'đ',
                         isDense: true,
@@ -323,7 +347,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         });
                         widget.onStateChanged();
                       },
-                      title: const Text(VN.useInventory),
+                      title: const Text(StockLabels.useInventory),
                       subtitle: _useInventory ? Text(_stockInlineText) : null,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -370,7 +394,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                   TextFormField(
                     controller: _notesCtrl,
                     decoration: const InputDecoration(
-                      labelText: VN.notes,
+                      labelText: OrdersLabels.notes,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -382,10 +406,22 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                   CheckboxListTile(
                     value: _isBirthday,
                     onChanged: (v) {
-                      setState(() => _isBirthday = v ?? false);
-                      widget.item.isBirthday = _isBirthday;
+                      setState(() {
+                        _isBirthday = v ?? false;
+                        widget.item.isBirthday = _isBirthday;
+                        // DG-361 Phase 1 — FR2/AC2: when birthday is checked
+                        // and the user has not yet picked a candle type
+                        // (still the initial default), pre-select `nen_so`
+                        // as the default. Not persisted until user interacts.
+                        if (_isBirthday &&
+                            _candleType == 'khong_nen' &&
+                            (widget.item.candleType == null ||
+                                widget.item.candleType!.isEmpty)) {
+                          _candleType = 'nen_so';
+                        }
+                      });
                     },
-                    title: const Text(VN.isBirthday),
+                    title: const Text(OrdersLabels.isBirthday),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -394,7 +430,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     TextFormField(
                       controller: _ageCtrl,
                       decoration: const InputDecoration(
-                        labelText: VN.birthdayAge,
+                        labelText: OrdersLabels.birthdayAge,
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -404,6 +440,37 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         LengthLimitingTextInputFormatter(3),
                       ],
                       onChanged: (v) => widget.item.age = v,
+                    ),
+                    const SizedBox(height: 8),
+                    // Candle type radio group (DG-340 Phase 2 — FR1/AC1).
+                    // Wired to a LOCAL _candleType field (CQ-3 fix) and
+                    // written back to DraftOrderItem.candleType only on
+                    // explicit user selection, mirroring the local-state +
+                    // submit-time persistence pattern used by
+                    // cake_detail_body.dart.
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 2),
+                      child: Text(
+                        OrdersLabels.candleTypeSectionLabel,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ),
+                    CandleTypeRadioGroup(
+                      groupValue: _candleType,
+                      onChanged: (v) {
+                        setState(() {
+                          _candleType = v;
+                          // Persist selection back to the draft model. This
+                          // card is a live editor (no explicit submit
+                          // button), so write-back on change is the
+                          // submit-time equivalent. The default "khong_nen"
+                          // is only persisted once the user interacts.
+                          widget.item.candleType = v;
+                        });
+                        widget.onStateChanged();
+                      },
                     ),
                     const SizedBox(height: 8),
                   ],
@@ -481,7 +548,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       Icons.add_photo_alternate_outlined,
                       size: 16,
                     ),
-                    label: const Text(VN.addOrderPhoto),
+                    label: const Text(OrdersLabels.addOrderPhoto),
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),

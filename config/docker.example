@@ -27,3 +27,38 @@ BAKER_PRINTER_DEVICE=/dev/usb/lp0
 # Unset defaults to "label". Invalid values cause server startup to fail fast.
 # Runtime override available via Settings → Technical tab (DB value takes precedence).
 PAPER_MODE=label
+
+# --- Auth configuration ---
+
+# BAKER_JWT_SECRET
+# Stable 256-bit random key used to sign and verify JWT auth tokens.
+# REQUIRED when BAKER_AUTH_REQUIRED=true — the server refuses to start without it.
+# When unset and BAKER_AUTH_REQUIRED=false, an ephemeral key is generated per
+# restart, so all previously issued tokens become invalid on the next start.
+# Generate a stable secret with either of:
+#   openssl rand -base64 32
+#   python -c "import secrets; print(secrets.token_urlsafe(32))"
+# Example:
+#   BAKER_JWT_SECRET= replace-with-output-of-openssl-rand-base64-32
+# BAKER_JWT_SECRET=
+
+# BAKER_AUTH_REQUIRED
+# Toggle JWT enforcement. Accepts: 1, true, yes, on (case-insensitive) to enable;
+# any other value (or unset) disables enforcement.
+# true  → all API requests except the public health/login paths require a valid
+#         JWT signed by BAKER_JWT_SECRET. Refuses to start if BAKER_JWT_SECRET is
+#         unset/ephemeral.
+# false → grace-period mode: requests pass through without a token (default).
+#         A presented token is still validated when present.
+# Example (enforce auth in production):
+#   BAKER_AUTH_REQUIRED=true
+# BAKER_AUTH_REQUIRED=false
+
+# BAKER_CORS_ORIGINS
+# Comma-separated list of allowed CORS origins (browser origins permitted to
+# call the API). Whitespace around each entry is stripped. Empty/unset falls
+# back to the default production origin for backward compatibility:
+#   https://lily.tail10c2c6.ts.net
+# For dev with an additional domain, list both:
+#   BAKER_CORS_ORIGINS=https://drgnfly.tail10c2c6.ts.net, https://lily.tail10c2c6.ts.net
+# BAKER_CORS_ORIGINS=

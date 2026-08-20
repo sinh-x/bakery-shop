@@ -438,7 +438,7 @@ def test_urgency_urgent_when_due_soon():
 def test_urgency_urgent_when_new_and_unacknowledged():
     from baker.models.order import compute_urgency
     far_future = "2099-01-01"
-    assert compute_urgency(far_future, "10:00", "new", None) == "urgent"
+    assert compute_urgency(far_future, "10:00", "new", None) == "normal"
 
 
 def test_urgency_urgent_when_due_today_and_active():
@@ -543,6 +543,109 @@ def test_configurable_threshold_respected(monkeypatch):
     soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
     due_date, due_time = _format_due(soon_local)
     assert compute_urgency(due_date, due_time, "new", None, "delivery") == "urgent"
+
+
+# --- DG-377 Phase 4.2 regression tests (urgency orange bar fix) ---
+#
+# Phase 4.1 (commit 22981377) made two changes to compute_urgency():
+#   1. The 2-hour "due soon" window is gated by `due_date == today` so it no
+#      longer leaks across midnight into tomorrow (FR2).
+#   2. The "due today -> urgent" rule now covers EVERY non-terminal status,
+#      not just new/confirmed, fixing the missing orange bar for
+#      in_progress/ready orders due today (FR1).
+# These tests pin both behaviours so they cannot silently regress.
+
+
+def _freeze_now_local(monkeypatch, hour, minute=0):
+    """Freeze ``datetime.now()`` inside ``baker.models.order`` to today at HH:MM (server tz).
+
+    Returns the frozen local datetime so callers can derive today/tomorrow
+    strings consistent with the frozen instant. The 2h-window same-day guard
+    only matters near midnight, so real-time tests would flake; freezing the
+    clock makes AC3/AC5 deterministic.
+    """
+    from baker.models import order as order_mod
+    from baker.config import TIMEZONE
+    from datetime import datetime as _real_dt, timezone as _tz
+    frozen_local = _real_dt.now(TIMEZONE).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
+    frozen_utc = frozen_local.astimezone(_tz.utc)
+
+    class _FrozenDateTime(_real_dt):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return frozen_utc.replace(tzinfo=None)
+            return frozen_utc.astimezone(tz)
+
+    monkeypatch.setattr(order_mod, "datetime", _FrozenDateTime)
+    return frozen_local
+
+
+def test_urgency_urgent_when_in_progress_and_due_today():
+    """AC1 (DG-377 FR1): in_progress order due today -> urgent.
+
+    Before Phase 4.1 the due-today rule only covered new/confirmed, so
+    in_progress orders due today showed no urgency. Now every non-terminal
+    status due today is urgent.
+    """
+    from baker.models.order import compute_urgency
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "in_progress", None) == "urgent"
+
+
+def test_urgency_urgent_when_ready_and_due_today():
+    """AC2 (DG-377 FR1): ready order due today -> urgent."""
+    from baker.models.order import compute_urgency
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "ready", None) == "urgent"
+
+
+def test_urgency_2h_window_does_not_cross_midnight(monkeypatch):
+    """AC3 (DG-377 FR2): due tomorrow 00:30, called at 23:00 today -> normal.
+
+    Before Phase 4.1 the 2-hour window had no same-day guard, so a due time
+    1.5h ahead leaked across midnight and wrongly returned urgent for
+    tomorrow's order. The fix gates the 2h branch on due_date == today.
+    Uses confirmed (not new) so the new-unacknowledged fallback cannot
+    mask the result.
+    """
+    from baker.models.order import compute_urgency
+    from datetime import timedelta
+    frozen = _freeze_now_local(monkeypatch, hour=23, minute=0)
+    tomorrow = (frozen + timedelta(days=1)).strftime("%Y-%m-%d")
+    assert compute_urgency(tomorrow, "00:30", "confirmed", None) == "normal"
+
+
+def test_urgency_due_today_urgent_for_new_and_confirmed():
+    """AC4 (DG-377 FR1): new/confirmed orders due today -> urgent (existing behaviour preserved)."""
+    from baker.models.order import compute_urgency
+    from baker.utils.time import now_utc
+    from baker.config import TIMEZONE
+    from datetime import datetime
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    # new + acknowledged isolates the due-today rule from the unack fallback
+    assert compute_urgency(today, "23:59", "new", now_utc()) == "urgent"
+    assert compute_urgency(today, "23:59", "confirmed", now_utc()) == "urgent"
+
+
+def test_urgency_2h_window_still_urgent_when_due_today(monkeypatch):
+    """AC5 (DG-377 FR2): due today within 2h -> urgent (existing behaviour preserved).
+
+    Pairs with AC3: the same-day guard rejects tomorrow, but a due time
+    within 2h whose date is still today must remain urgent. Frozen at 12:00
+    with due at 13:30 (1.5h ahead, same day). Uses confirmed to isolate the
+    2h-same-day branch from the new-unacknowledged fallback.
+    """
+    from baker.models.order import compute_urgency
+    frozen = _freeze_now_local(monkeypatch, hour=12, minute=0)
+    today = frozen.strftime("%Y-%m-%d")
+    assert compute_urgency(today, "13:30", "confirmed", None) == "urgent"
 
 
 def test_cli_accounting_read_only():
@@ -902,16 +1005,18 @@ def test_compute_urgency_threshold_minutes_param_overrides_env():
     assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=30) == "urgent"
 
 
-def test_compute_urgency_threshold_minutes_zero_not_used_when_none():
+def test_compute_urgency_threshold_minutes_zero_not_used_when_none(monkeypatch):
     """threshold_minutes=None -> falls back to env-var default (60).
 
     Sanity: passing None must NOT short-circuit the threshold check to 0.
+    The reference now is frozen to noon (12:00 server tz) so the 90-min-out
+    due time never crosses midnight, making the assertion deterministic
+    regardless of wall-clock time (AC2).
     """
     from baker.models.order import compute_urgency
-    from datetime import datetime, timedelta
-    from baker.config import TIMEZONE
-
-    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=90)
+    from datetime import timedelta
+    frozen = _freeze_now_local(monkeypatch, hour=12, minute=0)
+    soon_local = frozen + timedelta(minutes=90)
     due_date, due_time = _format_due(soon_local)
     # 90 min out > 60 min default -> urgent (not critical)
     assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=None) == "urgent"
@@ -1246,3 +1351,252 @@ def test_dg280_extras_and_gifts_not_treated_as_main_items(api_client):
 
     statuses = _dg280_item_statuses(api_client, ref)
     assert statuses["Bánh chính 1"] == "delivered"
+
+
+# --- DG-248: public_order_code CLI lookup + multi-match picker (Phases 1+2) ---
+
+
+def _dg248_insert_order(conn, *, order_ref, customer_name, public_order_code,
+                        due_date="2026-08-10", due_time="10:00", status="new",
+                        created_at=None, total_price=0):
+    from baker.utils.time import now_utc
+    conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status, "
+        "due_date, due_time, public_order_code, created_at, updated_at) "
+        "VALUES (?, ?, '[]', ?, ?, ?, ?, ?, ?, ?)",
+        (order_ref, customer_name, total_price, status, due_date, due_time,
+         public_order_code, created_at or now_utc(), created_at or now_utc()),
+    )
+    conn.commit()
+
+
+def test_public_code_single_match_show():
+    """AC1: single public_code match -> order show displays detail directly."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-001", customer_name="Alpha",
+                            public_order_code="A56-T")
+    result = runner.invoke(app, ["order", "show", "A56-T"])
+    assert result.exit_code == 0
+    assert "Alpha" in result.output
+    assert "Select order number" not in result.output
+
+
+def test_public_code_multi_match_show_picker():
+    """AC2: multi public_code match -> picker displayed, selection shows order."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-010", customer_name="Older",
+                            public_order_code="V96-T", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-011", customer_name="Newer",
+                            public_order_code="V96-T", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "V96-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Older" in result.output
+    assert "Newer" in result.output
+    assert "Select order number" in result.output
+
+
+def test_public_code_multi_match_show_picker_second_select():
+    """AC2: selecting the second order shows that order's detail."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-020", customer_name="First",
+                            public_order_code="W22-X", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-021", customer_name="Second",
+                            public_order_code="W22-X", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    # Newer (Second) is first in DESC order, so choosing 2 selects First.
+    result = runner.invoke(app, ["order", "show", "W22-X"], input="2\n")
+    assert result.exit_code == 0
+    assert "First" in result.output
+
+
+def test_public_code_single_match_status():
+    """AC3: single public_code match -> order status proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-030", customer_name="StatusOne",
+                            public_order_code="S11-T", status="new")
+    result = runner.invoke(app, ["order", "status", "S11-T", "confirmed"])
+    assert result.exit_code == 0
+    assert "confirmed" in result.output
+
+
+def test_public_code_single_match_edit():
+    """AC4: single public_code match -> order edit proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-040", customer_name="EditOne",
+                            public_order_code="E33-T", status="new")
+    result = runner.invoke(app, ["order", "edit", "E33-T", "--note", "hello"])
+    assert result.exit_code == 0
+    assert "Updated" in result.output
+
+
+def test_order_ref_lookup_unchanged():
+    """AC5: order_ref lookup unchanged (backward compatibility)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-050", customer_name="RefTest",
+                            public_order_code="R99-T")
+    result = runner.invoke(app, ["order", "show", "ORD-248-050"])
+    assert result.exit_code == 0
+    assert "RefTest" in result.output
+
+
+def test_numeric_id_lookup_unchanged():
+    """AC5: numeric id lookup unchanged (backward compatibility)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cursor = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+            "VALUES ('ORD-248-060', 'IdTest', '[]', 0, 'new')"
+        )
+        oid = cursor.lastrowid
+        conn.commit()
+    result = runner.invoke(app, ["order", "show", str(oid)])
+    assert result.exit_code == 0
+    assert "IdTest" in result.output
+
+
+def test_public_code_not_found():
+    """AC6: non-matching public_code -> 'not found' message."""
+    result = runner.invoke(app, ["order", "show", "XYZ-99"])
+    assert result.exit_code == 0
+    assert "not found" in result.output
+
+
+def test_public_code_multi_match_status_picker():
+    """AC7: multi public_code match in status -> picker then transition proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-070", customer_name="StatusA",
+                            public_order_code="P77-T", status="new", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-071", customer_name="StatusB",
+                            public_order_code="P77-T", status="new", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "status", "P77-T", "confirmed"], input="1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+    assert "confirmed" in result.output
+
+
+def test_public_code_multi_match_edit_picker():
+    """AC8: multi public_code match in edit -> picker then edit proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-080", customer_name="EditA",
+                            public_order_code="Q88-T", status="new", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-081", customer_name="EditB",
+                            public_order_code="Q88-T", status="new", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "edit", "Q88-T", "--note", "x"], input="1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+    assert "Updated" in result.output
+
+
+def test_public_code_multi_match_invalid_then_valid_input():
+    """FR2: invalid number re-prompts, then valid selection proceeds."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-090", customer_name="Inv1",
+                            public_order_code="I55-T", due_date="2026-08-01",
+                            created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-091", customer_name="Inv2",
+                            public_order_code="I55-T", due_date="2026-08-09",
+                            created_at="2026-08-05T10:00:00Z")
+    # 9 invalid, then 1 valid.
+    result = runner.invoke(app, ["order", "show", "I55-T"], input="9\n1\n")
+    assert result.exit_code == 0
+    assert "Select order number" in result.output
+
+
+def test_resolve_order_ref_helper_directly():
+    """Unit test the helper: single public_code match returns the row."""
+    from baker.commands.order import _resolve_order_ref
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="ORD-248-100", customer_name="HelperTest",
+                            public_order_code="H44-T")
+        row = _resolve_order_ref(conn, "H44-T")
+        assert row is not None
+        assert row["customer_name"] == "HelperTest"
+        # order_ref lookup
+        row = _resolve_order_ref(conn, "ORD-248-100")
+        assert row is not None
+        # not found
+        row = _resolve_order_ref(conn, "NOPE")
+        assert row is None
+
+
+def test_public_code_collision_with_order_ref_picks_public_code():
+    """DG-373 collision case: value matches both an order_ref and multiple
+    public_order_codes — public_code must win, triggering the picker.
+
+    Order A has order_ref='L57-T' (no public_code set to that value).
+    Orders B and C both share public_order_code='L57-T'.
+    Old lookup (order_ref first) returned Order A directly, bypassing the
+    picker. New lookup (public_code first) shows the picker for B and C.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="L57-T", customer_name="RefOrder",
+                            public_order_code="OTHER-1")
+        _dg248_insert_order(conn, order_ref="ORD-248-111", customer_name="PubA",
+                            public_order_code="L57-T",
+                            due_date="2026-08-02", created_at="2026-07-21T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-112", customer_name="PubB",
+                            public_order_code="L57-T",
+                            due_date="2026-08-03", created_at="2026-07-22T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "L57-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Select order number" in result.output
+    assert "RefOrder" not in result.output
+
+
+def test_public_code_collision_with_order_ref_single_match():
+    """DG-373 collision case (single): value matches both an order_ref and
+    exactly one public_order_code — public_code single match returns it
+    directly (FR3), not the order_ref row.
+    """
+    from baker.commands.order import _resolve_order_ref
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="M88-T", customer_name="RefOrder",
+                            public_order_code="OTHER-2")
+        _dg248_insert_order(conn, order_ref="ORD-248-120", customer_name="PubSingle",
+                            public_order_code="M88-T")
+        row = _resolve_order_ref(conn, "M88-T")
+        assert row is not None
+        assert row["customer_name"] == "PubSingle"
+        assert row["customer_name"] != "RefOrder"
+
+
+def test_public_code_collision_picker_via_cli():
+    """DG-373 collision via CLI: order show with a value that is both an
+    order_ref and a multi-match public_code triggers the picker (FR1+FR2).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg248_insert_order(conn, order_ref="N99-T", customer_name="RefOrder",
+                            public_order_code="OTHER-3")
+        _dg248_insert_order(conn, order_ref="ORD-248-130", customer_name="CliPubA",
+                            public_order_code="N99-T",
+                            due_date="2026-08-01", created_at="2026-07-20T10:00:00Z")
+        _dg248_insert_order(conn, order_ref="ORD-248-131", customer_name="CliPubB",
+                            public_order_code="N99-T",
+                            due_date="2026-08-09", created_at="2026-08-05T10:00:00Z")
+    result = runner.invoke(app, ["order", "show", "N99-T"], input="1\n")
+    assert result.exit_code == 0
+    assert "Found 2 orders" in result.output
+    assert "Select order number" in result.output
+    assert "RefOrder" not in result.output

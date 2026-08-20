@@ -3,6 +3,7 @@ import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/enum_attribute.dart';
+import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_form_screen.dart';
@@ -35,6 +36,21 @@ class _FakeProductService implements ProductService {
     calls.add(_RecordedCall('listProducts', {}));
     return productsById.values.toList();
   }
+
+  @override
+  Future<PaginatedResponse<Product>> listProductsPaginated({
+    String? category,
+    int active = 1,
+    int limit = 50,
+    int offset = 0,
+  }) async =>
+      PaginatedResponse<Product>(
+        items: productsById.values.toList(),
+        total: productsById.length,
+        hasMore: false,
+        limit: limit,
+        offset: offset,
+      );
 
   @override
   Future<Product> getProduct(int id) async => productsById[id]!;
@@ -311,7 +327,7 @@ void main() {
       final fake = await _pumpForm(tester, product: _testProduct());
 
       // Clear "Sầu riêng" value to trigger per-row validation
-      // (VN.enumOptionValueRequired).
+      // (ProductsLabels.enumOptionValueRequired).
       final sauRieng = find.widgetWithText(TextFormField, 'Sầu riêng');
       expect(sauRieng, findsOneWidget);
       await tester.enterText(sauRieng, '');

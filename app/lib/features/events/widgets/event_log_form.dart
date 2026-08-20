@@ -1,20 +1,15 @@
-import 'dart:io';
-
-// EXEMPT: 300-line widget threshold exceeded because the quick-log form owns
-// summary/type/tag selection, photo upload lifecycle, and submit flow in one
-// inline widget to keep QuickLogPhotoPicker under its own widget limit.
-// Pre-existing at 295 lines before DG-333 Phase 5; race-condition fix added
-// the _uploadPhotos helper + UploadProgressIndicator and grew it to 342.
-// Reviewed 2026-08-02.
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../../data/api/event_service.dart';
-import '../../../providers/events_provider.dart';
+import '../../../data/providers/events_provider.dart';
 import '../../../providers/photo_upload_provider.dart';
+import '../../../shared/providers/logged_by_provider.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import '../providers/event_log_form_notifier.dart';
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'quick_log_photo_picker.dart';
 
 class _EventType {
@@ -25,24 +20,24 @@ class _EventType {
 }
 
 const _kTypes = [
-  _EventType('note', VN.eventNote, Icons.edit_note),
-  _EventType('equipment', VN.typeEquipment, Icons.warning_amber),
-  _EventType('production', VN.eventProduction, Icons.bakery_dining),
-  _EventType('inventory', VN.eventInventory, Icons.inventory_2),
-  _EventType('expense', VN.eventExpense, Icons.payments),
-  _EventType('delivery', VN.eventDelivery, Icons.local_shipping),
-  _EventType('order', VN.eventOrder, Icons.receipt_long),
+  _EventType('note', EventsLabels.eventNote, Icons.edit_note),
+  _EventType('equipment', EventsLabels.typeEquipment, Icons.warning_amber),
+  _EventType('production', EventsLabels.eventProduction, Icons.bakery_dining),
+  _EventType('inventory', EventsLabels.eventInventory, Icons.inventory_2),
+  _EventType('expense', EventsLabels.eventExpense, Icons.payments),
+  _EventType('delivery', EventsLabels.eventDelivery, Icons.local_shipping),
+  _EventType('order', EventsLabels.eventOrder, Icons.receipt_long),
 ];
 
 const _kStandardTags = [
-  ('incident', VN.tagIncident),
-  ('knowledge-gap', VN.tagKnowledgeGap),
-  ('maintenance', VN.tagMaintenance),
-  ('equipment', VN.tagEquipment),
-  ('pricing', VN.tagPricing),
-  ('ordering', VN.tagOrdering),
-  ('decoration', VN.tagDecoration),
-  ('staff', VN.tagStaff),
+  ('incident', EventsLabels.tagIncident),
+  ('knowledge-gap', EventsLabels.tagKnowledgeGap),
+  ('maintenance', EventsLabels.tagMaintenance),
+  ('equipment', EventsLabels.tagEquipment),
+  ('pricing', EventsLabels.tagPricing),
+  ('ordering', EventsLabels.tagOrdering),
+  ('decoration', EventsLabels.tagDecoration),
+  ('staff', EventsLabels.tagStaff),
 ];
 
 /// Quick-log form for recording bakery events from the phone.
@@ -60,13 +55,6 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   final _summaryCtrl = TextEditingController();
   final _customTagCtrl = TextEditingController();
   final _summaryFocus = FocusNode();
-
-  String _selectedType = 'note';
-  final _selectedTags = <String>{};
-  final _customTags = <String>[];
-  final _selectedPhotos = <XFile>[];
-  bool _showCustomTagField = false;
-  bool _saving = false;
 
   @override
   void initState() {
@@ -92,21 +80,22 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
-
-    setState(() => _saving = true);
+    final notifier = ref.read(eventLogFormProvider.notifier);
+    final form = ref.read(eventLogFormProvider);
+    notifier.setSaving(true);
     try {
       final loggedBy = ref.read(loggedByProvider);
       final createdEvent = await ref.read(eventsProvider.notifier).logEvent(
             summary: summary,
-            type: _selectedType,
-            tags: _selectedTags.toList(),
+            type: form.selectedType,
+            tags: form.selectedTags.toList(),
             loggedBy: loggedBy,
           );
-      if (_selectedPhotos.isNotEmpty && mounted) {
+      if (form.selectedPhotos.isNotEmpty && mounted) {
         await _uploadPhotos(createdEvent.id);
       }
       if (mounted) {
-        showTopSnackBar(context, VN.eventLogged);
+        showTopSnackBar(context, EventsLabels.eventLogged);
         _reset();
       }
     } catch (e) {
@@ -114,9 +103,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+      if (mounted) notifier.setSaving(false);
     }
   }
 
@@ -130,24 +117,19 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   Future<void> _uploadPhotos(int eventId) async {
     final upload = ref.read(photoUploadNotifierProvider.notifier);
     final service = ref.read(eventServiceProvider);
+    final form = ref.read(eventLogFormProvider);
     await upload.uploadAll(
-      _selectedPhotos,
-      (file) => service.uploadEventPhoto(eventId, File(file.path)),
+      form.selectedPhotos,
+      (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
-      showTopSnackBar(context, VN.eventPhotosUploadFailed);
+      showTopSnackBar(context, EventsLabels.eventPhotosUploadFailed);
     }
   }
 
   void _reset() {
     _summaryCtrl.clear();
-    setState(() {
-      _selectedType = 'note';
-      _selectedTags.clear();
-      _customTags.clear();
-      _showCustomTagField = false;
-      _selectedPhotos.clear();
-    });
+    ref.read(eventLogFormProvider.notifier).reset();
     _summaryFocus.requestFocus();
   }
 
@@ -157,21 +139,21 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.loggedBy),
+        title: const Text(EventsLabels.loggedBy),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: VN.setYourName),
+          decoration: const InputDecoration(hintText: EventsLabels.setYourName),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text(VN.save),
+            child: const Text(SharedLabels.save),
           ),
         ],
       ),
@@ -183,17 +165,10 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   }
 
   void _confirmCustomTag() {
-    final tag = _customTagCtrl.text.trim();
-    if (tag.isNotEmpty) {
-      setState(() {
-        if (!_customTags.contains(tag)) _customTags.add(tag);
-        _selectedTags.add(tag);
-        _customTagCtrl.clear();
-        _showCustomTagField = false;
-      });
-    } else {
-      setState(() => _showCustomTagField = false);
-    }
+    ref
+        .read(eventLogFormProvider.notifier)
+        .confirmCustomTag(_customTagCtrl.text.trim());
+    _customTagCtrl.clear();
   }
 
   @override
@@ -201,6 +176,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final loggedBy = ref.watch(loggedByProvider);
+    final form = ref.watch(eventLogFormProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -214,7 +190,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
-            hintText: VN.eventPrompt,
+            hintText: EventsLabels.eventPrompt,
             border: OutlineInputBorder(),
           ),
         ),
@@ -225,7 +201,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           spacing: 6,
           runSpacing: 4,
           children: _kTypes.map((t) {
-            final selected = _selectedType == t.value;
+            final selected = form.selectedType == t.value;
             return ChoiceChip(
               label: Text(t.label),
               avatar: Icon(t.icon, size: 16),
@@ -233,7 +209,8 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
               selectedColor: t.value == 'equipment'
                   ? Colors.orange.shade100
                   : colorScheme.primaryContainer,
-              onSelected: (_) => setState(() => _selectedType = t.value),
+              onSelected: (_) =>
+                  ref.read(eventLogFormProvider.notifier).setSelectedType(t.value),
             );
           }).toList(),
         ),
@@ -247,30 +224,22 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             ..._kStandardTags.map(
               (tag) => FilterChip(
                 label: Text(tag.$2),
-                selected: _selectedTags.contains(tag.$1),
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _selectedTags.add(tag.$1);
-                  } else {
-                    _selectedTags.remove(tag.$1);
-                  }
-                }),
+                selected: form.selectedTags.contains(tag.$1),
+                onSelected: (v) => ref
+                    .read(eventLogFormProvider.notifier)
+                    .toggleTag(tag.$1, selected: v),
               ),
             ),
-            ..._customTags.map(
+            ...form.customTags.map(
               (tag) => FilterChip(
                 label: Text(tag),
-                selected: _selectedTags.contains(tag),
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _selectedTags.add(tag);
-                  } else {
-                    _selectedTags.remove(tag);
-                  }
-                }),
+                selected: form.selectedTags.contains(tag),
+                onSelected: (v) => ref
+                    .read(eventLogFormProvider.notifier)
+                    .toggleTag(tag, selected: v),
               ),
             ),
-            if (_showCustomTagField)
+            if (form.showCustomTagField)
               SizedBox(
                 width: 120,
                 child: TextField(
@@ -278,7 +247,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                   autofocus: true,
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
-                    hintText: VN.addTag,
+                    hintText: EventsLabels.addTag,
                     isDense: true,
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(
@@ -292,8 +261,9 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             else
               ActionChip(
                 avatar: const Icon(Icons.add, size: 16),
-                label: const Text(VN.addTag),
-                onPressed: () => setState(() => _showCustomTagField = true),
+                label: const Text(EventsLabels.addTag),
+                onPressed: () =>
+                    ref.read(eventLogFormProvider.notifier).showCustomTagField(),
               ),
           ],
         ),
@@ -301,12 +271,9 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
 
         // Photo picker — compact; uploads after event creation (NFR1)
         QuickLogPhotoPicker(
-          selectedPhotos: _selectedPhotos,
-          onSelectionChanged: (files) => setState(() {
-            _selectedPhotos
-              ..clear()
-              ..addAll(files);
-          }),
+          selectedPhotos: form.selectedPhotos,
+          onSelectionChanged: (files) =>
+              ref.read(eventLogFormProvider.notifier).setSelectedPhotos(files),
         ),
         UploadProgressIndicator(
           states: ref.watch(photoUploadNotifierProvider).states,
@@ -318,9 +285,9 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           children: [
             const Icon(Icons.person_outline, size: 18),
             const SizedBox(width: 6),
-            Text('${VN.loggedBy}: ', style: theme.textTheme.bodyMedium),
+            Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
             Text(
-              loggedBy.isNotEmpty ? loggedBy : VN.setYourName,
+              loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: loggedBy.isEmpty ? colorScheme.error : null,
@@ -329,7 +296,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             const Spacer(),
             TextButton(
               onPressed: _changeLogger,
-              child: const Text(VN.changeLogger),
+              child: const Text(EventsLabels.changeLogger),
             ),
           ],
         ),
@@ -337,18 +304,18 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
 
         // Submit button
         FilledButton(
-          onPressed: _saving ? null : _submit,
+          onPressed: form.saving ? null : _submit,
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: _saving
+          child: form.saving
               ? const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text(
-                  VN.logEvent,
+                  EventsLabels.logEvent,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,

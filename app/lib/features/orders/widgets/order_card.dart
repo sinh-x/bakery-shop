@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,7 +10,7 @@ import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
 const _pulseDuration = Duration(milliseconds: 1500);
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
@@ -84,6 +85,36 @@ class _OrderCardState extends ConsumerState<OrderCard>
     } else {
       return (Colors.red, 'Chưa TT');
     }
+  }
+
+  /// Returns the comma-separated Vietnamese payment-method labels for the
+  /// distinct payment methods on this order (e.g. "Tiền mặt, Chuyển khoản").
+  /// Empty when the order has no payment methods (defensive — renders nothing).
+  String _paymentMethodsLine() {
+    if (order.paymentMethods.isEmpty) return '';
+    return order.paymentMethods.map(paymentMethodLabel).join(', ');
+  }
+
+  /// Builds a compact Vietnamese payment-methods label widget shown beside
+  /// the payment status badge. Returns null when the order has no payment
+  /// methods (nothing to render).
+  Widget? _paymentMethodsLabel(ThemeData theme) {
+    final line = _paymentMethodsLine();
+    if (line.isEmpty) return null;
+    return Flexible(
+      child: Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Text(
+          line,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 10,
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Urgency/delivery helpers delegated to shared order_helpers.dart ──
@@ -169,12 +200,13 @@ class _OrderCardState extends ConsumerState<OrderCard>
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
+    final paymentMethodsLabel = _paymentMethodsLabel(theme);
     final isTerminal =
         ['completed', 'cancelled', 'delivered'].contains(order.status);
     final printedBy = order.displayPrintedBy;
     final printedLabel = printedBy.isNotEmpty
-        ? '${VN.printStatusPrintedShort}: $printedBy'
-        : VN.printStatusPrintedShort;
+        ? '${SharedLabels.printStatusPrintedShort}: $printedBy'
+        : SharedLabels.printStatusPrintedShort;
 
     // Build left border decoration driven by urgency tier only (FR-3).
     // Completeness is shown as a badge only, not as a border color.
@@ -408,7 +440,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
                           border: Border.all(color: Colors.orange.shade200),
                         ),
                         child: Text(
-                          VN.printStatusUnprintedShort,
+                          SharedLabels.printStatusUnprintedShort,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: Colors.orange.shade800,
                             fontSize: 12,
@@ -533,6 +565,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                     const Spacer(),
+                    // Payment methods label (Vietnamese) beside payment badge
+                    ?paymentMethodsLabel,
                     // Payment badge
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -565,6 +599,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                     const Spacer(),
+                    // Payment methods label (Vietnamese) beside payment badge
+                    ?paymentMethodsLabel,
                     // Payment badge (no due date)
                     Container(
                       padding: const EdgeInsets.symmetric(

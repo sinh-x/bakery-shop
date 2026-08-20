@@ -76,6 +76,13 @@ from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts
 from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries
 from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns
 from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance
+from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance
+from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot
+from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs
+from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column
+from .migrations.v100 import _migrate_v100_message_templates
+from .migrations.v102 import _migrate_v102_backfill_address_library
+from .migrations.v103 import _migrate_v103_orders_delivery_type_index
 
 MIGRATIONS = {
     1: {
@@ -540,6 +547,49 @@ MIGRATIONS = {
         "description": "Refactor cash drawer balance to derive from journal: add closing_balance, create cash_drawer_journal_entries join table, drop accumulator columns, drop cash_drawer_id from payment_transactions/events (DG-347 Phase 1)",
         "sql": "",
         "callable": _migrate_v95_cash_drawer_journal_balance,
+    },
+    96: {
+        "description": "Add counted_opening_balance INTEGER column to cash_drawer and backfill existing rows with counted_opening_balance = opening_balance (DG-354 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v96_cash_drawer_counted_opening_balance,
+    },
+    97: {
+        "description": "Create cash_drawer_breakdown_snapshot table + backfill snapshots for all already-closed drawers from linked 1101/2200 journal lines (DG-363 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v97_cash_drawer_breakdown_snapshot,
+    },
+    98: {
+        "description": "Add linked_order_refs TEXT column to reconciliation_sale_rows for 1-order-per-cake order list (DG-368 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v98_reconciliation_sale_rows_linked_order_refs,
+    },
+    99: {
+        "description": "Add reconciled INTEGER NOT NULL DEFAULT 0 column to cash_drawer for edit-lock on reconciled drawers (DG-379 Phase 4.1)",
+        "sql": "",
+        "callable": _migrate_v99_cash_drawer_reconciled_column,
+    },
+    100: {
+        "description": "Message templates table + seed 8 default built-in templates across 6 scenarios (DG-375 Phase 4.1)",
+        "sql": MESSAGE_TEMPLATES_SCHEMA,
+        "callable": _migrate_v100_message_templates,
+    },
+    101: {
+        "description": "Address library + customer_addresses junction tables (DG-385 Phase 1)",
+        "sql": ADDRESS_LIBRARY_SCHEMA,
+    },
+    102: {
+        "description": "Backfill address_library + customer_addresses from existing door-delivery orders with Google Maps links (DG-387 Phase 2)",
+        "sql": "",
+        "callable": _migrate_v102_backfill_address_library,
+    },
+    103: {
+        "description": "Add idx_orders_delivery_type index on orders(delivery_type) for door-delivery query performance (DG-388 Phase 5.6-c4 Mn-2)",
+        "sql": "",
+        "callable": _migrate_v103_orders_delivery_type_index,
+    },
+    104: {
+        "description": "payment_transaction_photos join table linking a single photo to an individual payment transaction (DG-410 Phase 1)",
+        "sql": PAYMENT_TRANSACTION_PHOTOS_SCHEMA,
     },
 }
 

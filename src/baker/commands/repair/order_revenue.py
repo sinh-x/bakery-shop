@@ -29,12 +29,6 @@ def _order_revenue_2100_debit(conn, order_id: int):
         return None, 0.0
     return int(row["entry_id"]), float(row["debit_2100"])
 
-def _order_ref(conn, order_id: int) -> str:
-    row = conn.execute(
-        "SELECT order_ref FROM orders WHERE id = ?", (order_id,)
-    ).fetchone()
-    return row["order_ref"] if row else f"#{order_id}"
-
 def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Evaluate and optionally repair one order's revenue entry.
 
@@ -142,7 +136,7 @@ def _delivered_orders_with_cogs(conn):
         FROM orders o
         WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
         ORDER BY o.id ASC
-        """,
+        """,  # nosec B608
         list(DELIVERED_STATUSES),
     ).fetchall()
     return [int(r["order_id"]) for r in rows]
@@ -312,14 +306,230 @@ def _print_cogs_report(results, *, dry_run):
         parts.append(f"khoá: {locked}")
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
 
+def _bus_orders_with_shipping_held(conn):
+    """Return ids of all delivered/completed bus orders with shipping_fee > 0.
+
+    Used by the shipping-release repair ``--all`` scan (FR2/FR8). Only bus
+    orders are considered — pickup/door orders never hold shipping in 2200.
+    Ordered by id ASC for deterministic output.
+    """
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT o.id AS order_id
+        FROM orders o
+        WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+          AND (o.delivery_type IS NULL OR o.delivery_type = 'bus')
+          AND COALESCE(o.shipping_fee, 0) > 0
+        ORDER BY o.id ASC
+        """,  # nosec B608
+        list(DELIVERED_STATUSES),
+    ).fetchall()
+    return [int(r["order_id"]) for r in rows]
+
+def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> dict:
+    """Evaluate and optionally repair one order's shipping release entry.
+
+    Mirrors :func:`_process_order` / :func:`_process_cogs_order` (per-order
+    repair with dry-run). Returns a result dict with keys: order_id,
+    order_ref, held_amount, release_amount, asset_code, action.
+
+    DG-366 Phase 4 — aligned with the new release logic in
+    :func:`_sync_bus_shipping_release_entry` (Phase 1): the release amount is
+    always the full ``shipping_fee`` (the previous ``min(shipping_fee,
+    held_in_2200)`` gate is removed) so the repair backfills missing entries
+    even when no payment has credited 2200. The actual write is delegated to
+    :func:`_sync_bus_shipping_release_entry` via the shared
+    :func:`run_journal_sync` wrapper (with ``source_type`` / ``source_id``),
+    mirroring the delivery/completion paths (FR6, NFR1) so failures are
+    observable via the ``journal_sync_failures`` counter and recorded in
+    ``journal_sync_failure_log``.
+
+    Actions:
+      - ``not-applicable``: non-bus order or ``shipping_fee <= 0``.
+      - ``skipped``: an existing ``order_shipping_release`` entry matches the
+        expected release amount within tolerance (idempotent, FR7).
+      - ``locked``: an existing entry is locked and stale (FR7 — do not modify).
+      - ``will-backfill``: dry-run preview of a missing entry (FR6).
+      - ``will-repair``: dry-run preview of a stale unlocked entry.
+      - ``backfilled``: missing entry created (CR is drawer-aware, FR3/FR4).
+      - ``repaired``: stale unlocked entry deleted and recreated.
+      - ``failed``: the delegated sync raised — reported, not raised to the
+        CLI caller (NFR1: repair never blocks on a single order).
+    """
+    order_ref = _order_ref(conn, order_id)
+    order_row = conn.execute(
+        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    if order_row is None:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "held_amount": 0.0,
+            "release_amount": 0.0,
+            "asset_code": "",
+            "action": "not-applicable",
+        }
+    delivery_type = order_row["delivery_type"] or "pickup"
+    shipping_fee = float(order_row["shipping_fee"] or 0)
+    if delivery_type != "bus" or shipping_fee <= 0:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "held_amount": 0.0,
+            "release_amount": 0.0,
+            "asset_code": "",
+            "action": "not-applicable",
+        }
+
+    held_in_2200 = _held_shipping_for_order(conn, order_id)
+    release_amount = shipping_fee
+
+    asset_code, drawer_id = _resolve_shipping_release_asset_account(
+        conn, order_id, order_ref
+    )
+
+    existing_id = _find_journal_entry(conn, "order_shipping_release", order_id)
+    if existing_id is not None:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS debit_2200
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = ?
+            """,
+            (existing_id, BUS_SHIPPING_HELD_CODE),
+        ).fetchone()
+        current_debit = float(row["debit_2200"]) if row else 0.0
+        if abs(current_debit - release_amount) <= MISMATCH_TOLERANCE:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": held_in_2200,
+                "release_amount": release_amount,
+                "asset_code": asset_code,
+                "action": "skipped",
+            }
+        if _is_locked(conn, existing_id):
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": held_in_2200,
+                "release_amount": release_amount,
+                "asset_code": asset_code,
+                "action": "locked",
+            }
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": held_in_2200,
+                "release_amount": release_amount,
+                "asset_code": asset_code,
+                "action": "will-repair",
+            }
+    else:
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": held_in_2200,
+                "release_amount": release_amount,
+                "asset_code": asset_code,
+                "action": "will-backfill",
+            }
+
+    # Delegate the write to the shared sync function (Phase 1 logic: always
+    # release the full shipping_fee) via the fire-and-forget runner with
+    # source_type/source_id, mirroring the delivery/completion paths (FR6,
+    # NFR1). The runner handles locked-stale reversal and unlocked-stale
+    # delete-and-recreate inside :func:`_sync_bus_shipping_release_entry`.
+    sync_status = run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=f"shipping release repair for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
+    )
+    action = "repaired" if existing_id is not None else "backfilled"
+    if sync_status != "ok":
+        action = "failed"
+    return {
+        "order_id": order_id,
+        "order_ref": order_ref,
+        "held_amount": held_in_2200,
+        "release_amount": release_amount,
+        "asset_code": asset_code,
+        "action": action,
+    }
+
+def _run_shipping_release_repair(conn, *, order_id, repair_all, dry_run):
+    """Drive the shipping-release repair for a single order or all bus orders.
+
+    Mirrors :func:`_run_cogs_repair`. When ``repair_all`` is True, scans every
+    delivered/completed bus order with ``shipping_fee > 0`` (FR2/FR8). Each
+    scanned order is reported with its action so the second idempotent run
+    reports every order as ``skipped`` (AC6).
+    """
+    if repair_all:
+        order_ids = _bus_orders_with_shipping_held(conn)
+    else:
+        order_ids = [order_id]
+    return [
+        _process_shipping_release_order(conn, oid, dry_run=dry_run)
+        for oid in order_ids
+    ]
+
+def _print_shipping_release_report(results, *, dry_run):
+    """Print the shipping-release repair report table and summary."""
+    click.echo("Sửa bút toán ship bus (shipping release)")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<20}{'Giữ 2200':>16}{'Trả ship':>16}{'TK đối ứng':<14}{'Hành động':<16}"
+    )
+    click.echo("-" * 82)
+    labels = {**_ACTION_LABELS, **SHIPPING_RELEASE_ACTION_LABELS}
+    for r in results:
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{_vn_amount(r['held_amount']):>16}"
+            f"{_vn_amount(r['release_amount']):>16}"
+            f"{r['asset_code']:<14}"
+            f"{labels.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 82)
+
+    backfilled = sum(1 for r in results if r["action"] == "backfilled")
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    skipped = sum(1 for r in results if r["action"] == "skipped")
+    not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
+    locked = sum(1 for r in results if r["action"] == "locked")
+    failed = sum(1 for r in results if r["action"] == "failed")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair + will_backfill}")
+    else:
+        parts.append(f"đã sửa: {repaired + backfilled}")
+    parts.append(f"bỏ qua: {skipped}")
+    parts.append(f"không áp dụng: {not_applicable}")
+    if locked:
+        parts.append(f"khoá: {locked}")
+    if failed:
+        parts.append(f"lỗi: {failed}")
+    click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
+
 @click.command("repair-order-revenue")
 @click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần sửa.")
 @click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã giao có bút toán lệch.")
 @click.option("--cogs", "repair_cogs", is_flag=True, default=False, help="Sửa/bổ sung bút toán giá vốn (COGS) thay vì doanh thu.")
+@click.option("--shipping-release", "repair_shipping_release", is_flag=True, default=False, help="Sửa/bổ sung bút toán trả ship bus (2200 → 1101/1102) thay vì doanh thu.")
 @click.option("--force", "force_cogs", is_flag=True, default=False, help="Tính lại toàn bộ cost_at_sale (không chỉ dòng = 0). Chỉ dùng với --cogs.")
 @click.option("--since", "since_date", type=str, default=None, help="Chỉ xử lý đơn có ngày giao từ DATE trở đi (YYYY-MM-DD). Chỉ dùng với --all.")
 @click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
-def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, since_date, dry_run):
+def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, repair_shipping_release, force_cogs, since_date, dry_run):
     """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế).
 
     Với ``--cogs``, sửa/bổ sung bút toán giá vốn (COGS) cho đơn đã giao:
@@ -327,6 +537,11 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, sinc
 
     Với ``--cogs --force``, tính lại toàn bộ cost_at_sale cho tất cả mặt hàng
     (kể cả những dòng đã có cost_at_sale > 0) dùng công thức unit_price × 30%.
+
+    Với ``--shipping-release``, sửa/bổ sung bút toán trả ship bus
+    (2200 → 1101/1102) cho đơn bus đã giao. Tài khoản đối ứng phụ thuộc
+    drawer đang mở: 1101 nếu giao trong phiên drawer hiện tại, 1102 nếu
+    không có drawer mở hoặc giao trước phiên đó.
     """
     if order_id is None and not repair_all:
         click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
@@ -340,6 +555,9 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, sinc
     if since_date and not repair_all:
         click.echo("--since chỉ dùng với --all.", err=True)
         raise SystemExit(1)
+    if repair_shipping_release and repair_cogs:
+        click.echo("Không thể dùng --shipping-release và --cogs cùng lúc.", err=True)
+        raise SystemExit(1)
 
     try:
         with get_db() as conn:
@@ -347,12 +565,16 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, sinc
                 results = _run_cogs_repair(
                     conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run, force=force_cogs
                 )
+            elif repair_shipping_release:
+                results = _run_shipping_release_repair(
+                    conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run
+                )
             elif repair_all:
                 sql = f"""
                     SELECT o.id AS order_id
                     FROM orders o
                     WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                """
+                """  # nosec B608
                 params = list(DELIVERED_STATUSES)
                 if since_date:
                     sql += " AND o.due_date >= ?"
@@ -382,6 +604,10 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, sinc
 
     if repair_cogs:
         _print_cogs_report(results, dry_run=dry_run)
+        return
+
+    if repair_shipping_release:
+        _print_shipping_release_report(results, dry_run=dry_run)
         return
 
     click.echo("Sửa bút toán doanh thu đơn hàng")

@@ -1,9 +1,9 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 
 import '../../../shared/utils/order_helpers.dart';
 import 'order_wizard.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
 export 'product_summary_card.dart' show ProductSummaryCard;
 
 class CustomerSummaryCard extends StatelessWidget {
@@ -40,14 +40,14 @@ class CustomerSummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             _buildRow(
               theme,
-              VN.customerName,
+              OrdersLabels.customerName,
               data.customerName.isNotEmpty ? data.customerName : '—',
             ),
             if (data.customerPhone.isNotEmpty)
-              _buildRow(theme, VN.customerPhone, data.customerPhone),
+              _buildRow(theme, OrdersLabels.customerPhone, data.customerPhone),
             _buildRow(
               theme,
-              VN.orderSource,
+              OrdersLabels.orderSource,
               source.isNotEmpty ? source : '—',
             ),
           ],
@@ -120,23 +120,23 @@ class DeliverySummaryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            _buildRow(theme, VN.deliveryType, deliveryTypeLabel(data.deliveryType)),
+            _buildRow(theme, OrdersLabels.deliveryType, deliveryTypeLabel(data.deliveryType)),
             if (data.needsAddress) ...[
               if (data.deliveryPhone.isNotEmpty)
                 _buildRow(theme, OrdersLabels.deliveryPhone, data.deliveryPhone),
               if (data.deliveryAddress.isNotEmpty)
-                _buildRow(theme, VN.deliveryAddress, data.deliveryAddress),
+                _buildRow(theme, OrdersLabels.deliveryAddress, data.deliveryAddress),
             ],
             if (data.deliveryType == 'bus' || data.deliveryType == 'door')
               _buildRow(
                 theme,
-                VN.shippingFee,
+                OrdersLabels.shippingFee,
                 data.shippingFee > 0
                     ? formatVND(data.shippingFee)
-                    : VN.shippingFree,
+                    : OrdersLabels.shippingFree,
               ),
-            if (data.notes.isNotEmpty) _buildRow(theme, VN.notes, data.notes),
-            _buildRow(theme, VN.dueDate, '$dateStr — $timeStr'),
+            if (data.notes.isNotEmpty) _buildRow(theme, OrdersLabels.notes, data.notes),
+            _buildRow(theme, OrdersLabels.dueDate, '$dateStr — $timeStr'),
           ],
         ),
       ),

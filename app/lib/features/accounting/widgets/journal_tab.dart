@@ -1,11 +1,14 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
-import '../../../providers/accounting_provider.dart';
+import '../../../data/providers/accounting_provider.dart';
 import '../../../shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import '../providers/journal_filter_bar_notifier.dart';
 import '../providers/journal_pagination_notifier.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'empty_state.dart';
 import 'filter_bar.dart';
 import 'journal_entry_card.dart';
@@ -22,37 +25,40 @@ class JournalTab extends ConsumerStatefulWidget {
 }
 
 class _JournalTabState extends ConsumerState<JournalTab> {
-  String? _since;
-  String? _until;
-  int? _accountId;
-  String? _sourceType;
-
-  JournalFilter get _filter => JournalFilter(
-        since: _since,
-        until: _until,
-        accountId: _accountId,
-        sourceType: _sourceType,
-        limit: _journalPageSize,
-        offset: 0,
-      );
+  JournalFilter get _filter {
+    final s = ref.watch(journalFilterBarProvider);
+    return JournalFilter(
+      since: s.since,
+      until: s.until,
+      accountId: s.accountId,
+      sourceType: s.sourceType,
+      limit: _journalPageSize,
+      offset: 0,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final filterState = ref.watch(journalFilterBarProvider);
     final paginationAsync =
         ref.watch(journalPaginationProvider(_filter));
 
     return Column(
       children: [
         FilterBar(
-          since: _since,
-          until: _until,
-          sourceType: _sourceType,
+          since: filterState.since,
+          until: filterState.until,
+          sourceType: filterState.sourceType,
           accountsAsync: ref.watch(accountsProvider),
-          accountId: _accountId,
-          onSinceChanged: (v) => setState(() => _since = v),
-          onUntilChanged: (v) => setState(() => _until = v),
-          onSourceTypeChanged: (v) => setState(() => _sourceType = v),
-          onAccountChanged: (v) => setState(() => _accountId = v),
+          accountId: filterState.accountId,
+          onSinceChanged: (v) =>
+              ref.read(journalFilterBarProvider.notifier).setSince(v),
+          onUntilChanged: (v) =>
+              ref.read(journalFilterBarProvider.notifier).setUntil(v),
+          onSourceTypeChanged: (v) =>
+              ref.read(journalFilterBarProvider.notifier).setSourceType(v),
+          onAccountChanged: (v) =>
+              ref.read(journalFilterBarProvider.notifier).setAccountId(v),
           onLock: _showLockDialog,
         ),
         Expanded(
@@ -62,12 +68,12 @@ class _JournalTabState extends ConsumerState<JournalTab> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(VN.apiError),
+                  const Text(SharedLabels.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: () =>
                         ref.invalidate(journalPaginationProvider(_filter)),
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
@@ -75,7 +81,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
             data: (state) {
               final loaded = state.loaded;
               if (loaded.isEmpty) {
-                return const AccountingEmptyState(text: VN.accountingNoEntries);
+                return const AccountingEmptyState(text: AccountingLabels.accountingNoEntries);
               }
               return Column(
                 children: [
@@ -93,7 +99,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                         vertical: 4,
                       ),
                       child: Text(
-                        VN.apiError,
+                        SharedLabels.apiError,
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
@@ -112,7 +118,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                                 .loadMore(),
                         icon: const Icon(Icons.expand_more),
                         label: Text(
-                          '${VN.accountingLoadMore} (${state.total - loaded.length})',
+                          '${AccountingLabels.accountingLoadMore} (${state.total - loaded.length})',
                         ),
                       ),
                     ),
@@ -160,7 +166,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
       if (mounted) {
         showTopSnackBar(
           context,
-          VN.accountingLockResult(count),
+          AccountingLabels.accountingLockResult(count),
           backgroundColor: Colors.green,
         );
         // CQ-1: the accumulated pagination state lives in the notifier.
@@ -170,7 +176,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, VN.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
       }
     }
   }

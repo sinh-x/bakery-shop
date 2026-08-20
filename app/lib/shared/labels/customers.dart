@@ -1,11 +1,8 @@
-export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
 /// Customer-domain labels (DG-206 Phase 2).
 ///
 /// New customer-facing copy lives here, not in the monolithic `VN` class
 /// (per §5 Label Organization). Consumers import this file and use
-/// `CustomersLabels.*` for new labels or `VN.*` for legacy labels re-exported
-/// above.
+/// `CustomersLabels.*` for customer-domain strings.
 class CustomersLabels {
   /// Suffix label for the per-year order count shown on customer cards.
   /// Displayed as "$count $label" e.g. "12 đơn/năm".
@@ -94,4 +91,82 @@ class CustomersLabels {
     }
     return '$memberCount khách — chạm để chọn khách giữ, rồi chọn khách gộp';
   }
+
+  // Batch merge UI (DG-369 Phase 3 — FR5/FR6/AC3/AC4/AC6).
+  // Extends the two-tap selection model to multi-select: first tap = primary
+  // (keep), subsequent taps = sources (merge-from). Tapping a selected member
+  // deselects it. When 2+ members are selected (1 primary + ≥1 source) the
+  // merge button appears. For 3+ selections the batch confirmation dialog is
+  // shown; for exactly 2 the existing single-pair dialog (with swap) is used
+  // so the two-tap flow keeps working for 2-member groups.
+  static const duplicateFinderBatchMergeDialogTitle =
+      'Xác nhận gộp hàng loạt';
+  static const duplicateFinderBatchMergeDialogBody =
+      'Tất cả đơn hàng và số điện thoại của các khách "gộp vào" sẽ được chuyển sang khách "giữ". Các khách "gộp vào" sẽ bị xóa. Hành động này không thể hoàn tác.';
+  static const duplicateFinderBatchMergeConfirm = 'Xác nhận gộp';
+  static const duplicateFinderBatchMergeCancel = 'Hủy';
+  static const duplicateFinderBatchMergeSourcesLabel = 'Các khách gộp vào';
+  static const duplicateFinderBatchMergePrimaryLabel =
+      duplicateFinderMergeIntoLabel;
+  static const duplicateFinderBatchMergeSuccess =
+      'Đã gộp hàng loạt khách hàng';
+  static const duplicateFinderBatchMergeFailed = 'Gộp hàng loạt thất bại';
+
+  // Duplicate-finder search/filter (DG-372 Phase 4.1 — FR3/NFR2).
+  // Client-side filter on the duplicate finder screen lets the admin search
+  // duplicate groups by customer name or phone. Diacritic-insensitive
+  // matching reuses `stripDiacritics` from `shared/utils/diacritics.dart`.
+  // `duplicateFinderSearchHint` is shown as the TextField hint text;
+  // `duplicateFinderSearchNoResults` is the empty state shown only when the
+  // filter query matches no groups (distinct from `duplicateFinderEmpty`,
+  // which is the "no duplicates exist" state).
+  static const duplicateFinderSearchHint =
+      'Tìm theo tên hoặc số điện thoại';
+  static const duplicateFinderSearchNoResults =
+      'Không tìm thấy nhóm trùng lặp nào';
+
+  // ── Phase 4.2 migration: relocated from VN ──
+
+  // Customer management (DG-182 Phase 3)
+  static const manageCustomers = 'Quản lý khách hàng';
+  static const addCustomer = 'Thêm khách hàng';
+  static const editCustomer = 'Sửa khách hàng';
+  static const customerListTitle = 'Khách hàng';
+  static const searchCustomers = 'Tìm theo tên hoặc số điện thoại...';
+  static const noCustomers = 'Chưa có khách hàng';
+  static const noCustomersMatch = 'Không tìm thấy khách phù hợp';
+  static const customerCreated = 'Đã thêm khách hàng';
+  static const customerUpdated = 'Đã cập nhật khách hàng';
+  static const customerDeleted = 'Đã xóa khách hàng';
+  static const deleteCustomer = 'Xóa khách hàng';
+  static const deleteCustomerConfirm =
+      'Xóa khách hàng này? Đơn hàng liên kết sẽ bỏ khách hàng.';
+  static const customerOrderHistory = 'Lịch sử đơn hàng';
+  static const customerNoOrders = 'Chưa có đơn hàng';
+  static const customerOrderCountSuffix = 'đơn';
+  static const customerSharedPhoneTitle = 'Cùng số điện thoại';
+  static const customerSharedPhoneHint = 'Khách hàng khác dùng chung số này:';
+  static const customerPhoneField = 'Số điện thoại (tùy chọn)';
+  static const customerNameField = 'Tên khách hàng';
+  static const openCustomerManagement = 'Khách hàng';
+  static const customerCreatedAt = 'Ngày tạo';
+
+  // Customer search in order flows (DG-182 Phase 4)
+  static const customerSearchHint = 'Tìm khách theo tên hoặc SĐT...';
+  static const customerSearchLinked = 'Đã chọn: {name}';
+  static const customerSearchChange = 'Đổi khách';
+  static const customerSearchClear = 'Bỏ chọn khách';
+  static const customerSearchNoMatch = 'Không tìm thấy khách';
+  static const customerSearchLoading = 'Đang tìm...';
+  static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
+  static const customerSearchRefineHint = 'Nhập thêm để thu hẹp kết quả';
+
+  // Customer form multi-phone (DG-205 Phase 5)
+  static const customerAddPhone = 'Thêm số điện thoại';
+  static const customerRemovePhone = 'Xóa số này';
+  static const customerPrimaryPhone = 'Số chính';
+  static const customerPhoneRequired = 'Cần ít nhất một số điện thoại';
+  static const customerPhonePrimaryRequired = 'Chọn một số làm số chính';
+  static const customerPhoneDuplicate = 'Số điện thoại bị trùng';
+
 }

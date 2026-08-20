@@ -1,10 +1,10 @@
 import 'package:bakery_app/data/api/paper_mode_service.dart';
 import 'package:bakery_app/features/settings/widgets/settings_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class _FakePaperModeService extends PaperModeService {
   _FakePaperModeService({
@@ -59,17 +59,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.paperModeLabel), findsOneWidget);
-      expect(find.text(VN.paperModeHelp), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeLabel), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeHelp), findsOneWidget);
       expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
 
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
       // The roll option is not the selected value, so it appears once.
-      expect(find.text(VN.paperModeRollOption), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeRollOption), findsOneWidget);
       // The selected label option appears both as the current value and as a
       // menu item; verify it is present.
-      expect(find.text(VN.paperModeLabelOption), findsWidgets);
+      expect(find.text(SharedLabels.paperModeLabelOption), findsWidgets);
     });
 
     testWidgets('shows error message when load fails', (tester) async {
@@ -84,7 +84,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.paperModeLoadError), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeLoadError), findsOneWidget);
       expect(find.byType(DropdownButtonFormField<String>), findsNothing);
     });
 
@@ -102,11 +102,11 @@ void main() {
 
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.paperModeRollOption).last);
+      await tester.tap(find.text(SharedLabels.paperModeRollOption).last);
       await tester.pumpAndSettle();
 
       expect(service.setCalls, ['roll']);
-      expect(find.text(VN.paperModeSaved), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeSaved), findsOneWidget);
     });
 
     testWidgets('shows failure snackbar when set mode fails', (tester) async {
@@ -124,11 +124,11 @@ void main() {
 
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.paperModeRollOption).last);
+      await tester.tap(find.text(SharedLabels.paperModeRollOption).last);
       await tester.pumpAndSettle();
 
       expect(service.setCalls, ['roll']);
-      expect(find.text(VN.paperModeSaveFailed), findsOneWidget);
+      expect(find.text(SharedLabels.paperModeSaveFailed), findsOneWidget);
     });
   });
 }

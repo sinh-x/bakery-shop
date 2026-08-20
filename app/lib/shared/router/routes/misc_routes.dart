@@ -13,6 +13,9 @@ import '../../../features/knowledge/knowledge_form_screen.dart';
 import '../../../features/knowledge/widgets/knowledge_edit_loader.dart';
 import '../../../features/pos/pos_checkout_screen.dart';
 import '../../../features/pos/pos_receipt_screen.dart';
+import '../../../features/settings/address_library_screen.dart';
+import '../../../features/settings/missing_links_screen.dart';
+import '../../../features/settings/pre_login_settings_screen.dart';
 import '../../../features/settings/settings_screen.dart';
 import '../../../features/stock/stock_reconciliation_screen.dart';
 import '../../../features/stock/stock_reconciliation_history_screen.dart';
@@ -67,10 +70,35 @@ List<RouteBase> miscRoutes() => [
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
       ),
-      // POS checkout — full-screen (outside shell)
+      // Address library management — full-screen (DG-385 Phase 5 /
+      // FR6/FR8/AC6). Reached from Settings → "Thư viện địa chỉ".
+      GoRoute(
+        path: '/settings/addresses',
+        builder: (context, state) => const AddressLibraryScreen(),
+      ),
+      // Missing-links screen — full-screen (DG-388 Phase 5 / FR5/AC6).
+      // Reached from Settings → "Địa chỉ thiếu liên kết" and from the
+      // Address Library screen. Full-screen route outside the shell,
+      // accessible to all authenticated users.
+      GoRoute(
+        path: '/settings/missing-links',
+        builder: (context, state) => const MissingLinksScreen(),
+      ),
+      // Pre-login technical settings (DG-367 Phase 1 / FR4 / AC5) —
+      // unauthenticated-accessible route for fixing the server URL before
+      // login. Exempted in auth_guard.dart `unauthenticatedRoutes`.
+      GoRoute(
+        path: '/settings/connection',
+        builder: (context, state) => const PreLoginSettingsScreen(),
+      ),
+      // POS checkout — full-screen (outside shell). The optional `fast`
+      // query parameter triggers the Giao ngay fast-path (DG-370 Phase 1):
+      // jumps directly to Stage 5 with walk-in defaults.
       GoRoute(
         path: '/pos/checkout',
-        builder: (context, state) => const PosCheckoutScreen(),
+        builder: (context, state) => PosCheckoutScreen(
+          fastPath: state.uri.queryParameters['fast'] == 'true',
+        ),
       ),
       // POS receipt — full-screen (outside shell)
       GoRoute(

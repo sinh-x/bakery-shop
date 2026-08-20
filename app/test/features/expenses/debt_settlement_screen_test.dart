@@ -1,7 +1,9 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/debt_settlement_screen.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,27 +50,29 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtSettlementScreen(
-            eventId: 7,
-            loadEvent: (id, ref) async => event,
+        ProviderScope(
+          child: MaterialApp(
+            home: DebtSettlementScreen(
+              eventId: 7,
+              loadEvent: (id, ref) async => event,
+            ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
       // Total debt 500000, settled 200000, remaining 300000.
-      expect(find.textContaining(VN.debtSettlementCreditor), findsOneWidget);
+      expect(find.textContaining(ExpensesLabels.debtSettlementCreditor), findsOneWidget);
       expect(
-        find.text('${VN.debtSettlementTotalDebt}: ${formatVND(500000)}'),
+        find.text('${ExpensesLabels.debtSettlementTotalDebt}: ${formatVND(500000)}'),
         findsOneWidget,
       );
       expect(
-        find.text('${VN.debtSettlementSettledSoFar}: ${formatVND(200000)}'),
+        find.text('${ExpensesLabels.debtSettlementSettledSoFar}: ${formatVND(200000)}'),
         findsOneWidget,
       );
       expect(
-        find.text('${VN.debtSettlementRemainingLabel}: ${formatVND(300000)}'),
+        find.text('${ExpensesLabels.debtSettlementRemainingLabel}: ${formatVND(300000)}'),
         findsOneWidget,
       );
     },
@@ -125,14 +129,14 @@ void main() {
       );
 
       // Tap submit.
-      await tester.tap(find.text(VN.debtSettlementSaveAction));
+      await tester.tap(find.text(ExpensesLabels.debtSettlementSaveAction));
       await tester.pumpAndSettle();
 
       expect(captured, isNotNull);
       expect(captured!['eventId'], 7);
       expect(captured!['amount'], 300000);
-      expect(captured!['paymentMethod'], VN.methodCash);
-      expect(captured!['paymentSource'], VN.paymentSourceDrawerCash);
+      expect(captured!['paymentMethod'], OrdersLabels.methodCash);
+      expect(captured!['paymentSource'], ExpensesLabels.paymentSourceDrawerCash);
       // settledBy is sourced from loggedByProvider (saved staff name).
       expect(captured!['settledBy'], 'Lan');
     },
@@ -179,10 +183,10 @@ void main() {
 
       // Remaining is 300000. Enter 400000 — should fail validation.
       await tester.enterText(find.byType(TextFormField).first, '400000');
-      await tester.tap(find.text(VN.debtSettlementSaveAction));
+      await tester.tap(find.text(ExpensesLabels.debtSettlementSaveAction));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtSettlementAmountExceedsRemaining), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtSettlementAmountExceedsRemaining), findsOneWidget);
       expect(submitted, isFalse);
     },
   );
@@ -216,10 +220,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(VN.debtSettlementSaveAction));
+      await tester.tap(find.text(ExpensesLabels.debtSettlementSaveAction));
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtSettlementAmountRequired), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtSettlementAmountRequired), findsOneWidget);
     },
   );
 
@@ -238,7 +242,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtSettlementFailure), findsOneWidget);
+      expect(find.text(ExpensesLabels.debtSettlementFailure), findsOneWidget);
     },
   );
 }

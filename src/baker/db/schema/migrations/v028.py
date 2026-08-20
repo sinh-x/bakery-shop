@@ -34,6 +34,6 @@ def _migrate_v28_cascade_and_reseed(conn):
     valid_keys = [v.split(":")[1] for _, v, _ in SEED_CATALOG_TAGS]
     placeholders = ",".join("?" * len(valid_keys))
     conn.execute(
-        f"DELETE FROM catalog_photo_tags WHERE tag_key NOT IN ({placeholders})",
+        f"DELETE FROM catalog_photo_tags WHERE tag_key NOT IN ({placeholders})",  # nosec B608
         valid_keys,
     )

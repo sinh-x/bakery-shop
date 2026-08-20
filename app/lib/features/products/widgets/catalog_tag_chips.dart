@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_tag.dart';
-import '../../../providers/catalog_provider.dart';
+import '../../../data/providers/catalog_provider.dart';
 
 /// Shared widget for rendering catalog tag chips in fixed category order
 /// (audience → occasion → style) with distinct colours per category.

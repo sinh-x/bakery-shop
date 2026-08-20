@@ -226,6 +226,90 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         ).save(conn)
 
 
+def reverse_order_stock_for_edit(conn, order_id: int, order_ref: str) -> None:
+    """Reverse stock deductions for an order edit so the new items can be re-deducted.
+
+    DG-342 Phase 4 (FR5, NFR2). Called by ``edit_order`` when the items list
+    changes on a confirmed+ order. Unlike :func:`restore_stock_for_order`
+    (which compensates by creating *new* lot items and is designed for
+    cancellation), this reverses the original consumption in-place:
+
+    1. Un-consume the FIFO inventory items consumed by each old ``sale``
+       movement (status → ``available``, restore ``stock_lots.remaining_qty``,
+       clear ``consumed_by_movement_id``).
+    2. Reverse ``negative_sale`` movements: restore the ``negative_balance``
+       deficit and reverse the matching ``negative_sale_cogs`` journal entry
+       (fire-and-forget — journal failures are logged, not raised).
+    3. Delete the old ``sale`` and ``negative_sale`` movements so
+       :func:`auto_decrement_stock` (called next by the handler) can re-deduct
+       for the new items without hitting its ``sale``-already-exists skip.
+
+    Idempotent (NFR2): if no ``sale`` movement exists for the order, returns
+    immediately — the caller's re-deduction is a no-op too. ``restore_sale``
+    movements are intentionally left untouched: they only appear after a
+    cancellation (terminal in the state machine), so a confirmed+ order
+    being edited never carries them. All mutations run within the caller's
+    ``get_db()`` transaction (NFR3).
+    """
+    sale_movements = conn.execute(
+        """SELECT id, product_id, price_chip_id, quantity
+           FROM stock_movements
+           WHERE reference_id = ? AND movement_type = 'sale'""",
+        (order_ref,),
+    ).fetchall()
+    if not sale_movements:
+        return
+
+    for movement in sale_movements:
+        movement_id = movement["id"]
+        consumed_items = conn.execute(
+            "SELECT id, lot_id FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement_id,),
+        ).fetchall()
+        for item in consumed_items:
+            conn.execute(
+                "UPDATE inventory_items "
+                "SET status = 'available', consumed_by_movement_id = NULL "
+                "WHERE id = ?",
+                (item["id"],),
+            )
+            conn.execute(
+                "UPDATE stock_lots SET remaining_qty = remaining_qty + 1 WHERE id = ?",
+                (item["lot_id"],),
+            )
+
+    negative_movements = conn.execute(
+        """SELECT id, product_id, price_chip_id, quantity
+           FROM stock_movements
+           WHERE reference_id = ? AND movement_type = 'negative_sale'""",
+        (order_ref,),
+    ).fetchall()
+    for movement in negative_movements:
+        deficit = -int(movement["quantity"])
+        if deficit > 0:
+            conn.execute(
+                "UPDATE negative_balance SET qty = qty + ?, updated_at = ? "
+                "WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?",
+                (deficit, now_utc(), movement["product_id"], movement["price_chip_id"]),
+            )
+        from baker.services.journal_sync._common import (
+            _find_journal_entry,
+            _reverse_journal_entry,
+        )
+
+        cogs_entry_id = _find_journal_entry(
+            conn, "negative_sale_cogs", movement["id"]
+        )
+        if cogs_entry_id is not None:
+            _reverse_journal_entry(conn, cogs_entry_id)
+
+    conn.execute(
+        "DELETE FROM stock_movements "
+        "WHERE reference_id = ? AND movement_type IN ('sale', 'negative_sale')",
+        (order_ref,),
+    )
+
+
 def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
     """Reverse stock deductions for a cancelled order.
 

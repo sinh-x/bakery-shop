@@ -4,9 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 Map<String, dynamic> _drawerJson({
   String status = 'open',
   String? closedAt,
+  int? countedOpeningBalance,
   int? countedAmount,
   int? discrepancy,
   int? closingBalance,
+  bool? reconciled,
   Map<String, dynamic>? journalEntry,
 }) {
   final json = <String, dynamic>{
@@ -15,10 +17,12 @@ Map<String, dynamic> _drawerJson({
     'closedAt': closedAt,
     'status': status,
     'openingBalance': 1000000,
+    'countedOpeningBalance': countedOpeningBalance,
     'countedAmount': countedAmount,
     'discrepancy': discrepancy,
     'expectedBalance': 1550000,
     'closingBalance': closingBalance,
+    'reconciled': ?reconciled,
     'journalEntry': journalEntry,
   };
   return json;
@@ -157,6 +161,131 @@ void main() {
 
       expect(drawer.openingBalance, 1000000);
       expect(drawer.expectedBalance, 1550000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: fromJson parses countedOpeningBalance when '
+        'present', () {
+      final drawer = CashDrawer.fromJson(_drawerJson(
+        countedOpeningBalance: 950000,
+      ));
+
+      expect(drawer.countedOpeningBalance, 950000);
+      // displayedOpeningBalance prefers the physical count (AC6).
+      expect(drawer.displayedOpeningBalance, 950000);
+      // The accounting opening balance is still available separately.
+      expect(drawer.openingBalance, 1000000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: countedOpeningBalance is null and '
+        'displayedOpeningBalance falls back to openingBalance for older '
+        'backends', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+
+      expect(drawer.countedOpeningBalance, isNull);
+      expect(drawer.displayedOpeningBalance, drawer.openingBalance);
+      expect(drawer.displayedOpeningBalance, 1000000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: toJson round-trips countedOpeningBalance', () {
+      final original = CashDrawer.fromJson(_drawerJson(
+        countedOpeningBalance: 950000,
+      ));
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+
+      expect(roundTripped.countedOpeningBalance, 950000);
+      expect(roundTripped.displayedOpeningBalance, 950000);
+    });
+
+    test(
+        'DG-354 Phase 4 FR7: toJson includes countedOpeningBalance (null '
+        'when unset, value when set)', () {
+      final without = CashDrawer.fromJson(_drawerJson()).toJson();
+      expect(without.containsKey('countedOpeningBalance'), isTrue);
+      expect(without['countedOpeningBalance'], isNull);
+
+      final withCount = CashDrawer.fromJson(
+        _drawerJson(countedOpeningBalance: 950000),
+      ).toJson();
+      expect(withCount['countedOpeningBalance'], 950000);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson parses breakdownSnapshot rows when '
+        'present', () {
+      final drawer = CashDrawer.fromJson({
+        ..._drawerJson(),
+        'breakdownSnapshot': [
+          {'category': 'sale', 'totalAmount': 200000.0, 'count': 3},
+          {'category': 'refund', 'totalAmount': -25000.0, 'count': 1},
+          {'category': 'busShipping', 'totalAmount': 30000.0, 'count': 1},
+        ],
+      });
+
+      expect(drawer.breakdownSnapshot.length, 3);
+      expect(drawer.breakdownSnapshot.first.category, 'sale');
+      expect(drawer.breakdownSnapshot.first.totalAmount, 200000);
+      expect(drawer.breakdownSnapshot.first.count, 3);
+      expect(
+          drawer.breakdownSnapshot
+              .firstWhere((r) => r.category == 'refund')
+              .totalAmount,
+          -25000);
+      expect(
+          drawer.breakdownSnapshot
+              .firstWhere((r) => r.category == 'busShipping')
+              .count,
+          1);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson defaults breakdownSnapshot to empty '
+        'when omitted (older responses / open drawer)', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+      expect(drawer.breakdownSnapshot, isEmpty);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: fromJson tolerates a non-list '
+        'breakdownSnapshot as empty', () {
+      final drawer = CashDrawer.fromJson({..._drawerJson(), 'breakdownSnapshot': null});
+      expect(drawer.breakdownSnapshot, isEmpty);
+    });
+
+    test(
+        'DG-363 Phase 4 / FR7: toJson round-trips breakdownSnapshot', () {
+      final original = CashDrawer.fromJson({
+        ..._drawerJson(),
+        'breakdownSnapshot': [
+          {'category': 'sale', 'totalAmount': 100.0, 'count': 1},
+        ],
+      });
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+      expect(roundTripped.breakdownSnapshot.length, 1);
+      expect(roundTripped.breakdownSnapshot.first.category, 'sale');
+      expect(roundTripped.breakdownSnapshot.first.totalAmount, 100);
+      expect(roundTripped.breakdownSnapshot.first.count, 1);
+    });
+
+    test(
+        'DG-379 Phase 4.1 / FR7: fromJson parses reconciled when present', () {
+      final drawer = CashDrawer.fromJson(_drawerJson(reconciled: true));
+      expect(drawer.reconciled, isTrue);
+    });
+
+    test(
+        'DG-379 Phase 4.1 / FR7: fromJson defaults reconciled to false when '
+        'omitted (older responses)', () {
+      final drawer = CashDrawer.fromJson(_drawerJson());
+      expect(drawer.reconciled, isFalse);
+    });
+
+    test('DG-379 Phase 4.1 / FR7: toJson round-trips reconciled', () {
+      final original = CashDrawer.fromJson(_drawerJson(reconciled: true));
+      final roundTripped = CashDrawer.fromJson(original.toJson());
+      expect(roundTripped.reconciled, isTrue);
     });
   });
 

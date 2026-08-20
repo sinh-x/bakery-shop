@@ -1,11 +1,9 @@
-import 'dart:io';
-
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/api_client.dart';
@@ -14,10 +12,12 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/xfile_utils.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/knowledge_share_entry_notifier.dart';
 import 'widgets/knowledge_photo_gallery.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class KnowledgeDetailScreen extends ConsumerWidget {
   const KnowledgeDetailScreen({super.key, required this.entryId});
 
@@ -38,12 +38,12 @@ class KnowledgeDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () =>
                     ref.invalidate(knowledgeEntryDetailProvider(entryId)),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -53,11 +53,11 @@ class KnowledgeDetailScreen extends ConsumerWidget {
         if (entry == null) {
           return Scaffold(
             appBar: AppBar(actions: const [AppBarOverflowMenu()]),
-            body: const Center(child: Text(VN.apiError)),
+            body: const Center(child: Text(SharedLabels.apiError)),
           );
         }
 
-        final typeLabel = VN.knowledgeTypes[entry.type] ?? entry.type;
+        final typeLabel = SharedLabels.knowledgeTypes[entry.type] ?? entry.type;
         final theme = Theme.of(context);
 
         return Scaffold(
@@ -67,7 +67,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               _ShareEntryButton(entry: entry),
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
-                tooltip: VN.editKnowledge,
+                tooltip: SharedLabels.editKnowledge,
                 onPressed: () => context.push('/knowledge/${entry.id}/edit'),
               ),
               AppBarOverflowMenu(
@@ -76,18 +76,18 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text(VN.confirmDeleteKnowledge),
+                        title: const Text(SharedLabels.confirmDeleteKnowledge),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.of(ctx).pop(false),
-                            child: const Text(VN.cancel),
+                            child: const Text(SharedLabels.cancel),
                           ),
                           FilledButton(
                             onPressed: () => Navigator.of(ctx).pop(true),
                             style: FilledButton.styleFrom(
                               backgroundColor: theme.colorScheme.error,
                             ),
-                            child: const Text(VN.deleteKnowledge),
+                            child: const Text(SharedLabels.deleteKnowledge),
                           ),
                         ],
                       ),
@@ -97,7 +97,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                           .read(knowledgeEntriesProvider.notifier)
                           .deleteEntry(entry.id);
                       if (context.mounted) {
-                        showTopSnackBar(context, VN.knowledgeDeleted);
+                        showTopSnackBar(context, SharedLabels.knowledgeDeleted);
                         context.pop();
                       }
                     }
@@ -114,7 +114,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          VN.deleteKnowledge,
+                          SharedLabels.deleteKnowledge,
                           style: TextStyle(color: theme.colorScheme.error),
                         ),
                       ],
@@ -236,13 +236,12 @@ class _ShareEntryButton extends ConsumerStatefulWidget {
 }
 
 class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
-  bool _sharing = false;
-
   static const _parallelism = 4;
 
   Future<void> _share() async {
-    if (_sharing) return;
-    setState(() => _sharing = true);
+    final sharing = ref.read(knowledgeShareEntryProvider).sharing;
+    if (sharing) return;
+    ref.read(knowledgeShareEntryProvider.notifier).setSharing(true);
     final entry = widget.entry;
     final text = entry.content.isNotEmpty
         ? '${entry.title}\n\n${entry.content}'
@@ -255,17 +254,18 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
         return;
       }
 
-      final tmpDir = await getTemporaryDirectory();
       final files = <XFile>[];
       for (final photo in entry.photos) {
         final bytes = await _fetchPhotoBytes(dio, baseUrl, photo);
         if (bytes == null) continue;
         final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
-        final tmpFile = File(
-          '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
+        final fileName = _knowledgePhotoFileName(photo, metadata);
+        final xfile = await createXFileFromBytes(
+          bytes,
+          fileName: fileName,
+          mimeType: metadata.mimeType,
         );
-        await tmpFile.writeAsBytes(bytes);
-        files.add(XFile(tmpFile.path, mimeType: metadata.mimeType));
+        files.add(xfile);
       }
 
       if (files.isEmpty) {
@@ -285,10 +285,12 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
           await _downloadPhotosFallback(text, entry.photos, baseUrl);
         }
       } else {
-        showTopSnackBar(context, VN.khongTheChiaSe);
+        showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
       }
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) {
+        ref.read(knowledgeShareEntryProvider.notifier).setSharing(false);
+      }
     }
   }
 
@@ -321,9 +323,9 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     final copied = await WebShareFallbackHelpers.copyText(text);
     if (!mounted) return;
     if (copied) {
-      showTopSnackBar(context, VN.daSaoChepNoiDung);
+      showTopSnackBar(context, ProductsLabels.daSaoChepNoiDung);
     } else {
-      showTopSnackBar(context, VN.saoChepNoiDungThatBai);
+      showTopSnackBar(context, ProductsLabels.saoChepNoiDungThatBai);
     }
   }
 
@@ -345,7 +347,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     if (mounted) {
       showTopSnackBar(
         context,
-        VN.taiNAnh.replaceFirst(
+        ProductsLabels.taiNAnh.replaceFirst(
           '{count}',
           '${fallbackResult.successCount}/${photos.length}',
         ),
@@ -428,16 +430,17 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
 
   @override
   Widget build(BuildContext context) {
+    final sharing = ref.watch(knowledgeShareEntryProvider).sharing;
     return IconButton(
-      icon: _sharing
+      icon: sharing
           ? const SizedBox(
               width: 20,
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.share),
-      tooltip: VN.share,
-      onPressed: _sharing ? null : _share,
+      tooltip: SharedLabels.share,
+      onPressed: sharing ? null : _share,
     );
   }
 }

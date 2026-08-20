@@ -1,4 +1,4 @@
-import 'package:bakery_app/features/auth/auth_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
 import 'package:bakery_app/shared/router/auth_guard.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +99,56 @@ void main() {
         state,
         AuthStatus.unknown,
         null,
+        forcePasswordChange: false,
+      );
+      expect(result, isNull);
+    });
+  });
+
+  group('authRedirect pre-login settings (DG-367 Phase 1 / FR4 / AC5)', () {
+    test('unauthenticated on /settings/connection is allowed (no redirect)',
+        () {
+      final state = _stateFor('/settings/connection');
+      final result = authRedirect(
+        state,
+        AuthStatus.unauthenticated,
+        null,
+        forcePasswordChange: false,
+      );
+      expect(result, isNull);
+    });
+
+    test('unauthenticated on /login still allowed', () {
+      final state = _stateFor('/login');
+      final result = authRedirect(
+        state,
+        AuthStatus.unauthenticated,
+        null,
+        forcePasswordChange: false,
+      );
+      expect(result, isNull);
+    });
+
+    test('unauthenticated on other route still redirects to /login', () {
+      final state = _stateFor('/orders');
+      final result = authRedirect(
+        state,
+        AuthStatus.unauthenticated,
+        null,
+        forcePasswordChange: false,
+      );
+      expect(result, '/login');
+    });
+
+    test('authenticated on /settings/connection passes through (not /login)',
+        () {
+      // An authenticated user opening the pre-login settings route should not
+      // be bounced — it is a valid route, just not the /login redirect.
+      final state = _stateFor('/settings/connection');
+      final result = authRedirect(
+        state,
+        AuthStatus.authenticated,
+        'admin',
         forcePasswordChange: false,
       );
       expect(result, isNull);

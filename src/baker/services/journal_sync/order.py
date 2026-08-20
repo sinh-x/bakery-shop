@@ -18,6 +18,7 @@ from baker.db.schema import (
     _account_id_by_code,
     _insert_journal_entry,
 )
+from baker.models.cash_drawer import CashDrawer
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync._common import (
     _active_drawer_id,
@@ -26,10 +27,15 @@ from baker.services.journal_sync._common import (
     _is_locked,
     _resolve_delivered_timestamp,
     _reverse_journal_entry,
+    _table_exists,
     run_journal_sync,
 )
+
+# Owner's Cash (sub-account of 1100) — used by the shipping-release sync and
+# repair when no open drawer covers the order's delivery timestamp (FR4).
+# Mirrors the 1102 routing used elsewhere (api/cash_drawer.py, repair/_common).
+OWNER_CASH_CODE = "1102"
 from baker.services.journal_sync.payment import (
-    _held_shipping_for_order,
     _held_tien_rut_for_order,
     _resolve_transaction_asset_code,
 )
@@ -387,7 +393,7 @@ def _resolve_tien_rut_return_asset_account(conn, order_id: int) -> int:
         WHERE pt.order_id = ? AND pt.type = 'tien_rut'
           {invalidation}
         ORDER BY pt.id ASC LIMIT 1
-        """,
+        """,  # nosec B608
         (order_id,),
     ).fetchone()
     method = row["method"] if row else "cash"
@@ -456,6 +462,29 @@ def _reconcile_tien_rut_return_entry(
         drawer_id=_active_drawer_id(conn),
     )
 
+def _resolve_shipping_release_asset_account(
+    conn, order_id: int, order_ref: str
+) -> tuple[str, int | None]:
+    """Return ``(asset_code, drawer_id)`` for the shipping release credit.
+
+    Drawer-aware account selection (FR3/FR4), shared by the live sync
+    (:func:`_sync_bus_shipping_release_entry`) and the repair command
+    (:func:`baker.commands.repair.order_revenue._process_shipping_release_order`)
+    so both code paths produce identical journal entries.
+
+      - If an open drawer exists and the order's delivery timestamp is at or
+        after the drawer's ``opened_at``, credit 1101 (Cash in Drawer) and
+        link the entry to that drawer.
+      - Otherwise (no open drawer, or delivery predates the open drawer),
+        credit 1102 (Owner's Cash) with no drawer link.
+    """
+    drawer = CashDrawer.get_active(conn) if _table_exists(conn, "cash_drawer") else None
+    if drawer is not None:
+        delivery_ts = _resolve_delivered_timestamp(conn, order_id, order_ref)
+        if delivery_ts is not None and delivery_ts >= drawer.opened_at:
+            return PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1101"), drawer.id
+    return OWNER_CASH_CODE, None
+
 def _sync_bus_shipping_release_entry(
     conn, order_id: int, order_ref: str
 ) -> None:
@@ -467,8 +496,12 @@ def _sync_bus_shipping_release_entry(
 
     Behaviour:
       - Non-bus orders or ``shipping_fee <= 0``: no-op.
-      - The release amount is ``min(shipping_fee, held_in_2200)`` so the
-        entry never releases more than was actually held.
+      - The release amount is always the full ``shipping_fee`` (DG-366 Phase 1,
+        FR1): the previous ``min(shipping_fee, held_in_2200)`` gate is removed
+        so the release is created even when no payment has been recorded yet.
+        The 2200 account may temporarily go negative until a payment credits
+        it; this is the intended accounting (shop paid the driver from the
+        drawer, the customer owes the shipping).
       - Idempotent: when an existing ``order_shipping_release`` entry matches
         the expected release amount (within tolerance), it is left untouched.
       - Lock semantics (FR6): a locked stale entry is *reversed* then a
@@ -486,13 +519,12 @@ def _sync_bus_shipping_release_entry(
     if delivery_type != "bus" or shipping_fee <= 0:
         return
 
-    held_in_2200 = _held_shipping_for_order(conn, order_id)
-    release_amount = min(shipping_fee, held_in_2200)
-    if release_amount <= 0:
-        return
+    release_amount = shipping_fee
 
     bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
-    asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
+    asset_code, drawer_id = _resolve_shipping_release_asset_account(
+        conn, order_id, order_ref
+    )
     asset_account_id = _account_id_by_code(conn, asset_code)
     description = f"Shipping release: {order_ref}"
     order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
@@ -530,7 +562,7 @@ def _sync_bus_shipping_release_entry(
             (asset_account_id, 0.0, release_amount, "Tiền ship bus đã trả"),
         ],
         transaction_date=order_transaction_date,
-        drawer_id=_active_drawer_id(conn),
+        drawer_id=drawer_id,
     )
 
 def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
@@ -562,16 +594,31 @@ def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
     an order that already has an ``order_cogs`` entry (e.g. from a prior
     delivery sync on the delivered→completed path) is left untouched (FR2).
 
-    Bus-shipping release entries remain delivery-time entries created by
-    :func:`_sync_delivered_order_journal` and are not touched here; orders
-    that bypassed "delivered" still rely on the existing repair commands for
-    that release.
+    Bus-shipping release entries (2200 → 1100) are created here via
+    :func:`_sync_bus_shipping_release_entry` so orders that bypassed
+    "delivered" still get the ``order_shipping_release`` entry at completion
+    (DG-356). The call is idempotent and a no-op for non-bus orders or
+    ``shipping_fee <= 0``.
 
     Fire-and-forget error handling is provided by the caller wrapping this in
     :func:`run_journal_sync` with ``source_type="order"`` (FR5) — a COGS sync
     failure never blocks the completion transition (FR3).
     """
     _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+
+    # Release the held bus shipping (2200 → 1100) at completion for orders
+    # that bypassed "delivered" (DG-356). Wrapped in the shared non-blocking
+    # wrapper so accounting failures never block the primary business
+    # operation (NFR1) and are observable via the ``journal_sync_failures``
+    # counter — mirrors the delivery-time pattern at lines 599-603.
+    run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
+    )
+
     _sync_order_cogs_entry(conn, order_id, order_ref)
     _sync_order_gift_cogs_entry(conn, order_id, order_ref)
 
@@ -600,6 +647,8 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
         _sync_bus_shipping_release_entry,
         conn, order_id, order_ref,
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+        source_type="order_shipping_release",
+        source_id=order_id,
     )
 
     _sync_order_cogs_entry(conn, order_id, order_ref)

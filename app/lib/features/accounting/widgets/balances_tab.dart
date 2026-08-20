@@ -1,9 +1,11 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../providers/accounting_provider.dart';
+import '../../../data/providers/accounting_provider.dart';
 import '../../../shared/utils/account_type_helper.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../data/models/account_balance.dart';
 import 'empty_state.dart';
 
@@ -22,18 +24,18 @@ class BalancesTab extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(VN.apiError),
+              const Text(SharedLabels.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref.invalidate(accountBalancesProvider),
-                child: const Text(VN.retry),
+                child: const Text(SharedLabels.retry),
               ),
             ],
           ),
         ),
         data: (balances) {
           if (balances.isEmpty) {
-            return const AccountingEmptyState(text: VN.accountingNoBalances);
+            return const AccountingEmptyState(text: AccountingLabels.accountingNoBalances);
           }
           final grouped = _groupByType(balances);
           return ListView.builder(

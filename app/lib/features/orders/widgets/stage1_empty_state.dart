@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'stage1_responsive_content.dart';
-
 /// Empty-state widget shown by Stage 1 when no products have been selected.
 ///
 /// Displays a prompt and a (+) button. The (+) button is intentionally not
@@ -48,7 +47,7 @@ class Stage1EmptyState extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onAddProduct,
                 icon: const Icon(Icons.add),
-                label: const Text(VN.addProduct),
+                label: const Text(OrdersLabels.addProduct),
               ),
             ],
           ),

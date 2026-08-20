@@ -1,4 +1,5 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects. DG-259 c6-fix (2026-07-19): staff binding section extracted, file now 333 lines.
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,14 +7,19 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../data/api/api_client.dart';
-import '../../features/auth/auth_provider.dart';
-import '../../providers/events_provider.dart';
+import '../../shared/providers/auth_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
+import 'package:bakery_app/shared/labels/address_labels.dart';
 import 'package:bakery_app/shared/labels/auth.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/templates.dart';
 import 'widgets/settings_sections.dart';
 import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
-
+import 'providers/settings_screen_notifier.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -27,15 +33,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   // Server URL section
   late TextEditingController _urlController;
-  bool _testing = false;
-  ConnectionResult? _testResult;
 
   // Staff section
   late TextEditingController _manualNameCtrl;
 
-  // Version info
-  String _appVersion = '';
-  String _serverVersion = VN.serverVersionLoading;
+  late final bool _isAdmin;
 
   @override
   void initState() {
@@ -47,8 +49,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
   }
-
-  late final bool _isAdmin;
 
   @override
   void didChangeDependencies() {
@@ -72,21 +72,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     try {
       final info = await PackageInfo.fromPlatform();
       if (mounted) {
-        setState(() {
-          _appVersion = '${info.version}+${info.buildNumber}';
-        });
+        ref
+            .read(settingsScreenProvider.notifier)
+            .setAppVersion('${info.version}+${info.buildNumber}');
       }
     } catch (_) {
-      if (mounted) setState(() => _appVersion = '—');
+      if (mounted) {
+        ref.read(settingsScreenProvider.notifier).setAppVersion('—');
+      }
     }
   }
 
   Future<void> _fetchServerVersion(String baseUrl) async {
+    final notifier = ref.read(settingsScreenProvider.notifier);
     if (baseUrl.isEmpty) {
-      setState(() => _serverVersion = VN.serverVersionError);
+      notifier.setServerVersion(SharedLabels.serverVersionError);
       return;
     }
-    setState(() => _serverVersion = VN.serverVersionLoading);
+    notifier.setServerVersion(SharedLabels.serverVersionLoading);
     try {
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 5),
@@ -95,12 +98,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final response = await dio.get('$baseUrl/api/health');
       if (mounted) {
         final data = response.data as Map<String, dynamic>?;
-        setState(() {
-          _serverVersion = (data?['version'] as String?) ?? '—';
-        });
+        notifier.setServerVersion((data?['version'] as String?) ?? '—');
       }
     } catch (_) {
-      if (mounted) setState(() => _serverVersion = VN.serverVersionError);
+      if (mounted) {
+        notifier.setServerVersion(SharedLabels.serverVersionError);
+      }
     }
   }
 
@@ -108,10 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
 
-    setState(() {
-      _testing = true;
-      _testResult = null;
-    });
+    ref.read(settingsScreenProvider.notifier).setTesting(true);
 
     try {
       final dio = Dio(BaseOptions(
@@ -121,19 +121,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final response = await dio.get('$url/api/health');
       if (mounted) {
         final data = response.data as Map<String, dynamic>?;
-        setState(() {
-          _testing = false;
-          _testResult = ConnectionResult(success: response.statusCode == 200);
-          // Also update server version when test succeeds
-          _serverVersion = (data?['version'] as String?) ?? '—';
-        });
+        ref.read(settingsScreenProvider.notifier).setTestResult(
+              ConnectionResult(success: response.statusCode == 200),
+              serverVersion: (data?['version'] as String?) ?? '—',
+            );
       }
     } catch (_) {
       if (mounted) {
-        setState(() {
-          _testing = false;
-          _testResult = const ConnectionResult(success: false);
-        });
+        ref.read(settingsScreenProvider.notifier).setTestResult(
+              const ConnectionResult(success: false),
+            );
       }
     }
   }
@@ -141,12 +138,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _saveUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      showTopSnackBar(context, VN.urlEmpty);
+      showTopSnackBar(context, SharedLabels.urlEmpty);
       return;
     }
     await ref.read(apiBaseUrlProvider.notifier).setUrl(url);
     if (mounted) {
-      showTopSnackBar(context, VN.urlSaved);
+      showTopSnackBar(context, SharedLabels.urlSaved);
       _fetchServerVersion(url);
     }
   }
@@ -155,6 +152,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Widget build(BuildContext context) {
     final currentUrl = ref.watch(apiBaseUrlProvider);
     final auth = ref.watch(authProvider);
+    final screenState = ref.watch(settingsScreenProvider);
+    final testing = screenState.testing;
+    final testResult = screenState.testResult;
+    final appVersion = screenState.appVersion;
+    final serverVersion = screenState.serverVersion;
 
     // Sync URL controller on first build
     if (_urlController.text.isEmpty && currentUrl.isNotEmpty) {
@@ -167,20 +169,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.settings),
+        title: const Text(SharedLabels.settings),
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(icon: Icon(Icons.person), text: VN.generalSettings),
+            const Tab(icon: Icon(Icons.person), text: SharedLabels.generalSettings),
             if (_isAdmin)
               const Tab(
                 icon: Icon(Icons.settings),
-                text: VN.technicalSettings,
+                text: SharedLabels.technicalSettings,
               ),
-            const Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
+            const Tab(icon: Icon(Icons.card_giftcard), text: OrdersLabels.extrasSettings),
             const Tab(
               icon: Icon(Icons.label_outline),
-              text: VN.catalogTagEditor,
+              text: ProductsLabels.catalogTagEditor,
             ),
           ],
         ),
@@ -203,6 +205,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   onTap: () => context.push('/change-password'),
                 ),
                 const SizedBox(height: 16),
+                // Message template management (DG-375 Phase 4 / FR10).
+                ListTile(
+                  leading: const Icon(Icons.message_outlined),
+                  title: const Text(TemplatesLabels.managementTitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/templates/manage'),
+                ),
+                const SizedBox(height: 16),
+                // Address library management (DG-385 Phase 5 / FR6/FR8/AC6).
+                ListTile(
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: const Text(AddressLabels.libraryNavEntry),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/addresses'),
+                ),
+                const SizedBox(height: 16),
+                // Missing-links screen (DG-388 Phase 5 / FR5/AC6).
+                // Full-screen route outside the shell, reachable from
+                // Settings and from the Address Library screen.
+                ListTile(
+                  leading: const Icon(Icons.link_off),
+                  title: const Text(AddressLabels.missingLinksNavEntry),
+                  subtitle: const Text(AddressLabels.missingLinksNavSubtitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/missing-links'),
+                ),
+                const SizedBox(height: 16),
                 // Logout (DG-319 Phase 6 / FR6 / AC6).
                 ListTile(
                   leading: const Icon(Icons.logout, color: Colors.red),
@@ -221,24 +250,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               children: [
                 // App version
                 InfoRow(
-                  label: VN.appVersion,
-                  value: _appVersion.isEmpty ? '...' : _appVersion,
+                  label: SharedLabels.appVersion,
+                  value: appVersion.isEmpty ? '...' : appVersion,
                 ),
                 const SizedBox(height: 8),
                 // Server version
-                InfoRow(label: VN.serverVersion, value: _serverVersion),
+                InfoRow(label: SharedLabels.serverVersion, value: serverVersion),
                 const SizedBox(height: 16),
                 // Printer paper mode (DG-183 Phase 2)
                 const PaperModeSection(),
                 const SizedBox(height: 16),
                 // Server URL
                 Text(
-                  VN.apiUrlLabel,
+                  SharedLabels.apiUrlLabel,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  VN.apiUrlHelp,
+                  SharedLabels.apiUrlHelp,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -248,15 +277,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 TextField(
                   controller: _urlController,
                   decoration: const InputDecoration(
-                    hintText: VN.apiUrlHint,
+                    hintText: SharedLabels.apiUrlHint,
                     prefixIcon: Icon(Icons.dns),
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.url,
                   autocorrect: false,
                   onChanged: (_) {
-                    if (_testResult != null) {
-                      setState(() => _testResult = null);
+                    if (testResult != null) {
+                      ref
+                          .read(settingsScreenProvider.notifier)
+                          .clearTestResult();
                     }
                   },
                 ),
@@ -265,15 +296,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _testing ? null : _testConnection,
-                        icon: _testing
+                        onPressed: testing ? null : _testConnection,
+                        icon: testing
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.wifi_find),
-                        label: Text(_testing ? VN.testing : VN.testConnection),
+                        label: Text(testing ? SharedLabels.testing : SharedLabels.testConnection),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -281,15 +312,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       child: FilledButton.icon(
                         onPressed: _saveUrl,
                         icon: const Icon(Icons.save),
-                        label: const Text(VN.save),
+                        label: const Text(SharedLabels.save),
                       ),
                     ),
                   ],
                 ),
-                if (_testResult != null) ...[
+                if (testResult != null) ...[
                   const SizedBox(height: 16),
                   Card(
-                    color: _testResult!.success
+                    color: testResult.success
                         ? Colors.green.shade50
                         : Colors.red.shade50,
                     child: Padding(
@@ -297,20 +328,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       child: Row(
                         children: [
                           Icon(
-                            _testResult!.success
+                            testResult.success
                                 ? Icons.check_circle
                                 : Icons.error,
-                            color: _testResult!.success
+                            color: testResult.success
                                 ? Colors.green
                                 : Colors.red,
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            _testResult!.success
-                                ? VN.connectionSuccess
-                                : VN.connectionFailed,
+                            testResult.success
+                                ? SharedLabels.connectionSuccess
+                                : SharedLabels.connectionFailed,
                             style: TextStyle(
-                              color: _testResult!.success
+                              color: testResult.success
                                   ? Colors.green.shade800
                                   : Colors.red.shade800,
                               fontWeight: FontWeight.w500,
@@ -325,7 +356,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 // Audit log entry (admin-only — this tab is admin-gated).
                 ListTile(
                   leading: const Icon(Icons.history_edu),
-                  title: const Text(VN.openAuditLog),
+                  title: const Text(SharedLabels.openAuditLog),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/audit-log'),
                 ),

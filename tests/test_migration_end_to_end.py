@@ -88,6 +88,14 @@ _EXPECTED_TABLES = {
     "cash_drawer",
     # v95
     "cash_drawer_journal_entries",
+    # v97
+    "cash_drawer_breakdown_snapshot",
+    # v100
+    "message_templates",
+    # v101
+    "address_library", "customer_addresses",
+    # v104
+    "payment_transaction_photos",
 }
 
 # Key composite / unique indexes that must exist after the full chain.
@@ -270,6 +278,24 @@ def test_end_to_end_migration_seeds_users_from_staff():
         ensure_schema(conn)
         user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         assert user_count >= 5, f"expected >=5 seeded users, got {user_count}"
+
+
+def test_end_to_end_migration_seeds_message_templates():
+    """v100 seeds 8 default message templates across 6 scenarios (DG-375 FR9/AC9)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM message_templates WHERE is_system = 1"
+        ).fetchone()[0]
+        assert count >= 8, f"expected >=8 seeded system templates, got {count}"
+        scenarios = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT scenario FROM message_templates WHERE is_system = 1"
+            ).fetchall()
+        }
+        expected = {"ask_info", "confirm_order", "final_message", "follow_up", "status_update", "payment_request"}
+        assert expected.issubset(scenarios), f"missing seeded scenarios: {expected - scenarios}"
 
 
 def test_end_to_end_migration_double_entry_integrity():

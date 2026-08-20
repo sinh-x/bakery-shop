@@ -1,12 +1,14 @@
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
-import '../../../providers/catalog_provider.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import '../../../data/providers/catalog_provider.dart';
+import '../providers/catalog_tag_edit_notifier.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Shared bottom sheet for editing a catalog photo's caption and tags.
 ///
 /// Use `showEditCatalogTagsSheet` to display from any context.
@@ -28,18 +30,19 @@ class EditCatalogTagsSheet extends ConsumerStatefulWidget {
 class _EditCatalogTagsSheetState
     extends ConsumerState<EditCatalogTagsSheet> {
   late final TextEditingController _captionCtrl;
-  final Set<String> _selectedTags = {};
-  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(text: widget.photo.caption);
-    if (widget.photo.tags.isNotEmpty) {
-      _selectedTags.addAll(
-        widget.photo.tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty),
-      );
-    }
+    // Seed the notifier with the photo's existing tags so the chip
+    // selector reflects the initial selection without setState. Deferred
+    // to a microtask because Riverpod disallows provider mutation during
+    // widget life-cycle hooks (initState/build).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(catalogTagEditProvider.notifier).seed(widget.photo);
+    });
   }
 
   @override
@@ -49,31 +52,34 @@ class _EditCatalogTagsSheetState
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    final notifier = ref.read(catalogTagEditProvider.notifier);
+    notifier.setSaving(true);
     try {
       await ref
           .read(catalogProvider(widget.productId).notifier)
           .updatePhoto(
             widget.photo.id,
             caption: _captionCtrl.text.trim(),
-            tags: _selectedTags.join(','),
+            tags: ref.read(catalogTagEditProvider).selectedTags.join(','),
           );
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.catalogPhotoUpdated);
+        showTopSnackBar(context, ProductsLabels.catalogPhotoUpdated);
       }
     } on DioException catch (e) {
       if (mounted) {
-        showTopSnackBar(context, e.message ?? VN.apiError);
+        showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) notifier.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
+    final tagState = ref.watch(catalogTagEditProvider);
+    final notifier = ref.read(catalogTagEditProvider.notifier);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -87,20 +93,20 @@ class _EditCatalogTagsSheetState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            VN.editCatalogPhoto,
+            ProductsLabels.editCatalogPhoto,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _captionCtrl,
-            decoration: const InputDecoration(labelText: VN.captionLabel),
+            decoration: const InputDecoration(labelText: ProductsLabels.captionLabel),
             maxLines: 2,
           ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -109,39 +115,31 @@ class _EditCatalogTagsSheetState
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Row(
               children: [
-                const Expanded(child: Text(VN.apiError)),
+                const Expanded(child: Text(SharedLabels.apiError)),
                 TextButton.icon(
                   onPressed: () =>
                       ref.read(catalogTagDefsProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
+                  label: const Text(SharedLabels.retry),
                 ),
               ],
             ),
             data: (tagDefs) => TagChipSelector(
               tagDefs: tagDefs,
-              selectedTags: _selectedTags,
-              onToggle: (tag) {
-                setState(() {
-                  if (_selectedTags.contains(tag)) {
-                    _selectedTags.remove(tag);
-                  } else {
-                    _selectedTags.add(tag);
-                  }
-                });
-              },
+              selectedTags: tagState.selectedTags,
+              onToggle: notifier.toggleTag,
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
+            onPressed: tagState.saving ? null : _save,
+            child: tagState.saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.save),
+                : const Text(SharedLabels.save),
           ),
           const SizedBox(height: 8),
         ],
@@ -176,7 +174,7 @@ class TagChipSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (audience.isNotEmpty) ...[
-          const Text(VN.doiTuong,
+          const Text(ProductsLabels.doiTuong,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
@@ -194,7 +192,7 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (occasion.isNotEmpty) ...[
-          const Text(VN.dip,
+          const Text(ProductsLabels.dip,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
@@ -212,7 +210,7 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (style.isNotEmpty) ...[
-          const Text(VN.phongCach,
+          const Text(ProductsLabels.phongCach,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(

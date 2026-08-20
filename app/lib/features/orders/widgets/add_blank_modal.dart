@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
+import '../providers/add_blank_modal_notifier.dart';
 import '../../../shared/labels/blanks.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Result of the add/edit blank modal (DG-294 FR3-FR5).
 ///
 /// Carries the user-entered values back to [CakeDetailScreen] which then
@@ -72,15 +76,20 @@ class _AddBlankModal extends ConsumerStatefulWidget {
 }
 
 class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
-  int? _blankId;
   late final TextEditingController _qtyController;
   late final TextEditingController _notesController;
-  bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
-    _blankId = widget.initialBlankId;
+    // Defer the seed to avoid modifying a provider during the build phase.
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(addBlankModalProvider.notifier)
+            .seedInitialBlankId(widget.initialBlankId);
+      }
+    });
     _qtyController = TextEditingController(
       text: widget.initialQuantity == widget.initialQuantity.roundToDouble()
           ? widget.initialQuantity.toInt().toString()
@@ -98,19 +107,16 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
 
   double get _qty => double.tryParse(_qtyController.text.trim()) ?? 0.0;
 
-  bool get _hasBlankError => _submitted && _blankId == null;
-  bool get _hasQtyError =>
-      _submitted && (_qty <= 0 || !_isFinitePositive(_qty));
-
   static bool _isFinitePositive(double v) =>
       v.isFinite && v > 0;
 
   void _submit() {
-    setState(() => _submitted = true);
-    if (_blankId == null || _qty <= 0 || !_isFinitePositive(_qty)) return;
+    ref.read(addBlankModalProvider.notifier).setSubmitted();
+    final s = ref.read(addBlankModalProvider);
+    if (s.blankId == null || _qty <= 0 || !_isFinitePositive(_qty)) return;
     Navigator.of(context).pop(
       BlankModalResult(
-        blankId: _blankId!,
+        blankId: s.blankId!,
         quantity: _qty,
         notes: _notesController.text.trim(),
       ),
@@ -120,6 +126,7 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
   @override
   Widget build(BuildContext context) {
     final blanksAsync = ref.watch(blanksProvider);
+    // Watch so the form rebuilds when blankId/submitted change.
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -143,7 +150,7 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
                 error: (e, _) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Text(
-                    '${VN.apiError}: $e',
+                    '${SharedLabels.apiError}: $e',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -182,16 +189,21 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
   }
 
   Widget _buildForm(BuildContext context, List<Blank> blanks) {
+    final modalState = ref.watch(addBlankModalProvider);
+    final blankId = modalState.blankId;
+    final submitted = modalState.submitted;
+    final hasBlankError = submitted && blankId == null;
+    final hasQtyError = submitted && (_qty <= 0 || !_isFinitePositive(_qty));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DropdownButtonFormField<int>(
-          initialValue: _blankId,
+          initialValue: blankId,
           decoration: InputDecoration(
             labelText: BlanksLabels.fieldBlankSelect,
             border: const OutlineInputBorder(),
             isDense: true,
-            errorText: _hasBlankError ? BlanksLabels.messageBlankRequired : null,
+            errorText: hasBlankError ? BlanksLabels.messageBlankRequired : null,
           ),
           items: blanks
               .map(
@@ -201,10 +213,8 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() {
-            _blankId = v;
-            _submitted = false;
-          }),
+          onChanged: (v) =>
+              ref.read(addBlankModalProvider.notifier).setBlankId(v),
         ),
         const SizedBox(height: 12),
         TextFormField(
@@ -218,10 +228,12 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
             border: const OutlineInputBorder(),
             isDense: true,
             errorText:
-                _hasQtyError ? BlanksLabels.messageBlankQuantityInvalid : null,
+                hasQtyError ? BlanksLabels.messageBlankQuantityInvalid : null,
           ),
           onChanged: (_) {
-            if (_submitted) setState(() => _submitted = false);
+            if (ref.read(addBlankModalProvider).submitted) {
+              ref.read(addBlankModalProvider.notifier).clearSubmitted();
+            }
           },
         ),
         const SizedBox(height: 12),
@@ -245,14 +257,14 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
         Expanded(
           child: TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: FilledButton(
             onPressed: _submit,
-            child: const Text(VN.xacNhan),
+            child: const Text(OrdersLabels.xacNhan),
           ),
         ),
       ],

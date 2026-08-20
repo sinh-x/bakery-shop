@@ -1,11 +1,14 @@
-import 'dart:io';
+import 'package:bakery_app/shared/utils.dart' show formatVND;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_draft.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Product summary card shown on Stage 2/3/4 of the order wizard.
 ///
 /// Displays per-item photo thumbnails, notes, quantity, unit price, line
@@ -49,26 +52,26 @@ class ProductSummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             _buildRow(
               theme,
-              VN.products,
+              OrdersLabels.products,
               OrdersLabels.productCount(regularItems.length),
             ),
             ...regularItems.map((item) => _buildItemBlock(theme, item)),
             if (extraItems.isNotEmpty) ...[
               const SizedBox(height: 4),
-              _buildRow(theme, VN.extras, OrdersLabels.extraCount(extraItems.length)),
+              _buildRow(theme, OrdersLabels.extras, OrdersLabels.extraCount(extraItems.length)),
               ...extraItems.map(
                 (item) => Padding(
                   padding: const EdgeInsets.only(left: 16, bottom: 2),
                   child: Text(
                     item.isGift
-                        ? '${item.product.name} x${item.quantity} (${VN.tangKem})'
+                        ? '${item.product.name} x${item.quantity} (${ProductsLabels.tangKem})'
                         : '${item.product.name} (${formatVND(item.unitPrice)}) x${item.quantity}',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
               ),
             ],
-            _buildRow(theme, VN.total, formatVND(total)),
+            _buildRow(theme, OrdersLabels.total, formatVND(total)),
           ],
         ),
       ),
@@ -89,11 +92,16 @@ class ProductSummaryCard extends StatelessWidget {
     final priceChipLabel = _resolvePriceChipLabel(item);
 
     final attributeLines = <String>[
-      if (item.notes.isNotEmpty) '${VN.notes}: ${item.notes}',
+      if (item.notes.isNotEmpty) '${OrdersLabels.notes}: ${item.notes}',
       if (item.isBirthday && item.age.isNotEmpty)
-        '${VN.birthdayWithAge}: ${item.age}',
-      if (usesInventory) VN.useInventory,
-      if (priceChipLabel != null) '${VN.priceChipLabel}: $priceChipLabel',
+        '${OrdersLabels.birthdayWithAge}: ${item.age}',
+      if (item.isBirthday &&
+          item.candleType != null &&
+          item.candleType!.isNotEmpty &&
+          item.candleType != 'khong_nen')
+        'Nến: ${OrdersLabels.candleTypeLabel(item.candleType)}',
+      if (usesInventory) StockLabels.useInventory,
+      if (priceChipLabel != null) '${ProductsLabels.priceChipLabel}: $priceChipLabel',
     ];
 
     return Padding(
@@ -113,14 +121,14 @@ class ProductSummaryCard extends StatelessWidget {
             ),
           if (hasRutTien) ...[
             Text(
-              '  ${VN.rutTien}: ${formatVND(cashAmount.toDouble())}',
+              '  ${OrdersLabels.rutTien}: ${formatVND(cashAmount.toDouble())}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
             ),
             if (cashFee != null && cashFee > 0)
               Text(
-                '  ${VN.phiRutTien}: ${formatVND(cashFee.toDouble())}',
+                '  ${OrdersLabels.phiRutTien}: ${formatVND(cashFee.toDouble())}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -142,25 +150,7 @@ class ProductSummaryCard extends StatelessWidget {
           separatorBuilder: (_, _) => const SizedBox(width: 6),
           itemBuilder: (context, index) {
             final xfile = item.pendingPhotos[index];
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(
-                File(xfile.path),
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 56,
-                  height: 56,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: 20,
-                    color: theme.colorScheme.outline,
-                  ),
-                ),
-              ),
-            );
+            return _PhotoThumb(file: xfile);
           },
         ),
       ),
@@ -194,6 +184,71 @@ class ProductSummaryCard extends StatelessWidget {
           Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
+    );
+  }
+}
+
+class _PhotoThumb extends StatefulWidget {
+  const _PhotoThumb({required this.file});
+
+  final XFile file;
+
+  @override
+  State<_PhotoThumb> createState() => _PhotoThumbState();
+}
+
+class _PhotoThumbState extends State<_PhotoThumb> {
+  late final Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = widget.file.readAsBytes();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<Uint8List>(
+      future: _bytesFuture,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return CircleAvatar(
+            radius: 28,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            child: Icon(
+              Icons.broken_image_outlined,
+              size: 20,
+              color: theme.colorScheme.outline,
+            ),
+          );
+        }
+        if (!snap.hasData) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: const SizedBox(width: 56, height: 56),
+          );
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.memory(
+            snap.data!,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Container(
+              width: 56,
+              height: 56,
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: Icon(
+                Icons.broken_image_outlined,
+                size: 20,
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

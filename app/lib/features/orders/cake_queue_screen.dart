@@ -1,4 +1,5 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting queue tile/time slot/summary widgets now would duplicate in-file queue action orchestration and event refresh contracts. Reviewed 2026-05-29.
+import 'package:bakery_app/shared/utils.dart' show formatVND, workItemStatusLabel;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,13 +9,17 @@ import '../../data/api/api_client.dart';
 import '../../data/models/cake_queue_item.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../data/providers/products_provider.dart';
+import 'providers/cake_queue_content_notifier.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/cake_queue_group_header.dart';
 import 'widgets/date_filter_chips.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'widgets/enum_attribute_display.dart';
 import 'package:bakery_app/shared/labels/blanks.dart' as blanks_v;
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
@@ -27,21 +32,16 @@ class CakeQueueContent extends ConsumerStatefulWidget {
 }
 
 class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
-  bool _includeReady = false;
-  DateFilterOption _selectedDateFilter = DateFilterOption.all;
-
-  /// Collapse state per status group. All groups start expanded by default.
-  /// Reset when the date filter or include-ready toggle changes (§11 risk
-  /// mitigation: collapse state reset on filter change).
-  final Map<String, bool> _collapsedGroups = {};
-
   Future<void> _onRefresh() async {
-    await ref.read(cakeQueueProvider(_includeReady).notifier).refresh();
+    final includeReady = ref.read(cakeQueueContentProvider).includeReady;
+    await ref.read(cakeQueueProvider(includeReady).notifier).refresh();
   }
 
   @override
   Widget build(BuildContext context) {
-    final queueAsync = ref.watch(cakeQueueProvider(_includeReady));
+    final queueState = ref.watch(cakeQueueContentProvider);
+    final includeReady = queueState.includeReady;
+    final queueAsync = ref.watch(cakeQueueProvider(includeReady));
     final theme = Theme.of(context);
 
     return Column(
@@ -49,22 +49,20 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
       children: [
         // Date filter chips (FR2)
         DateFilterChips(
-          selected: _selectedDateFilter,
-          onChanged: (option) => setState(() {
-            _selectedDateFilter = option;
-            _collapsedGroups.clear();
-          }),
+          selected: queueState.selectedDateFilter,
+          onChanged: (option) => ref
+              .read(cakeQueueContentProvider.notifier)
+              .setDateFilter(option),
         ),
         // Include-ready filter (FR4 — preserve existing behavior)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: FilterChip(
-            label: const Text(VN.includeReadyFilter),
-            selected: _includeReady,
-            onSelected: (v) => setState(() {
-              _includeReady = v;
-              _collapsedGroups.clear();
-            }),
+            label: const Text(OrdersLabels.includeReadyFilter),
+            selected: includeReady,
+            onSelected: (v) => ref
+                .read(cakeQueueContentProvider.notifier)
+                .setIncludeReady(v),
           ),
         ),
 
@@ -76,22 +74,22 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(VN.apiError),
+                  const Text(SharedLabels.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onRefresh,
-                    child: const Text(VN.retry),
+                    child: const Text(SharedLabels.retry),
                   ),
                 ],
               ),
             ),
             data: (items) {
               final filtered =
-                  filterCakeQueueByDate(items, _selectedDateFilter);
+                  filterCakeQueueByDate(items, queueState.selectedDateFilter);
               if (filtered.isEmpty) {
                 return Center(
                   child: Text(
-                    VN.noCakeQueueItems,
+                    OrdersLabels.noCakeQueueItems,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
@@ -131,20 +129,22 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
           if (item is String) {
             final status = item;
             final groupItems = grouped[status]!;
-            final isCollapsed = _collapsedGroups[status] ?? false;
+            final collapsedGroups = ref.read(cakeQueueContentProvider).collapsedGroups;
+            final isCollapsed = collapsedGroups[status] ?? false;
             return CakeQueueGroupHeader(
               status: status,
               count: groupItems.length,
               isCollapsed: isCollapsed,
-              onTap: () => setState(() {
-                _collapsedGroups[status] = !isCollapsed;
-              }),
+              onTap: () => ref
+                  .read(cakeQueueContentProvider.notifier)
+                  .toggleGroupCollapse(status),
             );
           }
           final queueItem = item as CakeQueueItem;
           // Skip rendering the card if its group is collapsed.
           final status = queueItem.orderStatus;
-          final isCollapsed = _collapsedGroups[status] ?? false;
+          final collapsedGroups = ref.read(cakeQueueContentProvider).collapsedGroups;
+          final isCollapsed = collapsedGroups[status] ?? false;
           if (isCollapsed) {
             return const SizedBox.shrink();
           }
@@ -225,6 +225,16 @@ class _CakeQueueCard extends ConsumerWidget {
                   if (item.isBirthday) ...[
                     const Text('🎂', style: TextStyle(fontSize: 16)),
                     const SizedBox(width: 6),
+                    if (item.candleType != null &&
+                        item.candleType!.isNotEmpty &&
+                        item.candleType != 'khong_nen')
+                      Text(
+                        'Nến: ${OrdersLabels.candleTypeLabel(item.candleType)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.pink.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                   ],
                   Expanded(
                     child: Text(
@@ -286,6 +296,19 @@ class _CakeQueueCard extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ),
+
+              // Enum attribute lines (DG-362 Phase 4 / FR3 / AC3 / AC6).
+              // Reuses the shared `buildEnumAttributeLines()` helper so the
+              // style (`bodySmall`, `outline` color) stays consistent across
+              // all three views (work item card, cake detail, cake queue).
+              ...buildEnumAttributeLines(
+                context,
+                item.attributes,
+                enumAttributesFor(
+                  item.productId,
+                  ref.watch(productsProvider).asData?.value ?? const [],
+                ),
               ),
 
               const SizedBox(height: 4),

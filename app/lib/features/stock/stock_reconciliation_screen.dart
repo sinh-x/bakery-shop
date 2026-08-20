@@ -3,19 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
-import '../../data/providers/reconciliation_provider.dart';
 import '../../data/models/category.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/events_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
+import '../../providers/reconciliation_provider.dart';
+import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/reconciliation_product_card.dart';
 import 'widgets/reconciliation_submit_review_dialog.dart';
 import 'stock_screen.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 class StockReconciliationScreen extends ConsumerStatefulWidget {
   const StockReconciliationScreen({super.key});
 
@@ -45,16 +46,16 @@ class _StockReconciliationScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.doiSoatTonKhoHomNay),
+        title: const Text(StockLabels.doiSoatTonKhoHomNay),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: state.isSubmitting ? null : notifier.loadDraft,
           ),
           IconButton(
             icon: const Icon(Icons.history),
-            tooltip: VN.lichSuDoiSoatTonKho,
+            tooltip: StockLabels.lichSuDoiSoatTonKho,
             onPressed: state.isSubmitting
                 ? null
                 : () => context.push('/stock/reconciliation/history'),
@@ -101,8 +102,8 @@ class _StockReconciliationScreenState
                     ref.invalidate(reconciliationHistoryListProvider);
                   }
                   final message = success
-                      ? (nextState.submitSuccessMessage ?? VN.doiSoatThanhCong)
-                      : (nextState.errorMessage ?? VN.doiSoatThatBai);
+                      ? (nextState.submitSuccessMessage ?? StockLabels.doiSoatThanhCong)
+                      : (nextState.errorMessage ?? StockLabels.doiSoatThatBai);
                   final background = success
                       ? Colors.green[700]
                       : Colors.red[700];
@@ -119,13 +120,13 @@ class _StockReconciliationScreenState
                         backgroundColor: background,
                         action: isWasteOverInventory
                             ? SnackBarAction(
-                                label: VN.nhapHangSheet,
+                                label: StockLabels.nhapHangSheet,
                                 onPressed: () => context.push('/stock'),
                               )
                             : success &&
                                   nextState.lastSubmittedSessionId != null
                             ? SnackBarAction(
-                                label: VN.xemLichSu,
+                                label: StockLabels.xemLichSu,
                                 onPressed: () => context.push(
                                   '/stock/reconciliation/history/${nextState.lastSubmittedSessionId}',
                                 ),
@@ -141,7 +142,7 @@ class _StockReconciliationScreenState
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.check_circle_outline),
-          label: Text(state.isSubmitting ? VN.dangGuiDoiSoat : VN.guiDoiSoat),
+          label: Text(state.isSubmitting ? StockLabels.dangGuiDoiSoat : StockLabels.guiDoiSoat),
         ),
       ),
     );
@@ -163,17 +164,17 @@ class _StockReconciliationScreenState
             const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
             const SizedBox(height: 12),
             Text(
-              state.errorMessage ?? VN.khongTheTaiDuLieuDoiSoat,
+              state.errorMessage ?? StockLabels.khongTheTaiDuLieuDoiSoat,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(VN.huongDanTaiLaiDoiSoat, textAlign: TextAlign.center),
+            const Text(StockLabels.huongDanTaiLaiDoiSoat, textAlign: TextAlign.center),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () =>
                   ref.read(reconciliationProvider.notifier).loadDraft(),
               icon: const Icon(Icons.refresh),
-              label: const Text(VN.taiLai),
+              label: const Text(OrdersLabels.taiLai),
             ),
           ],
         ),
@@ -193,10 +194,10 @@ class _StockReconciliationScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${VN.ngayDoiSoat}: ${draft.date}'),
+              Text('${StockLabels.ngayDoiSoat}: ${draft.date}'),
               const SizedBox(height: 4),
               Text(
-                '${VN.nhanVien}: ${staffName.isEmpty ? VN.chuaChonNhanVien : staffName}',
+                '${StockLabels.nhanVien}: ${staffName.isEmpty ? StockLabels.chuaChonNhanVien : staffName}',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               if (state.errorMessage != null) ...[
@@ -222,10 +223,10 @@ class _StockReconciliationScreenState
                       children: [
                         const Icon(Icons.inventory_2_outlined, size: 48),
                         const SizedBox(height: 12),
-                        const Text(VN.khongCoSanPhamTrungBay),
+                        const Text(StockLabels.khongCoSanPhamTrungBay),
                         const SizedBox(height: 8),
                         const Text(
-                          VN.huongDanKhongCoSanPhamTrungBay,
+                          StockLabels.huongDanKhongCoSanPhamTrungBay,
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 12),
@@ -234,7 +235,7 @@ class _StockReconciliationScreenState
                               .read(reconciliationProvider.notifier)
                               .loadDraft(),
                           icon: const Icon(Icons.refresh),
-                          label: const Text(VN.taiLai),
+                          label: const Text(OrdersLabels.taiLai),
                         ),
                       ],
                     ),

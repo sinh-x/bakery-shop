@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
-import '../../data/models/event_photo.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import 'providers/event_detail_photo_notifier.dart';
 import 'widgets/event_detail_photo_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
-
+import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 const _kTypeIcons = <String, IconData>{
   'note': Icons.edit_note,
   'equipment': Icons.warning_amber,
@@ -21,13 +21,13 @@ const _kTypeIcons = <String, IconData>{
 };
 
 const _kTypeLabels = <String, String>{
-  'note': VN.eventNote,
-  'equipment': VN.typeEquipment,
-  'production': VN.eventProduction,
-  'inventory': VN.eventInventory,
-  'expense': VN.eventExpense,
-  'delivery': VN.eventDelivery,
-  'order': VN.eventOrder,
+  'note': EventsLabels.eventNote,
+  'equipment': EventsLabels.typeEquipment,
+  'production': EventsLabels.eventProduction,
+  'inventory': EventsLabels.eventInventory,
+  'expense': EventsLabels.eventExpense,
+  'delivery': EventsLabels.eventDelivery,
+  'order': EventsLabels.eventOrder,
 };
 
 Color _badgeColor(String type) {
@@ -83,14 +83,13 @@ class EventDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
-  List<EventPhoto> _photos = const [];
-  bool _photosLoading = true;
-  String? _photosError;
-
   @override
   void initState() {
     super.initState();
-    _loadPhotos();
+    // Defer provider-affecting work to a post-frame callback because
+    // Riverpod disallows provider mutation during widget life-cycle hooks
+    // (initState/build).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPhotos());
   }
 
   Future<void> _loadPhotos() async {
@@ -98,17 +97,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(widget.event.id);
       if (mounted) {
-        setState(() {
-          _photos = photos;
-          _photosLoading = false;
-        });
+        ref.read(eventDetailPhotoProvider.notifier).setPhotos(photos);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _photosError = e.toString();
-          _photosLoading = false;
-        });
+        ref.read(eventDetailPhotoProvider.notifier).setError(e.toString());
       }
     }
   }
@@ -119,6 +112,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     final event = widget.event;
     final typeLabel = _kTypeLabels[event.type] ?? event.type;
     final typeIcon = _kTypeIcons[event.type] ?? Icons.event_note;
+    final photoState = ref.watch(eventDetailPhotoProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -126,7 +120,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
-            tooltip: VN.editEvent,
+            tooltip: EventsLabels.editEvent,
             onPressed: () =>
                 context.push('/events/${event.id}/edit', extra: event),
           ),
@@ -170,7 +164,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
           // Summary
           Text(
-            VN.eventSummary,
+            EventsLabels.eventSummary,
             style: theme.textTheme.labelMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -182,7 +176,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           // Tags
           if (event.tags.isNotEmpty) ...[
             Text(
-              VN.tagsLabel,
+              ProductsLabels.tagsLabel,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -214,7 +208,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${VN.loggedBy}: ${event.displayLoggedBy}',
+                  '${EventsLabels.loggedBy}: ${event.displayLoggedBy}',
                   style: theme.textTheme.bodyMedium,
                 ),
               ],
@@ -224,12 +218,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           const SizedBox(height: 20),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          Text(VN.eventPhotos, style: theme.textTheme.titleSmall),
+          Text(EventsLabels.eventPhotos, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           EventDetailPhotoSection(
-            photos: _photos,
-            loading: _photosLoading,
-            error: _photosError,
+            photos: photoState.photos,
+            loading: photoState.loading,
+            error: photoState.error,
           ),
         ],
       ),

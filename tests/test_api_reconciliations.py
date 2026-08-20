@@ -3,6 +3,8 @@ from baker.db.connection import get_db
 from baker.db.schema import MIGRATIONS
 from baker.services.inventory_fifo import create_lot_with_items
 
+from datetime import date
+
 pytestmark = pytest.mark.critical
 
 
@@ -151,7 +153,10 @@ def test_submit_valid_creates_order_payment_waste_and_links(api_client):
         assert line["linked_stock_movement_waste_id"] == waste_movement["id"]
 
 
-def test_submit_sale_only_creates_one_order_and_one_payment(api_client):
+def test_submit_sale_creates_one_order_per_unit(api_client):
+    # DG-368: sale_qty=2 now splits into 2 Orders (each qty=1) instead of one
+    # Order with qty=2 (NFR2). Each Order gets its own payment and sale stock
+    # movement (FR1/FR2).
     with get_db() as conn:
         _mark_product_display(conn, 1, "true")
         _set_stock(conn, 1, 6)
@@ -176,10 +181,18 @@ def test_submit_sale_only_creates_one_order_and_one_payment(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'sale'").fetchone()[0] == 1
+        # 2 units sold → 2 Orders, 2 Payments, 2 sale stock movements.
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'sale'").fetchone()[0] == 2
         assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'waste'").fetchone()[0] == 0
+
+        # Each Order carries quantity=1 (FR1).
+        order_items = conn.execute(
+            "SELECT quantity FROM order_items ORDER BY id"
+        ).fetchall()
+        assert all(oi["quantity"] == 1 for oi in order_items)
+        assert len(order_items) == 2
 
 
 def test_submit_stale_stock_creates_zero_side_effect_rows(api_client):
@@ -587,21 +600,27 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert line is not None
         assert line["sale_qty"] == 3
 
+        # DG-368: sale_qty is split per unit (NFR2). Row 1 (qty=1) → 1 order,
+        # row 2 (qty=2) → 2 orders → 3 orders total, 3 payments total.
         orders = conn.execute("SELECT order_ref, total_price FROM orders ORDER BY id").fetchall()
-        assert len(orders) == 2
+        assert len(orders) == 3
 
         payments = conn.execute(
             "SELECT method, amount FROM payment_transactions ORDER BY id"
         ).fetchall()
-        assert len(payments) == 2
+        assert len(payments) == 3
+        # Row 1 (qty=1 × 12000, cash) → 1 payment.
         assert payments[0]["method"] == "cash"
         assert payments[0]["amount"] == 12000
+        # Row 2 (qty=2 × 15000, transfer) → 2 payments of 15000 each.
         assert payments[1]["method"] == "transfer"
-        assert payments[1]["amount"] == 30000
+        assert payments[1]["amount"] == 15000
+        assert payments[2]["method"] == "transfer"
+        assert payments[2]["amount"] == 15000
 
         sale_rows = conn.execute(
-            "SELECT quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref "
-            "FROM reconciliation_sale_rows ORDER BY id"
+            "SELECT quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref, "
+            "linked_order_refs FROM reconciliation_sale_rows ORDER BY id"
         ).fetchall()
         assert len(sale_rows) == 2
         assert sale_rows[0]["quantity"] == 1
@@ -609,11 +628,22 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert sale_rows[0]["payment_method"] == "cash"
         assert sale_rows[0]["linked_order_ref"] == orders[0]["order_ref"]
         assert sale_rows[0]["linked_payment_ref"]
+        # DG-368 FR3: linked_order_refs stores a JSON array of all order_refs
+        # created for the row (1 for qty=1, 2 for qty=2).
+        import json as _json
+        row0_refs = _json.loads(sale_rows[0]["linked_order_refs"])
+        assert len(row0_refs) == 1
+        assert row0_refs[0] == orders[0]["order_ref"]
         assert sale_rows[1]["quantity"] == 2
         assert sale_rows[1]["unit_price"] == 15000
         assert sale_rows[1]["payment_method"] == "transfer"
         assert sale_rows[1]["linked_order_ref"] == orders[1]["order_ref"]
         assert sale_rows[1]["linked_payment_ref"]
+        row1_refs = _json.loads(sale_rows[1]["linked_order_refs"])
+        assert len(row1_refs) == 2
+        # linked_order_ref points to the first order of the row (FR4).
+        assert row1_refs[0] == orders[1]["order_ref"]
+        assert row1_refs[1] == orders[2]["order_ref"]
 
     history_resp = api_client.get(f"/api/reconciliations/history/{session_id}")
     assert history_resp.status_code == 200
@@ -1114,27 +1144,30 @@ def test_submit_sale_creates_revenue_journal_entry(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        order = conn.execute("SELECT id, order_ref FROM orders ORDER BY id DESC LIMIT 1").fetchone()
-        assert order is not None
+        orders = conn.execute("SELECT id, order_ref FROM orders ORDER BY id").fetchall()
+        # DG-368: sale_qty=2 splits into 2 Orders, each with its own revenue
+        # journal entry (FR2). Each entry is 1 unit × 12000 = 12000.
+        assert len(orders) == 2
 
-        entries = conn.execute(
-            "SELECT * FROM journal_entries WHERE source_type = 'order' AND source_id = ? "
-            "AND description NOT LIKE 'Reversal:%' ORDER BY id",
-            (order["id"],),
-        ).fetchall()
-        assert len(entries) == 1
+        for order in orders:
+            entries = conn.execute(
+                "SELECT * FROM journal_entries WHERE source_type = 'order' AND source_id = ? "
+                "AND description NOT LIKE 'Reversal:%' ORDER BY id",
+                (order["id"],),
+            ).fetchall()
+            assert len(entries) == 1
 
-        lines = conn.execute(
-            "SELECT jl.debit, jl.credit, a.code "
-            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
-            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
-            (entries[0]["id"],),
-        ).fetchall()
-        deposits_line = next(l for l in lines if l["code"] == "2100")
-        revenue_line = next(l for l in lines if l["code"] == "4100")
-        # 2 units × 12000 = 24000 paid in cash → deposited then recognised.
-        assert deposits_line["debit"] == 24000.0
-        assert revenue_line["credit"] == 24000.0
+            lines = conn.execute(
+                "SELECT jl.debit, jl.credit, a.code "
+                "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+                "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+                (entries[0]["id"],),
+            ).fetchall()
+            deposits_line = next(l for l in lines if l["code"] == "2100")
+            revenue_line = next(l for l in lines if l["code"] == "4100")
+            # 1 unit × 12000 = 12000 per Order (split across 2 Orders).
+            assert deposits_line["debit"] == 12000.0
+            assert revenue_line["credit"] == 12000.0
 
 
 def test_submit_sale_creates_cogs_journal_entry(api_client):
@@ -1214,30 +1247,33 @@ def test_submit_sale_creates_payment_journal_entry(api_client):
     assert resp.status_code == 201
 
     with get_db() as conn:
-        payment = conn.execute(
-            "SELECT id FROM payment_transactions ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        assert payment is not None
-
-        entries = conn.execute(
-            "SELECT * FROM journal_entries WHERE source_type = 'payment_transaction' "
-            "AND source_id = ? ORDER BY id",
-            (payment["id"],),
+        payments = conn.execute(
+            "SELECT id FROM payment_transactions ORDER BY id"
         ).fetchall()
-        assert len(entries) == 1
+        # DG-368: sale_qty=2 splits into 2 Orders, each with its own payment
+        # journal entry (FR2). Each entry is 1 unit × 12000 = 12000.
+        assert len(payments) == 2
 
-        lines = conn.execute(
-            "SELECT jl.debit, jl.credit, a.code "
-            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
-            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
-            (entries[0]["id"],),
-        ).fetchall()
-        # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
-        asset_line = next(l for l in lines if l["code"] == "1101")
-        deposits_line = next(l for l in lines if l["code"] == "2100")
-        # 2 units × 12000 = 24000 inflow.
-        assert asset_line["debit"] == 24000.0
-        assert deposits_line["credit"] == 24000.0
+        for payment in payments:
+            entries = conn.execute(
+                "SELECT * FROM journal_entries WHERE source_type = 'payment_transaction' "
+                "AND source_id = ? ORDER BY id",
+                (payment["id"],),
+            ).fetchall()
+            assert len(entries) == 1
+
+            lines = conn.execute(
+                "SELECT jl.debit, jl.credit, a.code "
+                "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+                "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+                (entries[0]["id"],),
+            ).fetchall()
+            # Cash method → asset account 1101 (Tiền mặt tại quầy, DG-330).
+            asset_line = next(l for l in lines if l["code"] == "1101")
+            deposits_line = next(l for l in lines if l["code"] == "2100")
+            # 1 unit × 12000 = 12000 inflow per Order (split across 2 Orders).
+            assert asset_line["debit"] == 12000.0
+            assert deposits_line["credit"] == 12000.0
 
 
 def test_submit_no_sale_creates_no_revenue_payment_journal(api_client):
@@ -1857,3 +1893,158 @@ def test_submit_counted_nonzero_does_not_clear_negative_balance(api_client):
     with get_db() as conn:
         # Netting reduced negative from 5 to 3; clearing path did not run.
         assert _neg_qty(conn, 1, None) == 3
+
+
+def test_submit_sale_sets_due_date_to_session_date(api_client):
+    """DG-384 FR1/AC6: reconciliation sale orders must have ``due_date`` equal
+    to the reconciliation session date (today, in ISO format)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "transfer",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 6,
+                    "counted_qty": 4,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    today = date.today().isoformat()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT due_date, source FROM orders WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 2
+        for row in rows:
+            assert row["due_date"] == today
+
+
+def test_submit_sale_sets_unique_public_order_code_per_due_date(api_client):
+    """DG-384 FR2/AC5: reconciliation sale orders must have a non-empty
+    ``public_order_code`` matching ``{LETTER}{DIGITS}-{SUFFIX}``, unique per
+    ``due_date``."""
+    import re
+
+    from baker.models.order import PUBLIC_ORDER_CODE_LETTERS
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 6,
+                    "counted_qty": 4,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    pattern = re.compile(rf"^[{PUBLIC_ORDER_CODE_LETTERS}]\d+-\S+$")
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT public_order_code, due_date FROM orders "
+            "WHERE source = 'reconciliation' ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 2
+
+        codes = []
+        for row in rows:
+            code = row["public_order_code"]
+            assert code, f"public_order_code must be non-empty, got {code!r}"
+            assert pattern.match(code), (
+                f"public_order_code {code!r} does not match {{LETTER}}{{DIGITS}}-{{SUFFIX}}"
+            )
+            codes.append(code)
+
+        # Unique per due_date (both orders share today's date).
+        assert len(set(codes)) == 2, f"public_order_codes must be unique, got {codes}"
+
+
+def test_submit_sale_public_order_code_and_due_date_visible_in_order_api(api_client):
+    """DG-384 AC5/AC6 (end-to-end): after a reconciliation submit, the
+    created sale orders are visible via ``GET /api/orders?due_date=today``
+    with a ``publicOrderCode`` matching ``{LETTER}{DIGITS}-{SUFFIX}`` and a
+    ``dueDate`` equal to the reconciliation session date.
+
+    This complements the DB-level assertions above by verifying the full
+    path from reconciliation submit → order list API response shape."""
+    import re
+    from datetime import date
+
+    from baker.models.order import PUBLIC_ORDER_CODE_LETTERS
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 3)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 3,
+                    "counted_qty": 1,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 18000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    today = date.today().isoformat()
+    pattern = re.compile(rf"^[{PUBLIC_ORDER_CODE_LETTERS}]\d+-\S+$")
+
+    list_resp = api_client.get("/api/orders", params={"due_date": today})
+    assert list_resp.status_code == 200
+    recon_orders = [
+        o for o in list_resp.json() if o.get("source") == "reconciliation"
+    ]
+    assert len(recon_orders) == 2, (
+        f"expected 2 reconciliation orders in order API, got {len(recon_orders)}"
+    )
+
+    codes = []
+    for order in recon_orders:
+        # AC6: dueDate equals the reconciliation session date (today).
+        assert order["dueDate"] == today, (
+            f"order {order['orderRef']} dueDate should be {today}, "
+            f"got {order['dueDate']!r}"
+        )
+        # AC5: publicOrderCode is non-empty and matches the pattern.
+        code = order["publicOrderCode"]
+        assert code, f"order {order['orderRef']} has empty publicOrderCode"
+        assert pattern.match(code), (
+            f"publicOrderCode {code!r} does not match {{LETTER}}{{DIGITS}}-{{SUFFIX}}"
+        )
+        codes.append(code)
+
+    # AC5: unique per due_date.
+    assert len(set(codes)) == 2, f"publicOrderCodes must be unique, got {codes}"

@@ -95,6 +95,10 @@ from ._constants import (  # noqa: F401
     SESSIONS_SCHEMA,
     BLANKS_SCHEMA,
     ORDER_ITEM_BLANKS_SCHEMA,
+    MESSAGE_TEMPLATES_SCHEMA,
+    SEED_MESSAGE_TEMPLATES,
+    ADDRESS_LIBRARY_SCHEMA,
+    PAYMENT_TRANSACTION_PHOTOS_SCHEMA,
 )
 from ._helpers import (  # noqa: F401
     _normalize_accessory_name,
@@ -193,6 +197,11 @@ from .migrations.v092 import _migrate_v92_cash_drawer_sub_accounts  # noqa: F401
 from .migrations.v093 import _migrate_v93_rename_quy_to_quay_in_journal_entries  # noqa: F401
 from .migrations.v094 import _migrate_v94_cash_drawer_tien_rut_columns  # noqa: F401
 from .migrations.v095 import _migrate_v95_cash_drawer_journal_balance  # noqa: F401
+from .migrations.v096 import _migrate_v96_cash_drawer_counted_opening_balance  # noqa: F401
+from .migrations.v097 import _migrate_v97_cash_drawer_breakdown_snapshot  # noqa: F401
+from .migrations.v098 import _migrate_v98_reconciliation_sale_rows_linked_order_refs  # noqa: F401
+from .migrations.v099 import _migrate_v99_cash_drawer_reconciled_column  # noqa: F401
+from .migrations.v100 import _migrate_v100_message_templates  # noqa: F401
 
 __all__ = [
     'ACCOUNTING_SCHEMA',
@@ -232,6 +241,7 @@ __all__ = [
     'ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA',
     'ORDER_ITEMS_ATTRIBUTES_SCHEMA',
     'ORDER_ITEM_BLANKS_SCHEMA',
+    'MESSAGE_TEMPLATES_SCHEMA',
     'ORDER_PHOTOS_SCHEMA',
     'ORDER_REVENUE_CODE',
     'PAYMENT_METHOD_TO_ASSET_CODE',
@@ -261,6 +271,9 @@ __all__ = [
     'SEED_CHECKLIST_OPENING',
     'SEED_EXPENSE_CATEGORIES',
     'SEED_NHAN_BANH_OPTIONS',
+    'SEED_MESSAGE_TEMPLATES',
+    'ADDRESS_LIBRARY_SCHEMA',
+    'PAYMENT_TRANSACTION_PHOTOS_SCHEMA',
     'SEED_ORDER_SOURCES',
     'SEED_PRODUCTS',
     'SEED_PRODUCT_ATTRIBUTES',
@@ -364,6 +377,11 @@ __all__ = [
     '_migrate_v93_rename_quy_to_quay_in_journal_entries',
     '_migrate_v94_cash_drawer_tien_rut_columns',
     '_migrate_v95_cash_drawer_journal_balance',
+    '_migrate_v96_cash_drawer_counted_opening_balance',
+    '_migrate_v97_cash_drawer_breakdown_snapshot',
+    '_migrate_v98_reconciliation_sale_rows_linked_order_refs',
+    '_migrate_v99_cash_drawer_reconciled_column',
+    '_migrate_v100_message_templates',
     '_normalize_accessory_name',
     '_normalize_phone',
     '_order_year',

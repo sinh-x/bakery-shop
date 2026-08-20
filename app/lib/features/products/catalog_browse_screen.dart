@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
-import '../../data/models/catalog_browse_photo.dart';
-import '../../providers/catalog_provider.dart';
+import '../../data/providers/catalog_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/catalog_browse_notifier.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
     if (kIsWeb) 'services/bulk_download_web.dart'
@@ -22,39 +24,19 @@ class CatalogBrowseScreen extends ConsumerStatefulWidget {
 }
 
 class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
-  final Set<String> _selectedTags = {};
-  final Set<String> _selectedCategorySlugs = {};
-  String _filterKey = '';
-  bool _selectMode = false;
-  Set<int> _selectedPhotoIds = {};
-  bool _bulkInProgress = false;
-
   @override
   void dispose() {
-    _selectedPhotoIds.clear();
     super.dispose();
   }
 
-  String _computeFilterKey() {
-    final sortedTags = _selectedTags.toList()..sort();
-    final sortedCats = _selectedCategorySlugs.toList()..sort();
-    final tagPart = 'tags:${sortedTags.join('|')}';
-    final catPart = 'cats:${sortedCats.join('|')}';
-    return '$tagPart;$catPart';
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selectMode = false;
-      _selectedPhotoIds.clear();
-    });
-  }
-
   Future<void> _onBulkShare() async {
-    final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
+    final browseState = ref.read(catalogBrowseNotifierProvider);
+    final photos = ref
+        .read(catalogBrowseProvider(browseState.filterKey))
+        .value;
     if (photos == null) return;
     final selectedPhotos = photos
-        .where((p) => _selectedPhotoIds.contains(p.id))
+        .where((p) => browseState.selectedPhotoIds.contains(p.id))
         .toList();
     if (selectedPhotos.isEmpty) return;
 
@@ -86,15 +68,20 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         }
       }
     } finally {
-      setState(() => _bulkInProgress = false);
+      if (mounted) {
+        ref.read(catalogBrowseNotifierProvider.notifier).setBulkInProgress(false);
+      }
     }
   }
 
   Future<void> _onBulkDownload() async {
-    final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
+    final browseState = ref.read(catalogBrowseNotifierProvider);
+    final photos = ref
+        .read(catalogBrowseProvider(browseState.filterKey))
+        .value;
     if (photos == null) return;
     final selectedPhotos = photos
-        .where((p) => _selectedPhotoIds.contains(p.id))
+        .where((p) => browseState.selectedPhotoIds.contains(p.id))
         .toList();
     if (selectedPhotos.isEmpty) return;
 
@@ -124,61 +111,47 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         }
       }
     } finally {
-      setState(() => _bulkInProgress = false);
+      if (mounted) {
+        ref.read(catalogBrowseNotifierProvider.notifier).setBulkInProgress(false);
+      }
     }
   }
 
-  void _toggleSelectMode() {
-    setState(() {
-      _selectMode = !_selectMode;
-      if (!_selectMode) {
-        _selectedPhotoIds.clear();
-      }
-    });
-  }
-
-  void _selectAll20(List<CatalogBrowsePhoto> photos) {
-    final count = photos.length >= 20 ? 20 : photos.length;
-    setState(() {
-      _selectedPhotoIds = photos.take(count).map((p) => p.id).toSet();
-    });
-  }
-
   void _onPhotoToggle(int photoId, bool selected) {
-    setState(() {
-      if (selected) {
-        if (_selectedPhotoIds.length >= 20) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(VN.toiDa20Anh),
-              duration: Duration(seconds: 2),
-            ),
-          );
-          return;
-        }
-        _selectedPhotoIds.add(photoId);
-      } else {
-        _selectedPhotoIds.remove(photoId);
-      }
-    });
+    final notifier = ref.read(catalogBrowseNotifierProvider.notifier);
+    final browseState = ref.read(catalogBrowseNotifierProvider);
+    if (selected && browseState.selectedPhotoIds.length >= 20) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(SharedLabels.toiDa20Anh),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    notifier.onPhotoToggle(photoId, selected);
   }
 
   Future<void> _onSelectModeMenuSelected(String value) async {
+    final notifier = ref.read(catalogBrowseNotifierProvider.notifier);
+    final browseState = ref.read(catalogBrowseNotifierProvider);
     switch (value) {
       case 'bulk_share':
-        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
-          setState(() => _bulkInProgress = true);
+        if (browseState.selectedPhotoIds.isNotEmpty &&
+            !browseState.bulkInProgress) {
+          notifier.setBulkInProgress(true);
           await _onBulkShare();
         }
         return;
       case 'bulk_download':
-        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
-          setState(() => _bulkInProgress = true);
+        if (browseState.selectedPhotoIds.isNotEmpty &&
+            !browseState.bulkInProgress) {
+          notifier.setBulkInProgress(true);
           await _onBulkDownload();
         }
         return;
       case 'cancel_selection':
-        _clearSelection();
+        notifier.clearSelection();
         return;
       default:
         assert(() {
@@ -193,48 +166,51 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
-    final photosAsync = ref.watch(catalogBrowseProvider(_filterKey));
+    final browseState = ref.watch(catalogBrowseNotifierProvider);
+    final notifier = ref.read(catalogBrowseNotifierProvider.notifier);
+    final photosAsync =
+        ref.watch(catalogBrowseProvider(browseState.filterKey));
 
     return PopScope(
-      canPop: !_selectMode,
+      canPop: !browseState.selectMode,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _selectMode) {
-          _clearSelection();
+        if (!didPop && browseState.selectMode) {
+          notifier.clearSelection();
         }
       },
       child: Scaffold(
         appBar: AppBar(
           title: Text(
-            _selectMode
-                ? '${_selectedPhotoIds.length} ${VN.daChon}'
-                : VN.browseScreenTitle,
+            browseState.selectMode
+                ? '${browseState.selectedPhotoIds.length} ${SharedLabels.daChon}'
+                : ProductsLabels.browseScreenTitle,
           ),
-          leading: _selectMode
+          leading: browseState.selectMode
               ? IconButton(
                   icon: const Icon(Icons.close),
-                  onPressed: _clearSelection,
+                  onPressed: notifier.clearSelection,
                 )
               : null,
           actions: [
-            if (!_selectMode)
+            if (!browseState.selectMode)
               IconButton(
                 icon: const Icon(Icons.check_circle),
-                onPressed: _toggleSelectMode,
-                tooltip: VN.chonAnh,
+                onPressed: notifier.toggleSelectMode,
+                tooltip: SharedLabels.chonAnh,
               ),
-            if (!_selectMode) const AppBarOverflowMenu(),
-            if (_selectMode)
+            if (!browseState.selectMode) const AppBarOverflowMenu(),
+            if (browseState.selectMode)
               IconButton(
                 icon: const Icon(Icons.select_all),
                 onPressed: () {
                   final photos = photosAsync.value;
                   if (photos != null) {
-                    _selectAll20(photos);
+                    notifier.selectAll20(photos);
                   }
                 },
-                tooltip: VN.chon20,
+                tooltip: SharedLabels.chon20,
               ),
-            if (_selectMode && _bulkInProgress)
+            if (browseState.selectMode && browseState.bulkInProgress)
               const Padding(
                 padding: EdgeInsets.all(12),
                 child: SizedBox(
@@ -243,23 +219,25 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            if (_selectMode)
+            if (browseState.selectMode)
               AppBarOverflowMenu(
                 onSelected: _onSelectModeMenuSelected,
                 items: [
                   PopupMenuItem<String>(
                     value: 'bulk_share',
-                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
-                    child: const Text(VN.chiaSe),
+                    enabled: browseState.selectedPhotoIds.isNotEmpty &&
+                        !browseState.bulkInProgress,
+                    child: const Text(ProductsLabels.chiaSe),
                   ),
                   PopupMenuItem<String>(
                     value: 'bulk_download',
-                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
-                    child: const Text(VN.taiAnh),
+                    enabled: browseState.selectedPhotoIds.isNotEmpty &&
+                        !browseState.bulkInProgress,
+                    child: const Text(ProductsLabels.taiAnh),
                   ),
                   const PopupMenuItem<String>(
                     value: 'cancel_selection',
-                    child: Text(VN.huy),
+                    child: Text(SharedLabels.huy),
                   ),
                 ],
               ),
@@ -279,11 +257,11 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(VN.catalogFilterLoadError),
+                      const Text(ProductsLabels.catalogFilterLoadError),
                       const SizedBox(height: 6),
                       FilledButton.tonal(
                         onPressed: () => ref.invalidate(catalogTagDefsProvider),
-                        child: const Text(VN.taiLai),
+                        child: const Text(OrdersLabels.taiLai),
                       ),
                     ],
                   ),
@@ -291,41 +269,11 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
               ),
               data: (tagDefs) => CatalogBrowseFilterBar(
                 tagDefs: tagDefs,
-                selectedTags: _selectedTags,
-                selectedCategories: _selectedCategorySlugs,
-                onTagToggle: (tag) {
-                  setState(() {
-                    if (_selectedTags.contains(tag)) {
-                      _selectedTags.remove(tag);
-                    } else {
-                      _selectedTags.add(tag);
-                    }
-                    _filterKey = _computeFilterKey();
-                    // Clear selection when tag filter changes
-                    _selectedPhotoIds.clear();
-                  });
-                },
-                onCategoryToggle: (slug) {
-                  setState(() {
-                    if (_selectedCategorySlugs.contains(slug)) {
-                      _selectedCategorySlugs.remove(slug);
-                    } else {
-                      _selectedCategorySlugs.add(slug);
-                    }
-                    _filterKey = _computeFilterKey();
-                    // Clear selection when category filter changes
-                    _selectedPhotoIds.clear();
-                  });
-                },
-                onClearAll: () {
-                  setState(() {
-                    _selectedTags.clear();
-                    _selectedCategorySlugs.clear();
-                    _filterKey = _computeFilterKey();
-                    // Clear selection when tag filter changes
-                    _selectedPhotoIds.clear();
-                  });
-                },
+                selectedTags: browseState.selectedTags,
+                selectedCategories: browseState.selectedCategorySlugs,
+                onTagToggle: notifier.toggleTag,
+                onCategoryToggle: notifier.toggleCategory,
+                onClearAll: notifier.clearAll,
               ),
             ),
             // Photo grid
@@ -338,21 +286,22 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     children: [
                       const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      const Text(VN.apiError),
+                      const Text(SharedLabels.apiError),
                       const SizedBox(height: 8),
                       FilledButton(
-                        onPressed: () =>
-                            ref.invalidate(catalogBrowseProvider(_filterKey)),
-                        child: const Text(VN.retry),
+                        onPressed: () => ref.invalidate(
+                          catalogBrowseProvider(browseState.filterKey),
+                        ),
+                        child: const Text(SharedLabels.retry),
                       ),
                     ],
                   ),
                 ),
                 data: (photos) {
                   if (photos.isEmpty) {
-                    final msg = _selectedTags.isEmpty
-                        ? VN.noBrowsePhotos
-                        : VN.noBrowsePhotosForFilter;
+                    final msg = browseState.selectedTags.isEmpty
+                        ? ProductsLabels.noBrowsePhotos
+                        : ProductsLabels.noBrowsePhotosForFilter;
                     return Center(
                       child: Text(
                         msg,
@@ -365,15 +314,15 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   return CatalogBrowsePhotoGrid(
                     photos: photos,
                     baseUrl: baseUrl,
-                    selectedPhotoIds: _selectedPhotoIds,
-                    selectMode: _selectMode,
+                    selectedPhotoIds: browseState.selectedPhotoIds,
+                    selectMode: browseState.selectMode,
                     onPhotoToggle: _onPhotoToggle,
                     onRefresh: () => ref
-                        .read(catalogBrowseProvider(_filterKey).notifier)
+                        .read(catalogBrowseProvider(browseState.filterKey).notifier)
                         .refresh(),
-                    emptyMessage: _selectedTags.isEmpty
-                        ? VN.noBrowsePhotos
-                        : VN.noBrowsePhotosForFilter,
+                    emptyMessage: browseState.selectedTags.isEmpty
+                        ? ProductsLabels.noBrowsePhotos
+                        : ProductsLabels.noBrowsePhotosForFilter,
                   );
                 },
               ),

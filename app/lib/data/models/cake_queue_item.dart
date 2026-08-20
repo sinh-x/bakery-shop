@@ -14,11 +14,24 @@ class CakeQueueItem {
   final String status;
   final bool isBirthday;
   final int? age;
+  /// Selected candle type carried through the cake queue display model
+  /// (DG-340 Phase 1). Sourced from `work_item.attributes['candle_type']`
+  /// by the API layer; null when no candle type is set (FR2, AC7). Display
+  /// phases render it via [OrdersLabels.candleTypeLabel] alongside the birthday
+  /// indicator (FR4).
+  final String? candleType;
   final String? dueDate;
   final String? dueTime;
   final String? createdAt;
   final String orderStatus;
   final int blankCount;
+  /// Selected enum attributes for this work item (e.g. `nhan_banh`, `candle_type`)
+  /// sourced from `order_items.attributes` via the cake queue API response.
+  /// Populated as `Map<String, dynamic>` by [fromJson]; empty dict when no
+  /// attributes are stored (FR5, AC5). Display phases render it via
+  /// `buildEnumAttributeLines()` together with `productsProvider`-resolved
+  /// `enumAttributes` (Phase 3/4).
+  final Map<String, dynamic> attributes;
 
   const CakeQueueItem({
     required this.id,
@@ -34,11 +47,13 @@ class CakeQueueItem {
     required this.status,
     required this.isBirthday,
     this.age,
+    this.candleType,
     this.dueDate,
     this.dueTime,
     this.createdAt,
     required this.orderStatus,
     this.blankCount = 0,
+    this.attributes = const {},
   });
 
   factory CakeQueueItem.fromJson(Map<String, dynamic> json) => CakeQueueItem(
@@ -55,10 +70,12 @@ class CakeQueueItem {
         status: json['status'] as String,
         isBirthday: json['isBirthday'] as bool? ?? false,
         age: json['age'] as int?,
+        candleType: json['candleType'] as String?,
         dueDate: json['dueDate'] as String?,
         dueTime: json['dueTime'] as String?,
         createdAt: json['createdAt'] as String?,
         orderStatus: (json['orderStatus'] as String?) ?? '',
         blankCount: (json['blankCount'] as int?) ?? 0,
+        attributes: (json['attributes'] as Map<String, dynamic>?) ?? const {},
       );
 }

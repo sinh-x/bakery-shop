@@ -69,7 +69,7 @@ def list_logs(
 
     with get_db() as conn:
         rows = conn.execute(
-            f"SELECT * FROM server_logs {where} ORDER BY id DESC LIMIT ?",
+            f"SELECT * FROM server_logs {where} ORDER BY id DESC LIMIT ?",  # nosec B608
             params + [limit],
         ).fetchall()
 

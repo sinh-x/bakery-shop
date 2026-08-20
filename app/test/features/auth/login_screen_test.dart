@@ -1,11 +1,14 @@
 import 'package:bakery_app/data/api/api_client.dart';
-import 'package:bakery_app/features/auth/auth_provider.dart';
+import 'package:bakery_app/shared/providers/auth_provider.dart';
 import 'package:bakery_app/features/auth/login_screen.dart';
+import 'package:bakery_app/features/settings/pre_login_settings_screen.dart';
 import 'package:bakery_app/shared/labels/auth.dart';
+import 'package:bakery_app/shared/labels/technical_settings.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'login_screen_test_helpers.dart';
@@ -100,6 +103,70 @@ void main() {
       expect(state.username, 'Sinh');
       expect(state.role, 'admin');
       expect(prefs.getString('auth_token'), isNotNull);
+    });
+  });
+
+  group('LoginScreen (DG-367 Phase 3 / FR1 / AC1)', () {
+    late SharedPreferences prefs;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      prefs = await SharedPreferences.getInstance();
+    });
+
+    testWidgets('renders a settings gear icon button', (tester) async {
+      await tester.pumpWidget(_buildApp(prefs: prefs));
+      await tester.pump();
+
+      expect(find.byKey(const Key('preLoginSettingsButton')), findsOneWidget);
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      expect(find.byTooltip(TechnicalSettingsLabels.openSettingsTooltip),
+          findsOneWidget);
+    });
+
+    testWidgets(
+        'tapping the gear icon navigates to the pre-login settings screen (AC1)',
+        (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final p = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(p),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/login',
+            builder: (context, state) => const LoginScreen(),
+          ),
+          GoRoute(
+            path: '/settings/connection',
+            builder: (context, state) => const PreLoginSettingsScreen(),
+          ),
+        ],
+        initialLocation: '/login',
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The gear icon should be visible on the login screen.
+      expect(find.byKey(const Key('preLoginSettingsButton')), findsOneWidget);
+
+      // Tap it — should navigate to /settings/connection.
+      await tester.tap(find.byKey(const Key('preLoginSettingsButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PreLoginSettingsScreen), findsOneWidget);
+      expect(find.text(TechnicalSettingsLabels.screenTitle), findsOneWidget);
     });
   });
 }

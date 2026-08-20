@@ -1,8 +1,8 @@
+import 'package:bakery_app/shared/utils.dart' show formatVND, statusActionLabel;
 import 'package:flutter/material.dart';
 
-import 'package:bakery_app/shared/labels/orders.dart';
 import '../section_header.dart';
-
+import 'package:bakery_app/shared/labels/orders.dart';
 /// Status transition action buttons (forward, backward, cancel, completed-
 /// blocked). Shown only when the order has available transitions.
 class OrderStatusActions extends StatelessWidget {
@@ -30,7 +30,7 @@ class OrderStatusActions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 20),
-        const SectionHeader(VN.actions),
+        const SectionHeader(OrdersLabels.actions),
         if (transitioning)
           const Center(child: CircularProgressIndicator())
         else

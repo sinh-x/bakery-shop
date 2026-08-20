@@ -1,19 +1,20 @@
+import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
-import '../../providers/categories_provider.dart';
-import '../../providers/products_provider.dart';
+import '../../data/providers/categories_provider.dart';
+import '../../data/providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
 import 'widgets/stock_item_card.dart';
-
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 /// Provider for stock overview list.
 final stockOverviewProvider =
     AsyncNotifierProvider<StockOverviewNotifier, List<StockOverviewItem>>(
@@ -54,8 +55,8 @@ Color stockStatusColor(int quantity) {
 /// Negative stock returns the VN label "Âm N" (where N is the absolute
 /// quantity) per FR-8 / AC-10. Zero stock returns "Hết hàng".
 String stockStatusLabel(int quantity) {
-  if (quantity < 0) return VN.negativeStockLabel(quantity);
-  if (quantity == 0) return VN.outOfStock;
+  if (quantity < 0) return StockLabels.negativeStockLabel(quantity);
+  if (quantity == 0) return StockLabels.outOfStock;
   if (quantity <= 3) return 'Sắp hết';
   return 'Còn hàng';
 }
@@ -125,11 +126,11 @@ class _StockScreenState extends ConsumerState<StockScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.quanLyTonKho),
+        title: const Text(StockLabels.quanLyTonKho),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: VN.lamMoi,
+            tooltip: SharedLabels.lamMoi,
             onPressed: () => ref.invalidate(stockOverviewProvider),
           ),
           AppBarOverflowMenu(
@@ -137,11 +138,11 @@ class _StockScreenState extends ConsumerState<StockScreen>
             items: const [
               PopupMenuItem<String>(
                 value: 'stock_reconciliation',
-                child: Text(VN.openStockReconciliation),
+                child: Text(SharedLabels.openStockReconciliation),
               ),
               PopupMenuItem<String>(
                 value: 'stock_reconciliation_history',
-                child: Text(VN.openStockReconciliationHistory),
+                child: Text(SharedLabels.openStockReconciliationHistory),
               ),
             ],
           ),
@@ -155,13 +156,13 @@ class _StockScreenState extends ConsumerState<StockScreen>
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 16),
-              Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
+              Text(SharedLabels.apiError, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: () =>
                     ref.read(stockOverviewProvider.notifier).refresh(),
                 icon: const Icon(Icons.refresh),
-                label: const Text(VN.retry),
+                label: const Text(SharedLabels.retry),
               ),
             ],
           ),
@@ -179,7 +180,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    VN.khongCoSanPhamTonKho,
+                    StockLabels.khongCoSanPhamTonKho,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ],
@@ -248,7 +249,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
         onDone: () {
           ref.read(stockOverviewProvider.notifier).refresh();
           Navigator.pop(context);
-          showTopSnackBar(context, VN.capNhatThanhCong);
+          showTopSnackBar(context, StockLabels.capNhatThanhCong);
         },
       ),
     );

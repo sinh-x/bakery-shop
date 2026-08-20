@@ -115,7 +115,7 @@ The Flutter app is a Riverpod-based single-page-style client:
 | `app/lib/features/` | Feature screens grouped by domain (`orders/`, `products/`, `customers/`, `events/`, `checklist/`, `knowledge/`, `stock/`, `reconciliation/`, `settings/`, …). Each feature holds its screens, widgets, and local state. |
 | `app/lib/providers/` | Riverpod providers grouped by domain (`order/`, `product/`, `customer/`, `auth/`, `shared/`, …). Feature-specific providers stay close to their screens; shared providers live in `shared/`. |
 | `app/lib/data/` | API client (Dio), data models, repositories. A Dio interceptor attaches the stored JWT to every request and redirects to login on `401`. |
-| `app/lib/shared/` | Cross-cutting widgets, labels (`labels/` domain files + the monolithic `vietnamese_labels.dart`), router (`router/app_router.dart` modularized into per-feature route modules), and common utilities. |
+| `app/lib/shared/` | Cross-cutting widgets, labels (per-domain `labels/` files: `orders.dart`, `shared.dart`, `customers.dart`, `products.dart`, plus `utils.dart`), router (`router/app_router.dart` modularized into per-feature route modules), and common utilities. |
 
 User-facing text is centralized in Vietnamese label modules under
 `app/lib/shared/labels/` (see `docs/flutter-coding-standards.md` for the VN

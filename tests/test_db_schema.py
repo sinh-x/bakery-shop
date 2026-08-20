@@ -180,6 +180,7 @@ def _assert_reconciliation_sale_rows_schema(conn) -> None:
         "payment_method",
         "linked_order_ref",
         "linked_payment_ref",
+        "linked_order_refs",
         "created_at",
     }
 
@@ -452,7 +453,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -471,7 +472,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -487,10 +488,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3497,7 +3498,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
         _assert_users_role_check_constraint(conn)
 
 
@@ -3563,7 +3564,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3686,7 +3687,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3760,7 +3761,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3787,7 +3788,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -4190,7 +4191,7 @@ def test_v88_creates_composite_indexes_on_fresh_db():
     """A fresh DB (migrated 0 → latest) has both composite indexes."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         indexes = {
             r["name"]
@@ -4273,7 +4274,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         cols = _schema_columns(conn, "cash_drawer")
         expected = {
@@ -4285,6 +4286,7 @@ def test_v91_creates_cash_drawer_table_on_fresh_db():
             "closing_balance",
             "counted_amount",
             "discrepancy",
+            "reconciled",
         }
         assert expected <= set(cols), f"missing columns: {expected - set(cols)}"
 
@@ -4384,7 +4386,7 @@ def test_v91_idempotent_on_already_migrated_db():
         _migrate_v91_cash_drawer_schema(conn)
         cols = _schema_columns(conn, "cash_drawer")
         assert "opening_balance" in cols
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
 
 def test_v91_cash_drawer_row_persists():
@@ -4459,7 +4461,7 @@ def test_v92_inserts_1101_and_1102_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
         for code, name, acc_type, parent_code in (
             ("1101", "Tiền mặt tại quầy", "asset", "1100"),
@@ -4593,7 +4595,7 @@ def test_v92_idempotent_on_already_migrated_db():
             "WHERE source_type = 'migration_balance_transfer' AND source_id = 92"
         ).fetchone()[0]
         assert count_after_first == count_after_second
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
 
 def test_v92_balance_transfer_entry_is_balanced():
@@ -4718,7 +4720,7 @@ def test_v93_idempotent_on_already_migrated_db():
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
         assert count_after == 0
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
 
 
 def test_v93_no_op_on_fresh_db():
@@ -4727,7 +4729,7 @@ def test_v93_no_op_on_fresh_db():
     """
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 95
+        assert _migrated_version(conn) >= 102
         quy_count = conn.execute(
             "SELECT COUNT(*) FROM journal_entries WHERE description LIKE '%quỹ%'"
         ).fetchone()[0]
@@ -4854,6 +4856,292 @@ def test_v94_idempotent_on_already_migrated_db():
         assert _migrated_version(conn) == 94
 
 
+def test_v98_registered_in_migration_chain():
+    """v98 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 98 in MIGRATIONS
+    assert (
+        MIGRATIONS[98]["description"]
+        == "Add linked_order_refs TEXT column to reconciliation_sale_rows for 1-order-per-cake order list (DG-368 Phase 1)"
+    )
+    assert (
+        MIGRATIONS[98]["callable"].__name__
+        == "_migrate_v98_reconciliation_sale_rows_linked_order_refs"
+    )
+
+
+def test_v98_adds_linked_order_refs_on_fresh_db():
+    """A fresh DB migrated through the full ensure_schema chain has the
+    ``linked_order_refs`` column on ``reconciliation_sale_rows`` (FR3).
+
+    The fresh-DB schema constant (``RECONCILIATION_SALE_ROWS_SCHEMA``) already
+    declares the column, so this test also verifies the fresh-DB path does
+    not double-add or conflict with v98's PRAGMA-guarded ALTER.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        cols = {
+            r[1]: r
+            for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" in cols
+        # TEXT, nullable (notnull == 0), DEFAULT NULL (PRAGMA reports the
+        # default as either None or the string 'NULL' depending on whether
+        # the column was added via ALTER TABLE or declared in CREATE TABLE).
+        assert cols["linked_order_refs"][2] == "TEXT"
+        assert cols["linked_order_refs"][3] == 0  # nullable
+        assert cols["linked_order_refs"][4] in (None, "NULL")  # DEFAULT NULL
+
+
+def test_v98_adds_linked_order_refs_on_existing_db():
+    """An existing DB (created before v98 landed) gains the
+    ``linked_order_refs`` column after running v98 (NFR1 — existing rows are
+    preserved; the new column defaults to NULL).
+
+    The fresh-DB schema constant (``RECONCILIATION_SALE_ROWS_SCHEMA``) already
+    declares the column, so a DB migrated from scratch always has it. To
+    simulate a real pre-v98 production DB, this test migrates fully to v97,
+    drops the column (SQLite >= 3.35.0 supports ``ALTER TABLE DROP COLUMN``),
+    inserts a sale row, then runs v98 and verifies the column is added back
+    with NULL on the existing row.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 97)
+        assert _migrated_version(conn) == 97
+
+        # Simulate a pre-v98 DB: drop the column the fresh-DB schema added.
+        conn.execute(
+            "ALTER TABLE reconciliation_sale_rows DROP COLUMN linked_order_refs"
+        )
+        cols_before = {
+            r[1] for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" not in cols_before
+
+        # Seed a sale row using only the pre-v98 columns. The products and
+        # reconciliation_lines rows satisfy the FK constraints.
+        conn.executescript(
+            """
+            INSERT INTO products (name, category, base_price, cost, recipe_notes)
+            VALUES ('Migration Cake', 'banh_kem', 50000, 0, '');
+            INSERT INTO reconciliation_sessions (id, reconciliation_date, staff_name)
+            VALUES (1, '2026-08-07', 'staff');
+            INSERT INTO reconciliation_lines (id, session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty)
+            VALUES (1, 1, 1, 0, 0, 0, 0);
+            INSERT INTO reconciliation_sale_rows (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref)
+            VALUES (1, 2, 50000, 'cash', 'ORD-1', 'PAY-1');
+            """
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 98)
+        assert _migrated_version(conn) == 98
+        cols_after = {
+            r[1]: r
+            for r in conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        }
+        assert "linked_order_refs" in cols_after
+        assert cols_after["linked_order_refs"][2] == "TEXT"
+        assert cols_after["linked_order_refs"][3] == 0  # nullable
+        # DEFAULT NULL — PRAGMA reports it as None (ALTER TABLE) or 'NULL'
+        # (CREATE TABLE); accept both forms.
+        assert cols_after["linked_order_refs"][4] in (None, "NULL")
+
+        # Existing row preserved; new column defaults to NULL.
+        row = conn.execute(
+            "SELECT linked_order_ref, linked_payment_ref, linked_order_refs "
+            "FROM reconciliation_sale_rows WHERE line_id = 1"
+        ).fetchone()
+        assert row["linked_order_ref"] == "ORD-1"
+        assert row["linked_payment_ref"] == "PAY-1"
+        assert row["linked_order_refs"] is None
+
+
+def test_v98_idempotent_on_already_migrated_db():
+    """Re-running v98 on a DB that already ran it is a no-op (NFR2 — the
+    inline PRAGMA guard skips columns that already exist).
+    """
+    from baker.db.schema import _migrate_v98_reconciliation_sale_rows_linked_order_refs
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 98)
+        assert _migrated_version(conn) == 98
+        before = conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v98_reconciliation_sale_rows_linked_order_refs(conn)
+        after = conn.execute("PRAGMA table_info(reconciliation_sale_rows)").fetchall()
+        assert before == after
+        assert _migrated_version(conn) == 98
+
+
+# ---------------------------------------------------------------------------
+# v99 — cash_drawer.reconciled column (DG-379 Phase 4.1)
+# FR7/FR8/AC5/AC6 (partial — column existence only; guard + API in Phase 4.2)
+# NFR3 — existing drawers default to reconciled = 0 (editable)
+# ---------------------------------------------------------------------------
+
+
+def test_v99_registered_in_migration_chain():
+    """v99 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 99 in MIGRATIONS
+    assert (
+        MIGRATIONS[99]["description"]
+        == "Add reconciled INTEGER NOT NULL DEFAULT 0 column to cash_drawer for edit-lock on reconciled drawers (DG-379 Phase 4.1)"
+    )
+    assert MIGRATIONS[99]["callable"].__name__ == "_migrate_v99_cash_drawer_reconciled_column"
+
+
+def test_v99_adds_reconciled_column_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the ``reconciled`` column on
+    ``cash_drawer`` stored as INTEGER NOT NULL DEFAULT 0 per NFR3.
+
+    FR7/FR8 (partial): the column exists; the 409 guard and PATCH
+    /reconcile endpoint are built in Phase 4.2.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+
+        cols = _schema_columns(conn, "cash_drawer")
+        assert "reconciled" in cols
+        # INTEGER NOT NULL DEFAULT 0 (NFR3 — existing drawers stay editable).
+        assert cols["reconciled"]["type"] == "INTEGER"
+        assert cols["reconciled"]["notnull"] == 1
+        assert cols["reconciled"]["dflt_value"] == "0"
+
+        # Covering index for the 409 guard lookup (Phase 4.2).
+        indexes = {
+            r[1]
+            for r in conn.execute(
+                "PRAGMA index_list('cash_drawer')"
+            ).fetchall()
+        }
+        assert "idx_cash_drawer_reconciled" in indexes
+
+
+def test_v99_existing_drawers_default_to_editable():
+    """NFR3 — after the migration, every pre-existing drawer row has
+    ``reconciled = 0`` (editable). SQLite ALTER TABLE ADD COLUMN with a
+    constant DEFAULT back-fills the default for all existing rows.
+    """
+    with get_db() as conn:
+        # Migrate to v98 (pre-v99), insert a drawer, then run v99.
+        _migrate_to_version(conn, 98)
+        conn.execute(
+            "INSERT INTO cash_drawer (opening_balance, status) VALUES (1000000, 'closed')"
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 99)
+        row = conn.execute(
+            "SELECT reconciled FROM cash_drawer WHERE id = 1"
+        ).fetchone()
+        assert row["reconciled"] == 0
+
+
+def test_v99_idempotent_on_already_migrated_db():
+    """Re-running v99 on a DB that already ran it is a no-op (the
+    ``_guard_add_column`` PRAGMA guard skips columns that already exist,
+    and ``CREATE INDEX IF NOT EXISTS`` skips the index).
+    """
+    from baker.db.schema import _migrate_v99_cash_drawer_reconciled_column
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        before = conn.execute("PRAGMA table_info('cash_drawer')").fetchall()
+        idx_before = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
+        # Re-running the callable must not raise and must not change columns.
+        _migrate_v99_cash_drawer_reconciled_column(conn)
+        after = conn.execute("PRAGMA table_info('cash_drawer')").fetchall()
+        idx_after = conn.execute("PRAGMA index_list('cash_drawer')").fetchall()
+        assert before == after
+        assert idx_before == idx_after
+        assert _migrated_version(conn) >= 102
+
+
+def test_v100_registered_in_migration_chain():
+    """v100 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 100 in MIGRATIONS
+    assert (
+        MIGRATIONS[100]["description"]
+        == "Message templates table + seed 8 default built-in templates across 6 scenarios (DG-375 Phase 4.1)"
+    )
+    assert MIGRATIONS[100]["callable"].__name__ == "_migrate_v100_message_templates"
+
+
+def test_v100_creates_message_templates_table_on_fresh_db():
+    """A fresh DB (migrated 0 → latest) has the ``message_templates`` table
+    with all expected columns (FR1/FR4/FR6/FR7)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+
+        cols = _schema_columns(conn, "message_templates")
+        expected = {
+            "id", "scenario", "name", "body", "is_system",
+            "created_by_staff_id", "sort_order", "active",
+            "created_at", "updated_at",
+        }
+        assert set(cols) >= expected, f"missing cols: {expected - set(cols)}"
+
+        # FK to staff(id) ON DELETE SET NULL
+        fk_rows = conn.execute("PRAGMA foreign_key_list('message_templates')").fetchall()
+        assert any(
+            r["table"] == "staff" and r["from"] == "created_by_staff_id" and r["on_delete"] == "SET NULL"
+            for r in fk_rows
+        ), f"no staff FK found: {fk_rows}"
+
+        # Indexes
+        indexes = {
+            r[1]
+            for r in conn.execute("PRAGMA index_list('message_templates')").fetchall()
+        }
+        assert "idx_message_templates_scenario" in indexes
+        assert "idx_message_templates_is_system" in indexes
+        assert "idx_message_templates_created_by_staff" in indexes
+        # Partial unique index dedupes system-template seeds (idempotent re-run)
+        assert "idx_message_templates_system_scenario_name_unique" in indexes
+
+
+def test_v100_seeds_eight_default_templates():
+    """FR9/AC9/NFR3: v100 seeds 8 default system templates across 6 scenarios."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM message_templates WHERE is_system = 1"
+        ).fetchone()[0]
+        assert count == 8, f"expected 8 seeded system templates, got {count}"
+
+        scenarios = {
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT scenario FROM message_templates WHERE is_system = 1"
+            ).fetchall()
+        }
+        expected = {"ask_info", "confirm_order", "final_message", "follow_up", "status_update", "payment_request"}
+        assert scenarios == expected, f"scenario mismatch: {scenarios ^ expected}"
+
+        # 3 confirm_order variants
+        confirm_count = conn.execute(
+            "SELECT COUNT(*) FROM message_templates WHERE scenario = 'confirm_order' AND is_system = 1"
+        ).fetchone()[0]
+        assert confirm_count == 3, f"expected 3 confirm_order variants, got {confirm_count}"
+
+
+def test_v100_idempotent_on_already_migrated_db():
+    """Re-running v100 on a DB that already ran it is a no-op (INSERT OR IGNORE)."""
+    from baker.db.schema import _migrate_v100_message_templates
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        before = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
+        # Re-running the callable must not raise and must not change count.
+        _migrate_v100_message_templates(conn)
+        after = conn.execute("SELECT COUNT(*) FROM message_templates").fetchone()[0]
+        assert before == after, f"re-running v100 changed count: {before} -> {after}"
+        assert _migrated_version(conn) >= 102
+
+
 def test_schema_all_matches_imported_symbols():
     """Verify ``baker.db.schema.__all__`` entries match the symbols actually
     importable from the package.
@@ -4901,3 +5189,293 @@ def test_schema_all_matches_imported_symbols():
         f"Symbols declared in __all__ but not importable from baker.db.schema: "
         f"{sorted(extra_in_all)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Migration v101 — address library + customer_addresses (DG-385 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _assert_address_library_schema(conn) -> None:
+    """DG-385 Phase 1: v101 creates address_library + customer_addresses."""
+    # address_library table exists with the expected columns.
+    addr_cols = _schema_columns(conn, "address_library")
+    assert set(addr_cols) >= {
+        "id",
+        "normalized_address",
+        "display_address",
+        "google_maps_url",
+        "created_at",
+        "updated_at",
+    }
+    for name in ("normalized_address", "display_address"):
+        assert addr_cols[name]["notnull"] == 1
+    # google_maps_url is nullable (FR2: non-null when present, not always set).
+    assert addr_cols["google_maps_url"]["notnull"] == 0
+
+    # Autocomplete index on normalized_address (NFR1: p95 < 300ms).
+    addr_indexes = [
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(address_library)").fetchall()
+    ]
+    assert "idx_address_library_normalized_address" in addr_indexes
+    # Unique upsert target on (normalized_address, google_maps_url) (FR3).
+    assert "idx_address_library_normalized_url_unique" in addr_indexes
+
+    # customer_addresses junction table.
+    junction_cols = _schema_columns(conn, "customer_addresses")
+    assert set(junction_cols) >= {
+        "customer_id",
+        "address_library_id",
+        "created_at",
+    }
+    for name in ("customer_id", "address_library_id"):
+        assert junction_cols[name]["notnull"] == 1
+
+    # Foreign keys: customer_id → customers, address_library_id → address_library.
+    junction_fks = conn.execute(
+        "PRAGMA foreign_key_list(customer_addresses)"
+    ).fetchall()
+    fk_targets = {(fk["from"], fk["table"], fk["on_delete"]) for fk in junction_fks}
+    assert ("customer_id", "customers", "CASCADE") in fk_targets
+    assert ("address_library_id", "address_library", "CASCADE") in fk_targets
+
+    # Composite PRIMARY KEY (customer_id, address_library_id) dedupes links.
+    junction_indexes = [
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(customer_addresses)").fetchall()
+    ]
+    assert any(
+        name.startswith("sqlite_autoindex_customer_addresses") or "pk" in name.lower()
+        for name in junction_indexes
+    ), f"customer_addresses missing composite PK index: {junction_indexes}"
+
+    # Lookup indexes for the autocomplete endpoint's per-customer prioritization.
+    for expected in (
+        "idx_customer_addresses_customer",
+        "idx_customer_addresses_address",
+    ):
+        assert expected in junction_indexes, f"missing {expected}: {junction_indexes}"
+
+
+def test_schema_migration_v101_fresh_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        # ensure_schema applies ALL migrations through the latest (v102 after
+        # DG-387 Phase 2). v101 creates the address_library tables; v102 only
+        # runs a data backfill so the schema is unchanged. Assert >= 102 so
+        # this test keeps passing as new migrations are added.
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v100_to_v101():
+    with get_db() as conn:
+        _migrate_to_version(conn, 100)
+        assert _migrated_version(conn) == 100
+
+        _migrate_to_version(conn, 101)
+        assert _migrated_version(conn) == 101
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v101_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+# ---------------------------------------------------------------------------
+# Migration v102 — address library backfill from door-delivery orders
+# (DG-387 Phase 2). v102 adds no schema objects — it only runs a data
+# backfill callable against the v101 ``address_library`` and
+# ``customer_addresses`` tables. These schema-level tests verify the
+# migration is registered, runs cleanly on a fresh DB, advances the
+# schema version to 102, and leaves the v101 schema intact (no tables or
+# columns added/removed/dropped). Backfill correctness, idempotency, and
+# customer linking are exercised in
+# ``tests/test_migration_v102_backfill.py``.
+# ---------------------------------------------------------------------------
+
+
+def test_schema_migration_v102_fresh_db():
+    """v102 runs via ensure_schema on a fresh DB and advances version to 102."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v101_to_v102():
+    """v102 applies cleanly on top of v101 and advances version to 102."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 101)
+        assert _migrated_version(conn) == 101
+        _assert_address_library_schema(conn)
+
+        _migrate_to_version(conn, 102)
+        assert _migrated_version(conn) == 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v102_idempotent():
+    """Re-running v102 on an already-backfilled DB is a no-op (NFR1).
+
+    v102 adds no schema objects, so schema assertions are unchanged. The
+    backfill callable uses ``INSERT OR IGNORE`` for both ``address_library``
+    # and ``customer_addresses`` so a second invocation reports 0 new rows.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 102
+        _assert_address_library_schema(conn)
+
+
+def test_schema_migration_v102_adds_no_new_tables_or_columns():
+    """v102 is a pure data backfill — no schema objects are added or removed.
+
+    Compares the set of tables and per-table columns before (v101) and after
+    # (v102) running the migration to guard against accidental schema drift.
+    """
+    def _snapshot(conn):
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        columns = {
+            table: set(_schema_columns(conn, table).keys())
+            for table in tables
+        }
+        return tables, columns
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 101)
+        before_tables, before_columns = _snapshot(conn)
+
+        _migrate_to_version(conn, 102)
+        after_tables, after_columns = _snapshot(conn)
+
+        assert after_tables == before_tables, (
+            f"v102 changed table set: added={after_tables - before_tables}, "
+            f"removed={before_tables - after_tables}"
+        )
+        for table in before_tables:
+            assert after_columns[table] == before_columns[table], (
+                f"v102 changed columns on {table}: "
+                f"added={after_columns[table] - before_columns[table]}, "
+                f"removed={before_columns[table] - after_columns[table]}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Migration v104 — payment_transaction_photos join table (DG-410 Phase 1).
+# v104 is pure DDL (no callable): it creates the join table that links a
+# single photo to an individual payment transaction. The UNIQUE constraint
+# on payment_transaction_id enforces the single-photo-per-transaction rule
+# (FR1). These tests verify the table/columns/FKs/indexes exist after the
+# full migration chain runs, that v104 applies cleanly on top of v103, and
+# that re-running v104 is a no-op (idempotent — NFR2). Model behavior
+# (upsert/delete/get) is exercised in tests/test_payment_transaction_photo.py.
+# ---------------------------------------------------------------------------
+
+
+def _assert_payment_transaction_photos_schema(conn) -> None:
+    """DG-410 Phase 1: v104 creates payment_transaction_photos join table."""
+    cols = _schema_columns(conn, "payment_transaction_photos")
+    assert set(cols) >= {
+        "id",
+        "payment_transaction_id",
+        "photo_id",
+        "created_at",
+    }
+    for name in ("payment_transaction_id", "photo_id"):
+        assert cols[name]["notnull"] == 1
+    # created_at has a DEFAULT; notnull is 1 but the default supplies a value.
+    assert cols["created_at"]["notnull"] == 1
+
+    # FKs: payment_transaction_id → payment_transactions (CASCADE),
+    # photo_id → photos.
+    fk_rows = conn.execute(
+        "PRAGMA foreign_key_list(payment_transaction_photos)"
+    ).fetchall()
+    fk_targets = {(fk["from"], fk["table"], fk["on_delete"]) for fk in fk_rows}
+    assert ("payment_transaction_id", "payment_transactions", "CASCADE") in fk_targets
+    assert ("photo_id", "photos", "NO ACTION") in fk_targets
+
+    # Indexes: per-txn + per-photo lookup, plus the UNIQUE-txn index that
+    # enforces single-photo-per-transaction (FR1).
+    indexes = [
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA index_list(payment_transaction_photos)"
+        ).fetchall()
+    ]
+    assert "idx_payment_transaction_photos_txn" in indexes
+    assert "idx_payment_transaction_photos_photo" in indexes
+    # The UNIQUE constraint creates an auto-index on payment_transaction_id.
+    unique_indexes = [
+        row
+        for row in conn.execute(
+            "PRAGMA index_list(payment_transaction_photos)"
+        ).fetchall()
+        if row["origin"] == "u" or row["unique"] == 1
+    ]
+    assert unique_indexes, (
+        f"no UNIQUE index on payment_transaction_photos (FR1 not enforced): "
+        f"{indexes}"
+    )
+
+
+def test_schema_migration_v104_fresh_db():
+    """v104 runs via ensure_schema on a fresh DB and creates the join table."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_schema_migration_v103_to_v104():
+    """v104 applies cleanly on top of v103 and advances version to 104."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 103)
+        assert _migrated_version(conn) == 103
+
+        _migrate_to_version(conn, 104)
+        assert _migrated_version(conn) == 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_schema_migration_v104_idempotent():
+    """Re-running v104 on an already-migrated DB is a no-op (NFR2).
+
+    CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS make the SQL
+    block safe to re-run.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 104
+        _assert_payment_transaction_photos_schema(conn)
+
+
+def test_v104_registered_in_migration_chain():
+    """v104 is present in MIGRATIONS and reachable via ensure_schema."""
+    assert 104 in MIGRATIONS
+    assert (
+        MIGRATIONS[104]["description"]
+        == "payment_transaction_photos join table linking a single photo to an individual payment transaction (DG-410 Phase 1)"
+    )
+    # v104 is pure DDL — no callable, SQL block carries the schema.
+    assert MIGRATIONS[104]["sql"].strip() != ""
+    assert "callable" not in MIGRATIONS[104] or MIGRATIONS[104]["callable"] is None

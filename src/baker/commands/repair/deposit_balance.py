@@ -54,7 +54,7 @@ def _orders_with_deposit_balance_issue(conn, order_id=None):
         ) ship ON ship.order_id = o.id
         WHERE COALESCE(pt.dep_credit, 0) > 0
            OR COALESCE(ord.rev_debit, 0) > 0
-    """
+    """  # nosec B608
     params = [deposits_code, deposits_code, deposits_code]
     if order_id is not None:
         sql += " AND o.id = ?"

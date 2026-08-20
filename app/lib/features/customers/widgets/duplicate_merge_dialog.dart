@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/customer_service.dart';
 import '../../../shared/labels/customers.dart';
+import '../providers/duplicate_merge_dialog_notifier.dart';
 
 /// Confirmation dialog shown before merging a duplicate customer (FR7/AC4).
 ///
@@ -12,7 +14,7 @@ import '../../../shared/labels/customers.dart';
 /// backend. The admin can swap the keep/merge-from direction before
 /// confirming (DG-252 review M3 — direction choice for the merge UI).
 /// Returns a [MergeChoice] when the admin confirms, `null` otherwise.
-class DuplicateMergeDialog extends StatefulWidget {
+class DuplicateMergeDialog extends ConsumerStatefulWidget {
   const DuplicateMergeDialog({
     super.key,
     required this.keep,
@@ -27,32 +29,37 @@ class DuplicateMergeDialog extends StatefulWidget {
   final DuplicateCustomerEntry mergeFrom;
 
   @override
-  State<DuplicateMergeDialog> createState() => _DuplicateMergeDialogState();
+  ConsumerState<DuplicateMergeDialog> createState() =>
+      _DuplicateMergeDialogState();
 }
 
 /// Result returned by [DuplicateMergeDialog] reflecting the admin's chosen
 /// keep/merge-from direction after an optional swap.
 typedef MergeChoice = ({DuplicateCustomerEntry keep, DuplicateCustomerEntry mergeFrom});
 
-class _DuplicateMergeDialogState extends State<DuplicateMergeDialog> {
-  late bool _swapped;
-
+class _DuplicateMergeDialogState extends ConsumerState<DuplicateMergeDialog> {
   @override
   void initState() {
     super.initState();
-    _swapped = false;
+    // Reset the swap state each time the dialog opens so a prior session's
+    // swap choice does not leak into a new dialog invocation. Deferred to
+    // a microtask so we don't mutate providers during the build phase
+    // (DG-404 Phase 4.7).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(duplicateMergeDialogProvider.notifier).reset();
+    });
   }
 
-  DuplicateCustomerEntry get _keep => _swapped ? widget.mergeFrom : widget.keep;
-  DuplicateCustomerEntry get _mergeFrom =>
-      _swapped ? widget.keep : widget.mergeFrom;
-
   void _toggleSwap() {
-    setState(() => _swapped = !_swapped);
+    ref.read(duplicateMergeDialogProvider.notifier).toggleSwap();
   }
 
   @override
   Widget build(BuildContext context) {
+    final swapped = ref.watch(duplicateMergeDialogProvider).swapped;
+    final keep = swapped ? widget.mergeFrom : widget.keep;
+    final mergeFrom = swapped ? widget.keep : widget.mergeFrom;
     return AlertDialog(
       title: const Text(CustomersLabels.duplicateFinderMergeDialogTitle),
       content: SingleChildScrollView(
@@ -64,7 +71,7 @@ class _DuplicateMergeDialogState extends State<DuplicateMergeDialog> {
             const SizedBox(height: 16),
             _CustomerSummary(
               label: CustomersLabels.duplicateFinderMergeIntoLabel,
-              entry: _keep,
+              entry: keep,
               highlight: true,
             ),
             Align(
@@ -80,7 +87,7 @@ class _DuplicateMergeDialogState extends State<DuplicateMergeDialog> {
             ),
             _CustomerSummary(
               label: CustomersLabels.duplicateFinderMergeFromLabel,
-              entry: _mergeFrom,
+              entry: mergeFrom,
             ),
           ],
         ),
@@ -92,8 +99,8 @@ class _DuplicateMergeDialogState extends State<DuplicateMergeDialog> {
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop<MergeChoice?>((
-            keep: _keep,
-            mergeFrom: _mergeFrom,
+            keep: keep,
+            mergeFrom: mergeFrom,
           )),
           child: const Text(CustomersLabels.duplicateFinderMergeConfirm),
         ),

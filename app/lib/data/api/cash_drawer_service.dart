@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/cash_drawer.dart';
+import '../models/cash_drawer_transaction.dart';
 import 'api_client.dart';
 
 /// FR9 carry-over proposal returned by the backend when opening today's
@@ -41,58 +42,18 @@ class CarryOverProposalException implements Exception {
       'CarryOverProposalException(amount: $amount, fromDrawerId: $fromDrawerId)';
 }
 
-/// DG-330: thrown when opening balance < 1101 reference balance and the
-/// owner must confirm transferring the difference to 1102 (Owner's Cash).
-class TransferProposalException implements Exception {
-  TransferProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown when opening balance > 1101 reference balance and the
-/// owner must confirm stock reconciliation before proceeding.
-class ExcessProposalException implements Exception {
-  ExcessProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
-/// DG-330: thrown after stock reconciliation confirmed, asking whether the
-/// excess should be recorded as an unidentified sale (50% COGS markup).
-class UnidentifiedSaleProposalException implements Exception {
-  UnidentifiedSaleProposalException({
-    required this.message,
-    required this.referenceBalance,
-    required this.openingBalance,
-    required this.excess,
-  });
-
-  final String message;
-  final int referenceBalance;
-  final int openingBalance;
-  final int excess;
-}
-
 /// DG-331: thrown when closing the drawer with a surplus (counted > expected)
 /// and `surplusConfirmed` is false. The backend responds with HTTP 409
 /// carrying a `surplusProposal` so the owner can choose the nature of the
 /// surplus before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close surplus proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseSurplusDialog` for both flows.
 class CloseSurplusProposalException implements Exception {
   CloseSurplusProposalException({
     required this.message,
@@ -116,6 +77,14 @@ class CloseSurplusProposalException implements Exception {
 /// expected) and `shortageConfirmed` is false. The backend responds with
 /// HTTP 409 carrying a `shortageProposal` so the owner can choose the nature
 /// of the shortage before re-sending the close request.
+///
+/// DG-360: this class is dual-use. It is also thrown by
+/// [CashDrawerService.openDrawer] when the opening balance diverges from the
+/// 1101 reference balance (the open flow reuses the close shortage proposal
+/// shape). Despite the `Close*` prefix, it covers both the close flow
+/// (`expectedBalance`/`countedAmount`) and the open flow
+/// (`referenceBalance`/`openingBalance` mapped onto the same fields), so the
+/// caller can reuse `showCloseShortageDialog` for both flows.
 class CloseShortageProposalException implements Exception {
   CloseShortageProposalException({
     required this.message,
@@ -165,14 +134,25 @@ class CashDrawerService {
   /// successful open the returned [CashDrawer] is unchanged; the optional
   /// `carryOver` block on the success body is not surfaced as a separate
   /// field (the proposal was already confirmed by the caller).
+  ///
+  /// DG-360 Phase 2 FR7: when `openingBalance` diverges from the 1101
+  /// reference balance, the backend responds with HTTP 409 carrying a
+  /// `surplusProposal` or `shortageProposal` (same shape as the close
+  /// drawer flow, except the inner fields are `referenceBalance`/
+  /// `openingBalance` instead of `expectedBalance`/`countedAmount`). This
+  /// method decodes that 409 and throws a [CloseSurplusProposalException] or
+  /// [CloseShortageProposalException] so the caller can reuse the existing
+  /// `showCloseSurplusDialog`/`showCloseShortageDialog` and re-call
+  /// `openDrawer` with the matching `surplusConfirmed`/`surplusSource` or
+  /// `shortageConfirmed`/`shortageSource` flags.
   Future<CashDrawer> openDrawer({
     required int openingBalance,
     String note = '',
     bool carryOverConfirmed = false,
-    bool transferConfirmed = false,
-    bool stockReconciliationConfirmed = false,
-    bool unidentifiedSaleConfirmed = false,
-    bool ownerCapitalConfirmed = false,
+    bool surplusConfirmed = false,
+    String? surplusSource,
+    bool shortageConfirmed = false,
+    String? shortageSource,
   }) async {
     try {
       final response = await _dio.post(
@@ -181,10 +161,12 @@ class CashDrawerService {
           'openingBalance': openingBalance,
           'note': note,
           'carryOverConfirmed': carryOverConfirmed,
-          'transferConfirmed': transferConfirmed,
-          'stockReconciliationConfirmed': stockReconciliationConfirmed,
-          'unidentifiedSaleConfirmed': unidentifiedSaleConfirmed,
-          'ownerCapitalConfirmed': ownerCapitalConfirmed,
+          if (surplusConfirmed) 'surplusConfirmed': true,
+          if (surplusSource != null && surplusSource.isNotEmpty)
+            'surplusSource': surplusSource,
+          if (shortageConfirmed) 'shortageConfirmed': true,
+          if (shortageSource != null && shortageSource.isNotEmpty)
+            'shortageSource': shortageSource,
         },
       );
       return CashDrawer.fromJson(response.data as Map<String, dynamic>);
@@ -196,8 +178,16 @@ class CashDrawerService {
   }
 
   /// Decodes a 409 `detail` body into a proposal exception (carry-over,
-  /// transfer, excess, or unidentified-sale), or returns `null` when the
-  /// error is not a known proposal type.
+  /// surplus, or shortage), or returns `null` when the error is not a known
+  /// proposal type.
+  ///
+  /// DG-360 Phase 2: `surplusProposal`/`shortageProposal` reuse the close
+  /// drawer exception types so the caller can re-use the same confirmation
+  /// dialogs. The open proposal's `referenceBalance`/`openingBalance` fields
+  /// map onto the close exception's `expectedBalance`/`countedAmount` fields
+  /// so the dialog labels stay consistent (the dialog prints "Số dư dự kiến"
+  /// and "Số tiền đếm được" — for an open flow these correspond to the 1101
+  /// reference and the entered opening amount respectively).
   Object? _decodeOpenProposal(DioException e) {
     if (e.response?.statusCode != 409) return null;
     final body = e.response?.data;
@@ -215,31 +205,22 @@ class CashDrawerService {
         fromExpectedBalance: (p['fromExpectedBalance'] as num).toInt(),
       );
     }
-    if (detail.containsKey('transferProposal')) {
-      final p = detail['transferProposal'] as Map<String, dynamic>;
-      return TransferProposalException(
+    if (detail.containsKey('surplusProposal')) {
+      final p = detail['surplusProposal'] as Map<String, dynamic>;
+      return CloseSurplusProposalException(
         message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
+        expectedBalance: (p['referenceBalance'] as num).toInt(),
+        countedAmount: (p['openingBalance'] as num).toInt(),
+        surplus: (p['surplus'] as num).toInt(),
       );
     }
-    if (detail.containsKey('excessProposal')) {
-      final p = detail['excessProposal'] as Map<String, dynamic>;
-      return ExcessProposalException(
+    if (detail.containsKey('shortageProposal')) {
+      final p = detail['shortageProposal'] as Map<String, dynamic>;
+      return CloseShortageProposalException(
         message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
-      );
-    }
-    if (detail.containsKey('unidentifiedSaleProposal')) {
-      final p = detail['unidentifiedSaleProposal'] as Map<String, dynamic>;
-      return UnidentifiedSaleProposalException(
-        message: detail['message'] as String? ?? '',
-        referenceBalance: (p['referenceBalance'] as num).toInt(),
-        openingBalance: (p['openingBalance'] as num).toInt(),
-        excess: (p['excess'] as num).toInt(),
+        expectedBalance: (p['referenceBalance'] as num).toInt(),
+        countedAmount: (p['openingBalance'] as num).toInt(),
+        shortage: (p['shortage'] as num).toInt(),
       );
     }
     return null;
@@ -425,6 +406,122 @@ class CashDrawerService {
     );
     return CashDrawerHistoryResponse.fromJson(
       response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// DG-343 Phase 2 (FR1/FR2): paginated list of cash transactions for a
+  /// given drawer, ordered newest-first. Calls
+  /// `GET /api/cash-drawer/{drawer_id}/transactions` with `limit`/`offset`
+  /// query params. The backend joins journal entries linked to the drawer
+  /// via `cash_drawer_journal_entries` and aggregates their 1101 (Cash in
+  /// Drawer) lines into one signed row per entry.
+  ///
+  /// Each item carries `type` (journal `source_type`), `amount` (signed int,
+  /// +inflow/-outflow), `timestamp` (transaction_date fallback to
+  /// created_at), and `note` (journal description). Non-cash operations
+  /// (bank transfers, card payments) are excluded by the backend.
+  ///
+  /// Use [cashDrawerTransactionsProvider] for Riverpod caching; call this
+  /// directly only for one-off fetches or tests.
+  Future<CashDrawerTransactionResponse> getDrawerTransactions(
+    int drawerId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final response = await _dio.get(
+      '/api/cash-drawer/$drawerId/transactions',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    return CashDrawerTransactionResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// DG-379 Phase 4.2/4.3 (FR1-FR3): edit an open/close transaction's amount
+  /// and/or notes in-place. Calls
+  /// `PATCH /api/cash-drawer/{drawer_id}/transactions/{entry_id}` with a JSON
+  /// body containing the optional `amount` (VND, > 0) and `notes`. The backend
+  /// updates `journal_entries.description` and `journal_lines.debit`/`credit`
+  /// in a single DB transaction, recalculates drawer balances for close
+  /// edits, and returns a dict describing the updated entry + drawer.
+  ///
+  /// Both [amount] and [notes] are optional — pass `null` to leave a field
+  /// unchanged. At least one must be non-null (the backend rejects an empty
+  /// body with 400). Throws [DioException] on 404 (drawer/entry missing),
+  /// 409 (drawer reconciled or close-edit-while-open), 400 (invalid type or
+  /// amount).
+  Future<CashDrawerEditResult> editTransaction(
+    int drawerId,
+    int entryId, {
+    int? amount,
+    String? notes,
+  }) async {
+    final response = await _dio.patch(
+      '/api/cash-drawer/$drawerId/transactions/$entryId',
+      data: {
+        'amount': ?amount,
+        'notes': ?notes,
+      },
+    );
+    return CashDrawerEditResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// DG-379 Phase 4.2/4.3 (FR8, AC6): mark a drawer as reconciled. Calls
+  /// `PATCH /api/cash-drawer/{drawer_id}/reconcile` (no body). Sets
+  /// `cash_drawer.reconciled = 1` so further transaction edits are rejected
+  /// with 409. Idempotent — re-reconciling an already-reconciled drawer
+  /// returns 200 with `reconciled: true`. Throws [DioException] on 404
+  /// (drawer missing).
+  Future<bool> reconcileDrawer(int drawerId) async {
+    final response = await _dio.patch('/api/cash-drawer/$drawerId/reconcile');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) return false;
+    return (data['reconciled'] as bool?) ?? false;
+  }
+}
+
+/// DG-379 Phase 4.3: result of [CashDrawerService.editTransaction]. Mirrors
+/// the backend `CashDrawer.edit_transaction` response dict:
+///
+///   {
+///     "drawerId": "1",
+///     "entryId": "12",
+///     "sourceType": "cash_drawer_open",
+///     "amount": 1500000,          // null when amount was not edited
+///     "notes": "Mở quầy sáng",      // the updated (or unchanged) description
+///     "drawer": { ...CashDrawer... } // full recalculated drawer
+///   }
+///
+/// The [drawer] field carries the recalculated expected/closing balance and
+/// the up-to-date `reconciled` flag so the caller can refresh the status
+/// card and transaction list without a second round-trip.
+class CashDrawerEditResult {
+  const CashDrawerEditResult({
+    required this.drawerId,
+    required this.entryId,
+    required this.sourceType,
+    required this.amount,
+    required this.notes,
+    required this.drawer,
+  });
+
+  final String drawerId;
+  final String entryId;
+  final String sourceType;
+  final int? amount;
+  final String notes;
+  final CashDrawer drawer;
+
+  factory CashDrawerEditResult.fromJson(Map<String, dynamic> json) {
+    return CashDrawerEditResult(
+      drawerId: (json['drawerId'] as String?) ?? '',
+      entryId: (json['entryId'] as String?) ?? '',
+      sourceType: (json['sourceType'] as String?) ?? '',
+      amount: (json['amount'] as num?)?.toInt(),
+      notes: (json['notes'] as String?) ?? '',
+      drawer: CashDrawer.fromJson((json['drawer'] as Map<String, dynamic>?) ?? const {}),
     );
   }
 }

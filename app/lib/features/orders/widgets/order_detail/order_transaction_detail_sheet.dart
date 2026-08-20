@@ -2,16 +2,20 @@
 // renders payment, deposit, and refund sections with per-row formatting that
 // does not split cleanly into independent widgets without duplicating state.
 // Reviewed 2026-07-30.
+import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel, showTopSnackBar, txnTypeLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
+import '../../providers/order_transaction_detail_notifier.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_detail_helpers.dart';
 import 'order_detail_row.dart';
-
+import 'txn_photo_section.dart';
+import 'package:bakery_app/shared/labels/expenses.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 /// Bottom sheet showing a single payment transaction's details with
 /// invalidate / restore / edit actions.
 class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
@@ -33,12 +37,11 @@ class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
 
 class _OrderTransactionDetailSheetState
     extends ConsumerState<OrderTransactionDetailSheet> {
-  bool _acting = false;
-
   PaymentTransaction get txn => widget.txn;
 
   @override
   Widget build(BuildContext context) {
+    final acting = ref.watch(orderTransactionDetailProvider);
     final theme = Theme.of(context);
     final color = txnColor(txn.type);
     final typeLabel = txnTypeLabel(txn.type);
@@ -80,7 +83,7 @@ class _OrderTransactionDetailSheetState
                   ),
                 ),
                 child: Text(
-                  isInvalidated ? VN.txnInvalidatedBadge : typeLabel,
+                  isInvalidated ? OrdersLabels.txnInvalidatedBadge : typeLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: isInvalidated ? theme.colorScheme.outline : color,
                     fontWeight: FontWeight.bold,
@@ -104,30 +107,37 @@ class _OrderTransactionDetailSheetState
             ],
           ),
           const SizedBox(height: 20),
-          OrderDetailRow(label: VN.paymentMethod, value: methodLabel),
+          OrderDetailRow(label: OrdersLabels.paymentMethod, value: methodLabel),
           if (txn.paymentSource != null && txn.paymentSource!.isNotEmpty)
             OrderDetailRow(
-              label: VN.paymentTargetAccountLabel,
+              label: ExpensesLabels.paymentTargetAccountLabel,
               value: txn.paymentSource!,
             ),
-          if (dateStr.isNotEmpty) OrderDetailRow(label: VN.txnType, value: dateStr),
+          if (dateStr.isNotEmpty) OrderDetailRow(label: OrdersLabels.txnType, value: dateStr),
           if (txn.notes.isNotEmpty)
-            OrderDetailRow(label: VN.txnNoteLabel, value: txn.notes),
+            OrderDetailRow(label: OrdersLabels.txnNoteLabel, value: txn.notes),
           if (isInvalidated) ...[
             const SizedBox(height: 8),
             if (invalidatedDateStr.isNotEmpty)
               OrderDetailRow(
-                label: VN.txnInvalidatedAtLabel,
+                label: OrdersLabels.txnInvalidatedAtLabel,
                 value: invalidatedDateStr,
               ),
             if (txn.invalidatedBy.isNotEmpty)
               OrderDetailRow(
-                label: VN.txnInvalidatedByLabel,
+                label: OrdersLabels.txnInvalidatedByLabel,
                 value: txn.invalidatedBy,
               ),
           ],
           const SizedBox(height: 20),
-          if (_acting)
+          TxnPhotoSection(
+            orderRef: widget.orderRef,
+            txnId: txn.id,
+            showRemove: false,
+            showEmptyState: true,
+          ),
+          const SizedBox(height: 20),
+          if (acting)
             const Center(child: CircularProgressIndicator())
           else ...[
             OutlinedButton.icon(
@@ -136,14 +146,14 @@ class _OrderTransactionDetailSheetState
                 widget.onEdit();
               },
               icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text(VN.editPayment),
+              label: const Text(OrdersLabels.editPayment),
             ),
             const SizedBox(height: 8),
             if (isInvalidated)
               FilledButton.icon(
                 onPressed: _onRestore,
                 icon: const Icon(Icons.restore, size: 18),
-                label: const Text(VN.restorePayment),
+                label: const Text(OrdersLabels.restorePayment),
               )
             else
               OutlinedButton.icon(
@@ -153,7 +163,7 @@ class _OrderTransactionDetailSheetState
                 ),
                 onPressed: _onInvalidate,
                 icon: const Icon(Icons.block_outlined, size: 18),
-                label: const Text(VN.invalidatePayment),
+                label: const Text(OrdersLabels.invalidatePayment),
               ),
           ],
         ],
@@ -161,45 +171,53 @@ class _OrderTransactionDetailSheetState
     );
   }
 
+  // ── Per-transaction photo (DG-410 Phase 4 / CQ-1) ─────────────────────────
+  //
+  // The detail sheet's photo section is now rendered by the shared
+  // [TxnPhotoSection] widget (see txn_photo_section.dart), which centralizes
+  // the pick / remove / busy-state logic that previously lived as
+  // duplicated `_pickTxnPhoto` / `_buildTxnPhotoSection` copies here and in
+  // the edit sheet.
+
   Future<void> _onInvalidate() async {
     final reason = await _showInvalidateReasonDialog();
     if (reason == null || !mounted) return;
-    setState(() => _acting = true);
+    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
           .invalidate(txn.id, reason: reason);
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.paymentInvalidated);
+        showTopSnackBar(context, OrdersLabels.paymentInvalidated);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
     }
   }
 
   Future<void> _onRestore() async {
     final confirmed = await _showRestoreConfirmDialog();
     if (!confirmed || !mounted) return;
-    setState(() => _acting = true);
+    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
     try {
       await ref
           .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
           .restore(txn.id);
       if (mounted) {
         Navigator.pop(context);
-        showTopSnackBar(context, VN.paymentRestored);
+        showTopSnackBar(context, OrdersLabels.paymentRestored);
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
     }
   }
 
@@ -211,18 +229,18 @@ class _OrderTransactionDetailSheetState
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setS) => AlertDialog(
-            title: const Text(VN.invalidateConfirmTitle),
+            title: const Text(OrdersLabels.invalidateConfirmTitle),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(VN.invalidateConfirmMessage),
+                const Text(OrdersLabels.invalidateConfirmMessage),
                 const SizedBox(height: 12),
                 TextField(
                   controller: ctrl,
                   decoration: const InputDecoration(
-                    labelText: VN.invalidateReasonLabel,
-                    hintText: VN.invalidateReasonHint,
+                    labelText: OrdersLabels.invalidateReasonLabel,
+                    hintText: OrdersLabels.invalidateReasonHint,
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 2,
@@ -234,14 +252,14 @@ class _OrderTransactionDetailSheetState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(VN.cancel),
+                child: const Text(SharedLabels.cancel),
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
                   backgroundColor: theme.colorScheme.error,
                 ),
                 onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                child: const Text(VN.invalidatePayment),
+                child: const Text(OrdersLabels.invalidatePayment),
               ),
             ],
           ),
@@ -256,16 +274,16 @@ class _OrderTransactionDetailSheetState
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(VN.restoreConfirmTitle),
-        content: const Text(VN.restoreConfirmMessage),
+        title: const Text(OrdersLabels.restoreConfirmTitle),
+        content: const Text(OrdersLabels.restoreConfirmMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
+            child: const Text(SharedLabels.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.restorePayment),
+            child: const Text(OrdersLabels.restorePayment),
           ),
         ],
       ),

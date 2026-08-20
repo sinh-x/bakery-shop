@@ -1,5 +1,14 @@
-import '../api/reconciliation_service.dart';
+import '../api/reconciliation_models.dart';
 import 'reconciliation_state.dart';
+
+/// Reconciliation submit-line and validation math.
+///
+/// The option-merge step ([mergeOptionsByNormalizedPrice]) and the
+/// discriminator constants ([kBasePriceDiscriminator],
+/// [kChipPriceDiscriminatorPrefix]) live in `reconciliation_models.dart`
+/// alongside [ReconciliationDraftOption], so the dependency between the two
+/// files is one-directional: this file imports `reconciliation_models.dart`,
+/// never the reverse (DG-413 review cycle 5 / CQ-11).
 
 class ReconciliationValidationResult {
   ReconciliationValidationResult(
@@ -27,6 +36,7 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final rows =
           state.saleRowsByOption[optionKey] ??
@@ -128,6 +138,7 @@ ReconciliationValidationResult? validateReconciliationState(
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
+        discriminator: option.keyDiscriminator,
       );
       final counted = currentState.countedQtyByOption[optionKey] ?? 0;
       final rows =
