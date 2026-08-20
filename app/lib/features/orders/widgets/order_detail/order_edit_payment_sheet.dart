@@ -10,6 +10,7 @@ import '../../providers/order_edit_payment_notifier.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'txn_photo_section.dart';
+import 'txn_date_time_picker_row.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Bottom sheet for editing an existing payment transaction.
@@ -39,13 +40,15 @@ class _OrderEditPaymentSheetState
     super.initState();
     final txn = widget.txn;
     // Defer the seed to avoid modifying a provider during the build phase
-    // (initState is part of the build lifecycle).
+    // (initState is part of the build lifecycle). Seed includes the existing
+    // `createdAt` (DG-415 Phase 3 / FR2) so the picker opens pre-filled.
     Future.microtask(() {
       if (mounted) {
         ref.read(orderEditPaymentProvider.notifier).seed(
               type: txn.type,
               method: txn.method,
               paymentSource: txn.paymentSource,
+              createdAt: txn.createdAt,
             );
       }
     });
@@ -78,6 +81,7 @@ class _OrderEditPaymentSheetState
             method: s.method,
             notes: _notesCtrl.text.trim(),
             paymentSource: s.paymentSource,
+            createdAt: s.createdAt,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -179,6 +183,20 @@ class _OrderEditPaymentSheetState
                 labelText: OrdersLabels.paymentNotes,
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            // DG-415 Phase 3 / FR2, FR7 — date+time picker pre-filled with the
+            // existing `createdAt` and limited to past→today. The notifier
+            // merges date+time so the edited timestamp persists as UTC Z on
+            // save and re-syncs the journal entry `transaction_date` (AC4).
+            TxnDateTimePickerRow(
+              dateTime: s.createdAt ?? widget.txn.createdAt ?? DateTime.now(),
+              onDateChanged: ref
+                  .read(orderEditPaymentProvider.notifier)
+                  .setCreatedDate,
+              onTimeChanged: ref
+                  .read(orderEditPaymentProvider.notifier)
+                  .setCreatedTime,
             ),
             if (s.method == 'transfer') ...[
               const SizedBox(height: 12),

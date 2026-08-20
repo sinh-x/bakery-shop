@@ -34,6 +34,7 @@ class OrderPaymentTransactionsNotifier
     String method = 'cash',
     String notes = '',
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     final service = ref.read(paymentTransactionServiceProvider);
     final txn = await service.createTransaction(
@@ -43,6 +44,7 @@ class OrderPaymentTransactionsNotifier
       method: method,
       notes: notes,
       paymentSource: paymentSource,
+      createdAt: createdAt,
     );
     final current = state.value ?? [];
     state = AsyncData([...current, txn]);
@@ -57,6 +59,7 @@ class OrderPaymentTransactionsNotifier
     required String method,
     required String notes,
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     final service = ref.read(paymentTransactionServiceProvider);
     final updated = await service.updateTransaction(
@@ -67,6 +70,7 @@ class OrderPaymentTransactionsNotifier
       method: method,
       notes: notes,
       paymentSource: paymentSource,
+      createdAt: createdAt,
     );
     final current = state.value ?? [];
     state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());

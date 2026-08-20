@@ -156,7 +156,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(OrdersLabels.txnPhotoRemove));
+      // The Remove button may be offscreen because the sheet now also hosts
+      // the date+time picker row (DG-415 Phase 3). Scroll it into view.
+      final removeFinder = find.text(OrdersLabels.txnPhotoRemove);
+      await tester.ensureVisible(removeFinder);
+      await tester.pumpAndSettle();
+      await tester.tap(removeFinder);
       await tester.pumpAndSettle();
 
       // Confirm dialog appears with the remove + cancel actions.

@@ -113,7 +113,8 @@ class _OrderTransactionDetailSheetState
               label: ExpensesLabels.paymentTargetAccountLabel,
               value: txn.paymentSource!,
             ),
-          if (dateStr.isNotEmpty) OrderDetailRow(label: OrdersLabels.txnType, value: dateStr),
+          if (dateStr.isNotEmpty)
+            OrderDetailRow(label: OrdersLabels.txnDateTimeLabel, value: dateStr),
           if (txn.notes.isNotEmpty)
             OrderDetailRow(label: OrdersLabels.txnNoteLabel, value: txn.notes),
           if (isInvalidated) ...[
