@@ -554,6 +554,19 @@ class OrdersLabels {
   static const paymentAmountLabel = 'Số tiền';
   static const txnType = 'Loại thanh toán';
 
+  // ── Payment transaction date/time editing (DG-415 Phase 3 / FR1, FR2, FR5, FR7) ─
+  /// "Ngày giao dịch" — label for the date picker shown in the create/edit
+  /// payment sheets. Defaults to the current local date when creating.
+  static const txnDateLabel = 'Ngày giao dịch';
+
+  /// "Giờ giao dịch" — label for the time picker shown in the create/edit
+  /// payment sheets. Defaults to the current local time when creating.
+  static const txnTimeLabel = 'Giờ giao dịch';
+
+  /// "Thời gian" — row label for the date/time display in the transaction
+  /// detail sheet (FR5).
+  static const txnDateTimeLabel = 'Thời gian';
+
   // Payment transaction invalidation (DG-196)
   static const txnInvalidatedBadge = 'Đã hủy';
   static const txnInvalidatedAtLabel = 'Ngày hủy';

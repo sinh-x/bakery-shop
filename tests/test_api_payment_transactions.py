@@ -798,3 +798,216 @@ def test_restore_journal_failure_does_not_block_api(api_client, monkeypatch):
     resp = _restore(api_client, ref, txn["id"])
     assert resp.status_code == 200
     assert resp.json()["invalidatedAt"] is None
+
+
+# --- DG-415 Phase 1: createdAt support on create / edit ---
+
+
+def test_create_transaction_with_created_at_override(api_client):
+    """AC5/FR3: POST with a valid ISO `createdAt` stores a UTC Z-suffixed
+    timestamp instead of stamping server 'now'."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01T09:15:00Z"},
+    )
+    assert resp.status_code == 201
+    txn = resp.json()
+    assert txn["createdAt"] == "2026-07-01T09:15:00Z"
+
+
+def test_create_transaction_with_created_at_offset_normalized_to_utc(api_client):
+    """NFR1/FR3: an offset timestamp (+07:00) is normalized to UTC Z."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    # 2026-07-01T16:15:00+07:00 == 2026-07-01T09:15:00Z
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01T16:15:00+07:00"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdAt"] == "2026-07-01T09:15:00Z"
+
+
+def test_create_transaction_without_created_at_defaults_to_now(api_client):
+    """Default behaviour (no createdAt) still stamps server UTC 'now'."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions", json={"amount": 50000}
+    )
+    assert resp.status_code == 201
+    created_at = resp.json()["createdAt"]
+    assert created_at is not None
+    assert created_at.endswith("Z")  # UTC Z-suffixed (NFR1)
+
+
+def test_create_transaction_invalid_created_at_rejected(api_client):
+    """FR3: a malformed createdAt is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "not-a-timestamp"},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_transaction_empty_created_at_rejected(api_client):
+    """FR3: an explicitly-empty createdAt is rejected with 422 (not silently
+    defaulted — the client explicitly sent an empty value)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "  "},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_created_at(api_client):
+    """AC5/FR3: PATCH updates createdAt to a new UTC Z-suffixed value."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-06-15T08:30:00Z"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["createdAt"] == "2026-06-15T08:30:00Z"
+
+
+def test_update_transaction_created_at_re_syncs_journal(api_client):
+    """AC4/FR4: editing createdAt re-syncs the journal entry so its
+    transaction_date follows the new created_at."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = int(txn["id"])
+
+    new_ts = "2026-06-15T08:30:00Z"
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": new_ts},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        entry = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type = 'payment_transaction' AND source_id = ?",
+            (txn_id,),
+        ).fetchone()
+        assert entry is not None
+        assert entry["transaction_date"] == new_ts
+
+
+def test_update_transaction_created_at_offset_normalized(api_client):
+    """NFR1/FR3: a PATCH with an offset createdAt is normalized to UTC Z."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-06-15T15:30:00+07:00"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["createdAt"] == "2026-06-15T08:30:00Z"
+
+
+def test_update_transaction_invalid_created_at_rejected(api_client):
+    """FR3: a malformed createdAt on PATCH is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "garbage"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_invalidated_transaction_rejects_created_at(api_client):
+    """AC6/FR6: editing createdAt on an invalidated transaction is rejected
+    with 422 — invalidated transactions are frozen for accounting integrity."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"])
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-06-15T08:30:00Z"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_invalidated_transaction_rejects_any_field(api_client):
+    """FR6: an invalidated transaction rejects any PATCH (not just
+    createdAt) — the whole transaction is frozen."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"])
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"amount": 999999},
+    )
+    assert resp.status_code == 422
+
+
+# --- review-auto cycle 1 CQ-2: normalize_timestamp hardening ---
+
+
+def test_create_transaction_date_only_created_at_rejected(api_client):
+    """CQ-2: a date-only `createdAt` (no T separator / time component) is
+    rejected with 422 so the canonical YYYY-MM-DDTHH:MM:SSZ invariant is
+    preserved."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01"},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_transaction_short_time_created_at_rejected(api_client):
+    """CQ-2: a timestamp missing seconds (HH:MM without :SS) is rejected
+    with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "createdAt": "2026-07-01T09:15"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_date_only_created_at_rejected(api_client):
+    """CQ-2: a date-only `createdAt` on PATCH is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-07-01"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_short_time_created_at_rejected(api_client):
+    """CQ-2: a timestamp missing seconds on PATCH is rejected with 422."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"createdAt": "2026-07-01T09:15"},
+    )
+    assert resp.status_code == 422

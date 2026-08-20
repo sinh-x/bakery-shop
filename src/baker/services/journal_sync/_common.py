@@ -187,9 +187,17 @@ def _reverse_journal_entry(conn, entry_id: int) -> Optional[int]:
     )
 
 def _update_journal_entry_in_place(
-    conn, entry_id: int, *, description: str, lines: list[tuple[int, float, float, str]]
+    conn, entry_id: int, *, description: str, lines: list[tuple[int, float, float, str]],
+    transaction_date: str | None = None,
 ) -> None:
-    """Replace the lines of an unlocked journal entry with the given lines."""
+    """Replace the lines of an unlocked journal entry with the given lines.
+
+    When ``transaction_date`` is provided (DG-415 FR4), the entry's
+    ``transaction_date`` is also updated so the journal follows the source
+    record's edited timestamp. When ``None`` the date is left unchanged
+    (preserves the existing behaviour for callers that re-resolve only
+    description/lines).
+    """
     conn.execute("DELETE FROM journal_lines WHERE journal_entry_id = ?", (entry_id,))
     for account_id, debit, credit, line_desc in lines:
         conn.execute(
@@ -198,10 +206,16 @@ def _update_journal_entry_in_place(
             "VALUES (?, ?, ?, ?, ?)",
             (entry_id, account_id, float(debit), float(credit), line_desc),
         )
-    conn.execute(
-        "UPDATE journal_entries SET description = ? WHERE id = ?",
-        (description, entry_id),
-    )
+    if transaction_date is not None:
+        conn.execute(
+            "UPDATE journal_entries SET description = ?, transaction_date = ? WHERE id = ?",
+            (description, transaction_date, entry_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE journal_entries SET description = ? WHERE id = ?",
+            (description, entry_id),
+        )
 
 def _resolve_delivered_timestamp(conn, order_id: int, order_ref: str) -> str | None:
     """Return the first delivered/completed event timestamp for an order.

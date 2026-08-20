@@ -7,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/payment_transaction.dart';
 import '../../../../providers/order_providers.dart';
 import '../../providers/order_edit_payment_notifier.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'txn_photo_section.dart';
+import 'txn_date_time_picker_row.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 /// Bottom sheet for editing an existing payment transaction.
@@ -39,13 +41,25 @@ class _OrderEditPaymentSheetState
     super.initState();
     final txn = widget.txn;
     // Defer the seed to avoid modifying a provider during the build phase
-    // (initState is part of the build lifecycle).
+    // (initState is part of the build lifecycle). Seed includes the existing
+    // `createdAt` (DG-415 Phase 3 / FR2) so the picker opens pre-filled.
+    //
+    // review-auto cycle 1 CQ-1: convert the stored UTC `createdAt` to
+    // server-local wall-clock once at the seed boundary. From here on the
+    // notifier/picker only deal with local DateTime fields, so editing the
+    // date or time no longer double-shifts the stored timestamp (the
+    // `timestampToJson` on save calls `.toUtc()` which exactly reverses this
+    // single local conversion).
     Future.microtask(() {
       if (mounted) {
+        final localCreatedAt = txn.createdAt == null
+            ? null
+            : ServerTimezone.toServerLocal(txn.createdAt!);
         ref.read(orderEditPaymentProvider.notifier).seed(
               type: txn.type,
               method: txn.method,
               paymentSource: txn.paymentSource,
+              createdAt: localCreatedAt,
             );
       }
     });
@@ -78,6 +92,7 @@ class _OrderEditPaymentSheetState
             method: s.method,
             notes: _notesCtrl.text.trim(),
             paymentSource: s.paymentSource,
+            createdAt: s.createdAt,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -179,6 +194,29 @@ class _OrderEditPaymentSheetState
                 labelText: OrdersLabels.paymentNotes,
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            // DG-415 Phase 3 / FR2, FR7 — date+time picker pre-filled with the
+            // existing `createdAt` and limited to past→today. The notifier
+            // merges date+time so the edited timestamp persists as UTC Z on
+            // save and re-syncs the journal entry `transaction_date` (AC4).
+            //
+            // CQ-1: `s.createdAt` is already a server-local DateTime (seeded
+            // via `ServerTimezone.toServerLocal`), so the picker formats local
+            // wall-clock fields directly. The fallback path also converts the
+            // raw UTC `txn.createdAt` through `toServerLocal` so the picker
+            // never reads raw UTC fields.
+            TxnDateTimePickerRow(
+              dateTime: s.createdAt ??
+                  (widget.txn.createdAt == null
+                      ? DateTime.now()
+                      : ServerTimezone.toServerLocal(widget.txn.createdAt!)),
+              onDateChanged: ref
+                  .read(orderEditPaymentProvider.notifier)
+                  .setCreatedDate,
+              onTimeChanged: ref
+                  .read(orderEditPaymentProvider.notifier)
+                  .setCreatedTime,
             ),
             if (s.method == 'transfer') ...[
               const SizedBox(height: 12),

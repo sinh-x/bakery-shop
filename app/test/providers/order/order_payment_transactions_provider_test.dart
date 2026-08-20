@@ -25,6 +25,7 @@ class _RecordingTxnService extends PaymentTransactionService {
     String method = 'cash',
     String notes = '',
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     lastCreateOrderRef = orderRef;
     lastCreatePaymentSource = paymentSource;
@@ -34,7 +35,7 @@ class _RecordingTxnService extends PaymentTransactionService {
       amount: amount,
       type: type,
       method: method,
-      createdAt: DateTime(2026, 7, 18),
+      createdAt: createdAt ?? DateTime(2026, 7, 18),
       paymentSource: paymentSource,
     );
   }
@@ -48,6 +49,7 @@ class _RecordingTxnService extends PaymentTransactionService {
     String? method,
     String? notes,
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     lastUpdateOrderRef = orderRef;
     lastUpdateTxnId = txnId;
@@ -58,7 +60,7 @@ class _RecordingTxnService extends PaymentTransactionService {
       amount: amount ?? 0,
       type: type ?? 'deposit',
       method: method ?? 'cash',
-      createdAt: DateTime(2026, 7, 18),
+      createdAt: createdAt ?? DateTime(2026, 7, 18),
       paymentSource: paymentSource,
     );
   }

@@ -11,6 +11,7 @@ import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'txn_date_time_picker_row.dart';
 /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
 /// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
 /// Unicode letters/digits are preserved; only ASCII punctuation/symbols
@@ -109,6 +110,7 @@ class _OrderRecordPaymentSheetState
             method: s.method,
             notes: _notesCtrl.text.trim(),
             paymentSource: s.paymentSource,
+            createdAt: s.createdAt,
           );
       // Upload the transfer proof photo after the payment is recorded (FR3).
       // Tags = 'chuyen-khoan,<sanitized-account>' (FR3/FR4). The photo upload
@@ -259,6 +261,19 @@ class _OrderRecordPaymentSheetState
                 labelText: OrdersLabels.paymentNotes,
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            // DG-415 Phase 3 / FR1, FR7 — date+time picker defaults to now
+            // and is limited to past→today. The notifier merges date+time so
+            // the picked timestamp persists as UTC Z on save (AC2).
+            TxnDateTimePickerRow(
+              dateTime: s.createdAt ?? DateTime.now(),
+              onDateChanged: ref
+                  .read(orderRecordPaymentProvider.notifier)
+                  .setCreatedDate,
+              onTimeChanged: ref
+                  .read(orderRecordPaymentProvider.notifier)
+                  .setCreatedTime,
             ),
             if (s.method == 'transfer') ...[
               const SizedBox(height: 12),

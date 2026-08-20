@@ -14,7 +14,7 @@ from baker.db.connection import get_db
 from baker.db.queries import paginate_params, paginated_envelope
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
 from baker.models.payment_transaction_photo import PaymentTransactionPhoto
-from baker.utils.time import now_utc
+from baker.utils.time import now_utc, normalize_timestamp
 
 logger = logging.getLogger("baker.server")
 
@@ -30,6 +30,7 @@ class TransactionCreate(BaseModel):
     method: str = "cash"
     note: str = ""
     payment_source: Optional[str] = ""
+    createdAt: Optional[str] = None
 
 
 class TransactionUpdate(BaseModel):
@@ -38,6 +39,7 @@ class TransactionUpdate(BaseModel):
     method: str | None = None
     note: str | None = None
     payment_source: Optional[str] = None
+    createdAt: Optional[str] = None
 
 
 class InvalidationRequest(BaseModel):
@@ -157,6 +159,18 @@ def create_transaction(ref: str, body: TransactionCreate):
             detail=f"Phương thức thanh toán không hợp lệ. Cho phép: {valid_methods}",
         )
 
+    # FR3/NFR1 (DG-415): normalize optional `createdAt` to UTC Z. When absent
+    # the model defaults to now_utc() on insert (see PaymentTransaction.save).
+    created_at_override = None
+    if body.createdAt is not None:
+        try:
+            created_at_override = normalize_timestamp(
+                body.createdAt,
+                empty_error="createdAt không được để trống",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
 
@@ -168,6 +182,8 @@ def create_transaction(ref: str, body: TransactionCreate):
             note=body.note,
             payment_source=body.payment_source or "",
         )
+        if created_at_override is not None:
+            txn.created_at = created_at_override
         txn.save(conn)
 
         # Auto-generate double-entry journal entry (DG-175).
@@ -210,6 +226,27 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
 
         txn = PaymentTransaction.from_row(row)
 
+        # FR6 (DG-415): invalidated transactions may not be edited — a
+        # soft-deleted transaction is frozen for accounting integrity. Reject
+        # any PATCH (not just createdAt) with 422 so the UI cannot mutate a
+        # cancelled transaction's fields.
+        if txn.invalidated_at is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể sửa giao dịch đã hủy",
+            )
+
+        # FR3/NFR1 (DG-415): normalize optional `createdAt` override to UTC Z.
+        new_created_at = None
+        if body.createdAt is not None:
+            try:
+                new_created_at = normalize_timestamp(
+                    body.createdAt,
+                    empty_error="createdAt không được để trống",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         if body.amount is not None:
             if body.amount <= 0:
                 raise HTTPException(status_code=422, detail="Số tiền phải lớn hơn 0")
@@ -234,10 +271,14 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             txn.note = body.note
         if body.payment_source is not None:
             txn.payment_source = body.payment_source or ""
+        if new_created_at is not None:
+            txn.created_at = new_created_at
 
         conn.execute(
-            "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, note = ?, payment_source = ? WHERE id = ?",
-            (txn.amount, txn.type, txn.method, txn.note, txn.payment_source, txn.id),
+            "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, "
+            "note = ?, payment_source = ?, created_at = ? WHERE id = ?",
+            (txn.amount, txn.type, txn.method, txn.note, txn.payment_source,
+             txn.created_at, txn.id),
         )
 
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the

@@ -22,7 +22,7 @@ class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
   String build() => _testBaseUrl;
 }
 
-PaymentTransaction _txn() => const PaymentTransaction(
+PaymentTransaction _txn({DateTime? invalidatedAt}) => PaymentTransaction(
       id: 'txn-1',
       orderId: 'ord-1',
       type: 'payment',
@@ -30,6 +30,7 @@ PaymentTransaction _txn() => const PaymentTransaction(
       amount: 200000,
       notes: '',
       paymentSource: ExpensesLabels.paymentSourcePhuongVCB,
+      invalidatedAt: invalidatedAt,
     );
 
 /// Fake service that controls what [getTransactionPhoto] returns so the
@@ -156,7 +157,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(OrdersLabels.txnPhotoRemove));
+      // The Remove button may be offscreen because the sheet now also hosts
+      // the date+time picker row (DG-415 Phase 3). Scroll it into view.
+      final removeFinder = find.text(OrdersLabels.txnPhotoRemove);
+      await tester.ensureVisible(removeFinder);
+      await tester.pumpAndSettle();
+      await tester.tap(removeFinder);
       await tester.pumpAndSettle();
 
       // Confirm dialog appears with the remove + cancel actions.
@@ -220,6 +226,58 @@ void main() {
       expect(find.text(OrdersLabels.txnPhotoReplace), findsOneWidget);
       // Thumbnail image present.
       expect(find.byType(Image), findsWidgets);
+    });
+  });
+
+  // cycle-1 CQ-3: lock the invalidated-edit UI guard with a widget test so a
+  // future refactor cannot re-introduce the Edit button for invalidated
+  // transactions without a failing test.
+  group('OrderTransactionDetailSheet invalidated guard (CQ-3)', () {
+    testWidgets(
+        'invalidated transaction hides Edit and shows Restore (CQ-3)',
+        (tester) async {
+      final service = _FakeTxnPhotoService(photo: null);
+      await tester.pumpWidget(
+        _wrap(
+          OrderTransactionDetailSheet(
+            txn: _txn(invalidatedAt: DateTime(2026, 8, 20, 10, 0, 0)),
+            orderRef: _testRef,
+            onEdit: () {},
+          ),
+          service,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Edit is hidden for invalidated transactions.
+      expect(find.text(OrdersLabels.editPayment), findsNothing);
+      // Restore is offered instead.
+      expect(find.text(OrdersLabels.restorePayment), findsOneWidget);
+      // The invalidate action must not also be surfaced when invalidated.
+      expect(find.text(OrdersLabels.invalidatePayment), findsNothing);
+    });
+
+    testWidgets(
+        'non-invalidated transaction shows Edit and Invalidate (CQ-3)',
+        (tester) async {
+      final service = _FakeTxnPhotoService(photo: null);
+      await tester.pumpWidget(
+        _wrap(
+          OrderTransactionDetailSheet(
+            txn: _txn(),
+            orderRef: _testRef,
+            onEdit: () {},
+          ),
+          service,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Edit is shown for active (non-invalidated) transactions.
+      expect(find.text(OrdersLabels.editPayment), findsOneWidget);
+      // Invalidate (not Restore) is offered.
+      expect(find.text(OrdersLabels.invalidatePayment), findsOneWidget);
+      expect(find.text(OrdersLabels.restorePayment), findsNothing);
     });
   });
 }
