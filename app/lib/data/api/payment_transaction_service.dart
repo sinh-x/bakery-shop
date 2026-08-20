@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
+import '../../shared/utils/date_formatting.dart';
 import '../models/payment_transaction.dart';
 import '../models/payment_transaction_photo.dart';
 import 'api_client.dart';
@@ -29,6 +30,7 @@ class PaymentTransactionService {
     String method = 'cash',
     String notes = '',
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     final data = <String, dynamic>{
       'amount': amount,
@@ -38,6 +40,9 @@ class PaymentTransactionService {
     };
     if (paymentSource != null && paymentSource.isNotEmpty) {
       data['payment_source'] = paymentSource;
+    }
+    if (createdAt != null) {
+      data['createdAt'] = timestampToJson(createdAt);
     }
     final response = await _dio.post(
       '/api/orders/$orderRef/transactions',
@@ -54,6 +59,7 @@ class PaymentTransactionService {
     String? method,
     String? notes,
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     final data = <String, dynamic>{};
     if (amount != null) data['amount'] = amount;
@@ -61,6 +67,9 @@ class PaymentTransactionService {
     if (method != null) data['method'] = method;
     if (notes != null) data['note'] = notes;
     data['payment_source'] = paymentSource ?? '';
+    if (createdAt != null) {
+      data['createdAt'] = timestampToJson(createdAt);
+    }
     final response = await _dio.patch(
       '/api/orders/$orderRef/transactions/$txnId',
       data: data,

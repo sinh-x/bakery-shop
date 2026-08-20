@@ -107,4 +107,56 @@ void main() {
       expect(txns[1].invalidatedBy, '');
     });
   });
+
+  group('PaymentTransactionService createdAt threading (DG-415 Phase 2)', () {
+    test('createTransaction forwards createdAt as UTC Z-suffixed string', () async {
+      final interceptor = _RecordingInterceptor(_txnJson());
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = PaymentTransactionService(dio);
+
+      await service.createTransaction(
+        'ORD-260625-001',
+        amount: 200000.0,
+        createdAt: DateTime.parse('2026-08-17T15:30:00+07:00'),
+      );
+
+      expect(interceptor.lastPath, '/api/orders/ORD-260625-001/transactions');
+      expect(interceptor.lastBody, containsPair('createdAt', '2026-08-17T08:30:00Z'));
+    });
+
+    test('createTransaction omits createdAt when not provided', () async {
+      final interceptor = _RecordingInterceptor(_txnJson());
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = PaymentTransactionService(dio);
+
+      await service.createTransaction('ORD-260625-001', amount: 200000.0);
+
+      expect(interceptor.lastBody, isNot(contains('createdAt')));
+    });
+
+    test('updateTransaction forwards createdAt as UTC Z-suffixed string', () async {
+      final interceptor = _RecordingInterceptor(_txnJson());
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = PaymentTransactionService(dio);
+
+      await service.updateTransaction(
+        'ORD-260625-001',
+        '20',
+        createdAt: DateTime.utc(2026, 8, 17, 8, 30, 0),
+      );
+
+      expect(interceptor.lastPath, '/api/orders/ORD-260625-001/transactions/20');
+      expect(interceptor.lastBody, containsPair('createdAt', '2026-08-17T08:30:00Z'));
+    });
+
+    test('updateTransaction omits createdAt when not provided', () async {
+      final interceptor = _RecordingInterceptor(_txnJson());
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = PaymentTransactionService(dio);
+
+      await service.updateTransaction('ORD-260625-001', '20', amount: 100000.0);
+
+      expect(interceptor.lastBody, isNot(contains('createdAt')));
+    });
+  });
 }

@@ -108,6 +108,7 @@ class _FakePaymentTransactionService extends PaymentTransactionService {
     String method = 'cash',
     String notes = '',
     String? paymentSource,
+    DateTime? createdAt,
   }) async {
     orderRefs.add(orderRef);
     amounts.add(amount);
@@ -120,7 +121,7 @@ class _FakePaymentTransactionService extends PaymentTransactionService {
       amount: amount,
       type: type,
       method: method,
-      createdAt: DateTime(2026, 5, 20),
+      createdAt: createdAt ?? DateTime(2026, 5, 20),
     );
   }
 }
