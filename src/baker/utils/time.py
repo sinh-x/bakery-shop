@@ -9,9 +9,13 @@ Traceability: DG-202 FR3, NFR2.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from baker.config import TIMEZONE
+
+
+_TZ_RE = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
 
 
 def now_utc() -> str:
@@ -111,3 +115,53 @@ def format_effective_from(date_str: str | None) -> str:
         return now_utc()
     parsed = parse_effective_from(date_str)
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def normalize_timestamp(raw: str | None, *, empty_error: str | None = None) -> str | None:
+    """Normalize an ISO-8601 timestamp to UTC ``Z``-suffixed form.
+
+    Accepts bare timestamps (treated as UTC), ``Z``-suffixed, or offset
+    timestamps (e.g. ``+07:00``) and returns ``YYYY-MM-DDTHH:MM:SSZ`` (no
+    fractional seconds) or with fractional seconds preserved when present.
+
+    Args:
+        raw: The raw timestamp string, or ``None``/empty.
+        empty_error: Optional detail message used when ``raw`` is empty
+            (``None`` → returns ``None`` silently; non-``None`` raises
+            :class:`ValueError`). When ``raw`` is ``None``, returns ``None``.
+
+    Returns:
+        The normalized UTC ``Z``-suffixed timestamp, or ``None`` when
+        ``raw`` is ``None``.
+
+    Raises:
+        ValueError: When ``raw`` is an empty/whitespace string and
+            ``empty_error`` is provided, or when the value cannot be
+            parsed as ISO-8601. Callers map these to their preferred
+            error type (e.g. :class:`fastapi.HTTPException`).
+
+    Traceability: DG-202 FR1, DG-415 FR3/NFR1 — shared helper extracted
+    from the duplicated ``_normalize_timestamp`` in ``events.py`` so the
+    payment-transaction API can reuse the same normalization semantics.
+    """
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        if empty_error is not None:
+            raise ValueError(empty_error)
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("timestamp không đúng định dạng ISO") from exc
+    if not _TZ_RE.search(value):
+        # Treat bare timestamps as UTC and append the Z suffix so all stored
+        # timestamps are UTC (DG-202 FR1).
+        return f"{value}Z"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    utc_dt = parsed.astimezone(timezone.utc)
+    if utc_dt.microsecond:
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc_dt.microsecond:06d}Z"
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")

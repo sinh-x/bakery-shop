@@ -88,6 +88,10 @@ class PaymentTransaction:
             raise ValueError(f"Invalid transaction type: {self.type}")
         if self.method not in [m.value for m in PaymentMethod]:
             raise ValueError(f"Invalid payment method: {self.method}")
+        # DG-415 FR3: honor a caller-provided `created_at` override (normalized
+        # to UTC Z upstream); fall back to now_utc() when unset so the default
+        # behaviour (server-stamped "now") is preserved.
+        created_at = self.created_at or now_utc()
         cursor = conn.execute(
             """INSERT INTO payment_transactions (order_id, amount, type, method, note, payment_source, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -98,10 +102,12 @@ class PaymentTransaction:
                 self.method,
                 self.note,
                 self.payment_source or "",
-                now_utc(),
+                created_at,
             ),
         )
         self.id = cursor.lastrowid
+        if self.created_at is None:
+            self.created_at = created_at
         return self.id
 
     @staticmethod

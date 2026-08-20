@@ -485,7 +485,8 @@ def _sync_payment_journal(
         )
     else:
         _update_journal_entry_in_place(
-            conn, existing_id, description=description, lines=lines
+            conn, existing_id, description=description, lines=lines,
+            transaction_date=transaction_date,
         )
 
     # FR2/AC2/AC3: re-trigger the bus shipping release sync for an
