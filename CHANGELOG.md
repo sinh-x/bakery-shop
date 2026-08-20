@@ -1,5 +1,149 @@
 # Changelog
 
+## [0.8.27+139] — 2026-08-20
+
+All merged PRs in the range v0.8.21–v0.8.26, grouped by DG ticket. Reconstructed from `git log v0.8.21..develop --merges --oneline`. Note: the v0.8.21–v0.8.26 release entries were omitted from the CHANGELOG by the `version-bump.yml` auto-patch workflow, so their PRs are consolidated into this v0.8.27 entry instead of being split across per-version sections.
+
+### DG-404 — Migrate setState violations to Riverpod Notifiers
+- #215 — Migrate setState violations to Riverpod Notifiers
+
+### DG-414 — Replace/change product on order item (in-place swap)
+- #214 — Replace/change product on order item (in-place swap)
+
+### DG-408 — Extract inner widgets from 25 files triggering ≥3 rule
+- #213 — Extract inner widgets from 25 files triggering ≥3 rule
+
+### DG-418 — VN labels migration — all domains
+- #212 — VN labels migration — all domains
+
+### DG-417 — Relocate misplaced providers + fix reconciliation cross-dependency
+- #211 — Relocate misplaced providers + fix reconciliation cross-dependency
+
+### DG-416 — Update standards docs (code-quality-audit.md + flutter-coding-standards.md)
+- #210 — Update standards docs (code-quality-audit.md + flutter-coding-standards.md)
+
+### DG-413 — Fix reconciliation 409 when base price equals a price chip
+- #209 — Fix reconciliation 409 when base price equals a price chip
+
+### DG-412 — Customer receipt — display up to 2 photos per item side by side
+- #208 — Customer receipt — display up to 2 photos per item side by side
+
+### DG-411 — Fix develop CI failures (stale tests, flutter lints, bandit false positives)
+- #207 — Fix develop CI failures (stale tests, flutter lints, bandit false positives)
+
+### DG-410 — Attach photo to payment transaction (per-transaction photo link)
+- #206 — Attach photo to payment transaction (per-transaction photo link)
+
+### DG-409 — Optimize App Loading Strategy & Data Management
+- #205 — Optimize App Loading Strategy & Data Management
+
+### DG-332 — Raise widget max-lines threshold 200→300 (docs)
+- #204 — Raise widget max-lines threshold 200→300 (docs)
+
+### DG-391 — Order breakdown theo nguồn đặt hàng (Tuần/Tháng)
+- #203 — Order breakdown theo nguồn đặt hàng (Tuần/Tháng)
+- Includes interim merge of `feature/manual-refresh-only` into the breakdown branch
+
+### DG-386 — Cải thiện màn hình Doanh số — Tuần/Tháng, sản phẩm, chi phí, dòng tiền, nhóm thu gọn
+- #202 — Cải thiện màn hình Doanh số — Tuần/Tháng, sản phẩm, chi phí, dòng tiền, nhóm thu gọn
+
+### DG-388 — Address Missing-Links UI + Address Input Improvements
+- #201 — Address Missing-Links UI + Address Input Improvements
+
+### DG-387 — Address library backfill, docstring fix, missing-links detection
+- #200 — Address library backfill, docstring fix, missing-links detection
+
+### DG-385 — Location Address Library with Google Maps Link Auto-Binding
+- #199 — Location Address Library with Google Maps Link Auto-Binding
+
+### DG-384 — Hiển thị đơn hàng đối soát tồn kho trong Today Summary và lịch sử đơn hàng
+- #198 — Hiển thị đơn hàng đối soát tồn kho trong Today Summary và lịch sử đơn hàng
+
+### DG-366 — Fix missing bus shipping release entry for completed bus orders
+- #197 — Fix missing bus shipping release entry for completed bus orders
+
+### DG-327 — Cashflow report - category/subcategory breakdown for supplier payments
+- #196 — Cashflow report - category/subcategory breakdown for supplier payments
+
+### DG-382 — Fix 14 pre-existing test failures on develop
+- #195 — Fix 14 pre-existing test failures on develop
+
+### DG-361 — Candle type display on receipts & work item cards
+- #194 — Candle type display on receipts & work item cards
+
+### DG-364 — Photos in Transactions Tab + Bank Transfer Photo Upload
+- #193 — Photos in Transactions Tab + Bank Transfer Photo Upload
+
+### DG-375 — Order Message Templates — Copy-Paste Customer Communication
+- #192 — Order Message Templates — Copy-Paste Customer Communication
+
+### DG-372 — Customer name/phone filter on Duplicate Finder screen
+- #191 — Customer name/phone filter on Duplicate Finder screen
+
+### DG-381 — Cash Drawer Bán hàng txn → Order Detail navigation
+- #190 — Cash Drawer Bán hàng txn → Order Detail navigation
+
+### DG-380 — Fix journal sync FK constraint in _delete_journal_entry_cascade
+- #189 — Fix journal sync FK constraint in _delete_journal_entry_cascade
+
+### DG-378 — Cash-in/Cash-out in Daily Summary + Fix Zero-Card Bug
+- #187 — Cash-in/Cash-out in Daily Summary + Fix Zero-Card Bug
+
+### DG-379 — Edit Cash Drawer Open/Close Transactions
+- Direct merge of `feature/DG-379-edit-cashdrawer-txn` — Edit Cash Drawer Open/Close Transactions
+
+### DG-376 — Fix Today Sales Metrics
+- #186 — Fix Today Sales Metrics
+
+### DG-358 — Fix chip stock display discrepancy between POS and order screens
+- Direct commit on develop — Fix chip stock display discrepancy between POS and order screens
+
+### DG-345 — Fix dev web login — CORS + JWT secret persistence
+- #183 — Fix dev web login — CORS + JWT secret persistence
+
+### DG-373 — Fix _resolve_order_ref lookup order - public_order_code first
+- #182 — Fix _resolve_order_ref lookup order - public_order_code first
+
+### DG-367 — Pre-Login Technical Settings Access
+- #181 — Pre-Login Technical Settings Access
+
+### DG-368 — Tách order đối soát tồn kho thành 1 order / 1 bánh
+- #178 — Tách order đối soát tồn kho thành 1 order / 1 bánh
+
+### DG-369 — Batch Merge Duplicate Customers
+- #177 — Batch Merge Duplicate Customers
+
+### DG-336 — Fix Photo Handling on Web/PWA — dart:io Compatibility
+- #175 — Fix Photo Handling on Web/PWA — dart:io Compatibility
+
+### DG-363 — Cải thiện bảng phân tích tiền vào/ra — Hoàn tiền & Phí ship bus
+- #174 — Cải thiện bảng phân tích tiền vào/ra — Hoàn tiền & Phí ship bus
+
+### DG-362 — Hiển thị thuộc tính enum trên work item card và cake queue
+- #173 — Hiển thị thuộc tính enum trên work item card và cake queue
+
+### DG-334 — Tab-based Order Detail Screen
+- #172 — Tab-based Order Detail Screen
+
+### DG-344 — Thay thế màn hình Tổng quan bằng màn hình Quản lý
+- #171 — Thay thế màn hình Tổng quan bằng màn hình Quản lý
+- Includes interim merge of `origin/develop` into the dashboard branch
+
+### DG-360 — Hiển thị số dư kế toán 1101 ở mọi giá trị trong dialog mở quầy
+- #170 — Hiển thị số dư kế toán 1101 ở mọi giá trị trong dialog mở quầy
+
+### DG-340 — Candle Type Selection for Cake Items
+- #168 — Candle Type Selection for Cake Items
+
+### DG-342 — Edit order - markup price, price chips, stock/COGS reversal
+- #167 — Edit order - markup price, price chips, stock/COGS reversal
+
+### DG-354 — Fix cash drawer opening balance accuracy
+- #165 — Fix cash drawer opening balance accuracy
+
+### DG-343 — Cash Drawer Transaction History
+- Direct commit on develop — Cash Drawer Transaction History
+
 ## [0.8.20+130] — 2026-08-02
 - chore: raise widget max lines threshold 200→300
 
