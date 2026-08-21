@@ -260,6 +260,15 @@ def _reconcile_revenue_entry_lines(
     existing_id = _find_order_entry_by_prefix(conn, order_id, prefix)
 
     if is_ar:
+        # A payment can be invalidated or deleted after delivery, changing a
+        # paid order into an AR order. Remove the prior revenue entry so the
+        # stale deposit balance is not retained alongside the AR entry.
+        stale_revenue_id = _find_order_entry_by_prefix(
+            conn, order_id, _REVENUE_ENTRY_PREFIX
+        )
+        if stale_revenue_id is not None:
+            _replace_order_entry(conn, stale_revenue_id, respect_locks=respect_locks)
+
         # Truly unpaid (no deposits and no refunds): record the order total
         # as accounts receivable (customer debt). Bus shipping exclusion does
         # not apply here because there were no deposits to hold shipping in
