@@ -4,6 +4,7 @@ import pytest
 
 from baker.db.connection import get_db
 from baker.services.journal_sync import _sync_delivered_order_journal
+from baker.services.journal_sync.order import _reconcile_order_revenue_entry
 
 pytestmark = pytest.mark.critical
 
@@ -47,6 +48,10 @@ def _revenue_balance(conn, order_id, account_code="2100"):
         (order_id, account_code),
     ).fetchone()
     return float(row["balance"])
+
+
+def _account_balance(conn, order_id, account_code):
+    return _revenue_balance(conn, order_id, account_code)
 
 
 def _order_entries(conn, order_id):
@@ -127,6 +132,44 @@ def test_locked_stale_revenue_entry_is_reversed_and_replaced(api_client):
         assert revenue_entries[0]["locked_at"] is not None
         assert len(_order_entries(conn, int(order["id"]))) == 3
         assert _revenue_balance(conn, int(order["id"])) == 200000.0
+
+
+def test_locked_paid_ar_paid_round_trip_reconciles_effective_chain(api_client):
+    order, txn = _prepare_delivered_order(api_client)
+    order_id = int(order["id"])
+    with get_db() as conn:
+        revenue = next(
+            row for row in _order_entries(conn, order_id)
+            if row["description"].startswith("Order revenue:")
+        )
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = '2026-06-25T10:00:00Z' WHERE id = ?",
+            (revenue["id"],),
+        )
+
+    invalidate = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions/{txn['id']}/invalidate",
+        json={"invalidatedBy": "sinh"},
+    )
+    assert invalidate.status_code == 200
+    with get_db() as conn:
+        assert _account_balance(conn, order_id, "2100") == 0.0
+        assert _account_balance(conn, order_id, "1500") == 300000.0
+        assert _account_balance(conn, order_id, "4100") == -300000.0
+
+    restore = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions/{txn['id']}/restore"
+    )
+    assert restore.status_code == 200
+    with get_db() as conn:
+        assert _account_balance(conn, order_id, "2100") == 100000.0
+        assert _account_balance(conn, order_id, "1500") == 0.0
+        assert _account_balance(conn, order_id, "4100") == -100000.0
+
+        _reconcile_order_revenue_entry(conn, order_id, order["orderRef"])
+        assert _account_balance(conn, order_id, "2100") == 100000.0
+        assert _account_balance(conn, order_id, "1500") == 0.0
+        assert _account_balance(conn, order_id, "4100") == -100000.0
 
 
 def test_revenue_recalc_failure_does_not_block_payment_mutation(api_client, monkeypatch):
