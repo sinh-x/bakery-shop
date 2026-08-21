@@ -415,8 +415,20 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
     # via ``_replace_order_entry`` — mirroring the live ``edit_order``
     # bus→non-bus reconciliation path (FR1/AC1).
     if delivery_type != "bus" or shipping_fee <= 0:
-        existing_id = _find_journal_entry(conn, "order_shipping_release", order_id)
-        if existing_id is None:
+        entries = conn.execute(
+            """
+            SELECT je.id,
+                   COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_2200
+            FROM journal_entries je
+            LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            LEFT JOIN accounts a ON a.id = jl.account_id
+            WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+            GROUP BY je.id
+            ORDER BY je.id ASC
+            """,
+            (BUS_SHIPPING_HELD_CODE, order_id),
+        ).fetchall()
+        if not entries:
             return {
                 "order_id": order_id,
                 "order_ref": order_ref,
@@ -425,14 +437,15 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
                 "asset_code": "",
                 "action": "not-applicable",
             }
-        if _is_locked(conn, existing_id):
+        aggregate_net = sum(float(entry["net_2200"]) for entry in entries)
+        if abs(aggregate_net) <= MISMATCH_TOLERANCE:
             return {
                 "order_id": order_id,
                 "order_ref": order_ref,
                 "held_amount": 0.0,
                 "release_amount": 0.0,
                 "asset_code": "",
-                "action": "locked",
+                "action": "skipped",
             }
         if dry_run:
             return {
@@ -441,16 +454,17 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
                 "held_amount": 0.0,
                 "release_amount": 0.0,
                 "asset_code": "",
-                "action": "will-remove",
+                "action": "will-repair" if any(_is_locked(conn, entry["id"]) for entry in entries) else "will-remove",
             }
-        _replace_order_entry(conn, existing_id, respect_locks=True)
+        for entry in entries:
+            _replace_order_entry(conn, int(entry["id"]), respect_locks=True)
         return {
             "order_id": order_id,
             "order_ref": order_ref,
             "held_amount": 0.0,
             "release_amount": 0.0,
             "asset_code": "",
-            "action": "removed",
+            "action": "repaired" if any(_is_locked(conn, entry["id"]) for entry in entries) else "removed",
         }
 
     held_in_2200 = _held_shipping_for_order(conn, order_id)
@@ -718,4 +732,3 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, repair_shipping_
     if locked:
         parts.append(f"khoá: {locked}")
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
-

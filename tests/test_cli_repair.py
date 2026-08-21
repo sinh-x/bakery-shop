@@ -19,9 +19,11 @@ import click.testing
 
 from baker.cli import app
 from baker.commands.repair import _process_order
+from baker.commands.repair.order_revenue import _process_shipping_release_order
 from baker.commands.repair import _vn_amount
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
+from baker.services.journal_sync import _replace_order_entry
 
 
 # ---------------------------------------------------------------------------
@@ -2334,6 +2336,78 @@ def test_shipping_release_repair_stale_unlocked_entry():
         lines = _shipping_release_lines(conn, oid)
         assert lines["2200"]["debit"] == 25000.0
 
+
+def test_shipping_release_repair_preserves_balanced_locked_reversal_chain():
+    """A locked release plus its reversal is already balanced and is skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-REL-CHAIN", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, locked_at) "
+            "VALUES (?, 'order_shipping_release', ?, CURRENT_TIMESTAMP)",
+            ("Shipping release: ORD-REL-CHAIN", oid),
+        )
+        original_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 25000, 0, 'ship')", (original_id, held_acct)
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0, 25000, 'ship')", (original_id, asset_acct)
+        )
+        _replace_order_entry(conn, original_id, respect_locks=True)
+        before = _shipping_release_entry_count(conn, oid)
+        preview = _process_shipping_release_order(conn, oid, dry_run=True)
+        assert preview["action"] == "skipped"
+        result = _process_shipping_release_order(conn, oid, dry_run=False)
+        assert result["action"] == "skipped"
+        assert _shipping_release_entry_count(conn, oid) == before == 2
+
+
+def test_shipping_release_repair_reverses_stale_locked_original():
+    """A stale locked non-bus release is reversed, not left as locked/stale."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-REL-LOCKED-STALE", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, locked_at) "
+            "VALUES (?, 'order_shipping_release', ?, CURRENT_TIMESTAMP)",
+            ("Shipping release: ORD-REL-LOCKED-STALE", oid),
+        )
+        entry_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) VALUES (?, ?, 10000, 0, 'ship')",
+            (entry_id, held_acct),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) VALUES (?, ?, 0, 10000, 'ship')",
+            (entry_id, asset_acct),
+        )
+        preview = _process_shipping_release_order(conn, oid, dry_run=True)
+        assert preview["action"] == "will-repair"
+        result = _process_shipping_release_order(conn, oid, dry_run=False)
+        assert result["action"] == "repaired"
+        assert _shipping_release_entry_count(conn, oid) == 2
+        net = conn.execute(
+            "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) FROM journal_lines jl "
+            "JOIN journal_entries je ON je.id = jl.journal_entry_id "
+            "WHERE je.source_type = 'order_shipping_release' AND je.source_id = ? "
+            "AND jl.account_id = ?",
+            (oid, held_acct),
+        ).fetchone()[0]
+        assert float(net) == 0.0
+
 # ---------------------------------------------------------------------------
 # DG-366 Phase 5 — check-shipping-release-gaps (read-only detection, FR5/AC6)
 # ---------------------------------------------------------------------------
@@ -2580,9 +2654,8 @@ def test_scan_all_dry_run_does_not_remove_stale_release():
         assert _shipping_release_entry_count(conn, oid) == 1
 
 
-def test_scan_all_non_bus_stale_locked_release_reports_locked():
-    """NFR1: a locked stale release entry on a non-bus order is reported as
-    locked, not modified."""
+def test_scan_all_non_bus_stale_locked_release_is_reversed():
+    """A stale locked non-bus release is reversed to restore a balanced chain."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_bus_order(
@@ -2597,12 +2670,11 @@ def test_scan_all_non_bus_stale_locked_release_reports_locked():
 
     result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
     assert result.exit_code == 0, result.output
-    assert "khoá" in result.output
+    assert "đã sửa" in result.output
 
     with get_db() as conn:
         ensure_schema(conn)
-        # The locked entry is untouched.
-        assert _shipping_release_entry_count(conn, oid) == 1
+        assert _shipping_release_entry_count(conn, oid) == 2
 
 
 def test_scan_all_bus_backfill_and_non_bus_removal_together():

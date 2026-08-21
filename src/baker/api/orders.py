@@ -1545,6 +1545,8 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         if delivery_type_changed and is_delivered_or_completed:
             old_delivery_type_sync = row["delivery_type"]
             new_delivery_type_sync = data["deliveryType"]
+            savepoint = "delivery_type_journal_reconciliation"
+            conn.execute(f"SAVEPOINT {savepoint}")
             try:
                 from baker.services.journal_sync import (
                     _find_journal_entry,
@@ -1592,7 +1594,37 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 _reconcile_order_revenue_entry(
                     conn, row["id"], row["order_ref"], respect_locks=True
                 )
+
+                # FR4/AC4: payment reconciliation is part of the same atomic
+                # accounting group. A failed sync must not leave release or
+                # revenue changes committed ahead of it.
+                if row["delivery_type"] == "bus" or new_delivery_type_sync == "bus":
+                    from baker.services.journal_sync import _sync_payment_journal
+
+                    txn_rows = conn.execute(
+                        "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+                        (row["id"],),
+                    ).fetchall()
+                    for txn_row in txn_rows:
+                        status = run_journal_sync(
+                            _sync_payment_journal,
+                            conn,
+                            txn_row["id"],
+                            float(txn_row["amount"]),
+                            txn_row["type"],
+                            txn_row["method"],
+                            order_id=row["id"],
+                            log_label=(
+                                f"payment journal re-sync for order {row['id']} "
+                                f"after shipping_fee/delivery_type edit"
+                            ),
+                        )
+                        if status != "ok":
+                            raise RuntimeError("payment journal reconciliation failed")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             except Exception:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
                 logger.exception(
                     "edit_order delivery-type journal reconciliation failed "
                     "for order %s (%s)",
@@ -1604,7 +1636,7 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # Re-sync payment journal entries when shipping_fee changes on a bus
         # order (DG-191 Phase 4) OR when delivery_type changes (DG-422 Phase 1,
         # FR4/AC4) so the 2200 split matches the final type in both directions.
-        if (shipping_fee_changed or delivery_type_changed) and (
+        if shipping_fee_changed and not delivery_type_changed and (
             row["delivery_type"] == "bus" or data.get("deliveryType") == "bus"
         ):
             from baker.services.journal_sync import (

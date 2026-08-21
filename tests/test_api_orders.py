@@ -1557,6 +1557,53 @@ def test_edit_order_bus_to_door_locked_release_is_reversed(api_client):
         assert _revenue_credit_4100(conn, order_id) == 125000.0
 
 
+def test_edit_order_delivery_type_reconciliation_rolls_back_journal_group(
+    api_client, monkeypatch
+):
+    """A mid-group accounting failure leaves all journal rows unchanged while
+    the order edit still succeeds with the normal warning behavior."""
+    from baker.services import journal_sync as journal_sync_api
+
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh atomic", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="bus",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        before = conn.execute(
+            "SELECT je.id, je.description, je.locked_at, jl.account_id, jl.debit, jl.credit "
+            "FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id = je.id "
+            "WHERE je.source_id = ? ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+
+    def fail_revenue(*_args, **_kwargs):
+        raise RuntimeError("injected revenue failure")
+
+    monkeypatch.setattr(journal_sync_api, "_reconcile_order_revenue_entry", fail_revenue)
+    response = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "door"})
+    assert response.status_code == 200
+    assert response.json().get("accountingSyncWarning") == "journal_sync_failed"
+
+    with get_db() as conn:
+        after = conn.execute(
+            "SELECT je.id, je.description, je.locked_at, jl.account_id, jl.debit, jl.credit "
+            "FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id = je.id "
+            "WHERE je.source_id = ? ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+        assert [tuple(row) for row in after] == [tuple(row) for row in before]
+        assert conn.execute("SELECT delivery_type FROM orders WHERE id = ?", (order_id,)).fetchone()[0] == "door"
+
+
 def test_edit_order_delivery_type_change_on_non_delivered_is_noop(api_client):
     """DG-422 scope guard: delivery-type reconciliation only fires for
     delivered/completed orders. A confirmed (or new) order changing
