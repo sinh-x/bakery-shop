@@ -1456,6 +1456,308 @@ def test_edit_order_delivery_type_unchanged_no_release_reconciliation(api_client
         assert release_ids_after == release_ids_before
 
 
+# ---------------------------------------------------------------------------
+# DG-422 Phase 3 — dedicated coverage expansion.
+#
+# Closes the gaps left by the Phase 1 focused tests so the AC1–AC4 matrix is
+# fully verified for delivered/completed transitions in both directions:
+#   - locked release reversal on bus → non-bus (FR1 locked-entry path)
+#   - non-delivered/non-completed no-op (scope guard)
+#   - zero shipping_fee transition (edge case)
+#   - payment 2200 split re-sync in both directions (FR4/AC4)
+#   - completed non-bus → bus (both directions on completed orders)
+# ---------------------------------------------------------------------------
+
+
+def _release_entry_ids(conn, order_id: int) -> list[int]:
+    rows = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ? "
+        "ORDER BY id ASC",
+        (order_id,),
+    ).fetchall()
+    return [int(r["id"]) for r in rows]
+
+
+def _release_lines(conn, order_id: int) -> dict[str, dict[str, float]]:
+    rows = conn.execute(
+        """SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+           FROM journal_entries je
+           JOIN journal_lines jl ON jl.journal_entry_id = je.id
+           JOIN accounts a ON a.id = jl.account_id
+           WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?""",
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out.setdefault(r["code"], {"debit": 0.0, "credit": 0.0})
+        out[r["code"]]["debit"] += float(r["debit"] or 0)
+        out[r["code"]]["credit"] += float(r["credit"] or 0)
+    return out
+
+
+def _payment_2200_credit(conn, order_id: int) -> float:
+    """Sum of 2200 credits across the order's payment journal entries."""
+    row = conn.execute(
+        """SELECT COALESCE(SUM(jl.credit), 0) AS c
+           FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+           JOIN journal_entries je ON je.id = jl.journal_entry_id
+           JOIN payment_transactions pt ON pt.id = je.source_id
+           WHERE je.source_type = 'payment_transaction'
+             AND pt.order_id = ? AND a.code = '2200'""",
+        (order_id,),
+    ).fetchone()
+    return float(row["c"])
+
+
+def test_edit_order_bus_to_door_locked_release_is_reversed(api_client):
+    """DG-422 FR1/AC1 (locked-entry path): when the existing
+    ``order_shipping_release`` entry is locked, the bus → non-bus transition
+    reverses it (creates a Reversal entry) rather than deleting it, so 2200
+    still nets to zero."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh locked", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="bus",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Lock the existing release entry (simulate a period-closed entry).
+        release_ids = _release_entry_ids(conn, order_id)
+        assert len(release_ids) == 1
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (release_ids[0],),
+        )
+        conn.commit()
+
+    # Change delivery_type bus → door.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "door"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # The original locked entry remains, and a Reversal entry is created
+        # so the net 2200 contribution from the release source is zero.
+        ids = _release_entry_ids(conn, order_id)
+        assert len(ids) == 2  # original + reversal
+        lines = _release_lines(conn, order_id)
+        # Net 2200 (debit - credit) across original + reversal must be zero.
+        net_2200 = lines.get("2200", {"debit": 0.0, "credit": 0.0})
+        assert abs(net_2200["debit"] - net_2200["credit"]) < 0.005
+        # 2200 nets to zero across payment + release sources.
+        assert abs(_bus_order_2200_net(conn, order_id)) < 0.005
+        # Revenue re-reconciled to include the shipping fee.
+        assert _revenue_credit_4100(conn, order_id) == 125000.0
+
+
+def test_edit_order_delivery_type_change_on_non_delivered_is_noop(api_client):
+    """DG-422 scope guard: delivery-type reconciliation only fires for
+    delivered/completed orders. A confirmed (or new) order changing
+    delivery_type must not touch the shipping release entries."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh new", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="bus",
+        status="new",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # A new order has no release entry and no revenue entry.
+        assert _release_entry_count(conn, order_id) == 0
+        rev_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+
+    # Change delivery_type bus → door on a non-delivered order.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "door"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # No release entry created or removed; no revenue entry appeared.
+        assert _release_entry_count(conn, order_id) == 0
+        rev_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()["c"]
+        assert rev_after == rev_before
+
+
+def test_edit_order_delivery_type_change_zero_shipping_fee(api_client):
+    """DG-422 edge case: when ``shipping_fee`` is zero, the delivery-type
+    transition still reconciles but produces a zero-amount release entry (or
+    none) and revenue is unaffected by the shipping exclusion."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh freeship", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=0,
+        deliveryType="bus",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        # Zero shipping fee → no held 2200 balance, release entry may be absent
+        # or zero-amount. Revenue equals the full deposit (100000).
+        assert _revenue_credit_4100(conn, order_id) == 100000.0
+
+    # Change delivery_type bus → door with zero shipping fee.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "door"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # No release entry remains; revenue is unchanged (shipping fee is 0).
+        assert _release_entry_count(conn, order_id) == 0
+        assert _revenue_credit_4100(conn, order_id) == 100000.0
+        # 2200 nets to zero.
+        assert abs(_bus_order_2200_net(conn, order_id)) < 0.005
+
+
+def test_edit_order_bus_to_door_removes_payment_2200_split(api_client):
+    """DG-422 FR4/AC4: bus → door re-syncs the payment journal so the 2200
+    credit (held shipping) is removed and the full deposit credits 2100."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh pay", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="bus",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    # Establish the pre-condition: run the payment journal sync so the bus
+    # payment split credits 2200 with the held shipping (25000). Order
+    # creation records the payment transaction but defers journal entry
+    # creation to the payment sync.
+    with get_db() as conn:
+        txn_row = conn.execute(
+            "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        from baker.services.journal_sync import _sync_payment_journal
+
+        _sync_payment_journal(
+            conn, int(txn_row["id"]), float(txn_row["amount"]),
+            txn_row["type"], txn_row["method"], order_id=order_id,
+        )
+        conn.commit()
+        assert _payment_2200_credit(conn, order_id) == 25000.0
+
+    # Change delivery_type bus → door.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "door"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # FR4/AC4: the 2200 credit is removed after re-sync.
+        assert _payment_2200_credit(conn, order_id) == 0.0
+        # 2200 nets to zero across all sources.
+        assert abs(_bus_order_2200_net(conn, order_id)) < 0.005
+
+
+def test_edit_order_door_to_bus_adds_payment_2200_split(api_client):
+    """DG-422 FR4/AC4: door → bus re-syncs the payment journal so a 2200
+    credit (held shipping) is added for the full shipping_fee."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh doorpay", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="door",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    # Establish the pre-condition: run the payment journal sync so the door
+    # payment entry exists (no 2200 split for non-bus).
+    with get_db() as conn:
+        txn_row = conn.execute(
+            "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+        from baker.services.journal_sync import _sync_payment_journal
+
+        _sync_payment_journal(
+            conn, int(txn_row["id"]), float(txn_row["amount"]),
+            txn_row["type"], txn_row["method"], order_id=order_id,
+        )
+        conn.commit()
+        assert _payment_2200_credit(conn, order_id) == 0.0
+
+    # Change delivery_type door → bus.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # FR4/AC4: the 2200 credit now equals the full shipping_fee.
+        assert _payment_2200_credit(conn, order_id) == 25000.0
+        # Release entry created (FR2/AC2).
+        assert _release_entry_count(conn, order_id) == 1
+        # Revenue excludes the shipping fee (FR3/AC3).
+        assert _revenue_credit_4100(conn, order_id) == 100000.0
+
+
+def test_edit_order_completed_door_to_bus_creates_release(api_client):
+    """DG-422 AC2 (completed path): changing a completed non-bus order to bus
+    creates the release entry and excludes shipping from revenue — mirrors the
+    delivered test but on a completed order."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh cmp2bus", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="door",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    # Transition delivered → completed (fully paid, so allowed).
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+
+    with get_db() as conn:
+        assert _release_entry_count(conn, order_id) == 0
+        assert _revenue_credit_4100(conn, order_id) == 125000.0
+
+    # Change delivery_type door → bus on a completed order.
+    resp = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        # FR2/AC2: release entry created.
+        assert _release_entry_count(conn, order_id) == 1
+        # FR3/AC3: revenue excludes the shipping fee.
+        assert _revenue_credit_4100(conn, order_id) == 100000.0
+        # FR4/AC4: payment 2200 split added.
+        assert _payment_2200_credit(conn, order_id) == 25000.0
+
+
 def test_edit_order_confirmed_skips_journal_adjustment(api_client):
     """FR6/FR7 scope guard: editing a confirmed (not delivered/completed)
     order does NOT trigger COGS/revenue journal adjustment — those entries
