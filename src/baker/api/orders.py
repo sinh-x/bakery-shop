@@ -1527,10 +1527,86 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                         changed_by,
                     )
 
-        # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
-        if (shipping_fee_changed or delivery_type_changed) and row[
-            "delivery_type"
-        ] == "bus":
+        # DG-422 Phase 1 (FR1/FR2/FR3/AC1/AC2/AC3): when a delivered/completed
+        # order's ``delivery_type`` changes, reconcile the bus-shipping release
+        # entry and re-reconcile revenue so the journal reflects the final type.
+        #   - bus → non-bus (door/pickup): remove/reverse the existing
+        #     ``order_shipping_release`` entry so account 2200 nets to zero
+        #     (FR1/AC1). Mirrors the ``_replace_order_entry`` pattern used by
+        #     ``_sync_cancelled_order_journal`` (reverse locked, delete unlocked).
+        #   - non-bus → bus: create the release entry for the full
+        #     ``shipping_fee`` (FR2/AC2). Reuses the idempotent,
+        #     drawer-aware ``_sync_bus_shipping_release_entry``.
+        # Revenue is re-reconciled in both directions (FR3/AC3) so the 4100
+        # credit excludes shipping for bus and includes it for non-bus.
+        # All mutations run within this same ``get_db()`` transaction (NFR3);
+        # journal errors are logged but never crash the order update (NFR1),
+        # mirroring the ``run_journal_sync`` fire-and-forget pattern.
+        if delivery_type_changed and is_delivered_or_completed:
+            old_delivery_type_sync = row["delivery_type"]
+            new_delivery_type_sync = data["deliveryType"]
+            try:
+                from baker.services.journal_sync import (
+                    _find_journal_entry,
+                    _reconcile_order_revenue_entry,
+                    run_journal_sync,
+                )
+                from baker.services.journal_sync.order import (
+                    _replace_order_entry,
+                    _sync_bus_shipping_release_entry,
+                )
+
+                was_bus = old_delivery_type_sync == "bus"
+                is_bus_now = new_delivery_type_sync == "bus"
+
+                # FR1: bus → non-bus — remove/reverse the stale release entry.
+                # FR2: non-bus → bus — create the release entry. The idempotent
+                # sync also handles the bus→bus shipping_fee change path, so it
+                # is used for any transition whose final type is bus.
+                if was_bus and not is_bus_now:
+                    existing_release_id = _find_journal_entry(
+                        conn, "order_shipping_release", row["id"]
+                    )
+                    if existing_release_id is not None:
+                        _replace_order_entry(
+                            conn, existing_release_id, respect_locks=True
+                        )
+                elif is_bus_now:
+                    run_journal_sync(
+                        _sync_bus_shipping_release_entry,
+                        conn,
+                        row["id"],
+                        row["order_ref"],
+                        log_label=(
+                            f"bus shipping release sync for order {row['id']} "
+                            f"({row['order_ref']}) after delivery_type edit"
+                        ),
+                        source_type="order_shipping_release",
+                        source_id=row["id"],
+                    )
+
+                # FR3/AC3: re-reconcile revenue so the 4100 credit reflects
+                # the final delivery_type (bus excludes shipping_fee, non-bus
+                # includes it). The reconciler reads the updated orders row
+                # (delivery_type/shipping_fee) directly, so no kwargs needed.
+                _reconcile_order_revenue_entry(
+                    conn, row["id"], row["order_ref"], respect_locks=True
+                )
+            except Exception:
+                logger.exception(
+                    "edit_order delivery-type journal reconciliation failed "
+                    "for order %s (%s)",
+                    row["id"],
+                    row["order_ref"],
+                )
+                edit_sync_warning = "journal_sync_failed"
+
+        # Re-sync payment journal entries when shipping_fee changes on a bus
+        # order (DG-191 Phase 4) OR when delivery_type changes (DG-422 Phase 1,
+        # FR4/AC4) so the 2200 split matches the final type in both directions.
+        if (shipping_fee_changed or delivery_type_changed) and (
+            row["delivery_type"] == "bus" or data.get("deliveryType") == "bus"
+        ):
             from baker.services.journal_sync import (
                 _sync_payment_journal,
                 run_journal_sync,
@@ -1549,7 +1625,10 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                     txn_row["type"],
                     txn_row["method"],
                     order_id=row["id"],
-                    log_label=f"payment journal re-sync for order {row['id']} after shipping_fee edit",
+                    log_label=(
+                        f"payment journal re-sync for order {row['id']} "
+                        f"after shipping_fee/delivery_type edit"
+                    ),
                 )
 
         # Log each changed field with old/new values
