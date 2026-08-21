@@ -70,6 +70,8 @@ OWNER_CASH_CODE = "1102"
 SHIPPING_RELEASE_ACTION_LABELS = {
     "backfilled": "đã tạo",
     "will-backfill": "sẽ tạo",
+    "removed": "đã xoá",
+    "will-remove": "sẽ xoá",
 }
 
 _ACTION_LABELS = {
