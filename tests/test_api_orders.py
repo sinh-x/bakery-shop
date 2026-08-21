@@ -1557,6 +1557,137 @@ def test_edit_order_bus_to_door_locked_release_is_reversed(api_client):
         assert _revenue_credit_4100(conn, order_id) == 125000.0
 
 
+def test_edit_order_locked_bus_round_trip_preserves_balanced_release_chain(api_client):
+    """A locked bus release remains balanced across repeated type round trips."""
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh roundtrip", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="bus",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        release_id = _release_entry_ids(conn, order_id)[0]
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (release_id,),
+        )
+        conn.commit()
+
+    for delivery_type, expected_release, expected_payment, expected_revenue in [
+        ("door", 0.0, 0.0, 125000.0),
+        ("bus", 25000.0, 25000.0, 100000.0),
+        ("door", 0.0, 0.0, 125000.0),
+        ("bus", 25000.0, 25000.0, 100000.0),
+    ]:
+        response = api_client.patch(
+            f"/api/orders/{ref}", json={"deliveryType": delivery_type}
+        )
+        assert response.status_code == 200
+        with get_db() as conn:
+            release_lines = _release_lines(conn, order_id).get(
+                "2200", {"debit": 0.0, "credit": 0.0}
+            )
+            assert release_lines["debit"] - release_lines["credit"] == expected_release
+            assert _payment_2200_credit(conn, order_id) == expected_payment
+            assert _revenue_credit_4100(conn, order_id) == expected_revenue
+            assert abs(_bus_order_2200_net(conn, order_id)) < 0.005
+
+
+def test_edit_order_release_status_failure_rolls_back_journals(api_client, monkeypatch):
+    """A status-returning release failure rolls back the accounting savepoint."""
+    from baker.services.journal_sync import order as order_journal_sync
+
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh release failure", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="door",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    with get_db() as conn:
+        before = conn.execute(
+            "SELECT je.id, jl.account_id, jl.debit, jl.credit FROM journal_entries je "
+            "JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.source_id = ? "
+            "ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+
+    def fail_release(*_args, **_kwargs):
+        raise RuntimeError("injected release failure")
+
+    monkeypatch.setattr(order_journal_sync, "_sync_bus_shipping_release_entry", fail_release)
+    response = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "bus"})
+    assert response.status_code == 200
+    assert response.json().get("accountingSyncWarning") == "journal_sync_failed"
+    with get_db() as conn:
+        after = conn.execute(
+            "SELECT je.id, jl.account_id, jl.debit, jl.credit FROM journal_entries je "
+            "JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.source_id = ? "
+            "ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+        assert [tuple(row) for row in after] == [tuple(row) for row in before]
+        assert conn.execute(
+            "SELECT delivery_type FROM orders WHERE id = ?", (order_id,)
+        ).fetchone()[0] == "bus"
+
+
+def test_edit_order_payment_status_failure_rolls_back_journals(api_client, monkeypatch):
+    """A payment sync status failure rolls back release and revenue changes."""
+    from baker.services import journal_sync as journal_sync_api
+
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Banh payment failure", "quantity": 1, "unitPrice": 100000, "productId": "BKS-16"}
+        ],
+        shippingFee=25000,
+        deliveryType="door",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    with get_db() as conn:
+        before = conn.execute(
+            "SELECT je.id, jl.account_id, jl.debit, jl.credit FROM journal_entries je "
+            "JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.source_id = ? "
+            "ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+
+    def fail_payment(*_args, **_kwargs):
+        raise RuntimeError("injected payment failure")
+
+    monkeypatch.setattr(journal_sync_api, "_sync_payment_journal", fail_payment)
+    response = api_client.patch(f"/api/orders/{ref}", json={"deliveryType": "bus"})
+    assert response.status_code == 200
+    assert response.json().get("accountingSyncWarning") == "journal_sync_failed"
+    with get_db() as conn:
+        after = conn.execute(
+            "SELECT je.id, jl.account_id, jl.debit, jl.credit FROM journal_entries je "
+            "JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.source_id = ? "
+            "ORDER BY je.id, jl.id",
+            (order_id,),
+        ).fetchall()
+        assert [tuple(row) for row in after] == [tuple(row) for row in before]
+        assert conn.execute(
+            "SELECT delivery_type FROM orders WHERE id = ?", (order_id,)
+        ).fetchone()[0] == "bus"
+
+
 def test_edit_order_delivery_type_reconciliation_rolls_back_journal_group(
     api_client, monkeypatch
 ):

@@ -1549,7 +1549,6 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             conn.execute(f"SAVEPOINT {savepoint}")
             try:
                 from baker.services.journal_sync import (
-                    _find_journal_entry,
                     _reconcile_order_revenue_entry,
                     run_journal_sync,
                 )
@@ -1566,15 +1565,33 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 # sync also handles the bus→bus shipping_fee change path, so it
                 # is used for any transition whose final type is bus.
                 if was_bus and not is_bus_now:
-                    existing_release_id = _find_journal_entry(
-                        conn, "order_shipping_release", row["id"]
+                    release_entries = conn.execute(
+                        """
+                        SELECT je.id,
+                               COALESCE(SUM(CASE WHEN a.code = '2200'
+                                 THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_2200
+                        FROM journal_entries je
+                        LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                        LEFT JOIN accounts a ON a.id = jl.account_id
+                        WHERE je.source_type = 'order_shipping_release'
+                          AND je.source_id = ?
+                        GROUP BY je.id
+                        ORDER BY je.id ASC
+                        """,
+                        (row["id"],),
+                    ).fetchall()
+                    aggregate_net = sum(
+                        float(entry["net_2200"]) for entry in release_entries
                     )
-                    if existing_release_id is not None:
-                        _replace_order_entry(
-                            conn, existing_release_id, respect_locks=True
-                        )
+                    # A locked original plus its reversal is historical,
+                    # balanced accounting and must remain intact.
+                    if abs(aggregate_net) > 0.005:
+                        for entry in release_entries:
+                            _replace_order_entry(
+                                conn, int(entry["id"]), respect_locks=True
+                            )
                 elif is_bus_now:
-                    run_journal_sync(
+                    release_status = run_journal_sync(
                         _sync_bus_shipping_release_entry,
                         conn,
                         row["id"],
@@ -1586,6 +1603,8 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                         source_type="order_shipping_release",
                         source_id=row["id"],
                     )
+                    if release_status != "ok":
+                        raise RuntimeError("shipping release reconciliation failed")
 
                 # FR3/AC3: re-reconcile revenue so the 4100 credit reflects
                 # the final delivery_type (bus excludes shipping_fee, non-bus

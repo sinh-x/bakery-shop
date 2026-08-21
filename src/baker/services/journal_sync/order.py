@@ -529,28 +529,30 @@ def _sync_bus_shipping_release_entry(
     description = f"Shipping release: {order_ref}"
     order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
 
-    existing_id = _find_journal_entry(
-        conn, "order_shipping_release", order_id
-    )
-    if existing_id is not None:
-        # Compare the existing entry's 2200 debit against release_amount.
-        row = conn.execute(
-            """
-            SELECT COALESCE(SUM(jl.debit), 0) AS debit_2200
-            FROM journal_lines jl
-            JOIN accounts a ON a.id = jl.account_id
-            WHERE jl.journal_entry_id = ? AND a.code = ?
-            """,
-            (existing_id, BUS_SHIPPING_HELD_CODE),
-        ).fetchone()
-        current_debit = float(row["debit_2200"]) if row else 0.0
-        if abs(current_debit - release_amount) <= REVENUE_UPDATE_TOLERANCE:
-            # Already in sync — idempotent no-op.
+    existing_entries = conn.execute(
+        """
+        SELECT je.id,
+               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0)
+                 AS net_2200
+        FROM journal_entries je
+        LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        LEFT JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+        GROUP BY je.id
+        ORDER BY je.id ASC
+        """,
+        (BUS_SHIPPING_HELD_CODE, order_id),
+    ).fetchall()
+    if existing_entries:
+        aggregate_net = sum(float(entry["net_2200"]) for entry in existing_entries)
+        if abs(aggregate_net - release_amount) <= REVENUE_UPDATE_TOLERANCE:
+            # The complete source chain, including any locked history, is in sync.
             return
-        if _is_locked(conn, existing_id):
-            _reverse_journal_entry(conn, existing_id)
-        else:
-            _delete_journal_entry_cascade(conn, existing_id)
+        if abs(aggregate_net) > REVENUE_UPDATE_TOLERANCE:
+            # Replace the whole unbalanced chain, not only its newest row. This
+            # avoids deleting a reversal and reviving a locked original.
+            for entry in existing_entries:
+                _replace_order_entry(conn, int(entry["id"]), respect_locks=True)
 
     _insert_journal_entry(
         conn,
