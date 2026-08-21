@@ -19,9 +19,11 @@ import click.testing
 
 from baker.cli import app
 from baker.commands.repair import _process_order
+from baker.commands.repair.order_revenue import _process_shipping_release_order
 from baker.commands.repair import _vn_amount
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
+from baker.services.journal_sync import _replace_order_entry
 
 
 # ---------------------------------------------------------------------------
@@ -2334,6 +2336,78 @@ def test_shipping_release_repair_stale_unlocked_entry():
         lines = _shipping_release_lines(conn, oid)
         assert lines["2200"]["debit"] == 25000.0
 
+
+def test_shipping_release_repair_preserves_balanced_locked_reversal_chain():
+    """A locked release plus its reversal is already balanced and is skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-REL-CHAIN", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, locked_at) "
+            "VALUES (?, 'order_shipping_release', ?, CURRENT_TIMESTAMP)",
+            ("Shipping release: ORD-REL-CHAIN", oid),
+        )
+        original_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 25000, 0, 'ship')", (original_id, held_acct)
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0, 25000, 'ship')", (original_id, asset_acct)
+        )
+        _replace_order_entry(conn, original_id, respect_locks=True)
+        before = _shipping_release_entry_count(conn, oid)
+        preview = _process_shipping_release_order(conn, oid, dry_run=True)
+        assert preview["action"] == "skipped"
+        result = _process_shipping_release_order(conn, oid, dry_run=False)
+        assert result["action"] == "skipped"
+        assert _shipping_release_entry_count(conn, oid) == before == 2
+
+
+def test_shipping_release_repair_reverses_stale_locked_original():
+    """A stale locked non-bus release is reversed, not left as locked/stale."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-REL-LOCKED-STALE", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        held_acct = _account_id(conn, "2200")
+        asset_acct = _account_id(conn, "1101")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id, locked_at) "
+            "VALUES (?, 'order_shipping_release', ?, CURRENT_TIMESTAMP)",
+            ("Shipping release: ORD-REL-LOCKED-STALE", oid),
+        )
+        entry_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) VALUES (?, ?, 10000, 0, 'ship')",
+            (entry_id, held_acct),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) VALUES (?, ?, 0, 10000, 'ship')",
+            (entry_id, asset_acct),
+        )
+        preview = _process_shipping_release_order(conn, oid, dry_run=True)
+        assert preview["action"] == "will-repair"
+        result = _process_shipping_release_order(conn, oid, dry_run=False)
+        assert result["action"] == "repaired"
+        assert _shipping_release_entry_count(conn, oid) == 2
+        net = conn.execute(
+            "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) FROM journal_lines jl "
+            "JOIN journal_entries je ON je.id = jl.journal_entry_id "
+            "WHERE je.source_type = 'order_shipping_release' AND je.source_id = ? "
+            "AND jl.account_id = ?",
+            (oid, held_acct),
+        ).fetchone()[0]
+        assert float(net) == 0.0
+
 # ---------------------------------------------------------------------------
 # DG-366 Phase 5 — check-shipping-release-gaps (read-only detection, FR5/AC6)
 # ---------------------------------------------------------------------------
@@ -2468,3 +2542,195 @@ def test_check_shipping_release_gaps_ignores_bus_order_with_no_held_shipping():
     assert result.exit_code == 0, result.output
     assert "ORD-BUS-GAP-UNPAID" not in result.output
     assert "không có đơn ship bus nào" in result.output
+
+
+# ---------------------------------------------------------------------------
+# DG-422 Phase 2 — scan-all stale bus-shipping accounting repair
+# (FR5, NFR2, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _insert_stale_shipping_release_entry(
+    conn, *, order_id: int, amount: float = 25000.0
+) -> int:
+    """Insert a stale ``order_shipping_release`` entry for an order.
+
+    Used to simulate the pre-Phase-1 state where a bus→non-bus delivery-type
+    edit left a stale release entry behind (the scan-all repair target).
+    """
+    held_acct = _account_id(conn, "2200")
+    asset_acct = _account_id(conn, "1101")
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'order_shipping_release', ?)",
+        (f"Shipping release: stale #{order_id}", order_id),
+    )
+    entry_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, ?, 0.0, 'Thanh toán ship bus')",
+        (entry_id, held_acct, amount),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, 0.0, ?, 'Tiền ship bus đã trả')",
+        (entry_id, asset_acct, amount),
+    )
+    return entry_id
+
+
+def test_scan_all_removes_stale_release_on_non_bus_order():
+    """FR5/AC5: ``--all`` scans non-bus orders with a stale release entry and
+    removes it (the bus→non-bus stale case from pre-Phase-1 delivery-type edits)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # A door order (formerly bus) that still carries a stale release entry.
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-REMOVED", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        _insert_stale_shipping_release_entry(conn, order_id=oid, amount=25000)
+        assert _shipping_release_entry_count(conn, oid) == 1
+
+    result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-DG422-REMOVED" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+
+def test_scan_all_non_bus_stale_release_idempotent_second_run():
+    """NFR2/AC5: after removing the stale release entry, a second ``--all``
+    run does not rescan the non-bus order (no release entry → not in scan
+    set → not reported at all)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-IDEM", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        _insert_stale_shipping_release_entry(conn, order_id=oid, amount=25000)
+
+    # First run removes the stale entry.
+    r1 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert r1.exit_code == 0, r1.output
+    assert "đã sửa" in r1.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    # Second run: the non-bus order is no longer in the scan set (no release
+    # entry → excluded by the scan query), so it is not reported at all.
+    r2 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert r2.exit_code == 0, r2.output
+    assert "ORD-DG422-IDEM" not in r2.output
+
+
+def test_scan_all_dry_run_does_not_remove_stale_release():
+    """AC5: ``--all --dry-run`` previews the removal without writing."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-DRY", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        _insert_stale_shipping_release_entry(conn, order_id=oid, amount=25000)
+        assert _shipping_release_entry_count(conn, oid) == 1
+
+    result = _invoke(
+        ["repair-order-revenue", "--shipping-release", "--all", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "ORD-DG422-DRY" in result.output
+    assert "sẽ sửa" in result.output
+    assert "đã sửa" not in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 1
+
+
+def test_scan_all_non_bus_stale_locked_release_is_reversed():
+    """A stale locked non-bus release is reversed to restore a balanced chain."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-LOCK", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        entry_id = _insert_stale_shipping_release_entry(conn, order_id=oid, amount=25000)
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (entry_id,),
+        )
+
+    result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, oid) == 2
+
+
+def test_scan_all_bus_backfill_and_non_bus_removal_together():
+    """FR5: ``--all`` handles both cases in one sweep — a bus order missing
+    its release entry (backfill) and a non-bus order with a stale release
+    entry (removal)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Bus order missing release → backfill.
+        bus_oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-BUS", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="bus",
+        )
+        _pay_and_sync_bus(conn, order_id=bus_oid, amount=100000)
+        _delete_shipping_release_entry(conn, bus_oid)
+        assert _shipping_release_entry_count(conn, bus_oid) == 0
+        # Non-bus order with stale release → removal.
+        door_oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-DOOR", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        _insert_stale_shipping_release_entry(conn, order_id=door_oid, amount=25000)
+        assert _shipping_release_entry_count(conn, door_oid) == 1
+
+    result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-DG422-BUS" in result.output
+    assert "ORD-DG422-DOOR" in result.output
+    assert "đã sửa: 2" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _shipping_release_entry_count(conn, bus_oid) == 1
+        assert _shipping_release_entry_count(conn, door_oid) == 0
+
+    # Second run: both orders are now correct → bus order skipped, door order
+    # excluded from scan. Only the bus order appears as "bỏ qua".
+    r2 = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert r2.exit_code == 0, r2.output
+    assert "ORD-DG422-BUS" in r2.output
+    assert "bỏ qua: 1" in r2.output
+    assert "đã sửa: 0" in r2.output
+
+
+def test_scan_all_non_bus_order_without_release_not_scanned():
+    """FR5: a non-bus order with no release entry is excluded from the scan
+    (not reported as not-applicable — it is simply not in the scan set)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_bus_order(
+            conn, order_ref="ORD-DG422-CLEAN", total_price=100000, shipping_fee=25000,
+            status="delivered", due_date="2026-07-15", delivery_type="door",
+        )
+        # No payment, no release entry — clean door order.
+        assert _shipping_release_entry_count(conn, oid) == 0
+
+    result = _invoke(["repair-order-revenue", "--shipping-release", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-DG422-CLEAN" not in result.output

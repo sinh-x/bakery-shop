@@ -307,19 +307,41 @@ def _print_cogs_report(results, *, dry_run):
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
 
 def _bus_orders_with_shipping_held(conn):
-    """Return ids of all delivered/completed bus orders with shipping_fee > 0.
+    """Return ids of all delivered/completed orders to scan for shipping-release repair.
 
-    Used by the shipping-release repair ``--all`` scan (FR2/FR8). Only bus
-    orders are considered — pickup/door orders never hold shipping in 2200.
-    Ordered by id ASC for deterministic output.
+    Used by the shipping-release repair ``--all`` scan (FR2/FR8, DG-422
+    Phase 2 FR5). The scan includes two categories of orders:
+
+    1. **Bus orders with ``shipping_fee > 0``** — the normal case: the
+       release entry may be missing (backfill) or stale (repair).
+    2. **Non-bus orders with a stale ``order_shipping_release`` entry**
+       (DG-422 Phase 2) — orders whose ``delivery_type`` was edited from
+       ``bus`` to ``door``/``pickup`` after delivery (before the Phase 1
+       ``edit_order`` fix) and still carry a stale release entry that must
+       be removed/reversed (FR1/AC1).
+
+    Pickup/door orders with no release entry and bus orders with
+    ``shipping_fee = 0`` and no release entry are excluded. Ordered by id
+    ASC for deterministic output.
     """
     rows = conn.execute(
         f"""
         SELECT DISTINCT o.id AS order_id
         FROM orders o
         WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-          AND (o.delivery_type IS NULL OR o.delivery_type = 'bus')
-          AND COALESCE(o.shipping_fee, 0) > 0
+          AND (
+            -- (1) bus orders with shipping_fee > 0
+            ((o.delivery_type IS NULL OR o.delivery_type = 'bus')
+             AND COALESCE(o.shipping_fee, 0) > 0)
+            OR
+            -- (2) non-bus orders carrying a stale order_shipping_release entry
+            (o.delivery_type IS NOT NULL AND o.delivery_type != 'bus'
+             AND EXISTS (
+               SELECT 1 FROM journal_entries je
+               WHERE je.source_type = 'order_shipping_release'
+                 AND je.source_id = o.id
+             ))
+          )
         ORDER BY o.id ASC
         """,  # nosec B608
         list(DELIVERED_STATUSES),
@@ -344,15 +366,30 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
     observable via the ``journal_sync_failures`` counter and recorded in
     ``journal_sync_failure_log``.
 
+    DG-422 Phase 2 — extended to repair stale bus-shipping accounting on
+    non-bus orders: when a delivered/completed order whose ``delivery_type``
+    was edited from ``bus`` to ``door``/``pickup`` still carries a stale
+    ``order_shipping_release`` entry, the entry is removed/reversed via
+    :func:`_replace_order_entry` (locked → reversed, unlocked → deleted),
+    mirroring the live ``edit_order`` bus→non-bus reconciliation path
+    (FR1/AC1). The scan-all function (:func:`_bus_orders_with_shipping_held`)
+    is also extended to include these non-bus orders so the ``--all`` sweep
+    catches them (FR5/AC5).
+
     Actions:
-      - ``not-applicable``: non-bus order or ``shipping_fee <= 0``.
+      - ``not-applicable``: non-bus order with no release entry, or
+        ``shipping_fee <= 0`` with no release entry.
       - ``skipped``: an existing ``order_shipping_release`` entry matches the
         expected release amount within tolerance (idempotent, FR7).
       - ``locked``: an existing entry is locked and stale (FR7 — do not modify).
       - ``will-backfill``: dry-run preview of a missing entry (FR6).
       - ``will-repair``: dry-run preview of a stale unlocked entry.
+      - ``will-remove``: dry-run preview of a stale release entry on a non-bus
+        order (DG-422 Phase 2).
       - ``backfilled``: missing entry created (CR is drawer-aware, FR3/FR4).
       - ``repaired``: stale unlocked entry deleted and recreated.
+      - ``removed``: stale release entry on a non-bus order removed/reversed
+        (DG-422 Phase 2).
       - ``failed``: the delegated sync raised — reported, not raised to the
         CLI caller (NFR1: repair never blocks on a single order).
     """
@@ -371,14 +408,63 @@ def _process_shipping_release_order(conn, order_id: int, *, dry_run: bool) -> di
         }
     delivery_type = order_row["delivery_type"] or "pickup"
     shipping_fee = float(order_row["shipping_fee"] or 0)
+
+    # DG-422 Phase 2 (FR5/AC5): non-bus orders should not carry an
+    # ``order_shipping_release`` entry. If one exists (stale from a
+    # delivery-type edit done before the Phase 1 fix), remove/reverse it
+    # via ``_replace_order_entry`` — mirroring the live ``edit_order``
+    # bus→non-bus reconciliation path (FR1/AC1).
     if delivery_type != "bus" or shipping_fee <= 0:
+        entries = conn.execute(
+            """
+            SELECT je.id,
+                   COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_2200
+            FROM journal_entries je
+            LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            LEFT JOIN accounts a ON a.id = jl.account_id
+            WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+            GROUP BY je.id
+            ORDER BY je.id ASC
+            """,
+            (BUS_SHIPPING_HELD_CODE, order_id),
+        ).fetchall()
+        if not entries:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": 0.0,
+                "release_amount": 0.0,
+                "asset_code": "",
+                "action": "not-applicable",
+            }
+        aggregate_net = sum(float(entry["net_2200"]) for entry in entries)
+        if abs(aggregate_net) <= MISMATCH_TOLERANCE:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": 0.0,
+                "release_amount": 0.0,
+                "asset_code": "",
+                "action": "skipped",
+            }
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "held_amount": 0.0,
+                "release_amount": 0.0,
+                "asset_code": "",
+                "action": "will-repair" if any(_is_locked(conn, entry["id"]) for entry in entries) else "will-remove",
+            }
+        for entry in entries:
+            _replace_order_entry(conn, int(entry["id"]), respect_locks=True)
         return {
             "order_id": order_id,
             "order_ref": order_ref,
             "held_amount": 0.0,
             "release_amount": 0.0,
             "asset_code": "",
-            "action": "not-applicable",
+            "action": "repaired" if any(_is_locked(conn, entry["id"]) for entry in entries) else "removed",
         }
 
     held_in_2200 = _held_shipping_for_order(conn, order_id)
@@ -501,8 +587,10 @@ def _print_shipping_release_report(results, *, dry_run):
 
     backfilled = sum(1 for r in results if r["action"] == "backfilled")
     repaired = sum(1 for r in results if r["action"] == "repaired")
+    removed = sum(1 for r in results if r["action"] == "removed")
     will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
     will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    will_remove = sum(1 for r in results if r["action"] == "will-remove")
     skipped = sum(1 for r in results if r["action"] == "skipped")
     not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
     locked = sum(1 for r in results if r["action"] == "locked")
@@ -510,9 +598,9 @@ def _print_shipping_release_report(results, *, dry_run):
 
     parts = []
     if dry_run:
-        parts.append(f"sẽ sửa: {will_repair + will_backfill}")
+        parts.append(f"sẽ sửa: {will_repair + will_backfill + will_remove}")
     else:
-        parts.append(f"đã sửa: {repaired + backfilled}")
+        parts.append(f"đã sửa: {repaired + backfilled + removed}")
     parts.append(f"bỏ qua: {skipped}")
     parts.append(f"không áp dụng: {not_applicable}")
     if locked:
@@ -644,4 +732,3 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, repair_shipping_
     if locked:
         parts.append(f"khoá: {locked}")
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
-
