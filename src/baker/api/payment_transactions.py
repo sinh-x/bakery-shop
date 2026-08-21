@@ -68,6 +68,31 @@ def _resolve_order_id(conn, ref: str) -> int:
     return row["id"]
 
 
+def _sync_order_revenue_after_payment(conn, order_id: int) -> None:
+    """Reconcile revenue after a payment mutation on a delivered order."""
+    order = conn.execute(
+        "SELECT order_ref, status FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    if order is None or order["status"] not in ("delivered", "completed"):
+        return
+
+    from baker.services.journal_sync import (
+        _reconcile_order_revenue_entry,
+        run_journal_sync,
+    )
+
+    run_journal_sync(
+        _reconcile_order_revenue_entry,
+        conn,
+        order_id,
+        order["order_ref"],
+        respect_locks=True,
+        log_label=f"order revenue sync after payment mutation for order {order_id}",
+        source_type="order",
+        source_id=order_id,
+    )
+
+
 def _resolve_txn_or_404(conn, order_id: int, txn_id: int):
     """Return the payment_transactions row or raise 404.
 
@@ -202,6 +227,7 @@ def create_transaction(ref: str, body: TransactionCreate):
             source_type="payment_transaction",
             source_id=txn.id,
         )
+        _sync_order_revenue_after_payment(conn, order_id)
 
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
@@ -296,6 +322,7 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             source_type="payment_transaction",
             source_id=txn.id,
         )
+        _sync_order_revenue_after_payment(conn, order_id)
 
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
@@ -338,6 +365,7 @@ def delete_transaction(ref: str, txn_id: int):
             source_type="payment_transaction",
             source_id=txn_id,
         )
+        _sync_order_revenue_after_payment(conn, order_id)
 
 
 def _now_iso() -> str:
@@ -399,6 +427,7 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
             source_type="payment_transaction",
             source_id=txn_id,
         )
+        _sync_order_revenue_after_payment(conn, order_id)
 
         # FR10: audit trail.
         try:
@@ -465,6 +494,7 @@ def restore_transaction(ref: str, txn_id: int):
             source_type="payment_transaction",
             source_id=txn_id,
         )
+        _sync_order_revenue_after_payment(conn, order_id)
 
         # FR10: audit trail.
         try:
