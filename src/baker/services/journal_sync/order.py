@@ -311,7 +311,7 @@ def _reconcile_revenue_entry_lines(
                 FROM journal_lines jl
                 JOIN accounts a ON a.id = jl.account_id
                   WHERE jl.journal_entry_id IN ({placeholders})
-                """,
+                """,  # nosec B608
                 (ACCOUNTS_RECEIVABLE_CODE, ORDER_REVENUE_CODE, *existing_ids),
             ).fetchone()
             mismatch = abs(float(row["net_1500"]) - expected_debit) + abs(
@@ -362,7 +362,7 @@ def _reconcile_revenue_entry_lines(
             FROM journal_lines jl
             JOIN accounts a ON a.id = jl.account_id
               WHERE jl.journal_entry_id IN ({placeholders})
-            """,
+            """,  # nosec B608
             (CUSTOMER_DEPOSITS_CODE, ORDER_REVENUE_CODE, *existing_ids),
         ).fetchone()
         mismatch = abs(float(row["net_2100"]) - deposit_balance) + abs(
