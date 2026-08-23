@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/blank.dart';
 import 'package:bakery_app/data/providers/blanks_provider.dart';
 import 'package:bakery_app/features/orders/widgets/add_blank_modal.dart';
+import 'package:bakery_app/features/orders/providers/order_draft_contexts.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 
 const _blanks = [
@@ -41,6 +42,11 @@ Future<void> _pumpModal(
               child: ElevatedButton(
                 onPressed: () => showAddBlankModal(
                   ctx,
+                  draftContext: OrderDraftContexts.addBlank(
+                    orderRef: 'ORD-TEST',
+                    workItemId: 'ITEM-TEST',
+                    assignmentId: isEdit ? 1 : null,
+                  ),
                   initialBlankId: initialBlankId,
                   initialQuantity: initialQuantity,
                   initialNotes: initialNotes,
@@ -62,23 +68,28 @@ Future<void> _pumpModal(
 void main() {
   group('AddBlankModal', () {
     testWidgets(
-        'AC1: shows blank dropdown, quantity (default 1), and optional notes field',
-        (tester) async {
-      await _pumpModal(tester, blanks: _blanks);
+      'AC1: shows blank dropdown, quantity (default 1), and optional notes field',
+      (tester) async {
+        await _pumpModal(tester, blanks: _blanks);
 
-      expect(find.text(BlanksLabels.addBlankTitle), findsOneWidget);
-      expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
-      // Quantity defaults to 1 for add flow.
-      expect(
-        tester.widget<TextField>(find.byType(TextField).at(0)).controller!.text,
-        '1',
-      );
-      // Notes field present.
-      expect(find.text(BlanksLabels.fieldBlankNotes), findsOneWidget);
-    });
+        expect(find.text(BlanksLabels.addBlankTitle), findsOneWidget);
+        expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
+        // Quantity defaults to 1 for add flow.
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).at(0))
+              .controller!
+              .text,
+          '1',
+        );
+        // Notes field present.
+        expect(find.text(BlanksLabels.fieldBlankNotes), findsOneWidget);
+      },
+    );
 
-    testWidgets('confirm with blank selected returns BlankModalResult',
-        (tester) async {
+    testWidgets('confirm with blank selected returns BlankModalResult', (
+      tester,
+    ) async {
       await _pumpModal(tester, blanks: _blanks);
 
       // Open dropdown and pick "Phôi kem".
@@ -107,8 +118,9 @@ void main() {
       expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
     });
 
-    testWidgets('AC3: edit mode prefills title, blank, quantity, notes',
-        (tester) async {
+    testWidgets('AC3: edit mode prefills title, blank, quantity, notes', (
+      tester,
+    ) async {
       await _pumpModal(
         tester,
         blanks: _blanks,

@@ -9,8 +9,11 @@ import '../../../shared/providers/logged_by_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/printer_provider.dart';
 import '../providers/google_maps_modal_notifier.dart';
+import '../providers/order_draft_contexts.dart';
+import '../../../shared/models/form_draft_context.dart';
 import '../../../shared/widgets/printer_picker_dialog.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Dialog shown after confirming a work item, prompting the staff to print
 /// the internal receipt (work ticket) for that item.
 ///
@@ -28,22 +31,34 @@ class InternalPrintDialog extends ConsumerStatefulWidget {
 }
 
 class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
+  late final FormDraftContext _operationContext =
+      OrderDraftContexts.printWorkItem(widget.orderRef, widget.itemId);
+
   Future<void> _printInternal() async {
-    ref.read(internalPrintProvider.notifier).startPrinting(
-          statusText: SharedLabels.fetchingInternalReceipt,
-        );
+    final container = ProviderScope.containerOf(context, listen: false);
+    final printNotifier = container.read(
+      internalPrintProvider(_operationContext).notifier,
+    );
+    final receiptService = container.read(receiptServiceProvider);
+    final printedBy = container.read(loggedByProvider);
+    final orderDetail = container.read(
+      orderDetailProvider(widget.orderRef).notifier,
+    );
+    final printerService = container.read(printerServiceProvider);
+    final printer = container.read(printerProvider.notifier);
+    printNotifier.startPrinting(
+      statusText: SharedLabels.fetchingInternalReceipt,
+    );
 
     try {
       if (kIsWeb) {
-        final receiptService = ref.read(receiptServiceProvider);
-        final printedBy = ref.read(loggedByProvider);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
           itemId: widget.itemId,
           printedBy: printedBy,
         );
-        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+        orderDetail.refresh();
         if (mounted) {
           showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
           Navigator.pop(context);
@@ -51,26 +66,21 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
         return;
       }
 
-      final printerService = ref.read(printerServiceProvider);
       await printerService.init();
 
-      final receiptService = ref.read(receiptServiceProvider);
       final internalBytes = await receiptService.fetchReceipt(
         orderRef: widget.orderRef,
         type: ReceiptType.workTicket,
         itemId: widget.itemId,
       );
 
-      ref
-          .read(internalPrintProvider.notifier)
-          .setStatusText(SharedLabels.printingInternalReceipt);
+      printNotifier.setStatusText(SharedLabels.printingInternalReceipt);
 
       PrinterPickerResult result = PrinterPickerResult.cancelled;
       if (printerService.lastPrinterMac != null) {
         try {
           await printerService.connect(printerService.lastPrinterMac!);
-          final success =
-              await ref.read(printerProvider.notifier).printImage(internalBytes);
+          final success = await printer.printImage(internalBytes);
           if (success) {
             result = PrinterPickerResult.success;
           }
@@ -88,7 +98,7 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
       }
 
       if (result == PrinterPickerResult.success) {
-        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+        orderDetail.refresh();
         if (mounted) {
           showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
           Navigator.pop(context);
@@ -100,15 +110,13 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) {
-        ref.read(internalPrintProvider.notifier).finishPrinting();
-      }
+      printNotifier.finishPrinting();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(internalPrintProvider);
+    final state = ref.watch(internalPrintProvider(_operationContext));
     return AlertDialog(
       title: const Text(SharedLabels.printChecklistTitle),
       content: state.printing
@@ -134,7 +142,10 @@ class _InternalPrintDialogState extends ConsumerState<InternalPrintDialog> {
           child: const Text(SharedLabels.printSkip),
         ),
         if (!state.printing)
-          FilledButton(onPressed: _printInternal, child: const Text(SharedLabels.print)),
+          FilledButton(
+            onPressed: _printInternal,
+            child: const Text(SharedLabels.print),
+          ),
       ],
     );
   }

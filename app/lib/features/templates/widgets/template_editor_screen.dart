@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/template_service.dart';
 import '../../../data/models/message_template.dart';
 import '../../../data/providers/template_providers.dart';
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../../../shared/labels/templates.dart';
 import '../providers/template_editor_notifier.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Template editor screen (DG-375 Phase 4 / FR8, AC8).
 ///
 /// A full-screen create/edit form for a single message template. The body
@@ -49,19 +53,48 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
   late final TextEditingController _cursorAccessor;
 
   bool get _isEditing => widget.template != null;
+  late final FormDraftContext _draftContext;
+  NotifierProvider<TemplateEditorNotifier, TemplateEditorState> get _provider =>
+      contextualTemplateEditorProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
     final t = widget.template;
-    _nameCtrl = TextEditingController(text: t?.name ?? '');
-    _bodyCtrl = TextEditingController(text: t?.body ?? '');
+    _draftContext = FormDraftContext(
+      formType: 'template',
+      mode: _isEditing ? FormDraftMode.edit : FormDraftMode.create,
+      entityId: t?.id.toString(),
+      variantId: _isEditing ? null : widget.initialIsSystem.toString(),
+    );
+    final formNotifier = ref.read(_provider.notifier);
+    final draft = ref
+        .read(_provider.notifier)
+        .newDraftFor(widget.initialIsSystem);
+    final restore = formNotifier.hasRetainedDraft;
+    _nameCtrl = TextEditingController(
+      text: restore ? draft.name : t?.name ?? '',
+    );
+    _bodyCtrl = TextEditingController(
+      text: restore ? draft.body : t?.body ?? '',
+    );
     _cursorAccessor = TextEditingController();
+    _nameCtrl.addListener(_retainNewDraft);
+    _bodyCtrl.addListener(_retainNewDraft);
     // Seed the editor notifier with the template (edit mode) or the
     // caller-supplied default isSystem flag (create mode).
-    Future.microtask(() => ref
-        .read(templateEditorProvider.notifier)
-        .seed(widget.template, initialIsSystem: widget.initialIsSystem));
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(_provider.notifier)
+          .seed(widget.template, initialIsSystem: widget.initialIsSystem);
+    });
+  }
+
+  void _retainNewDraft() {
+    ref
+        .read(_provider.notifier)
+        .updateNewDraft(name: _nameCtrl.text, body: _bodyCtrl.text);
   }
 
   @override
@@ -74,8 +107,10 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    ref.read(templateEditorProvider.notifier).setSaving(true);
-    final editor = ref.read(templateEditorProvider);
+    final editorNotifier = ref.read(_provider.notifier);
+    final submittedDraft = editorNotifier.draftSnapshot;
+    editorNotifier.setSaving(true);
+    final editor = ref.read(_provider);
     final name = _nameCtrl.text.trim();
     try {
       final notifier = ref.read(templateListProvider.notifier);
@@ -97,12 +132,17 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
           active: editor.isActive,
         );
       }
+      editorNotifier.clearAfterSuccess(submittedDraft);
+      editorNotifier.setSaving(false);
       if (!mounted) return;
       Navigator.of(context).pop();
-      showTopSnackBar(context, TemplatesLabels.editorSavedSnack.replaceAll('{name}', name));
+      showTopSnackBar(
+        context,
+        TemplatesLabels.editorSavedSnack.replaceAll('{name}', name),
+      );
     } catch (e) {
+      editorNotifier.setSaving(false);
       if (mounted) {
-        ref.read(templateEditorProvider.notifier).setSaving(false);
         showTopSnackBar(context, '${TemplatesLabels.editorSaveError} ($e)');
       }
     }
@@ -126,7 +166,9 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
     final text = controller.text;
     if (!selection.isValid) {
       controller.text = text + snippet;
-      controller.selection = TextSelection.collapsed(offset: text.length + snippet.length);
+      controller.selection = TextSelection.collapsed(
+        offset: text.length + snippet.length,
+      );
       return;
     }
     final newText = text.replaceRange(selection.start, selection.end, snippet);
@@ -137,13 +179,26 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final editor = ref.watch(templateEditorProvider);
+    final editor = ref.watch(_provider);
     final saving = editor.saving;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing
-            ? TemplatesLabels.editorEditTitle
-            : TemplatesLabels.editorCreateTitle),
+        title: Text(
+          _isEditing
+              ? TemplatesLabels.editorEditTitle
+              : TemplatesLabels.editorCreateTitle,
+        ),
+        actions: [
+          DiscardFormDraftAction(
+            isDirty: ref
+                .watch(formDraftSessionProvider)
+                .containsKey(_draftContext),
+            onDiscard: () {
+              ref.read(_provider.notifier).clearNewDraft();
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -167,6 +222,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
+                key: ValueKey(editor.selectedScenario),
                 initialValue: editor.selectedScenario,
                 decoration: const InputDecoration(
                   labelText: TemplatesLabels.editorScenarioLabel,
@@ -182,8 +238,8 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                 onChanged: saving
                     ? null
                     : (v) => ref
-                        .read(templateEditorProvider.notifier)
-                        .setSelectedScenario(v ?? editor.selectedScenario),
+                          .read(_provider.notifier)
+                          .setSelectedScenario(v ?? editor.selectedScenario),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -218,8 +274,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                 value: editor.isActive,
                 onChanged: saving
                     ? null
-                    : (v) =>
-                        ref.read(templateEditorProvider.notifier).setActive(v),
+                    : (v) => ref.read(_provider.notifier).setActive(v),
               ),
               if (widget.isAdmin) ...[
                 SwitchListTile.adaptive(
@@ -228,9 +283,7 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                   value: editor.isSystem,
                   onChanged: saving
                       ? null
-                      : (v) => ref
-                          .read(templateEditorProvider.notifier)
-                          .setIsSystem(v),
+                      : (v) => ref.read(_provider.notifier).setIsSystem(v),
                 ),
               ],
               const SizedBox(height: 16),
@@ -238,7 +291,9 @@ class _TemplateEditorScreenState extends ConsumerState<TemplateEditorScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: saving ? null : () => Navigator.of(context).pop(),
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: const Text(SharedLabels.cancel),
                   ),
                   const SizedBox(width: 8),

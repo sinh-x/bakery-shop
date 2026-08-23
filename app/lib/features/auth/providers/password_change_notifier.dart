@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/form_draft_session_notifier.dart';
+
 /// Form state for the reusable password-change form (DG-404 Phase 4.7).
 ///
 /// Holds the fields previously mutated via `setState` inside
@@ -37,8 +39,9 @@ class PasswordChangeFormState {
       obscureNew: obscureNew ?? this.obscureNew,
       obscureConfirm: obscureConfirm ?? this.obscureConfirm,
       submitting: submitting ?? this.submitting,
-      errorMessage:
-          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
     );
   }
 }
@@ -51,7 +54,10 @@ class PasswordChangeFormState {
 /// on change — no `setState` is required.
 class PasswordChangeFormNotifier extends Notifier<PasswordChangeFormState> {
   @override
-  PasswordChangeFormState build() => const PasswordChangeFormState();
+  PasswordChangeFormState build() {
+    ref.watch(formDraftSessionEpochProvider);
+    return const PasswordChangeFormState();
+  }
 
   void toggleObscureOld() =>
       state = state.copyWith(obscureOld: !state.obscureOld);
@@ -62,20 +68,20 @@ class PasswordChangeFormNotifier extends Notifier<PasswordChangeFormState> {
   void toggleObscureConfirm() =>
       state = state.copyWith(obscureConfirm: !state.obscureConfirm);
 
-  void startSubmitting() => state = state.copyWith(
-        submitting: true,
-        clearErrorMessage: true,
-      );
+  void startSubmitting() =>
+      state = state.copyWith(submitting: true, clearErrorMessage: true);
 
   void setErrorMessage(String message) =>
       state = state.copyWith(errorMessage: message);
 
-  void setSubmitting(bool value) =>
-      state = state.copyWith(submitting: value);
+  void setSubmitting(bool value) => state = state.copyWith(submitting: value);
+
+  void reset() => state = const PasswordChangeFormState();
 }
 
 /// Provider for the password-change form state. The widget reads this
 /// and calls the notifier's mutators; no `setState` is required.
 final passwordChangeFormProvider =
     NotifierProvider<PasswordChangeFormNotifier, PasswordChangeFormState>(
-    PasswordChangeFormNotifier.new);
+      PasswordChangeFormNotifier.new,
+    );

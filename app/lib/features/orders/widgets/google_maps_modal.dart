@@ -46,12 +46,15 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
   }
 
   Future<void> _save({bool clear = false}) async {
-    ref.read(googleMapsModalProvider.notifier).setSaving(true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final savingNotifier = container.read(googleMapsModalProvider.notifier);
+    final orderDetail = container.read(
+      orderDetailProvider(widget.orderRef).notifier,
+    );
+    savingNotifier.setSaving(true);
     try {
       final value = clear ? null : _urlCtrl.text.trim();
-      await ref
-          .read(orderDetailProvider(widget.orderRef).notifier)
-          .save(googleMapsUrl: value);
+      await orderDetail.save(googleMapsUrl: value);
       if (mounted) {
         showTopSnackBar(
           context,
@@ -64,7 +67,7 @@ class _GoogleMapsModalState extends ConsumerState<GoogleMapsModal> {
         showTopSnackBar(context, '${SharedLabels.apiError}: ${normalizeApiError(e).message}');
       }
     } finally {
-      if (mounted) ref.read(googleMapsModalProvider.notifier).setSaving(false);
+      savingNotifier.setSaving(false);
     }
   }
 

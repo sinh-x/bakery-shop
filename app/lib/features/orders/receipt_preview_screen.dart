@@ -103,11 +103,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         widget.receiptType == ReceiptType.workTicket &&
         orderAsync.value?.status == 'new';
 
-    ref.read(receiptPreviewProvider.notifier).setPrinting(true);
+    final previewNotifier = ref.read(receiptPreviewProvider.notifier);
+    final receiptService = ref.read(receiptServiceProvider);
+    final printedBy = ref.read(loggedByProvider);
+    final orderDetail = ref.read(orderDetailProvider(widget.orderRef).notifier);
+    previewNotifier.setPrinting(true);
     try {
-      final receiptService = ref.read(receiptServiceProvider);
-      final printedBy = ref.read(loggedByProvider);
-
       // Always use server-side print API (USB thermal printer)
       await receiptService.printReceipt(
         orderRef: widget.orderRef,
@@ -120,9 +121,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
 
       // Flow B: auto-confirm order after successful work ticket print
       if (isFlowB) {
-        await ref
-            .read(orderDetailProvider(widget.orderRef).notifier)
-            .transitionTo('confirmed');
+        await orderDetail.transitionTo('confirmed');
         if (mounted) {
           showTopSnackBar(context, SharedLabels.orderAutoConfirmed);
         }
@@ -132,7 +131,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(receiptPreviewProvider.notifier).setPrinting(false);
+      previewNotifier.setPrinting(false);
     }
   }
 

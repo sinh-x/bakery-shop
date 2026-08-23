@@ -8,6 +8,9 @@ import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import '../providers/cash_drawer_selector_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
+
 /// Result returned by the cash-drawer dialogs.
 ///
 /// `null` means the user cancelled. A non-null value carries the entered
@@ -112,9 +115,9 @@ Future<CarryOverDecision?> showCarryOverConfirmationDialog(
           const SizedBox(height: 4),
           Text(
             formatVND(carryOverAmount.toDouble()),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           const Text(CashDrawerLabels.cashDrawerCarryOverQuestion),
@@ -126,14 +129,12 @@ Future<CarryOverDecision?> showCarryOverConfirmationDialog(
           child: const Text(SharedLabels.cancel),
         ),
         FilledButton.tonalIcon(
-          onPressed: () =>
-              Navigator.of(context).pop(CarryOverDecision.decline),
+          onPressed: () => Navigator.of(context).pop(CarryOverDecision.decline),
           icon: const Icon(Icons.block),
           label: const Text(CashDrawerLabels.cashDrawerCarryOverDecline),
         ),
         FilledButton.icon(
-          onPressed: () =>
-              Navigator.of(context).pop(CarryOverDecision.accept),
+          onPressed: () => Navigator.of(context).pop(CarryOverDecision.accept),
           icon: const Icon(Icons.east),
           label: const Text(CashDrawerLabels.cashDrawerCarryOverAccept),
         ),
@@ -167,8 +168,9 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
   required int surplus,
   bool openFlow = false,
 }) async {
-  final String title =
-      openFlow ? CashDrawerLabels.cashDrawerOpenSurplusTitle : CashDrawerLabels.cashDrawerCloseSurplusTitle;
+  final String title = openFlow
+      ? CashDrawerLabels.cashDrawerOpenSurplusTitle
+      : CashDrawerLabels.cashDrawerCloseSurplusTitle;
   final String referenceLabel = openFlow
       ? CashDrawerLabels.cashDrawerOpenSurplusReferenceLabel
       : 'Số dư dự kiến';
@@ -192,9 +194,9 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thừa: ${formatVND(surplus.toDouble())}',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           Text(question),
@@ -209,7 +211,9 @@ Future<CloseSurplusDecision?> showCloseSurplusDialog(
           onPressed: () =>
               Navigator.of(context).pop(CloseSurplusDecision.unidentifiedSale),
           icon: const Icon(Icons.receipt_long),
-          label: const Text(CashDrawerLabels.cashDrawerCloseSurplusUnidentifiedSale),
+          label: const Text(
+            CashDrawerLabels.cashDrawerCloseSurplusUnidentifiedSale,
+          ),
         ),
         FilledButton.icon(
           onPressed: () =>
@@ -273,9 +277,9 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
           const SizedBox(height: 4),
           Text(
             'Chênh lệch thiếu: ${formatVND(shortage.toDouble())}',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           Text(question),
@@ -296,7 +300,9 @@ Future<CloseShortageDecision?> showCloseShortageDialog(
           onPressed: () =>
               Navigator.of(context).pop(CloseShortageDecision.ownerWithdraw),
           icon: const Icon(Icons.account_balance_wallet),
-          label: const Text(CashDrawerLabels.cashDrawerCloseShortageOwnerWithdraw),
+          label: const Text(
+            CashDrawerLabels.cashDrawerCloseShortageOwnerWithdraw,
+          ),
         ),
       ],
     ),
@@ -317,19 +323,20 @@ Future<CashDrawerDialogResult?> showCashInDialog(
   WidgetRef ref, {
   List<StaffMember> staff = const <StaffMember>[],
   int expectedBalance = 0,
-}) =>
-    _showAmountDialog(
-      context: context,
-      ref: ref,
-      title: CashDrawerLabels.cashDrawerCashIn,
-      amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
-      confirmLabel: OrdersLabels.xacNhan,
-      allowZero: false,
-      helper: expectedBalance > 0
-          ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
-          : null,
-      selector: _CashDrawerSelector.cashIn(staff),
-    );
+  String drawerId = 'active',
+}) => _showAmountDialog(
+  context: context,
+  ref: ref,
+  title: CashDrawerLabels.cashDrawerCashIn,
+  amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
+  confirmLabel: OrdersLabels.xacNhan,
+  allowZero: false,
+  helper: expectedBalance > 0
+      ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+      : null,
+  selector: _CashDrawerSelector.cashIn(staff),
+  draftContext: cashDrawerActionContext(drawerId, 'cash-in'),
+);
 
 /// Shows the cash-out dialog (FR3 / FR4 / FR13 / AC15).
 ///
@@ -343,19 +350,20 @@ Future<CashDrawerDialogResult?> showCashOutDialog(
   WidgetRef ref, {
   List<StaffMember> staff = const <StaffMember>[],
   int expectedBalance = 0,
-}) =>
-    _showAmountDialog(
-      context: context,
-      ref: ref,
-      title: CashDrawerLabels.cashDrawerCashOut,
-      amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
-      confirmLabel: OrdersLabels.xacNhan,
-      allowZero: false,
-      helper: expectedBalance > 0
-          ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
-          : null,
-      selector: _CashDrawerSelector.cashOut(staff),
-    );
+  String drawerId = 'active',
+}) => _showAmountDialog(
+  context: context,
+  ref: ref,
+  title: CashDrawerLabels.cashDrawerCashOut,
+  amountLabel: CashDrawerLabels.cashDrawerAmountLabel,
+  confirmLabel: OrdersLabels.xacNhan,
+  allowZero: false,
+  helper: expectedBalance > 0
+      ? '${CashDrawerLabels.cashDrawerCurrentBalance}: ${formatVND(expectedBalance.toDouble())}'
+      : null,
+  selector: _CashDrawerSelector.cashOut(staff),
+  draftContext: cashDrawerActionContext(drawerId, 'cash-out'),
+);
 
 /// Shows the close-drawer dialog (FR7 / AC7).
 ///
@@ -398,17 +406,21 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
   required bool allowZero,
   String? helper,
   _CashDrawerSelector? selector,
+  FormDraftContext? draftContext,
 }) async {
-  final amountCtrl = TextEditingController();
-  final noteCtrl = TextEditingController();
+  final draft = draftContext == null
+      ? null
+      : ref.read(cashDrawerSelectorProvider(draftContext));
+  final amountCtrl = TextEditingController(text: draft?.amount ?? '');
+  final noteCtrl = TextEditingController(text: draft?.note ?? '');
   final formKey = GlobalKey<FormState>();
 
   // Seed the selector notifier's initial selected value (defaults to
   // 'owner' for both cash-in and cash-out).
   if (selector != null) {
-    ref.read(cashDrawerSelectorProvider.notifier).setSelectedValue(
-          selector.initialSelectedValue,
-        );
+    ref
+        .read(cashDrawerSelectorProvider(draftContext!).notifier)
+        .initialize(selector.initialSelectedValue);
   }
 
   final result = await showDialog<CashDrawerDialogResult>(
@@ -423,6 +435,7 @@ Future<CashDrawerDialogResult?> _showAmountDialog({
       amountCtrl: amountCtrl,
       noteCtrl: noteCtrl,
       formKey: formKey,
+      draftContext: draftContext,
     ),
   );
 
@@ -443,6 +456,7 @@ class _AmountDialog extends ConsumerStatefulWidget {
     required this.amountCtrl,
     required this.noteCtrl,
     required this.formKey,
+    required this.draftContext,
   });
 
   final String title;
@@ -454,6 +468,7 @@ class _AmountDialog extends ConsumerStatefulWidget {
   final TextEditingController amountCtrl;
   final TextEditingController noteCtrl;
   final GlobalKey<FormState> formKey;
+  final FormDraftContext? draftContext;
 
   @override
   ConsumerState<_AmountDialog> createState() => _AmountDialogState();
@@ -461,9 +476,37 @@ class _AmountDialog extends ConsumerStatefulWidget {
 
 class _AmountDialogState extends ConsumerState<_AmountDialog> {
   @override
+  void initState() {
+    super.initState();
+    if (widget.draftContext != null) {
+      widget.amountCtrl.addListener(_retainDraft);
+      widget.noteCtrl.addListener(_retainDraft);
+    }
+  }
+
+  void _retainDraft() {
+    final context = widget.draftContext;
+    if (context == null) return;
+    final notifier = ref.read(cashDrawerSelectorProvider(context).notifier);
+    notifier
+      ..setAmount(widget.amountCtrl.text)
+      ..setNote(widget.noteCtrl.text);
+  }
+
+  @override
+  void dispose() {
+    widget.amountCtrl.removeListener(_retainDraft);
+    widget.noteCtrl.removeListener(_retainDraft);
+    widget.amountCtrl.dispose();
+    widget.noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final selectorState =
-        widget.selector == null ? null : ref.watch(cashDrawerSelectorProvider);
+    final selectorState = widget.selector == null
+        ? null
+        : ref.watch(cashDrawerSelectorProvider(widget.draftContext!));
     return AlertDialog(
       title: Text(widget.title),
       content: Form(
@@ -475,9 +518,9 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
               if (widget.helper != null) ...[
                 Text(
                   widget.helper!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
               ],
@@ -486,9 +529,7 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: false,
                 ),
-                inputFormatters: [
-                  _ThousandsSeparatorInputFormatter(),
-                ],
+                inputFormatters: [_ThousandsSeparatorInputFormatter()],
                 decoration: InputDecoration(
                   labelText: widget.amountLabel,
                   border: const OutlineInputBorder(),
@@ -496,7 +537,9 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
                 validator: (value) {
                   final raw = (value ?? '').replaceAll(',', '').trim();
                   final parsed = int.tryParse(raw);
-                  if (parsed == null) return CashDrawerLabels.cashDrawerAmountLabel;
+                  if (parsed == null) {
+                    return CashDrawerLabels.cashDrawerAmountLabel;
+                  }
                   if (!widget.allowZero && parsed <= 0) {
                     return CashDrawerLabels.cashDrawerAmountLabel;
                   }
@@ -506,7 +549,12 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
               ),
               if (widget.selector != null && selectorState != null) ...[
                 const SizedBox(height: 12),
-                widget.selector!.build(context, ref, selectorState),
+                widget.selector!.build(
+                  context,
+                  ref,
+                  selectorState,
+                  widget.draftContext!,
+                ),
               ],
               const SizedBox(height: 12),
               TextFormField(
@@ -522,6 +570,19 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
         ),
       ),
       actions: [
+        if (selectorState != null)
+          DiscardFormDraftAction(
+            isDirty: selectorState.isDirty,
+            onDiscard: () {
+              widget.amountCtrl.clear();
+              widget.noteCtrl.clear();
+              ref
+                  .read(
+                    cashDrawerSelectorProvider(widget.draftContext!).notifier,
+                  )
+                  .clear();
+            },
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text(SharedLabels.cancel),
@@ -529,21 +590,36 @@ class _AmountDialogState extends ConsumerState<_AmountDialog> {
         FilledButton(
           onPressed: () {
             final formValid = widget.formKey.currentState?.validate() ?? false;
-            final selectorValid = widget.selector?.validate(ref) ?? true;
+            final selectorValid =
+                widget.selector?.validate(ref, widget.draftContext!) ?? true;
             if (formValid && selectorValid) {
               Navigator.of(context).pop(
                 CashDrawerDialogResult(
                   amount: int.parse(
-                      widget.amountCtrl.text.replaceAll(',', '').trim()),
+                    widget.amountCtrl.text.replaceAll(',', '').trim(),
+                  ),
                   note: widget.noteCtrl.text.trim(),
-                  source: widget.selector?.sourceValue(ref),
-                  destination: widget.selector?.destinationValue(ref),
-                  staffName: widget.selector?.selectedStaffName(ref),
+                  source: widget.selector?.sourceValue(
+                    ref,
+                    widget.draftContext!,
+                  ),
+                  destination: widget.selector?.destinationValue(
+                    ref,
+                    widget.draftContext!,
+                  ),
+                  staffName: widget.selector?.selectedStaffName(
+                    ref,
+                    widget.draftContext!,
+                  ),
                 ),
               );
             } else if (!selectorValid) {
               // Force the staff-picker error to render.
-              ref.read(cashDrawerSelectorProvider.notifier).rebuild();
+              ref
+                  .read(
+                    cashDrawerSelectorProvider(widget.draftContext!).notifier,
+                  )
+                  .rebuild();
             }
           },
           child: Text(widget.confirmLabel),
@@ -588,7 +664,10 @@ class _CashDrawerSelector {
         staff: staff,
         options: const [
           (value: 'owner', label: CashDrawerLabels.cashDrawerDestinationOwner),
-          (value: 'employee', label: CashDrawerLabels.cashDrawerDestinationEmployee),
+          (
+            value: 'employee',
+            label: CashDrawerLabels.cashDrawerDestinationEmployee,
+          ),
         ],
         headerLabel: CashDrawerLabels.cashDrawerDestinationLabel,
         initialSelectedValue: 'owner',
@@ -602,18 +681,18 @@ class _CashDrawerSelector {
 
   String get initialSelectedValue => _initialSelectedValue;
 
-  String? sourceValue(WidgetRef ref) =>
+  String? sourceValue(WidgetRef ref, FormDraftContext context) =>
       _mode == _SelectorMode.cashIn
-          ? ref.read(cashDrawerSelectorProvider).selectedValue
-          : null;
+      ? ref.read(cashDrawerSelectorProvider(context)).selectedValue
+      : null;
 
-  String? destinationValue(WidgetRef ref) =>
+  String? destinationValue(WidgetRef ref, FormDraftContext context) =>
       _mode == _SelectorMode.cashOut
-          ? ref.read(cashDrawerSelectorProvider).selectedValue
-          : null;
+      ? ref.read(cashDrawerSelectorProvider(context)).selectedValue
+      : null;
 
-  String? selectedStaffName(WidgetRef ref) {
-    final s = ref.read(cashDrawerSelectorProvider);
+  String? selectedStaffName(WidgetRef ref, FormDraftContext context) {
+    final s = ref.read(cashDrawerSelectorProvider(context));
     return s.selectedValue == 'employee' ? s.selectedStaffName : null;
   }
 
@@ -621,23 +700,25 @@ class _CashDrawerSelector {
 
   /// Returns true when the employee option is chosen but no staff member is
   /// selected.
-  bool validate(WidgetRef ref) {
-    final s = ref.read(cashDrawerSelectorProvider);
+  bool validate(WidgetRef ref, FormDraftContext context) {
+    final s = ref.read(cashDrawerSelectorProvider(context));
     if (_needsStaffPicker(s.selectedValue)) {
       return s.selectedStaffName != null && s.selectedStaffName!.isNotEmpty;
     }
     return true;
   }
 
-  Widget build(BuildContext context, WidgetRef ref, CashDrawerSelectorState state) {
+  Widget build(
+    BuildContext context,
+    WidgetRef ref,
+    CashDrawerSelectorState state,
+    FormDraftContext draftContext,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _headerLabel,
-          style: Theme.of(context).textTheme.labelMedium,
-        ),
+        Text(_headerLabel, style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: 4),
         DropdownButtonFormField<String>(
           initialValue: state.selectedValue,
@@ -651,7 +732,9 @@ class _CashDrawerSelector {
           ],
           onChanged: (value) {
             if (value == null) return;
-            ref.read(cashDrawerSelectorProvider.notifier).setSelectedValue(value);
+            ref
+                .read(cashDrawerSelectorProvider(draftContext).notifier)
+                .setSelectedValue(value);
           },
         ),
         if (_needsStaffPicker(state.selectedValue)) ...[
@@ -665,14 +748,11 @@ class _CashDrawerSelector {
             ),
             items: [
               for (final member in _staff)
-                DropdownMenuItem(
-                  value: member.name,
-                  child: Text(member.name),
-                ),
+                DropdownMenuItem(value: member.name, child: Text(member.name)),
             ],
             onChanged: (value) {
               ref
-                  .read(cashDrawerSelectorProvider.notifier)
+                  .read(cashDrawerSelectorProvider(draftContext).notifier)
                   .setSelectedStaffName(value);
             },
             validator: (_) {
@@ -705,7 +785,10 @@ class _ThousandsSeparatorInputFormatter extends TextInputFormatter {
 
     final digits = text.replaceAll(RegExp(r'[^\d]'), '');
     if (digits.isEmpty) {
-      return newValue.copyWith(text: '', selection: const TextSelection.collapsed(offset: 0));
+      return newValue.copyWith(
+        text: '',
+        selection: const TextSelection.collapsed(offset: 0),
+      );
     }
 
     final formatted = _addCommas(digits);

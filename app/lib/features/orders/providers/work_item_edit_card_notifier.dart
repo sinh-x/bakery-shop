@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+
 /// Work-item edit card state (DG-404 Phase 4.6 / FR2).
 ///
 /// Owns the `_expanded`, `_isBirthday`, `_rutTien`, `_candleType`,
@@ -21,6 +24,11 @@ class WorkItemEditCardState {
     this.savedCashAmount = '',
     this.savedCashFee = '',
     this.floorWarning,
+    this.notes = '',
+    this.age = '',
+    this.price = '',
+    this.cashAmount = '',
+    this.cashFee = '',
   });
 
   final bool expanded;
@@ -31,6 +39,11 @@ class WorkItemEditCardState {
   final String savedCashAmount;
   final String savedCashFee;
   final String? floorWarning;
+  final String notes;
+  final String age;
+  final String price;
+  final String cashAmount;
+  final String cashFee;
 
   WorkItemEditCardState copyWith({
     bool? expanded,
@@ -43,28 +56,34 @@ class WorkItemEditCardState {
     String? floorWarning,
     bool clearFloorWarning = false,
     bool clearCandleType = false,
-  }) =>
-      WorkItemEditCardState(
-        expanded: expanded ?? this.expanded,
-        isBirthday: isBirthday ?? this.isBirthday,
-        rutTien: rutTien ?? this.rutTien,
-        candleType: clearCandleType ? null : (candleType ?? this.candleType),
-        editingCashAmount: editingCashAmount ?? this.editingCashAmount,
-        savedCashAmount: savedCashAmount ?? this.savedCashAmount,
-        savedCashFee: savedCashFee ?? this.savedCashFee,
-        floorWarning:
-            clearFloorWarning ? null : (floorWarning ?? this.floorWarning),
-      );
+    String? notes,
+    String? age,
+    String? price,
+    String? cashAmount,
+    String? cashFee,
+  }) => WorkItemEditCardState(
+    expanded: expanded ?? this.expanded,
+    isBirthday: isBirthday ?? this.isBirthday,
+    rutTien: rutTien ?? this.rutTien,
+    candleType: clearCandleType ? null : (candleType ?? this.candleType),
+    editingCashAmount: editingCashAmount ?? this.editingCashAmount,
+    savedCashAmount: savedCashAmount ?? this.savedCashAmount,
+    savedCashFee: savedCashFee ?? this.savedCashFee,
+    floorWarning: clearFloorWarning
+        ? null
+        : (floorWarning ?? this.floorWarning),
+    notes: notes ?? this.notes,
+    age: age ?? this.age,
+    price: price ?? this.price,
+    cashAmount: cashAmount ?? this.cashAmount,
+    cashFee: cashFee ?? this.cashFee,
+  );
 }
 
 class WorkItemEditCardNotifier extends Notifier<WorkItemEditCardState> {
-  final String workItemId;
+  WorkItemEditCardNotifier(this.context);
 
-  bool _seededIsBirthday = false;
-  bool _seededRutTien = false;
-  String? _seededCandleType;
-
-  WorkItemEditCardNotifier(this.workItemId);
+  final FormDraftContext context;
 
   /// Seed the initial birthday/candle/rutTien defaults from the work item
   /// being edited. Called once from the widget's `initState` before any
@@ -74,14 +93,22 @@ class WorkItemEditCardNotifier extends Notifier<WorkItemEditCardState> {
     required bool isBirthday,
     required bool rutTien,
     String? candleType,
+    required String notes,
+    required String age,
+    required String price,
+    required String cashAmount,
+    required String cashFee,
   }) {
-    _seededIsBirthday = isBirthday;
-    _seededRutTien = rutTien;
-    _seededCandleType = candleType;
+    if (ref.read(formDraftSessionProvider).containsKey(context)) return;
     final seeded = WorkItemEditCardState(
       isBirthday: isBirthday,
       rutTien: rutTien,
       candleType: candleType,
+      notes: notes,
+      age: age,
+      price: price,
+      cashAmount: cashAmount,
+      cashFee: cashFee,
     );
     if (state.isBirthday != isBirthday ||
         state.rutTien != rutTien ||
@@ -91,41 +118,92 @@ class WorkItemEditCardNotifier extends Notifier<WorkItemEditCardState> {
   }
 
   @override
-  WorkItemEditCardState build() => WorkItemEditCardState(
-        isBirthday: _seededIsBirthday,
-        rutTien: _seededRutTien,
-        candleType: _seededCandleType,
-      );
+  WorkItemEditCardState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const WorkItemEditCardState(),
+    );
+    ref.listen(formDraftSessionProvider, (previous, next) {
+      if ((previous?.containsKey(context) ?? false) &&
+          !next.containsKey(context)) {
+        state = const WorkItemEditCardState();
+      }
+    });
+    return ref
+            .read(formDraftSessionProvider.notifier)
+            .readDraft<WorkItemEditCardState>(context) ??
+        const WorkItemEditCardState();
+  }
 
-  void toggleExpanded() => state = state.copyWith(expanded: !state.expanded);
+  void _set(WorkItemEditCardState next) {
+    state = next;
+    ref.read(formDraftSessionProvider.notifier).retainDraft(context, next);
+  }
+
+  void toggleExpanded() => _set(state.copyWith(expanded: !state.expanded));
 
   void setBirthday(bool value, {String? candleDefault}) {
     var candleType = state.candleType;
     if (value && candleType == 'khong_nen' && candleDefault != null) {
       candleType = candleDefault;
     }
-    state = state.copyWith(isBirthday: value, candleType: candleType);
+    _set(state.copyWith(isBirthday: value, candleType: candleType));
   }
 
-  void setCandleType(String? value) => state = state.copyWith(candleType: value);
+  void setCandleType(String? value) =>
+      _set(state.copyWith(candleType: value, clearCandleType: value == null));
 
   void setRutTien(bool value) =>
-      state = state.copyWith(rutTien: value, editingCashAmount: false);
+      _set(state.copyWith(rutTien: value, editingCashAmount: false));
 
   void setEditingCashAmount(bool value) =>
-      state = state.copyWith(editingCashAmount: value);
+      _set(state.copyWith(editingCashAmount: value));
 
-  void setFloorWarning(String? value) =>
-      state = state.copyWith(floorWarning: value, clearFloorWarning: value == null);
+  void setFloorWarning(String? value) => _set(
+    state.copyWith(floorWarning: value, clearFloorWarning: value == null),
+  );
 
-  void clearFloorWarning() =>
-      state = state.copyWith(clearFloorWarning: true);
+  void clearFloorWarning() => _set(state.copyWith(clearFloorWarning: true));
 
-  void saveCashAttributes(String amount, String fee) =>
-      state = state.copyWith(savedCashAmount: amount, savedCashFee: fee);
+  void saveCashAttributes(String amount, String fee) => _set(
+    state.copyWith(
+      savedCashAmount: amount,
+      savedCashFee: fee,
+      cashAmount: amount,
+      cashFee: fee,
+    ),
+  );
+
+  void setNotes(String value) => _set(state.copyWith(notes: value));
+  void setAge(String value) => _set(state.copyWith(age: value));
+  void setPrice(String value) => _set(state.copyWith(price: value));
+  void setCashAmount(String value) => _set(state.copyWith(cashAmount: value));
+  void setCashFee(String value) => _set(state.copyWith(cashFee: value));
+
+  void markSaved() {
+    final current = state;
+    ref.read(formDraftSessionProvider.notifier).clearDraft(context);
+    state = current;
+  }
+
+  void markSavedIfUnchanged(WorkItemEditCardState? expected) {
+    if (expected == null) return;
+    final current = state;
+    final cleared = ref
+        .read(formDraftSessionProvider.notifier)
+        .clearDraftIfUnchanged(context, expected);
+    if (cleared) state = current;
+  }
+
+  void clearDraft() {
+    ref.read(formDraftSessionProvider.notifier).clearDraft(context);
+    state = const WorkItemEditCardState();
+  }
 }
 
 final workItemEditCardProvider =
-    NotifierProvider.family<WorkItemEditCardNotifier, WorkItemEditCardState, String>(
-  WorkItemEditCardNotifier.new,
-);
+    NotifierProvider.family<
+      WorkItemEditCardNotifier,
+      WorkItemEditCardState,
+      FormDraftContext
+    >(WorkItemEditCardNotifier.new);

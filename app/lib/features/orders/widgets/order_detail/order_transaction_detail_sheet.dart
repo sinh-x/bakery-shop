@@ -190,11 +190,13 @@ class _OrderTransactionDetailSheetState
   Future<void> _onInvalidate() async {
     final reason = await _showInvalidateReasonDialog();
     if (reason == null || !mounted) return;
-    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
+    final detailNotifier = ref.read(orderTransactionDetailProvider.notifier);
+    final transactions = ref.read(
+      orderPaymentTransactionsProvider(widget.orderRef).notifier,
+    );
+    detailNotifier.setActing(true);
     try {
-      await ref
-          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
-          .invalidate(txn.id, reason: reason);
+      await transactions.invalidate(txn.id, reason: reason);
       if (mounted) {
         Navigator.pop(context);
         showTopSnackBar(context, OrdersLabels.paymentInvalidated);
@@ -204,18 +206,20 @@ class _OrderTransactionDetailSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
+      detailNotifier.setActing(false);
     }
   }
 
   Future<void> _onRestore() async {
     final confirmed = await _showRestoreConfirmDialog();
     if (!confirmed || !mounted) return;
-    ref.read(orderTransactionDetailProvider.notifier).setActing(true);
+    final detailNotifier = ref.read(orderTransactionDetailProvider.notifier);
+    final transactions = ref.read(
+      orderPaymentTransactionsProvider(widget.orderRef).notifier,
+    );
+    detailNotifier.setActing(true);
     try {
-      await ref
-          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
-          .restore(txn.id);
+      await transactions.restore(txn.id);
       if (mounted) {
         Navigator.pop(context);
         showTopSnackBar(context, OrdersLabels.paymentRestored);
@@ -225,7 +229,7 @@ class _OrderTransactionDetailSheetState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(orderTransactionDetailProvider.notifier).setActing(false);
+      detailNotifier.setActing(false);
     }
   }
 

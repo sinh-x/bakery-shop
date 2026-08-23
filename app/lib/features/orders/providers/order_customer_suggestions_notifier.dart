@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/customer_service.dart';
 import '../../../data/models/customer.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Inline customer-suggestions search state (DG-404 Phase 4.6 / FR2).
 ///
@@ -48,16 +49,26 @@ class OrderCustomerSuggestionsState {
 /// inline order customer-suggestions search (DG-404 Phase 4.6 / FR2).
 class OrderCustomerSuggestionsNotifier
     extends Notifier<OrderCustomerSuggestionsState> {
+  int _generation = 0;
+
   @override
-  OrderCustomerSuggestionsState build() => const OrderCustomerSuggestionsState();
+  OrderCustomerSuggestionsState build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) {
+      _generation++;
+      state = const OrderCustomerSuggestionsState();
+    });
+    return const OrderCustomerSuggestionsState();
+  }
 
   /// Run a backend customer search for [query], capping results at
   /// [CustomersLabels.orderSuggestionsCap] rows and surfacing a refine hint
   /// when more were returned.
   Future<void> search(String query, CustomerService service) async {
+    final generation = ++_generation;
     state = state.copyWith(loading: true, clearError: true);
     try {
       final results = await service.listCustomers(search: query);
+      if (generation != _generation) return;
       const cap = CustomersLabels.orderSuggestionsCap;
       final capped = results.take(cap).toList();
       state = state.copyWith(
@@ -67,6 +78,7 @@ class OrderCustomerSuggestionsNotifier
         searched: true,
       );
     } catch (e) {
+      if (generation != _generation) return;
       debugPrint('[OrderCustomerSuggestions] search failed: $e');
       state = state.copyWith(
         results: const [],
@@ -78,7 +90,10 @@ class OrderCustomerSuggestionsNotifier
   }
 
   /// Reset the suggestions to the empty/Idle state.
-  void clear() => state = const OrderCustomerSuggestionsState();
+  void clear() {
+    _generation++;
+    state = const OrderCustomerSuggestionsState();
+  }
 }
 
 final orderCustomerSuggestionsProvider =

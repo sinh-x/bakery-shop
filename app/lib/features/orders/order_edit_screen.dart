@@ -14,6 +14,10 @@ import '../../data/models/order.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_providers.dart';
 import 'providers/order_edit_wizard_notifier.dart';
+import 'providers/order_draft_contexts.dart';
+import '../../shared/models/form_draft_context.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
+import '../../providers/form_draft_session_notifier.dart';
 import '../../shared/labels/templates.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
@@ -36,6 +40,7 @@ import 'widgets/order_edit/edit_stage3_delivery.dart';
 import 'widgets/order_edit/edit_stage4_review.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 class OrderEditScreen extends ConsumerStatefulWidget {
   const OrderEditScreen({super.key, required this.orderRef});
 
@@ -53,6 +58,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _deliveryPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   late final PageController _pageController;
+  late final FormDraftContext _draftContext = OrderDraftContexts.editOrder(
+    widget.orderRef,
+  );
 
   bool _initialized = false;
 
@@ -69,12 +77,30 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+    final draft = ref.read(orderEditWizardProvider(_draftContext));
+    if (ref.read(formDraftSessionProvider).containsKey(_draftContext)) {
+      _nameCtrl.text = draft.customerName;
+      _phoneCtrl.text = draft.customerPhone;
+      _addressCtrl.text = draft.deliveryAddress;
+      _deliveryPhoneCtrl.text = draft.deliveryPhone;
+      _notesCtrl.text = draft.notes;
+    }
+    _nameCtrl.addListener(_persistCustomerName);
+    _phoneCtrl.addListener(_persistCustomerPhone);
+    _addressCtrl.addListener(_persistDeliveryAddress);
+    _deliveryPhoneCtrl.addListener(_persistDeliveryPhone);
+    _notesCtrl.addListener(_persistNotes);
     _phoneCtrl.addListener(_onCustomerPhoneChanged);
     _deliveryPhoneCtrl.addListener(_onDeliveryPhoneChanged);
   }
 
   @override
   void dispose() {
+    _nameCtrl.removeListener(_persistCustomerName);
+    _phoneCtrl.removeListener(_persistCustomerPhone);
+    _addressCtrl.removeListener(_persistDeliveryAddress);
+    _deliveryPhoneCtrl.removeListener(_persistDeliveryPhone);
+    _notesCtrl.removeListener(_persistNotes);
     _phoneCtrl.removeListener(_onCustomerPhoneChanged);
     _deliveryPhoneCtrl.removeListener(_onDeliveryPhoneChanged);
     _nameCtrl.dispose();
@@ -86,11 +112,42 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     super.dispose();
   }
 
+  OrderEditWizardNotifier get _draftNotifier =>
+      ref.read(orderEditWizardProvider(_draftContext).notifier);
+
+  void _persistCustomerName() {
+    if (!_initializing) {
+      _draftNotifier.setCustomerName(_nameCtrl.text);
+    }
+  }
+
+  void _persistCustomerPhone() {
+    if (!_initializing) _draftNotifier.setCustomerPhone(_phoneCtrl.text);
+  }
+
+  void _persistDeliveryAddress() {
+    if (!_initializing) {
+      _draftNotifier.setDeliveryAddress(_addressCtrl.text);
+    }
+  }
+
+  void _persistDeliveryPhone() {
+    if (!_initializing) {
+      _draftNotifier.setDeliveryPhone(_deliveryPhoneCtrl.text);
+    }
+  }
+
+  void _persistNotes() {
+    if (!_initializing) {
+      _draftNotifier.setNotes(_notesCtrl.text);
+    }
+  }
+
   /// FR2: while the delivery phone has not been manually diverged, every
   /// customer-phone change also updates the delivery phone so the two stay
   /// in sync.
   void _onCustomerPhoneChanged() {
-    final wizardState = ref.read(orderEditWizardProvider);
+    final wizardState = ref.read(orderEditWizardProvider(_draftContext));
     if (_initializing || wizardState.deliveryPhoneDiverged) return;
     _syncingDeliveryPhone = true;
     _deliveryPhoneCtrl.text = _phoneCtrl.text;
@@ -124,6 +181,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   void _initFrom(Order order) {
     if (_initialized) return;
     _initialized = true;
+    if (ref.read(formDraftSessionProvider).containsKey(_draftContext)) return;
     _initializing = true;
     _nameCtrl.text = order.customerName;
     _phoneCtrl.text = formatPhone(order.customerPhone);
@@ -146,7 +204,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     final diverged = _deliveryPhoneDiverged;
     Future.microtask(() {
       if (mounted) {
-        ref.read(orderEditWizardProvider.notifier).seedFromOrder(
+        ref
+            .read(orderEditWizardProvider(_draftContext).notifier)
+            .seedFromOrder(
               source: order.source,
               deliveryType: order.deliveryType,
               shippingFee: order.shippingFee,
@@ -157,6 +217,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
               existingLongitude: order.longitude,
               existingGoogleMapsUrl: order.googleMapsUrl,
               deliveryPhoneDiverged: diverged,
+              customerName: _nameCtrl.text,
+              customerPhone: _phoneCtrl.text,
+              deliveryAddress: _addressCtrl.text,
+              deliveryPhone: _deliveryPhoneCtrl.text,
+              notes: _notesCtrl.text,
             );
       }
     });
@@ -169,14 +234,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     try {
       final customerSvc = ref.read(customerServiceProvider);
       final customer = await customerSvc.getCustomer(customerId);
-      if (mounted) ref.read(orderEditWizardProvider.notifier).setSelectedCustomer(customer);
+      if (mounted) _draftNotifier.seedSelectedCustomer(customer);
     } catch (e) {
       debugPrint('[OrderEdit] load linked customer failed: $e');
     }
   }
 
   bool get _needsAddress {
-    final deliveryType = ref.read(orderEditWizardProvider).deliveryType;
+    final deliveryType = ref
+        .read(orderEditWizardProvider(_draftContext))
+        .deliveryType;
     return deliveryType == 'bus' || deliveryType == 'door';
   }
 
@@ -192,40 +259,35 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       busDefault: busDefault,
       doorDefault: doorDefault,
     );
-    ref.read(orderEditWizardProvider.notifier).updateDeliveryTypeAndShippingFee(
-          type,
-          shippingFee,
-        );
+    _draftNotifier.updateDeliveryTypeAndShippingFee(type, shippingFee);
   }
 
-  void _setShippingFee(double fee) =>
-      ref.read(orderEditWizardProvider.notifier).setShippingFee(fee);
+  void _setShippingFee(double fee) => _draftNotifier.setShippingFee(fee);
 
   Future<void> _pickDate() async {
-    final dueDate = ref.read(orderEditWizardProvider).dueDate;
+    final dueDate = ref.read(orderEditWizardProvider(_draftContext)).dueDate;
     final picked = await showDatePicker(
       context: context,
       initialDate: dueDate ?? DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (picked != null) ref.read(orderEditWizardProvider.notifier).setDueDate(picked);
+    if (picked != null) _draftNotifier.setDueDate(picked);
   }
 
   Future<void> _pickTime() async {
-    final dueTime = ref.read(orderEditWizardProvider).dueTime;
+    final dueTime = ref.read(orderEditWizardProvider(_draftContext)).dueTime;
     final picked = await showDialog<int>(
       context: context,
       builder: (ctx) => HourPickerDialog(initialHour: dueTime?.hour ?? 8),
     );
     if (picked != null) {
-      ref.read(orderEditWizardProvider.notifier)
-          .setDueTime(TimeOfDay(hour: picked, minute: 0));
+      _draftNotifier.setDueTime(TimeOfDay(hour: picked, minute: 0));
     }
   }
 
   void _goToStage(int stage) {
-    ref.read(orderEditWizardProvider.notifier).goToStage(stage);
+    _draftNotifier.goToStage(stage);
     _pageController.animateToPage(
       stage - 1,
       duration: const Duration(milliseconds: 300),
@@ -235,82 +297,103 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final wizardState = ref.read(orderEditWizardProvider);
-    final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
-    final newDueDate = wizardState.dueDate != null ? formatApiDate(wizardState.dueDate!) : null;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final draftProvider = orderEditWizardProvider(_draftContext);
+    final wizardState = container.read(draftProvider);
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[_draftContext];
+    final draftNotifier = container.read(draftProvider.notifier);
+    final orderDetail = container.read(
+      orderDetailProvider(widget.orderRef).notifier,
+    );
+    final originalOrder = container
+        .read(orderDetailProvider(widget.orderRef))
+        .value;
+    final customerService = container.read(customerServiceProvider);
+    final customerName = _nameCtrl.text;
+    final customerPhone = _phoneCtrl.text;
+    final notes = _notesCtrl.text.trim();
+    final deliveryAddress = _needsAddress ? _addressCtrl.text.trim() : '';
+    final deliveryPhone = _needsAddress ? _deliveryPhoneCtrl.text.trim() : '';
+    final newDueDate = wizardState.dueDate != null
+        ? formatApiDate(wizardState.dueDate!)
+        : null;
     String? publicCodeDateChangeDecision;
     if (shouldAskPublicCodeDateDecision(originalOrder, newDueDate)) {
-      publicCodeDateChangeDecision =
-          await showPublicCodeDateChangeDecision(context);
+      publicCodeDateChangeDecision = await showPublicCodeDateChangeDecision(
+        context,
+      );
       if (publicCodeDateChangeDecision == null) return;
     }
 
     // FR1: auto-create-and-link a customer when name+phone present, no link.
     final created = await maybeAutoCreateCustomer(
       selectedCustomer: wizardState.selectedCustomer,
-      name: _nameCtrl.text,
-      phone: _phoneCtrl.text,
-      customerService: ref.read(customerServiceProvider),
+      name: customerName,
+      phone: customerPhone,
+      customerService: customerService,
     );
-    if (created.customer != null &&
-        created.customer!.id != wizardState.selectedCustomer?.id) {
-      ref
-          .read(orderEditWizardProvider.notifier)
-          .setSelectedCustomer(created.customer);
-    }
     // CQ-6: surface a non-blocking notice when auto-create failed so the
     // operator knows the order will save without a linked customer.
     if (created.failed && mounted) {
       showTopSnackBar(context, CustomersLabels.autoCreateFailedNotice);
     }
-    final customerId = ref.read(orderEditWizardProvider).selectedCustomer?.id;
+    final customerId = created.customer?.id ?? wizardState.selectedCustomer?.id;
 
     // FR2: empty customer name defaults to `Khách lẻ` at save time only.
-    final effectiveName = _nameCtrl.text.trim().isEmpty
+    final effectiveName = customerName.trim().isEmpty
         ? OrdersLabels.khachLe
-        : _nameCtrl.text.trim();
+        : customerName.trim();
 
-    ref.read(orderEditWizardProvider.notifier).setSaving(true);
+    final saveGeneration = draftNotifier.startSaving();
     late final Order updatedOrder;
     try {
-      updatedOrder = await ref
-          .read(orderDetailProvider(widget.orderRef).notifier)
-          .save(
-            notes: _notesCtrl.text.trim(),
-            dueDate: newDueDate,
-            dueTime: wizardState.dueTime != null ? _formatTime(wizardState.dueTime!) : null,
-            customerPhone: _phoneCtrl.text.trim(),
-            deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
-            deliveryPhone: _needsAddress ? _deliveryPhoneCtrl.text.trim() : '',
-            deliveryType: wizardState.deliveryType,
-            source: wizardState.source.isEmpty ? null : wizardState.source,
-            customerName: effectiveName,
-            customerId: customerId,
-            // OPS-1: send customerId (incl. null to unlink) when touched.
-            customerTouched: wizardState.customerTouched,
-            shippingFee: wizardState.shippingFee,
-            publicCodeDateChangeDecision: publicCodeDateChangeDecision,
-            latitude: wizardState.existingLatitude,
-            longitude: wizardState.existingLongitude,
-            googleMapsUrl: wizardState.existingGoogleMapsUrl,
-            // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
-            deliveryTimeSlot: wizardState.dueTime != null
-                ? deriveTimeSlot(_formatTime(wizardState.dueTime!))
-                : null,
-            // DG-304 Phase 5: admin staff assignment (FR8/AC5). Only sent when
-            // the admin touched the dropdown; null clears the assignment.
-            assignedStaffId: wizardState.assignedStaffId,
-            assignedStaffTouched: wizardState.assignedStaffTouched,
-          );
+      updatedOrder = await orderDetail.save(
+        notes: notes,
+        dueDate: newDueDate,
+        dueTime: wizardState.dueTime != null
+            ? _formatTime(wizardState.dueTime!)
+            : null,
+        customerPhone: customerPhone.trim(),
+        deliveryAddress: deliveryAddress,
+        deliveryPhone: deliveryPhone,
+        deliveryType: wizardState.deliveryType,
+        source: wizardState.source.isEmpty ? null : wizardState.source,
+        customerName: effectiveName,
+        customerId: customerId,
+        // OPS-1: send customerId (incl. null to unlink) when touched.
+        customerTouched:
+            wizardState.customerTouched || created.customer != null,
+        shippingFee: wizardState.shippingFee,
+        publicCodeDateChangeDecision: publicCodeDateChangeDecision,
+        latitude: wizardState.existingLatitude,
+        longitude: wizardState.existingLongitude,
+        googleMapsUrl: wizardState.existingGoogleMapsUrl,
+        // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
+        deliveryTimeSlot: wizardState.dueTime != null
+            ? deriveTimeSlot(_formatTime(wizardState.dueTime!))
+            : null,
+        // DG-304 Phase 5: admin staff assignment (FR8/AC5). Only sent when
+        // the admin touched the dropdown; null clears the assignment.
+        assignedStaffId: wizardState.assignedStaffId,
+        assignedStaffTouched: wizardState.assignedStaffTouched,
+      );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
       }
-      if (mounted) ref.read(orderEditWizardProvider.notifier).setSaving(false);
+      draftNotifier.finishSavingIfCurrent(saveGeneration);
       return;
     }
+    if (expectedDraft != null) {
+      container
+          .read(formDraftSessionProvider.notifier)
+          .clearDraftIfUnchanged(_draftContext, expectedDraft);
+    }
+    draftNotifier.finishSavingIfCurrent(saveGeneration);
     // Post-save UI runs outside the save try/catch so a navigation/snackbar
     // error cannot be misreported as a save failure (CQ-3).
     if (mounted) {
@@ -324,12 +407,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       // throw after a successful save (CQ-3). The save itself already
       // succeeded; the snackbar above informed the user.
       if (context.canPop()) context.pop();
-      ref.read(orderEditWizardProvider.notifier).setSaving(false);
     }
   }
 
   OrderWizardData get _wizardSnapshot {
-    final s = ref.read(orderEditWizardProvider);
+    final s = ref.read(orderEditWizardProvider(_draftContext));
     return OrderWizardData(
       customerName: _nameCtrl.text,
       customerPhone: _phoneCtrl.text,
@@ -352,11 +434,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   void _openTemplatePicker() {
     final order = ref.read(orderDetailProvider(widget.orderRef)).asData?.value;
     if (order == null) return;
-    final workItemsAsync =
-        ref.read(orderWorkItemsProvider(widget.orderRef));
-    final summaryItems =
-        summaryItemsFromWorkItems(workItemsAsync.value ?? const []);
-    final s = ref.read(orderEditWizardProvider);
+    final workItemsAsync = ref.read(orderWorkItemsProvider(widget.orderRef));
+    final summaryItems = summaryItemsFromWorkItems(
+      workItemsAsync.value ?? const [],
+    );
+    final s = ref.read(orderEditWizardProvider(_draftContext));
     final ctx = buildTemplateContextFromEditWizard(
       order: order,
       summaryItems: summaryItems,
@@ -369,7 +451,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   void _onCustomerSelected(Customer? c) {
-    ref.read(orderEditWizardProvider.notifier).setSelectedCustomer(c);
+    _draftNotifier.setSelectedCustomer(c);
     if (c != null) {
       _nameCtrl.text = c.name;
       if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
@@ -377,15 +459,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   void _onClearCustomerSelection() {
-    if (ref.read(orderEditWizardProvider).selectedCustomer != null) {
-      ref.read(orderEditWizardProvider.notifier).clearSelectedCustomer();
+    if (ref.read(orderEditWizardProvider(_draftContext)).selectedCustomer !=
+        null) {
+      _draftNotifier.clearSelectedCustomer();
     }
   }
 
   /// DG-304 Phase 5: admin selects a delivery staff member (or clears to
   /// unassign) in the wizard delivery stage dropdown (FR8/FR6/AC5).
   void _onAssignedStaffChanged(String? staffId) =>
-      ref.read(orderEditWizardProvider.notifier).setAssignedStaffId(staffId);
+      _draftNotifier.setAssignedStaffId(staffId);
 
   /// DG-385 Phase 4 / FR2 / AC2 / AC7: auto-bind the selected suggestion's
   /// `googleMapsUrl` to the order being edited. The address text is written
@@ -395,7 +478,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   /// parity with order creation (FR9/AC7).
   void _onAddressSelected(AddressSuggestion suggestion) {
     ref
-        .read(orderEditWizardProvider.notifier)
+        .read(orderEditWizardProvider(_draftContext).notifier)
         .setAddressSelected(suggestion.googleMapsUrl);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -415,13 +498,20 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
     final fees = shippingFeeDefaults(ref);
-    final wizardState = ref.watch(orderEditWizardProvider);
+    final wizardState = ref.watch(orderEditWizardProvider(_draftContext));
     final saving = wizardState.saving;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(OrdersLabels.editOrder),
         actions: [
+          DiscardFormDraftAction(
+            isDirty: wizardState.isDirty,
+            onDiscard: () {
+              _draftNotifier.clearDraft();
+              context.pop();
+            },
+          ),
           TextButton(
             onPressed: saving ? null : () => _goToStage(4),
             child: saving
@@ -450,9 +540,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         error: (e, _) => const Center(child: Text(SharedLabels.apiError)),
         data: (order) {
           _initFrom(order);
-          final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
-          final summaryItems =
-              summaryItemsFromWorkItems(workItemsAsync.value ?? const []);
+          final workItemsAsync = ref.watch(
+            orderWorkItemsProvider(widget.orderRef),
+          );
+          final summaryItems = summaryItemsFromWorkItems(
+            workItemsAsync.value ?? const [],
+          );
           return Form(
             key: _formKey,
             child: Column(
@@ -481,11 +574,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         nameCtrl: _nameCtrl,
                         phoneCtrl: _phoneCtrl,
                         source: wizardState.source,
-                        onSourceChanged: (s) =>
-                            ref.read(orderEditWizardProvider.notifier).setSource(s),
+                        onSourceChanged: (s) => _draftNotifier.setSource(s),
                         wizardSnapshot: _wizardSnapshot,
-                        summaryItems:
-                            summaryItems.where((i) => !i.isExtra).toList(),
+                        summaryItems: summaryItems
+                            .where((i) => !i.isExtra)
+                            .toList(),
                         onBack: () => _goToStage(1),
                         onContinue: () => _goToStage(3),
                       ),
@@ -500,17 +593,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         shippingDoorDefault: fees.door,
                         onDeliveryTypeChanged: (type) =>
                             _updateShippingFeeForDeliveryType(
-                          type,
-                          busDefault: fees.bus,
-                          doorDefault: fees.door,
-                        ),
+                              type,
+                              busDefault: fees.bus,
+                              doorDefault: fees.door,
+                            ),
                         onShippingFeeChanged: _setShippingFee,
                         dueDate: wizardState.dueDate,
                         dueTime: wizardState.dueTime,
                         onPickDate: _pickDate,
                         onPickTime: _pickTime,
-                        onDueTimeChanged: (t) =>
-                            ref.read(orderEditWizardProvider.notifier).setDueTime(t),
+                        onDueTimeChanged: (t) => _draftNotifier.setDueTime(t),
                         wizardSnapshot: _wizardSnapshot,
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),

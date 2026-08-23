@@ -43,6 +43,14 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
   final _confirmCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (mounted) ref.read(passwordChangeFormProvider.notifier).reset();
+    });
+  }
+
+  @override
   void dispose() {
     _oldCtrl.dispose();
     _newCtrl.dispose();
@@ -53,13 +61,14 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final notifier = ref.read(passwordChangeFormProvider.notifier);
+    final authNotifier = ref.read(authProvider.notifier);
     notifier.startSubmitting();
     try {
-      await ref.read(authProvider.notifier).changePassword(
-            oldPassword: _oldCtrl.text,
-            newPassword: _newCtrl.text,
-            confirmPassword: _confirmCtrl.text,
-          );
+      await authNotifier.changePassword(
+        oldPassword: _oldCtrl.text,
+        newPassword: _newCtrl.text,
+        confirmPassword: _confirmCtrl.text,
+      );
       if (!mounted) return;
       widget.onSuccess();
     } on DioException catch (e) {
@@ -69,7 +78,7 @@ class _PasswordChangeFormState extends ConsumerState<PasswordChangeForm> {
       if (!mounted) return;
       notifier.setErrorMessage(AuthLabels.changePasswordFailed);
     } finally {
-      if (mounted) notifier.setSubmitting(false);
+      notifier.setSubmitting(false);
     }
   }
 
@@ -194,9 +203,9 @@ class _PasswordField extends StatelessWidget {
         border: const OutlineInputBorder(),
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
-          icon: Icon(obscure
-              ? Icons.visibility_off_outlined
-              : Icons.visibility_outlined),
+          icon: Icon(
+            obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          ),
           onPressed: onToggleObscure,
         ),
       ),
@@ -222,7 +231,11 @@ class _ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 20, color: theme.colorScheme.onErrorContainer),
+          Icon(
+            Icons.error_outline,
+            size: 20,
+            color: theme.colorScheme.onErrorContainer,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

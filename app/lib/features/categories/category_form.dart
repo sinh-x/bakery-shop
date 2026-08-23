@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
 import '../../data/providers/categories_provider.dart';
+import '../../providers/form_draft_session_notifier.dart';
+import '../../shared/models/form_draft_context.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'providers/category_form_notifier.dart';
@@ -63,14 +66,32 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   late final TextEditingController _slugCtrl;
 
   bool get _isEditing => widget.category != null;
+  late final FormDraftContext _draftContext;
+
+  NotifierProvider<CategoryFormNotifier, CategoryFormState> get _provider =>
+      contextualCategoryFormProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
     final c = widget.category;
-    _nameCtrl = TextEditingController(text: c?.name ?? '');
-    _codePrefixCtrl = TextEditingController(text: c?.codePrefix ?? '');
-    _slugCtrl = TextEditingController(text: c?.slug ?? '');
+    _draftContext = FormDraftContext(
+      formType: 'category',
+      mode: _isEditing ? FormDraftMode.edit : FormDraftMode.create,
+      entityId: c?.id.toString(),
+    );
+    final formNotifier = ref.read(_provider.notifier);
+    final draft = formNotifier.newDraft;
+    final restore = formNotifier.hasRetainedDraft;
+    _nameCtrl = TextEditingController(
+      text: restore ? draft.name : c?.name ?? '',
+    );
+    _codePrefixCtrl = TextEditingController(
+      text: restore ? draft.codePrefix : c?.codePrefix ?? '',
+    );
+    _slugCtrl = TextEditingController(
+      text: restore ? draft.slug : c?.slug ?? '',
+    );
     final seedId = c?.id;
     final seedIcon = c?.icon;
     final seedActive = (c?.active ?? 1) == 1;
@@ -78,8 +99,13 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     // widget-tree build phase (DG-404 Phase 4.7).
     Future.microtask(() {
       if (!mounted) return;
-      ref.read(categoryFormProvider.notifier).seed(
+      ref
+          .read(_provider.notifier)
+          .seed(
             editingId: seedId,
+            name: c?.name,
+            codePrefix: c?.codePrefix,
+            slug: c?.slug,
             icon: seedIcon,
             active: seedActive,
           );
@@ -87,10 +113,23 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     if (!_isEditing) {
       _nameCtrl.addListener(_onNameChanged);
     }
+    _nameCtrl.addListener(_retainNewDraft);
+    _codePrefixCtrl.addListener(_retainNewDraft);
+    _slugCtrl.addListener(_retainNewDraft);
   }
 
   void _onNameChanged() {
     _slugCtrl.text = _slugify(_nameCtrl.text);
+  }
+
+  void _retainNewDraft() {
+    ref
+        .read(_provider.notifier)
+        .updateNewDraft(
+          name: _nameCtrl.text,
+          codePrefix: _codePrefixCtrl.text,
+          slug: _slugCtrl.text,
+        );
   }
 
   String _slugify(String text) {
@@ -187,8 +226,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final formNotifier = ref.read(categoryFormProvider.notifier);
-    final formState = ref.read(categoryFormProvider);
+    final formNotifier = ref.read(_provider.notifier);
+    final formState = ref.read(_provider);
+    final submittedDraft = formNotifier.draftSnapshot;
     formNotifier.setSaving(true);
     try {
       final notifier = ref.read(categoriesProvider.notifier);
@@ -208,11 +248,15 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           icon: formState.selectedIcon,
         );
       }
+      formNotifier.clearAfterSuccess(submittedDraft);
+      formNotifier.setSaving(false);
       if (mounted) {
         Navigator.of(context).pop();
         showTopSnackBar(
           context,
-          _isEditing ? ProductsLabels.categoryUpdated : ProductsLabels.categoryCreated,
+          _isEditing
+              ? ProductsLabels.categoryUpdated
+              : ProductsLabels.categoryCreated,
         );
       }
     } catch (e) {
@@ -224,8 +268,8 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   }
 
   Widget _buildIconPicker(ColorScheme colorScheme) {
-    final selectedIcon = ref.watch(categoryFormProvider).selectedIcon;
-    final formNotifier = ref.read(categoryFormProvider.notifier);
+    final selectedIcon = ref.watch(_provider).selectedIcon;
+    final formNotifier = ref.read(_provider.notifier);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -277,7 +321,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final formState = ref.watch(categoryFormProvider);
+    final formState = ref.watch(_provider);
     final isActive = formState.isActive;
     final saving = formState.saving;
     return Padding(
@@ -295,7 +339,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _isEditing ? ProductsLabels.editCategory : ProductsLabels.addCategory,
+                _isEditing
+                    ? ProductsLabels.editCategory
+                    : ProductsLabels.addCategory,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 20),
@@ -307,8 +353,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   labelText: ProductsLabels.categoryName,
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? SharedLabels.fieldRequired
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -325,7 +372,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return ProductsLabels.noPrefixError;
+                  if (v == null || v.trim().isEmpty) {
+                    return ProductsLabels.noPrefixError;
+                  }
                   if (!RegExp(r'^[A-Z]{2,4}$').hasMatch(v.trim())) {
                     return ProductsLabels.prefixFormatError;
                   }
@@ -341,8 +390,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   border: const OutlineInputBorder(),
                   filled: _isEditing,
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? SharedLabels.fieldRequired
+                    : null,
               ),
               const SizedBox(height: 16),
               if (_isEditing) ...[
@@ -355,21 +405,30 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                     title: const Text(ProductsLabels.categoryVisibility),
                     subtitle: Text(
-                      isActive ? ProductsLabels.categoryVisible : ProductsLabels.categoryHiddenState,
+                      isActive
+                          ? ProductsLabels.categoryVisible
+                          : ProductsLabels.categoryHiddenState,
                     ),
                     value: isActive,
                     onChanged: saving
                         ? null
                         : (value) {
-                            ref
-                                .read(categoryFormProvider.notifier)
-                                .setIsActive(value);
+                            ref.read(_provider.notifier).setIsActive(value);
                           },
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
               _buildIconPicker(colorScheme),
+              DiscardFormDraftAction(
+                isDirty: ref
+                    .watch(formDraftSessionProvider)
+                    .containsKey(_draftContext),
+                onDiscard: () {
+                  ref.read(_provider.notifier).clearNewDraft();
+                  Navigator.of(context).pop();
+                },
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,

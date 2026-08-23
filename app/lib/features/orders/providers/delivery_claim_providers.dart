@@ -9,6 +9,7 @@ import '../../../data/providers/order/order_list_providers.dart';
 import '../../../data/providers/staff_provider.dart';
 import '../../../data/providers/user_binding_provider.dart';
 import '../../../shared/services/session_cache.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Snapshot of the currently logged-in staff member relevant to delivery
 /// claiming (DG-310 Phase 4 / FR5/AC9). Combines the staff-user binding
@@ -68,16 +69,25 @@ final currentStaffProvider = FutureProvider<CurrentStaff>((ref) async {
 /// FR1/FR2/AC1/AC2). One instance per `orderRef`.
 class OrderClaimNotifier extends AsyncNotifier<Order?> {
   String _orderRef = '';
+  int _generation = 0;
 
   @override
-  Future<Order?> build() async => null;
+  Future<Order?> build() async {
+    ref.listen(formDraftSessionEpochProvider, (_, _) {
+      _generation++;
+      _orderRef = '';
+      state = const AsyncData(null);
+    });
+    return null;
+  }
 
   void setOrderRef(String orderRef) => _orderRef = orderRef;
 
   Future<void> claim() async {
+    final generation = ++_generation;
     final service = ref.read(orderServiceProvider);
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    final result = await AsyncValue.guard(() async {
       final updated = await service.assignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
       // DG-409 Phase 5 (FR13, AC6): claim mutates the order, invalidate
@@ -91,12 +101,14 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
       ref.read(orderDetailProvider(_orderRef).notifier).refresh();
       return updated;
     });
+    if (generation == _generation) state = result;
   }
 
   Future<void> unclaim() async {
+    final generation = ++_generation;
     final service = ref.read(orderServiceProvider);
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    final result = await AsyncValue.guard(() async {
       final updated = await service.unassignOrder(_orderRef);
       ref.read(orderListProvider.notifier).refresh();
       // DG-409 Phase 5 (FR13, AC6): unclaim mutates the order.
@@ -106,6 +118,7 @@ class OrderClaimNotifier extends AsyncNotifier<Order?> {
       ref.read(orderDetailProvider(_orderRef).notifier).refresh();
       return updated;
     });
+    if (generation == _generation) state = result;
   }
 }
 

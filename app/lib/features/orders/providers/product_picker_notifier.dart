@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/product.dart';
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
 
 /// Product-picker page selection state (DG-404 Phase 4.6 / FR2).
 ///
@@ -18,10 +20,7 @@ class ProductPickerState {
   final Set<int> selectedIds;
   final bool multiSelectMode;
 
-  ProductPickerState copyWith({
-    Set<int>? selectedIds,
-    bool? multiSelectMode,
-  }) =>
+  ProductPickerState copyWith({Set<int>? selectedIds, bool? multiSelectMode}) =>
       ProductPickerState(
         selectedIds: selectedIds ?? this.selectedIds,
         multiSelectMode: multiSelectMode ?? this.multiSelectMode,
@@ -29,26 +28,42 @@ class ProductPickerState {
 }
 
 class ProductPickerNotifier extends Notifier<ProductPickerState> {
-  Set<int>? _initialSelectedIds;
+  ProductPickerNotifier(this.context);
+
+  final FormDraftContext context;
 
   /// Seed the initial selection from the parent's `selectedItems` list.
   /// Called once from the widget's `initState` before any mutation. Updates
   /// the state so the seeded selection is visible on the first build.
   void seedInitial(Set<int> ids) {
-    _initialSelectedIds = Set<int>.from(ids);
-    if (!setEquals(state.selectedIds, _initialSelectedIds!) ||
-        state.multiSelectMode) {
-      state = ProductPickerState(
-        selectedIds: Set<int>.from(_initialSelectedIds!),
-      );
+    if (ref.read(formDraftSessionProvider).containsKey(context)) return;
+    if (!setEquals(state.selectedIds, ids) || state.multiSelectMode) {
+      state = ProductPickerState(selectedIds: Set<int>.from(ids));
     }
   }
 
   @override
-  ProductPickerState build() => ProductPickerState(
-        selectedIds:
-            _initialSelectedIds != null ? Set<int>.from(_initialSelectedIds!) : const <int>{},
-      );
+  ProductPickerState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const ProductPickerState(),
+    );
+    ref.listen(formDraftSessionProvider, (previous, next) {
+      if ((previous?.containsKey(context) ?? false) &&
+          !next.containsKey(context)) {
+        state = const ProductPickerState();
+      }
+    });
+    return ref
+            .read(formDraftSessionProvider.notifier)
+            .readDraft<ProductPickerState>(context) ??
+        const ProductPickerState();
+  }
+
+  void _set(ProductPickerState next) {
+    state = next;
+    ref.read(formDraftSessionProvider.notifier).retainDraft(context, next);
+  }
 
   void toggleProduct(Product product) {
     final next = Set<int>.from(state.selectedIds);
@@ -57,15 +72,23 @@ class ProductPickerNotifier extends Notifier<ProductPickerState> {
     } else {
       next.add(product.id);
     }
-    state = state.copyWith(selectedIds: next);
+    _set(state.copyWith(selectedIds: next));
   }
 
   void enterMultiSelectMode(Product product) {
     final next = Set<int>.from(state.selectedIds)..add(product.id);
-    state = state.copyWith(selectedIds: next, multiSelectMode: true);
+    _set(state.copyWith(selectedIds: next, multiSelectMode: true));
+  }
+
+  void clearDraft() {
+    ref.read(formDraftSessionProvider.notifier).clearDraft(context);
+    state = const ProductPickerState();
   }
 }
 
 final productPickerProvider =
-    NotifierProvider<ProductPickerNotifier, ProductPickerState>(
-        ProductPickerNotifier.new);
+    NotifierProvider.family<
+      ProductPickerNotifier,
+      ProductPickerState,
+      FormDraftContext
+    >(ProductPickerNotifier.new);

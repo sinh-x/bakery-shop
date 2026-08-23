@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/date_filter_chips.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Cake-queue content filter/collapse state (DG-404 Phase 4.6 / FR2).
 ///
@@ -36,7 +37,13 @@ class CakeQueueContentState {
 
 class CakeQueueContentNotifier extends Notifier<CakeQueueContentState> {
   @override
-  CakeQueueContentState build() => const CakeQueueContentState();
+  CakeQueueContentState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const CakeQueueContentState(),
+    );
+    return const CakeQueueContentState();
+  }
 
   void setDateFilter(DateFilterOption option) =>
       state = state.copyWith(selectedDateFilter: option, clearCollapsedGroups: true);

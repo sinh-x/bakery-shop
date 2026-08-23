@@ -17,6 +17,9 @@ import '../../data/providers/categories_provider.dart';
 import '../../data/providers/products_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'providers/product_form_notifier.dart';
+import '../../providers/form_draft_session_notifier.dart';
+import '../../shared/models/form_draft_context.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/catalog_gallery_section.dart';
@@ -56,6 +59,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final List<PriceChip> _originalPriceChips;
   late final List<PriceChipFormRow> _priceChipRows;
   late final List<EnumAttributeFormSection> _enumSections;
+  late final FormDraftContext _draftContext;
+
+  NotifierProvider<ProductFormNotifier, ProductFormState> get _provider =>
+      contextualProductFormProvider(_draftContext);
 
   bool get _isEditing => widget.product != null;
 
@@ -72,31 +79,78 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   void initState() {
     super.initState();
     final p = widget.product;
-    _nameCtrl = TextEditingController(text: p?.name ?? '');
+    _draftContext = FormDraftContext(
+      formType: 'product',
+      mode: _isEditing ? FormDraftMode.edit : FormDraftMode.create,
+      entityId: p?.id.toString(),
+    );
+    final formNotifier = ref.read(_provider.notifier);
+    final draft = formNotifier.newDraft;
+    final restore = formNotifier.hasRetainedDraft;
+    _nameCtrl = TextEditingController(
+      text: restore ? draft.name : p?.name ?? '',
+    );
     _priceCtrl = TextEditingController(
-      text: p != null ? p.basePrice.toInt().toString() : '',
+      text: restore
+          ? draft.price
+          : p != null
+          ? p.basePrice.toInt().toString()
+          : '',
     );
     _costCtrl = TextEditingController(
-      text: p != null && p.cost > 0 ? p.cost.toInt().toString() : '',
+      text: restore
+          ? draft.cost
+          : p != null && p.cost > 0
+          ? p.cost.toInt().toString()
+          : '',
     );
-    _notesCtrl = TextEditingController(text: p?.recipeNotes ?? '');
+    _notesCtrl = TextEditingController(
+      text: restore ? draft.notes : p?.recipeNotes ?? '',
+    );
     _originalPriceChips = List<PriceChip>.of(
       p?.priceChips ?? const <PriceChip>[],
     );
-    _priceChipRows = _originalPriceChips
-        .map(
-          (chip) => PriceChipFormRow(
-            id: chip.id,
-            label: chip.label,
-            price: chip.price.toInt().toString(),
-          ),
-        )
-        .toList();
+    _priceChipRows = p != null && !restore
+        ? _originalPriceChips
+              .map(
+                (chip) => PriceChipFormRow(
+                  id: chip.id,
+                  label: chip.label,
+                  price: chip.price.toInt().toString(),
+                ),
+              )
+              .toList()
+        : draft.priceChips
+              .map(
+                (chip) =>
+                    PriceChipFormRow(label: chip.label, price: chip.price),
+              )
+              .toList();
     _enumSections = (p?.enumAttributes ?? const <EnumAttribute>[])
         .map(EnumAttributeFormSection.fromAttribute)
         .toList();
+    if (restore) _restoreEnumSections(draft.enumSections);
     // Store only the suffix portion so the prefix can be shown read-only.
-    _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
+    _codeCtrl = TextEditingController(
+      text: restore
+          ? draft.code
+          : p != null
+          ? _extractSuffix(p.productCode)
+          : '',
+    );
+    _nameCtrl.addListener(_retainNewDraft);
+    _priceCtrl.addListener(_retainNewDraft);
+    _costCtrl.addListener(_retainNewDraft);
+    _notesCtrl.addListener(_retainNewDraft);
+    _codeCtrl.addListener(_retainNewDraft);
+    for (final row in _priceChipRows) {
+      _listenToNewPriceChip(row);
+    }
+    for (final section in _enumSections) {
+      for (final row in section.rows) {
+        row.valueController.addListener(_retainNewDraft);
+      }
+    }
     // Seed the notifier with the initial form values derived from the
     // product (or defaults for new products). All subsequent mutations
     // go through the notifier; no setState is required.
@@ -108,13 +162,84 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     // provider mutation during widget life-cycle hooks (initState/build).
     Future.microtask(() {
       if (!mounted) return;
-      ref.read(productFormProvider.notifier).seed(
+      ref
+          .read(_provider.notifier)
+          .seed(
             initialCategory: initialCategory,
             rutTien: initialRutTien,
             trungBay: initialTrungBay,
             tangKem: initialTangKem,
+            editing: _isEditing,
           );
     });
+  }
+
+  void _retainNewDraft() {
+    ref
+        .read(_provider.notifier)
+        .updateNewDraft(
+          name: _nameCtrl.text,
+          price: _priceCtrl.text,
+          cost: _costCtrl.text,
+          notes: _notesCtrl.text,
+          code: _codeCtrl.text,
+          priceChips: _priceChipRows
+              .map(
+                (row) => ProductPriceChipDraft(
+                  label: row.labelController.text,
+                  price: row.priceController.text,
+                ),
+              )
+              .toList(),
+          enumSections: [
+            for (final section in _enumSections)
+              ProductEnumSectionDraft(
+                attributeType: section.attribute.attributeType,
+                rows: [
+                  for (final row in section.rows)
+                    ProductEnumOptionDraft(
+                      id: row.id,
+                      value: row.valueController.text,
+                      sortOrder: row.sortOrder,
+                      active: row.active,
+                      isDefault: row.isDefault,
+                      removed: row.removed,
+                    ),
+                ],
+              ),
+          ],
+        );
+  }
+
+  void _restoreEnumSections(List<ProductEnumSectionDraft> drafts) {
+    final byType = {for (final draft in drafts) draft.attributeType: draft};
+    for (final section in _enumSections) {
+      final draft = byType[section.attribute.attributeType];
+      if (draft == null) continue;
+      for (final row in section.rows) {
+        row.dispose();
+      }
+      section.rows
+        ..clear()
+        ..addAll(
+          draft.rows.map((saved) {
+            final row = EnumOptionFormRow(
+              id: saved.id,
+              valueVi: saved.value,
+              sortOrder: saved.sortOrder,
+              active: saved.active,
+              isDefault: saved.isDefault,
+            );
+            row.removed = saved.removed;
+            return row;
+          }),
+        );
+    }
+  }
+
+  void _listenToNewPriceChip(PriceChipFormRow row) {
+    row.labelController.addListener(_retainNewDraft);
+    row.priceController.addListener(_retainNewDraft);
   }
 
   @override
@@ -135,8 +260,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _addPriceChip() {
     if (_priceChipRows.length >= _maxPriceChips) return;
-    _priceChipRows.add(PriceChipFormRow());
-    ref.read(productFormProvider.notifier).rebuild();
+    final row = PriceChipFormRow();
+    _priceChipRows.add(row);
+    _listenToNewPriceChip(row);
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   Future<void> _removePriceChip(int index) async {
@@ -162,18 +290,21 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         ),
       );
       if (confirm != true) return;
+      if (!mounted) return;
     }
 
     row.dispose();
     _priceChipRows.removeAt(index);
-    ref.read(productFormProvider.notifier).rebuild();
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _reorderPriceChips(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex -= 1;
     final row = _priceChipRows.removeAt(oldIndex);
     _priceChipRows.insert(newIndex, row);
-    ref.read(productFormProvider.notifier).rebuild();
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   double? _parseChipPrice(String text) {
@@ -192,7 +323,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final parsedPrice = _parseChipPrice(priceText);
 
       final rowErrors = PriceChipValidationErrors(
-        labelError: label.isEmpty ? ProductsLabels.priceChipLabelRequired : null,
+        labelError: label.isEmpty
+            ? ProductsLabels.priceChipLabelRequired
+            : null,
         priceError: parsedPrice == null || parsedPrice < 0
             ? ProductsLabels.priceChipPriceInvalid
             : null,
@@ -204,7 +337,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
 
     final changed = _applyPriceChipRowErrors(errors);
-    if (changed) ref.read(productFormProvider.notifier).rebuild();
+    if (changed) ref.read(_provider.notifier).rebuild();
     return errors;
   }
 
@@ -254,8 +387,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return seenIds.length != _originalPriceChips.length;
   }
 
-  Future<void> _syncPriceChipEdits(int productId) async {
-    final productSvc = ref.read(productServiceProvider);
+  Future<void> _syncPriceChipEdits(
+    int productId,
+    ProductService productSvc,
+  ) async {
     final originalMap = <int, PriceChip>{
       for (final chip in _originalPriceChips) chip.id: chip,
     };
@@ -299,7 +434,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
     }
 
-    await ref.read(productsProvider.notifier).refresh();
     _applyPriceChipChangesToUi();
   }
 
@@ -323,7 +457,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            ProductsLabels.priceChips,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _addPriceChip,
@@ -338,7 +475,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(ProductsLabels.priceChips, style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          ProductsLabels.priceChips,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 8),
         ReorderableListView.builder(
           physics: const NeverScrollableScrollPhysics(),
@@ -367,7 +507,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                             labelError: null,
                             priceError: row.priceError,
                           );
-                          ref.read(productFormProvider.notifier).rebuild();
+                          ref.read(_provider.notifier).rebuild();
                         }
                       },
                     ),
@@ -388,7 +528,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                             labelError: row.labelError,
                             priceError: null,
                           );
-                          ref.read(productFormProvider.notifier).rebuild();
+                          ref.read(_provider.notifier).rebuild();
                         }
                       },
                     ),
@@ -429,8 +569,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   // ----- Enum attribute options editor (DG-092 Phase 4.5) -----
 
   void _addEnumOption(EnumAttributeFormSection section) {
-    section.rows.add(EnumOptionFormRow(sortOrder: section.rows.length));
-    ref.read(productFormProvider.notifier).rebuild();
+    final row = EnumOptionFormRow(sortOrder: section.rows.length);
+    row.valueController.addListener(_retainNewDraft);
+    section.rows.add(row);
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _toggleRemoveEnumOption(EnumAttributeFormSection section, int index) {
@@ -444,14 +587,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         row.isDefault = false;
       }
     }
-    ref.read(productFormProvider.notifier).rebuild();
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _setEnumDefault(EnumAttributeFormSection section, int index) {
     for (var i = 0; i < section.rows.length; i++) {
       section.rows[i].isDefault = i == index;
     }
-    ref.read(productFormProvider.notifier).rebuild();
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _reorderEnumOptions(
@@ -462,7 +607,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (newIndex > oldIndex) newIndex -= 1;
     final row = section.rows.removeAt(oldIndex);
     section.rows.insert(newIndex, row);
-    ref.read(productFormProvider.notifier).rebuild();
+    _retainNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   /// Returns true if all enum sections validate (every section with at least
@@ -488,12 +634,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
       if (liveRowCount > 0 && defaultCount != 1) {
         sectionChanged =
-            section.setError(ProductsLabels.enumOptionDefaultRequired) || sectionChanged;
+            section.setError(ProductsLabels.enumOptionDefaultRequired) ||
+            sectionChanged;
         ok = false;
       }
       changed = changed || sectionChanged;
     }
-    if (changed) ref.read(productFormProvider.notifier).rebuild();
+    if (changed) ref.read(_provider.notifier).rebuild();
     return ok;
   }
 
@@ -504,8 +651,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return false;
   }
 
-  Future<void> _syncEnumOptionEdits() async {
-    final productSvc = ref.read(productServiceProvider);
+  Future<void> _syncEnumOptionEdits(ProductService productSvc) async {
     for (final section in _enumSections) {
       if (!section.hasChanges()) continue;
 
@@ -642,18 +788,22 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                         decoration: InputDecoration(
                           labelText: ProductsLabels.enumOptionValueLabel,
                           errorText: row.valueError,
-                          helperText: row.removed ? ProductsLabels.enumOptionRemoved : null,
+                          helperText: row.removed
+                              ? ProductsLabels.enumOptionRemoved
+                              : null,
                         ),
                         onChanged: (_) {
                           if (row.valueError != null) {
                             row.setValueError(null);
-                            ref.read(productFormProvider.notifier).rebuild();
+                            ref.read(_provider.notifier).rebuild();
                           }
                         },
                       ),
                     ),
                     IconButton(
-                      tooltip: row.removed ? ProductsLabels.enumOptionRestore : SharedLabels.remove,
+                      tooltip: row.removed
+                          ? ProductsLabels.enumOptionRestore
+                          : SharedLabels.remove,
                       icon: Icon(
                         row.removed ? Icons.restore : Icons.delete_outline,
                       ),
@@ -714,7 +864,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source);
     if (file != null) {
-      ref.read(productFormProvider.notifier).setPickedPhoto(file);
+      ref.read(_provider.notifier).setPickedPhoto(file);
     }
   }
 
@@ -722,12 +872,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_validatePriceChipRows().isNotEmpty) return;
     if (!_validateEnumOptions()) return;
-    final formNotifier = ref.read(productFormProvider.notifier);
-    final formState = ref.read(productFormProvider);
+    final formNotifier = ref.read(_provider.notifier);
+    final formState = ref.read(_provider);
+    final submittedDraft = formNotifier.draftSnapshot;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final notifier = ref.read(productsProvider.notifier);
+    final productSvc = ref.read(productServiceProvider);
+    final cats = ref.read(categoriesProvider).asData?.value;
     formNotifier.setSaving(true);
 
     try {
-      final notifier = ref.read(productsProvider.notifier);
       final price = double.tryParse(_priceCtrl.text) ?? 0;
       final cost = double.tryParse(_costCtrl.text) ?? 0;
       final hasPriceChipChanges = _hasPriceChipChanges();
@@ -735,7 +889,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       Product saved;
       // Build full product code: prefix (from category) + '-' + suffix (user input).
       final suffix = _codeCtrl.text.trim();
-      final cats = ref.read(categoriesProvider).asData?.value;
       final prefix =
           cats
               ?.firstWhere(
@@ -804,7 +957,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
         // Sync rut_tien attribute if changed
         if (formState.rutTien != origRutTien) {
-          final productSvc = ref.read(productServiceProvider);
           if (formState.rutTien) {
             await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           } else {
@@ -814,7 +966,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
         // Sync trung_bay attribute if changed
         if (formState.trungBay != origTrungBay) {
-          final productSvc = ref.read(productServiceProvider);
           if (formState.trungBay) {
             await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           } else {
@@ -824,7 +975,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
         // Sync tang_kem attribute if changed
         if (formState.tangKem != origTangKem) {
-          final productSvc = ref.read(productServiceProvider);
           if (formState.tangKem) {
             await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           } else {
@@ -843,43 +993,45 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         );
         // Sync rut_tien attribute for new products
         if (formState.rutTien) {
-          final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
           await notifier.refresh();
         }
         // Sync trung_bay attribute for new products
         if (formState.trungBay) {
-          final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
           await notifier.refresh();
         }
         // Sync tang_kem attribute for new products
         if (formState.tangKem) {
-          final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
         }
       }
 
       if (hasPriceChipChanges) {
-        await _syncPriceChipEdits(saved.id);
+        await _syncPriceChipEdits(saved.id, productSvc);
+        await notifier.refresh();
       }
 
       if (_hasEnumOptionChanges()) {
-        await _syncEnumOptionEdits();
-        await ref.read(productsProvider.notifier).refresh();
+        await _syncEnumOptionEdits(productSvc);
+        await notifier.refresh();
       }
 
       if (formState.pickedPhoto != null) {
         await notifier.uploadPhoto(saved.id, formState.pickedPhoto!);
       }
 
-      ref.invalidate(phuKienProductsProvider);
+      container.invalidate(phuKienProductsProvider);
+
+      formNotifier.clearAfterSuccess(submittedDraft);
 
       if (mounted) {
         showTopSnackBar(
           context,
-          _isEditing ? ProductsLabels.productUpdated : ProductsLabels.productCreated,
+          _isEditing
+              ? ProductsLabels.productUpdated
+              : ProductsLabels.productCreated,
         );
         context.pop();
       }
@@ -891,7 +1043,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         showTopSnackBar(context, detail ?? e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) formNotifier.setSaving(false);
+      formNotifier.setSaving(false);
     }
   }
 
@@ -915,7 +1067,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     if (confirmed != true) return;
 
-    final formNotifier = ref.read(productFormProvider.notifier);
+    final formNotifier = ref.read(_provider.notifier);
     formNotifier.setSaving(true);
     try {
       await ref
@@ -935,7 +1087,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 
   Future<void> _reactivate() async {
-    final formNotifier = ref.read(productFormProvider.notifier);
+    final formNotifier = ref.read(_provider.notifier);
     formNotifier.setSaving(true);
     try {
       await ref
@@ -959,8 +1111,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
-    final formState = ref.watch(productFormProvider);
-    final formNotifier = ref.read(productFormProvider.notifier);
+    final formState = ref.watch(_provider);
+    final formNotifier = ref.read(_provider.notifier);
 
     // Compute the read-only prefix for the current category.
     final currentPrefix = categoriesAsync.maybeWhen(
@@ -981,8 +1133,21 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? ProductsLabels.editProduct : ProductsLabels.createProduct),
+        title: Text(
+          _isEditing
+              ? ProductsLabels.editProduct
+              : ProductsLabels.createProduct,
+        ),
         actions: [
+          DiscardFormDraftAction(
+            isDirty: ref
+                .watch(formDraftSessionProvider)
+                .containsKey(_draftContext),
+            onDiscard: () {
+              ref.read(_provider.notifier).clearNewDraft();
+              Navigator.of(context).pop();
+            },
+          ),
           if (_isEditing)
             IconButton(
               tooltip: widget.product!.active == 0

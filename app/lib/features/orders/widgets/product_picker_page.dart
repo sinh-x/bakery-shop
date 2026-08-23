@@ -10,6 +10,7 @@ import '../../../data/models/product.dart';
 import '../../../data/providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../providers/product_picker_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
 import '../../../data/providers/products_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../products/widgets/product_card.dart';
@@ -18,6 +19,7 @@ import 'category_tab_tracker.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 class ProductPickerPage extends ConsumerStatefulWidget {
   const ProductPickerPage({
     super.key,
@@ -26,6 +28,7 @@ class ProductPickerPage extends ConsumerStatefulWidget {
     this.initialCategorySlug,
     this.onCategorySelected,
     this.singleSelect = false,
+    required this.draftContext,
   });
 
   final List<DraftOrderItem> selectedItems;
@@ -40,6 +43,7 @@ class ProductPickerPage extends ConsumerStatefulWidget {
   /// Defaults to `false` to preserve the established multi-select behavior
   /// for the order-create flow (DG-414 review UI-2).
   final bool singleSelect;
+  final FormDraftContext draftContext;
 
   @override
   ConsumerState<ProductPickerPage> createState() => _ProductPickerPageState();
@@ -53,19 +57,22 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     Future.microtask(() {
       if (mounted) {
         ref
-            .read(productPickerProvider.notifier)
+            .read(productPickerProvider(widget.draftContext).notifier)
             .seedInitial(widget.selectedItems.map((i) => i.product.id).toSet());
       }
     });
   }
 
   void _toggleProduct(Product product) {
-    ref.read(productPickerProvider.notifier).toggleProduct(product);
+    ref
+        .read(productPickerProvider(widget.draftContext).notifier)
+        .toggleProduct(product);
   }
 
   void _selectSingleProduct(Product product) {
     widget.selectedItems.add(_createDraftItem(product));
     widget.onChanged();
+    ref.read(productPickerProvider(widget.draftContext).notifier).clearDraft();
     Navigator.of(context).pop();
   }
 
@@ -90,11 +97,13 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   }
 
   void _enterMultiSelectMode(Product product) {
-    ref.read(productPickerProvider.notifier).enterMultiSelectMode(product);
+    ref
+        .read(productPickerProvider(widget.draftContext).notifier)
+        .enterMultiSelectMode(product);
   }
 
   void _onConfirm(List<Product> allProducts) {
-    final pickerState = ref.read(productPickerProvider);
+    final pickerState = ref.read(productPickerProvider(widget.draftContext));
     final selectedIds = pickerState.selectedIds;
     // Remove items that were deselected
     widget.selectedItems.removeWhere(
@@ -113,6 +122,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     }
 
     widget.onChanged();
+    ref.read(productPickerProvider(widget.draftContext).notifier).clearDraft();
     Navigator.of(context).pop();
   }
 
@@ -177,7 +187,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     List<Product> allProducts,
     List<Category> activeCategories,
   ) {
-    final pickerState = ref.watch(productPickerProvider);
+    final pickerState = ref.watch(productPickerProvider(widget.draftContext));
     final multiSelectMode = pickerState.multiSelectMode;
     final selectedIds = pickerState.selectedIds;
     return AppBar(
@@ -219,7 +229,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     String baseUrl,
     String cacheBuster,
   ) {
-    final pickerState = ref.watch(productPickerProvider);
+    final pickerState = ref.watch(productPickerProvider(widget.draftContext));
     final selectedIds = pickerState.selectedIds;
     final multiSelectMode = pickerState.multiSelectMode;
     return GridView.builder(

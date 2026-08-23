@@ -1,9 +1,17 @@
 import 'package:bakery_app/features/orders/providers/order_record_payment_notifier.dart';
 import 'package:bakery_app/features/orders/providers/order_edit_payment_notifier.dart';
+import 'package:bakery_app/features/orders/providers/order_draft_contexts.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+final _recordProvider = orderRecordPaymentDraftProvider(
+  OrderDraftContexts.recordPayment('ORD-TEST'),
+);
+final _editProvider = orderEditPaymentProvider(
+  OrderDraftContexts.editPayment('ORD-TEST', 'TXN-TEST'),
+);
 
 void main() {
   group('OrderRecordPaymentNotifier createdAt (DG-415 Phase 3 / FR1, FR7)', () {
@@ -11,7 +19,7 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       final before = DateTime.now();
-      final state = container.read(orderRecordPaymentProvider);
+      final state = container.read(_recordProvider);
       final after = DateTime.now();
       expect(state.createdAt, isNotNull);
       // Within the same wall-clock second as build().
@@ -28,10 +36,10 @@ void main() {
     test('setCreatedDate replaces the date and keeps the time', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(orderRecordPaymentProvider.notifier);
-      final initial = container.read(orderRecordPaymentProvider).createdAt!;
+      final notifier = container.read(_recordProvider.notifier);
+      final initial = container.read(_recordProvider).createdAt!;
       notifier.setCreatedDate(DateTime(2024, 6, 15));
-      final updated = container.read(orderRecordPaymentProvider).createdAt!;
+      final updated = container.read(_recordProvider).createdAt!;
       expect(updated.year, 2024);
       expect(updated.month, 6);
       expect(updated.day, 15);
@@ -43,10 +51,10 @@ void main() {
     test('setCreatedTime replaces the time and keeps the date', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(orderRecordPaymentProvider.notifier);
-      final initial = container.read(orderRecordPaymentProvider).createdAt!;
+      final notifier = container.read(_recordProvider.notifier);
+      final initial = container.read(_recordProvider).createdAt!;
       notifier.setCreatedTime(const TimeOfDay(hour: 8, minute: 30));
-      final updated = container.read(orderRecordPaymentProvider).createdAt!;
+      final updated = container.read(_recordProvider).createdAt!;
       expect(updated.hour, 8);
       expect(updated.minute, 30);
       // Date component preserved.
@@ -60,7 +68,7 @@ void main() {
     test('seed() pre-fills createdAt from the existing transaction (AC3)', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(orderEditPaymentProvider.notifier);
+      final notifier = container.read(_editProvider.notifier);
       const existing = '2026-08-16T06:00:00Z';
       final existingDt = DateTime.parse(existing);
       notifier.seed(
@@ -68,22 +76,26 @@ void main() {
         method: 'transfer',
         paymentSource: 'TK Phượng VCB',
         createdAt: existingDt,
+        amount: '100',
+        notes: '',
       );
-      final state = container.read(orderEditPaymentProvider);
+      final state = container.read(_editProvider);
       expect(state.createdAt, existingDt);
     });
 
     test('setCreatedDate merges date into the seeded createdAt (FR2)', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(orderEditPaymentProvider.notifier);
+      final notifier = container.read(_editProvider.notifier);
       notifier.seed(
         type: 'payment',
         method: 'cash',
         createdAt: DateTime(2026, 8, 16, 6, 0, 0),
+        amount: '100',
+        notes: '',
       );
       notifier.setCreatedDate(DateTime(2025, 1, 10));
-      final updated = container.read(orderEditPaymentProvider).createdAt!;
+      final updated = container.read(_editProvider).createdAt!;
       expect(updated.year, 2025);
       expect(updated.month, 1);
       expect(updated.day, 10);
@@ -95,14 +107,16 @@ void main() {
     test('setCreatedTime merges time into the seeded createdAt (FR2)', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(orderEditPaymentProvider.notifier);
+      final notifier = container.read(_editProvider.notifier);
       notifier.seed(
         type: 'payment',
         method: 'cash',
         createdAt: DateTime(2026, 8, 16, 6, 0, 0),
+        amount: '100',
+        notes: '',
       );
       notifier.setCreatedTime(const TimeOfDay(hour: 18, minute: 45));
-      final updated = container.read(orderEditPaymentProvider).createdAt!;
+      final updated = container.read(_editProvider).createdAt!;
       expect(updated.hour, 18);
       expect(updated.minute, 45);
       // Seeded date preserved.
@@ -119,45 +133,47 @@ void main() {
   // round-trips back to the original UTC instant instead of shifting by the
   // local offset.
   group(
-      'OrderEditPaymentNotifier UTC/local round-trip (review-auto cycle 1 CQ-1)',
-      () {
-    test(
-        'editing only the date preserves the original UTC time after '
-        'serialization', () {
-      // The stored UTC timestamp returned by the backend. Choose an instant
-      // whose local wall-clock differs from UTC (so a double-shift would be
-      // detectable). Use the test host's local offset — `toServerLocal`
-      // renders through the device timezone (assumed to match the server).
-      const storedUtc = '2026-08-16T06:00:00Z';
-      final utcDt = DateTime.parse(storedUtc);
-      // Compute the local wall-clock fields the picker should display.
-      final localSeed = ServerTimezone.toServerLocal(utcDt);
+    'OrderEditPaymentNotifier UTC/local round-trip (review-auto cycle 1 CQ-1)',
+    () {
+      test('editing only the date preserves the original UTC time after '
+          'serialization', () {
+        // The stored UTC timestamp returned by the backend. Choose an instant
+        // whose local wall-clock differs from UTC (so a double-shift would be
+        // detectable). Use the test host's local offset — `toServerLocal`
+        // renders through the device timezone (assumed to match the server).
+        const storedUtc = '2026-08-16T06:00:00Z';
+        final utcDt = DateTime.parse(storedUtc);
+        // Compute the local wall-clock fields the picker should display.
+        final localSeed = ServerTimezone.toServerLocal(utcDt);
 
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      final notifier = container.read(orderEditPaymentProvider.notifier);
-      notifier.seed(
-        type: 'payment',
-        method: 'cash',
-        createdAt: localSeed,
-      );
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(_editProvider.notifier);
+        notifier.seed(
+          type: 'payment',
+          method: 'cash',
+          createdAt: localSeed,
+          amount: '100',
+          notes: '',
+        );
 
-      // User edits only the date to 2026-07-01; time is preserved.
-      notifier.setCreatedDate(DateTime(2026, 7, 1));
-      final edited = container.read(orderEditPaymentProvider).createdAt!;
+        // User edits only the date to 2026-07-01; time is preserved.
+        notifier.setCreatedDate(DateTime(2026, 7, 1));
+        final edited = container.read(_editProvider).createdAt!;
 
-      // The local hour/minute must match what the picker displayed.
-      expect(edited.hour, localSeed.hour);
-      expect(edited.minute, localSeed.minute);
+        // The local hour/minute must match what the picker displayed.
+        expect(edited.hour, localSeed.hour);
+        expect(edited.minute, localSeed.minute);
 
-      // Serialize as the API client would on save.
-      final wire = timestampToJson(edited);
+        // Serialize as the API client would on save.
+        final wire = timestampToJson(edited);
 
-      // The UTC time component must be unchanged (06:00:00Z) — only the date
-      // changed. Before the CQ-1 fix the local hour was copied into a
-      // DateTime whose `.toUtc()` then shifted it again, double-shifting the
-      // stored time by the local offset.
-      expect(wire, '2026-07-01T06:00:00Z');
-    });
-  });
+        // The UTC time component must be unchanged (06:00:00Z) — only the date
+        // changed. Before the CQ-1 fix the local hour was copied into a
+        // DateTime whose `.toUtc()` then shifted it again, double-shifting the
+        // stored time by the local offset.
+        expect(wire, '2026-07-01T06:00:00Z');
+      });
+    },
+  );
 }

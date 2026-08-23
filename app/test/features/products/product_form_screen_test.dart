@@ -9,7 +9,9 @@ import 'package:bakery_app/data/models/paginated_response.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_form_screen.dart';
+import 'package:bakery_app/features/products/providers/product_form_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/models/form_draft_context.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,8 +29,7 @@ class _FakeProductService implements ProductService {
     String? code,
     int active = 1,
     bool trungBay = false,
-  }) async =>
-      const [];
+  }) async => const [];
 
   @override
   Future<PaginatedResponse<Product>> listProductsPaginated({
@@ -36,20 +37,20 @@ class _FakeProductService implements ProductService {
     int active = 1,
     int limit = 50,
     int offset = 0,
-  }) async =>
-      PaginatedResponse<Product>(
-        items: const [],
-        total: 0,
-        hasMore: false,
-        limit: limit,
-        offset: offset,
-      );
+  }) async => PaginatedResponse<Product>(
+    items: const [],
+    total: 0,
+    hasMore: false,
+    limit: limit,
+    offset: offset,
+  );
 
   @override
   Future<Product> getProduct(int id) async => throw UnimplementedError();
 
   @override
-  Future<Product> getProductByCode(String code) async => throw UnimplementedError();
+  Future<Product> getProductByCode(String code) async =>
+      throw UnimplementedError();
 
   @override
   Future<Product> createProduct({
@@ -124,8 +125,7 @@ class _FakeProductService implements ProductService {
     required String label,
     required double price,
     required int position,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<PriceChip> updatePriceChip(
@@ -134,8 +134,7 @@ class _FakeProductService implements ProductService {
     String? label,
     double? price,
     int? position,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<void> deletePriceChip(int productId, int chipId) async {}
@@ -158,8 +157,7 @@ class _FakeProductService implements ProductService {
     required String attributeType,
     required String valueVi,
     int? sortOrder,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<EnumOption> updateEnumOption(
@@ -167,8 +165,7 @@ class _FakeProductService implements ProductService {
     String? valueVi,
     int? sortOrder,
     int? active,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<void> deleteEnumOption(int optionId) async {}
@@ -190,8 +187,20 @@ class _FakeCategoryService implements CategoryService {
   @override
   Future<List<Category>> listCategories({bool includeInactive = false}) async {
     return const [
-      Category(id: 1, slug: 'banh_kem', name: 'Bánh kem', codePrefix: 'BKS', active: 1),
-      Category(id: 2, slug: 'bread', name: 'Bánh mì', codePrefix: 'BMB', active: 1),
+      Category(
+        id: 1,
+        slug: 'banh_kem',
+        name: 'Bánh kem',
+        codePrefix: 'BKS',
+        active: 1,
+      ),
+      Category(
+        id: 2,
+        slug: 'bread',
+        name: 'Bánh mì',
+        codePrefix: 'BMB',
+        active: 1,
+      ),
     ];
   }
 
@@ -210,14 +219,14 @@ class _FakeCatalogService implements CatalogService {
 }
 
 Product _testProduct() => const Product(
-      id: 100,
-      name: 'Bánh kem 20cm',
-      category: 'banh_kem',
-      productCode: 'BKS-20',
-      basePrice: 200000,
-      cost: 120000,
-      recipeNotes: 'Ghi chú công thức',
-    );
+  id: 100,
+  name: 'Bánh kem 20cm',
+  category: 'banh_kem',
+  productCode: 'BKS-20',
+  basePrice: 200000,
+  cost: 120000,
+  recipeNotes: 'Ghi chú công thức',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -265,8 +274,9 @@ void main() {
     expect(find.text(ProductsLabels.createProduct), findsOneWidget);
   });
 
-  testWidgets('edit mode renders edit-product title and prefilled fields',
-      (tester) async {
+  testWidgets('edit mode renders edit-product title and prefilled fields', (
+    tester,
+  ) async {
     await pumpForm(tester, product: _testProduct());
     expect(find.text(ProductsLabels.editProduct), findsOneWidget);
     expect(find.text('Bánh kem 20cm'), findsOneWidget);
@@ -336,4 +346,56 @@ void main() {
     );
     expect(priceField.controller?.text, '200000');
   });
+
+  testWidgets(
+    'edit price-chip add, reorder, and remove update retained draft',
+    (tester) async {
+      await pumpForm(tester, product: _testProduct());
+      const context = FormDraftContext(
+        formType: 'product',
+        mode: FormDraftMode.edit,
+        entityId: '100',
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ProductFormScreen)),
+      );
+
+      await tester.tap(find.text(ProductsLabels.addPriceChip));
+      await tester.pump();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, ProductsLabels.priceChipLabel).first,
+        'Nho',
+      );
+      await tester.tap(find.text(ProductsLabels.addPriceChip));
+      await tester.pump();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, ProductsLabels.priceChipLabel).last,
+        'Lon',
+      );
+
+      var draft = container
+          .read(contextualProductFormProvider(context).notifier)
+          .newDraft;
+      expect(draft.priceChips.map((chip) => chip.label), ['Nho', 'Lon']);
+
+      final list = tester.widget<ReorderableListView>(
+        find.byType(ReorderableListView).first,
+      );
+      // Invoke the same compatibility callback wired by the production list.
+      // ignore: deprecated_member_use
+      list.onReorder!.call(0, 2);
+      await tester.pump();
+      draft = container
+          .read(contextualProductFormProvider(context).notifier)
+          .newDraft;
+      expect(draft.priceChips.map((chip) => chip.label), ['Lon', 'Nho']);
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pump();
+      draft = container
+          .read(contextualProductFormProvider(context).notifier)
+          .newDraft;
+      expect(draft.priceChips.map((chip) => chip.label), ['Nho']);
+    },
+  );
 }

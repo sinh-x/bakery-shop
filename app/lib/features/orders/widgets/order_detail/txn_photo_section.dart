@@ -7,12 +7,15 @@ import 'package:image_picker/image_picker.dart'
 import '../../../../data/api/api_client.dart' show apiBaseUrlProvider;
 import '../../../../data/models/order_photo.dart';
 import '../../../../providers/order_providers.dart';
-import '../../providers/txn_photo_busy_notifier.dart';
+import '../../providers/order_draft_contexts.dart';
+import '../../providers/order_form_operation_notifier.dart';
+import '../../../../shared/models/form_draft_context.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'order_photo_thumbnail.dart';
 import '../order_photo_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Shared per-transaction photo section used by both the edit-payment and
 /// transaction-detail sheets (DG-410 CQ-1).
 ///
@@ -53,6 +56,8 @@ class TxnPhotoSection extends ConsumerStatefulWidget {
 class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
   String get _orderRef => widget.orderRef;
   String get _txnId => widget.txnId;
+  FormDraftContext get _operationContext =>
+      OrderDraftContexts.transactionPhoto(_orderRef, _txnId);
 
   /// Opens the camera/gallery picker (FR3 add/replace). Reuses the POS
   /// `showTransferSourceDialog` pattern. The keyboard is dismissed before
@@ -67,15 +72,21 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
       imageQuality: 85,
     );
     if (image == null || !mounted) return;
-    ref.read(txnPhotoBusyProvider.notifier).setBusy(true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final operation = container.read(
+      orderFormOperationProvider(_operationContext).notifier,
+    );
+    final generation = operation.start();
+    final transactions = container.read(
+      orderPaymentTransactionsProvider(_orderRef).notifier,
+    );
     try {
-      await ref
-          .read(orderPaymentTransactionsProvider(_orderRef).notifier)
-          .attachPhoto(_txnId, image);
+      await transactions.attachPhoto(_txnId, image);
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.txnPhotoSaved);
       }
     } catch (e, st) {
+      operation.failIfCurrent(generation, e);
       // CQ-3: log the exception detail for diagnostics but never surface
       // raw exception text in the user-facing snackbar — show the stable
       // VN label only.
@@ -84,7 +95,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
         showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
-      if (mounted) ref.read(txnPhotoBusyProvider.notifier).setBusy(false);
+      operation.finishIfCurrent(generation);
     }
   }
 
@@ -110,21 +121,27 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    ref.read(txnPhotoBusyProvider.notifier).setBusy(true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final operation = container.read(
+      orderFormOperationProvider(_operationContext).notifier,
+    );
+    final generation = operation.start();
+    final transactions = container.read(
+      orderPaymentTransactionsProvider(_orderRef).notifier,
+    );
     try {
-      await ref
-          .read(orderPaymentTransactionsProvider(_orderRef).notifier)
-          .detachPhoto(_txnId);
+      await transactions.detachPhoto(_txnId);
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.txnPhotoRemoved);
       }
     } catch (e, st) {
+      operation.failIfCurrent(generation, e);
       debugPrint('detachPhoto failed: $e\n$st');
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.txnPhotoSaveFailed);
       }
     } finally {
-      if (mounted) ref.read(txnPhotoBusyProvider.notifier).setBusy(false);
+      operation.finishIfCurrent(generation);
     }
   }
 
@@ -132,9 +149,10 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final baseUrl = ref.watch(apiBaseUrlProvider);
-    final photoBusy = ref.watch(txnPhotoBusyProvider);
-    final photoAsync =
-        ref.watch(transactionPhotoProvider((_orderRef, _txnId)));
+    final photoBusy = ref
+        .watch(orderFormOperationProvider(_operationContext))
+        .busy;
+    final photoAsync = ref.watch(transactionPhotoProvider((_orderRef, _txnId)));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -150,8 +168,9 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
             debugPrint('transactionPhotoProvider error: $e\n$st');
             return Text(
               OrdersLabels.txnPhotoSaveFailed,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             );
           },
           data: (photo) {
@@ -172,8 +191,7 @@ class _TxnPhotoSectionState extends ConsumerState<TxnPhotoSection> {
                       message: OrdersLabels.txnPhotoAttach,
                       child: TextButton.icon(
                         onPressed: photoBusy ? null : _pickTxnPhoto,
-                        icon:
-                            const Icon(Icons.photo_camera_outlined, size: 20),
+                        icon: const Icon(Icons.photo_camera_outlined, size: 20),
                         label: const Text(OrdersLabels.txnPhotoAttach),
                       ),
                     ),

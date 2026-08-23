@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Order transaction detail sheet acting-flag state (DG-404 Phase 4.6 / FR2).
 ///
@@ -8,7 +9,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// [setActing] method; no `setState` is required.
 class OrderTransactionDetailNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) => state = false);
+    return false;
+  }
 
   void setActing(bool value) => state = value;
 }

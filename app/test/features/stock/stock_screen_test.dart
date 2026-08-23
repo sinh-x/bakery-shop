@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/features/stock/stock_screen.dart';
+import 'package:bakery_app/features/stock/providers/stock_action_sheet_notifier.dart';
 import 'package:bakery_app/features/stock/widgets/stock_action_sheet.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 import 'package:dio/dio.dart';
@@ -63,6 +66,30 @@ class _RecordingStockService extends StockService {
       'note': note,
       'normalizedPrice': normalizedPrice,
     });
+  }
+}
+
+class _DelayedStockService extends _RecordingStockService {
+  _DelayedStockService(super.items);
+
+  final List<Completer<void>> pending = [];
+
+  @override
+  Future<void> restock(
+    int productId,
+    int quantity, {
+    String note = '',
+    int? normalizedPrice,
+  }) {
+    restockCalls.add({
+      'productId': productId,
+      'quantity': quantity,
+      'note': note,
+      'normalizedPrice': normalizedPrice,
+    });
+    final completer = Completer<void>();
+    pending.add(completer);
+    return completer.future;
   }
 }
 
@@ -291,10 +318,7 @@ void main() {
 
       // The 35.000đ chip ("Khuyến mãi") has an add_circle_outline affordance
       // icon. Verify a trailing + icon is rendered for each chip (AC4).
-      expect(
-        find.byIcon(Icons.add_circle_outline),
-        findsNWidgets(2),
-      );
+      expect(find.byIcon(Icons.add_circle_outline), findsNWidgets(2));
 
       // Tap the chip text to open the restock action sheet. The chip text
       // format is "$displayLabel ($normalizedPrice): $quantity".
@@ -355,10 +379,7 @@ void main() {
       expect(stockService.restockCalls.single['normalizedPrice'], 20000);
 
       // Verify the overview was refreshed (onDone callback fired).
-      expect(
-        stockService.overviewCallCount,
-        greaterThan(initialOverviewCalls),
-      );
+      expect(stockService.overviewCallCount, greaterThan(initialOverviewCalls));
     });
 
     testWidgets('AC3: no-chip product retains button-only restock flow '
@@ -424,10 +445,12 @@ void main() {
       // Quantity field still auto-focuses. Enter a value into the first
       // TextFormField within the sheet.
       await tester.enterText(
-        find.descendant(
-          of: find.byType(StockActionSheet),
-          matching: find.byType(TextFormField),
-        ).first,
+        find
+            .descendant(
+              of: find.byType(StockActionSheet),
+              matching: find.byType(TextFormField),
+            )
+            .first,
         '2',
       );
       await tester.pumpAndSettle();
@@ -447,8 +470,9 @@ void main() {
       expect(stockService.restockCalls.single['normalizedPrice'], isNull);
     });
 
-    testWidgets('AC4: each price chip shows InkWell ripple + trailing + icon',
-        (tester) async {
+    testWidgets('AC4: each price chip shows InkWell ripple + trailing + icon', (
+      tester,
+    ) async {
       await pumpMultiChipScreen(
         tester,
         categorySlug: 'banh_kem',
@@ -507,6 +531,210 @@ void main() {
       expect(stockService.overviewCallCount, initialOverviewCalls);
       // Sheet is gone.
       expect(find.byType(StockActionSheet), findsNothing);
+    });
+  });
+
+  group('Nhap kho retained draft completion', () {
+    final productA = StockOverviewItem(
+      productId: 21,
+      productName: 'Banh A',
+      category: 'banh_kem',
+      quantity: 4,
+      basePrice: 20000,
+      perChip: [
+        StockOverviewOption(
+          normalizedPrice: 20000,
+          quantity: 2,
+          chipLabels: ['Thuong'],
+          chipLabel: 'Thuong',
+        ),
+        StockOverviewOption(
+          normalizedPrice: 35000,
+          quantity: 2,
+          chipLabels: ['Dac biet'],
+          chipLabel: 'Dac biet',
+        ),
+      ],
+    );
+    final productB = StockOverviewItem(
+      productId: 22,
+      productName: 'Banh B',
+      category: 'banh_kem',
+      quantity: 1,
+      basePrice: 90000,
+      perChip: [
+        StockOverviewOption(
+          normalizedPrice: 90000,
+          quantity: 1,
+          chipLabels: ['Mac dinh B'],
+          chipLabel: 'Mac dinh B',
+        ),
+      ],
+    );
+
+    Future<void> pumpSheet(
+      WidgetTester tester,
+      ProviderContainer container,
+      StockOverviewItem item, {
+      int? initialPrice,
+      required VoidCallback onDone,
+    }) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: StockActionSheet(
+                key: ValueKey('${item.productId}-$initialPrice'),
+                item: item,
+                actionType: ActionType.restock,
+                initialPrice: initialPrice,
+                onDone: onDone,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets(
+      'stale success preserves newer A draft and matching success clears it',
+      (tester) async {
+        final service = _DelayedStockService([productA, productB]);
+        final container = ProviderContainer(
+          overrides: [stockServiceProvider.overrideWithValue(service)],
+        );
+        addTearDown(container.dispose);
+        var doneCount = 0;
+
+        await pumpSheet(
+          tester,
+          container,
+          productA,
+          initialPrice: 35000,
+          onDone: () => doneCount++,
+        );
+        final fields = find.descendant(
+          of: find.byType(StockActionSheet),
+          matching: find.byType(TextFormField),
+        );
+        await tester.enterText(fields.at(0), '3');
+        await tester.enterText(fields.at(1), 'ban dau');
+        await tester.tap(find.byType(FilledButton));
+        await tester.pump();
+
+        expect(service.restockCalls.single, {
+          'productId': 21,
+          'quantity': 3,
+          'note': 'ban dau',
+          'normalizedPrice': 35000,
+        });
+
+        await tester.enterText(fields.at(1), 'moi hon');
+        service.pending.single.complete();
+        await tester.pump();
+        expect(doneCount, 1);
+
+        await tester.pumpWidget(const SizedBox());
+        await pumpSheet(
+          tester,
+          container,
+          productA,
+          initialPrice: 35000,
+          onDone: () => doneCount++,
+        );
+        var reopenedFields = tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .toList();
+        expect(reopenedFields[0].controller!.text, '3');
+        expect(reopenedFields[1].controller!.text, 'moi hon');
+
+        await tester.tap(find.byType(FilledButton));
+        await tester.pump();
+        expect(service.restockCalls, hasLength(2));
+        service.pending.last.complete();
+        await tester.pump();
+        expect(doneCount, 2);
+
+        await tester.pumpWidget(const SizedBox());
+        await pumpSheet(
+          tester,
+          container,
+          productA,
+          initialPrice: 35000,
+          onDone: () => doneCount++,
+        );
+        reopenedFields = tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .toList();
+        expect(reopenedFields[0].controller!.text, isEmpty);
+        expect(reopenedFields[1].controller!.text, isEmpty);
+        expect(find.textContaining('Dac biet - 35,000'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox());
+        await pumpSheet(tester, container, productB, onDone: () => doneCount++);
+        final productBFields = tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .toList();
+        expect(productBFields[0].controller!.text, isEmpty);
+        expect(productBFields[1].controller!.text, isEmpty);
+        expect(find.textContaining('Mac dinh B - 90,000'), findsOneWidget);
+      },
+    );
+
+    testWidgets('delayed failure settles after dismissal and retains A draft', (
+      tester,
+    ) async {
+      final service = _DelayedStockService([productA]);
+      final container = ProviderContainer(
+        overrides: [stockServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+      final context = stockActionDraftContext(
+        productId: productA.productId,
+        action: ActionType.restock.name,
+        normalizedPrice: 20000,
+      );
+
+      await pumpSheet(
+        tester,
+        container,
+        productA,
+        initialPrice: 20000,
+        onDone: () {},
+      );
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), '5');
+      await tester.enterText(fields.at(1), 'giu lai');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pump();
+      expect(
+        container.read(stockActionSheetProvider(context)).isLoading,
+        isTrue,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      service.pending.single.completeError(Exception('network'));
+      await tester.pump();
+      expect(
+        container.read(stockActionSheetProvider(context)).isLoading,
+        isFalse,
+      );
+
+      await pumpSheet(
+        tester,
+        container,
+        productA,
+        initialPrice: 20000,
+        onDone: () {},
+      );
+      final reopenedFields = tester
+          .widgetList<TextFormField>(find.byType(TextFormField))
+          .toList();
+      expect(reopenedFields[0].controller!.text, '5');
+      expect(reopenedFields[1].controller!.text, 'giu lai');
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });
 }

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Order work-item section state (DG-404 Phase 4.6 / FR2).
 ///
@@ -27,7 +28,13 @@ class OrderWorkItemSectionState {
 
 class OrderWorkItemSectionNotifier extends Notifier<OrderWorkItemSectionState> {
   @override
-  OrderWorkItemSectionState build() => const OrderWorkItemSectionState();
+  OrderWorkItemSectionState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const OrderWorkItemSectionState(),
+    );
+    return const OrderWorkItemSectionState();
+  }
 
   void toggleExpanded() =>
       state = state.copyWith(expanded: !state.expanded);

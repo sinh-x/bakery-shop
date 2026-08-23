@@ -21,6 +21,7 @@
 | Async state | `AsyncNotifier` |
 | Sync state | `Notifier` |
 | `setState` in ConsumerWidget | Prohibited |
+| Form drafts | Typed context; authenticated-session retention; isolated operation state |
 | VN labels | Domain files under `lib/shared/labels/` |
 | Test naming | `<component>_test.dart` |
 | Widget test pattern | `pumpWidget` with provider overrides |
@@ -32,6 +33,7 @@
 - [ ] §2 Widget Composition — inner classes ≥3 extracted to `widgets/`
 - [ ] §3 Provider Placement — providers placed in correct directory
 - [ ] §4 State Management — AsyncNotifier/Notifier used, no setState in ConsumerWidget
+- [ ] §4 Contextual Form Drafts — typed keys, lifecycle clears, operation isolation, and retained-scope tests verified
 - [ ] §5 Label Organization — labels split by domain, no monolithic VN class additions
 - [ ] §6 Testing — tests follow naming, pattern, and coverage rules
 - [x] §7 Linting — 12 rules enabled, no new analyzer errors
@@ -306,6 +308,69 @@ grep -rlE "ConsumerState|ConsumerStatefulWidget" app/lib --include='*.dart' 2>/d
 ```
 
 The prohibited subset is **0**: every remaining `setState` call site in `ConsumerState`/`ConsumerStatefulWidget` has been manually classified as acceptable-use (animation/text/third-party) or comment-only per the rule above. All real `setState` call sites now live in plain `StatefulWidget`s (out of scope per the Non-Goals) or acceptable-use cases. DG-404 migration is complete.
+
+### Contextual Form Drafts
+
+Form state moved from a widget into Riverpod must preserve form lifecycle semantics; moving it into an application-scope provider must not turn unrelated forms into one shared draft. The exhaustive DG-423 classification of all 98 fixed-baseline providers and 19 added lifecycle symbols is maintained in the [form draft lifecycle migration matrix](form-draft-lifecycle-migration-matrix.md).
+
+#### Identity And Lifetime
+
+- Every retained draft has a typed context identity containing the form type and `create`, `edit`, or `action` mode, plus every stable identity that distinguishes the form: entity ID, product ID, option ID, and normalized-price/variant ID where applicable.
+- Create and edit modes never share a key. Different entities, products, options, or normalized prices never share a key, even when their widgets reuse the same Riverpod family or route.
+- Drafts are in-memory only and live for the current authenticated application session. They are not written to disk and must add no API request.
+- A context has at most one registry entry. Reopening a context restores that entry; it must not append a duplicate or initialize from another context.
+- Initialize from declared defaults or server entity data only when the exact context has no retained draft. Deferred seeding must not overwrite a dirty draft or expose another context's state on the first frame.
+
+Use the shared `FormDraftContext` identity and session registry rather than ad hoc strings or one global mutable form provider. An intentional exception must document its key, retention boundary, reset events, security rationale where relevant, and tests in the migration matrix.
+
+The integrated implementation uses `formDraftSessionProvider` as the in-memory registry and `formDraftSessionEpochProvider` to reset already-live providers on every authenticated-session clear, including when the registry is empty. Async success paths use `clearDraftIfUnchanged` when a newer same-context draft may replace the submitted snapshot. Order flows construct identities through `OrderDraftContexts`, and transient order busy/error state is isolated by `orderFormOperationProvider` rather than retained with draft fields.
+
+#### Retain And Clear Rules
+
+| Event | Required result |
+|---|---|
+| Cancel, system back, route back, or swipe dismissal | Retain the dirty draft for the exact context; do not interpret navigation as discard. |
+| Reopen same context in same authenticated session | Restore all draft values, selections, identity, and draft-owned photos. |
+| Open another context | Show only that context's retained draft or declared defaults/server data. |
+| Submit fails | Clear transient busy state and retain retryable draft data plus the contextual error. |
+| Submit succeeds | Clear transient operation state and remove exactly the submitted context's draft. |
+| User requests clear draft | Show the shared Vietnamese action only when dirty; clear exactly one context only after confirmation. Cancelling confirmation retains it. |
+| Logout, forced session end, or HTTP 401 | Clear every authenticated-session draft. |
+| App-process restart | Drafts are naturally absent because storage is memory-only. |
+
+Sensitive credentials are an explicit exception: password values must not be retained as session drafts and must clear on close, success, logout, and 401. Their loading and error state still follows the operation-isolation rules below.
+
+#### Operation State
+
+Draft data and transient operation state are separate lifecycle concepts. `loading`, `saving`, `submitting`, validation/API errors, and duplicate-submission latches must be scoped to the matching context/operation and must not be retained as unfinished field data.
+
+- A pending operation may disable only its context.
+- Dismissing and reopening while a request is pending must not expose another context's busy/error state.
+- Failure clears busy state and preserves retryable draft values.
+- Success clears busy/error state and the submitted draft, even if the originating widget was dismissed before completion.
+- Two mounted contexts and reused family keys must remain independent.
+
+#### Nullable Fields And Photos
+
+Nullable `copyWith` parameters must distinguish "not supplied" from "explicitly clear to null". Use an explicit clear flag, sentinel, or another typed mechanism; `field: value ?? this.field` is invalid when null is a meaningful user action. Tests must cover both preserving an omitted value and clearing a populated value, including expense subcategory, product photo, catalog-tag category, and reconciliation payment method.
+
+Photos follow the same context rules as other draft data:
+
+- Pending/local photos and persisted-photo selections must never cross form contexts.
+- If a flow retains draft-owned photos, restore them only for the exact context and clear them on success, confirmed discard, logout, or restart.
+- If security, platform lifetime, or file-handle validity requires a form not to retain pending photos, document that intentional exception and its user-visible behavior in the migration matrix and add a focused test. Silent photo loss is not the default.
+
+#### Test Expectations
+
+Provider and widget tests must reuse one `ProviderContainer`/`ProviderScope` across sequential opens; constructing a fresh scope for each open cannot detect application-scope leaks. Each audited draft family requires coverage for:
+
+1. Same-context cancel/back/swipe dismissal and reopen.
+2. Create versus edit and entity/product/option/normalized-price isolation.
+3. Successful submit, failed submit/retry, confirmed discard, cancelled discard, logout/401, and process-restart semantics.
+4. Dismiss-in-flight and two concurrently mounted contexts, including Riverpod family-key reuse.
+5. Explicit nullable clearing through state and submitted request.
+6. Draft-owned photo isolation/retention or an approved tested exception.
+7. Public notifier methods and each operation error path, followed by `flutter analyze`, `dart analyze`, and `flutter test --coverage`.
 
 ---
 

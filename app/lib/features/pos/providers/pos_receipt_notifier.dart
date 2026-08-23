@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// POS receipt screen state (DG-404 Phase 4.5 / FR2).
 ///
@@ -45,8 +46,19 @@ class PosReceiptState {
 /// reads the state via [posReceiptProvider] and rebuilds on change — no
 /// `setState` is required.
 class PosReceiptNotifier extends Notifier<PosReceiptState> {
+  int _printGeneration = 0;
+
   @override
-  PosReceiptState build() => const PosReceiptState();
+  PosReceiptState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) {
+        _printGeneration++;
+        state = const PosReceiptState();
+      },
+    );
+    return const PosReceiptState();
+  }
 
   /// Record a successful receipt fetch.
   void setLoaded(Uint8List bytes) => state = state.copyWith(
@@ -62,10 +74,17 @@ class PosReceiptNotifier extends Notifier<PosReceiptState> {
       );
 
   /// Begin a print operation.
-  void startPrinting() => state = state.copyWith(printing: true);
+  int startPrinting() {
+    state = state.copyWith(printing: true);
+    return ++_printGeneration;
+  }
 
   /// End a print operation.
   void stopPrinting() => state = state.copyWith(printing: false);
+
+  void stopPrintingIfCurrent(int generation) {
+    if (generation == _printGeneration) stopPrinting();
+  }
 
   /// Reset back to the loading state (used by the retry button).
   void resetForRetry() => state = state.copyWith(

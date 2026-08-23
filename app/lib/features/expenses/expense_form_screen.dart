@@ -10,6 +10,9 @@ import 'package:bakery_app/features/expenses/providers/expense_form_notifier.dar
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/data/providers/events_provider.dart';
 import 'package:bakery_app/providers/photo_upload_provider.dart';
+import 'package:bakery_app/providers/form_draft_session_notifier.dart';
+import 'package:bakery_app/shared/models/form_draft_context.dart';
+import 'package:bakery_app/shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/data/providers/staff_provider.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/widgets/upload_progress_indicator.dart';
@@ -21,6 +24,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 // EXEMPT: 300-line screen threshold exceeded because photo upload lifecycle
 // (state, load-existing, post-submit upload) must live in the screen to keep
@@ -38,9 +42,12 @@ class ExpenseFormScreen extends ConsumerStatefulWidget {
 
 class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountCtrl = TextEditingController();
-  final _vendorCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _vendorCtrl;
+  late final TextEditingController _noteCtrl;
+  late final FormDraftContext _draftContext;
+  NotifierProvider<ExpenseFormNotifier, ExpenseFormState> get _provider =>
+      contextualExpenseFormProvider(_draftContext);
 
   @override
   void initState() {
@@ -54,28 +61,56 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       () => ref.read(photoUploadNotifierProvider.notifier).reset(),
     );
     final event = widget.event;
+    _draftContext = FormDraftContext(
+      formType: 'expense',
+      mode: event == null ? FormDraftMode.create : FormDraftMode.edit,
+      entityId: event?.id.toString(),
+    );
+    final editData = event == null ? null : ExpenseEventMapper.fromEvent(event);
+    final formNotifier = ref.read(_provider.notifier);
+    final draft = ref.read(_provider).newDraft;
+    final restore = formNotifier.hasRetainedDraft;
+    _amountCtrl = TextEditingController(
+      text: restore ? draft.amount : editData?.amountVnd.toString() ?? '',
+    );
+    _vendorCtrl = TextEditingController(
+      text: restore ? draft.vendor : editData?.vendor ?? '',
+    );
+    _noteCtrl = TextEditingController(
+      text: restore ? draft.note : editData?.note ?? '',
+    );
+    _amountCtrl.addListener(() {
+      ref.read(_provider.notifier).setAmount(_amountCtrl.text);
+    });
+    _vendorCtrl.addListener(() {
+      ref.read(_provider.notifier).setVendor(_vendorCtrl.text);
+    });
+    _noteCtrl.addListener(() {
+      ref.read(_provider.notifier).setNote(_noteCtrl.text);
+    });
     final staffName = ref.read(loggedByProvider);
     // Defer provider mutations to a microtask because Riverpod disallows
     // provider mutation during widget life-cycle hooks (initState/build).
     Future.microtask(() {
       if (!mounted) return;
-      final notifier = ref.read(expenseFormProvider.notifier);
+      final notifier = ref.read(_provider.notifier);
       if (event == null) {
-        notifier.seed(staffName: staffName);
+        notifier.startNew(staffName: staffName);
         return;
       }
-      notifier.seed(event: event, staffName: staffName);
-      final data = ExpenseEventMapper.fromEvent(event);
+      notifier.startEdit(event: event, staffName: staffName);
+      final data = editData;
       if (data == null) return;
-      _amountCtrl.text = data.amountVnd.toString();
-      notifier
-        ..setCategory(data.category)
-        ..setSubcategory(data.subcategory.isNotEmpty ? data.subcategory : null)
-        ..setPaymentMethod(data.paymentMethod)
-        ..setPaymentSource(data.paymentSource);
-      _vendorCtrl.text = data.vendor;
-      _noteCtrl.text = data.note;
-      notifier.setPaidByName(data.paidByName.isNotEmpty ? data.paidByName : null);
+      notifier.initializeEditFields(
+        amount: data.amountVnd.toString(),
+        vendor: data.vendor,
+        note: data.note,
+        category: data.category,
+        subcategory: data.subcategory.isNotEmpty ? data.subcategory : null,
+        paymentMethod: data.paymentMethod,
+        paymentSource: data.paymentSource,
+        paidByName: data.paidByName.isNotEmpty ? data.paidByName : null,
+      );
     });
     if (event != null) {
       _loadExistingPhotos(event.id);
@@ -86,7 +121,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     try {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
-      if (mounted) ref.read(expenseFormProvider.notifier).addExistingPhotos(photos);
+      if (mounted) {
+        ref.read(_provider.notifier).addExistingPhotos(photos);
+      }
     } catch (e) {
       debugPrint('_loadExistingPhotos failed: $e');
       // Non-fatal: edit form still works without existing photo display.
@@ -103,28 +140,46 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final form = ref.watch(expenseFormProvider);
-    final notifier = ref.read(expenseFormProvider.notifier);
+    final form = ref.watch(_provider);
+    final notifier = ref.read(_provider.notifier);
     final staffAsync = ref.watch(staffListProvider);
-    final staffList = staffAsync.whenOrNull<List<String>>(
+    final staffList =
+        staffAsync.whenOrNull<List<String>>(
           data: (members) =>
               members.where((m) => m.active).map((m) => m.name).toList(),
         ) ??
         const <String>[];
     final vendorSuggestionsAsync = ref.watch(expenseVendorSuggestionsProvider);
-    final vendorSuggestions = vendorSuggestionsAsync.whenOrNull<List<String>>(
+    final vendorSuggestions =
+        vendorSuggestionsAsync.whenOrNull<List<String>>(
           data: (names) => names,
         ) ??
         const <String>[];
     final categoriesAsync = ref.watch(expenseCategoriesProvider);
-    final categoryTree = categoriesAsync.whenOrNull<List<ExpenseCategory>>(
+    final categoryTree =
+        categoriesAsync.whenOrNull<List<ExpenseCategory>>(
           data: (tree) => tree,
         ) ??
         const <ExpenseCategory>[];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(form.editing ? ExpensesLabels.expenseUpdateAction : ExpensesLabels.expenseAddAction),
+        title: Text(
+          widget.event != null
+              ? ExpensesLabels.expenseUpdateAction
+              : ExpensesLabels.expenseAddAction,
+        ),
+        actions: [
+          DiscardFormDraftAction(
+            isDirty: ref
+                .watch(formDraftSessionProvider)
+                .containsKey(_draftContext),
+            onDiscard: () {
+              ref.read(_provider.notifier).clearNewDraft();
+              context.pop(false);
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -145,7 +200,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             selectedPaidByName: form.paidByName,
             eventDateTime: form.eventDateTime,
             loading: form.loading,
-            editing: form.editing,
+            editing: widget.event != null,
             categoryTree: categoryTree,
             subcategory: form.subcategory,
             onSubcategoryChanged: notifier.setSubcategory,
@@ -178,8 +233,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final form = ref.read(expenseFormProvider);
-    final notifier = ref.read(expenseFormProvider.notifier);
+    final form = ref.read(_provider);
+    final notifier = ref.read(_provider.notifier);
     if (form.category == null || form.category!.isEmpty) return;
 
     final loggedBy = ref.read(loggedByProvider);
@@ -208,7 +263,10 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       if (!mounted) return;
       if (form.paymentSource == ExpensesLabels.paymentSourceStaffAdvance &&
           paidByName.isEmpty) {
-        showTopSnackBar(context, ExpensesLabels.expenseStaffNameRequiredForAdvance);
+        showTopSnackBar(
+          context,
+          ExpensesLabels.expenseStaffNameRequiredForAdvance,
+        );
         return;
       }
     }
@@ -227,51 +285,62 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       subcategory: form.subcategory ?? '',
     );
 
+    final submittedDraft = notifier.draftSnapshot;
+    final eventsNotifier = ref.read(eventsProvider.notifier);
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final photoService = ref.read(eventServiceProvider);
+    final selectedPhotos = List<XFile>.of(form.selectedPhotos);
     notifier.setLoading(true);
     try {
       final hasNewPhotos = form.selectedPhotos.isNotEmpty;
-      final upload = ref.read(photoUploadNotifierProvider.notifier);
-      if (form.editing) {
-        await ref
-            .read(eventsProvider.notifier)
-            .updateEvent(
-              id: form.editingId!,
-              summary: _summary(payload),
-              loggedBy: loggedBy,
-              data: ExpenseEventMapper.toDataMap(payload),
-              timestamp: form.eventDateTime,
-            );
-        if (hasNewPhotos && mounted) {
-          await _uploadPhotos(form.editingId!, upload);
+      if (widget.event != null) {
+        await eventsNotifier.updateEvent(
+          id: widget.event!.id,
+          summary: _summary(payload),
+          loggedBy: loggedBy,
+          data: ExpenseEventMapper.toDataMap(payload),
+          timestamp: form.eventDateTime,
+        );
+        if (hasNewPhotos) {
+          await _uploadPhotos(
+            widget.event!.id,
+            upload,
+            photoService,
+            selectedPhotos,
+          );
         }
         if (mounted) showTopSnackBar(context, EventsLabels.eventUpdated);
       } else {
-        final createdEvent = await ref
-            .read(eventsProvider.notifier)
-            .logEvent(
-              summary: _summary(payload),
-              type: expenseType,
-              loggedBy: loggedBy,
-              data: ExpenseEventMapper.toDataMap(payload),
-              timestamp: form.eventDateTime,
-            );
-        if (hasNewPhotos && mounted) {
-          await _uploadPhotos(createdEvent.id, upload);
+        final createdEvent = await eventsNotifier.logEvent(
+          summary: _summary(payload),
+          type: expenseType,
+          loggedBy: loggedBy,
+          data: ExpenseEventMapper.toDataMap(payload),
+          timestamp: form.eventDateTime,
+        );
+        if (hasNewPhotos) {
+          await _uploadPhotos(
+            createdEvent.id,
+            upload,
+            photoService,
+            selectedPhotos,
+          );
         }
         if (mounted) showTopSnackBar(context, EventsLabels.eventLogged);
       }
+      notifier.clearAfterSuccess(submittedDraft, staffName: loggedBy);
       if (mounted) context.pop(true);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(
           context,
-          e is DioException ? (e.message ?? SharedLabels.apiError) : SharedLabels.apiError,
+          e is DioException
+              ? (e.message ?? SharedLabels.apiError)
+              : SharedLabels.apiError,
         );
       }
     } finally {
-      if (mounted) {
-        notifier.setLoading(false);
-      }
+      notifier.setLoading(false);
     }
   }
 
@@ -285,11 +354,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _uploadPhotos(
     int eventId,
     PhotoUploadNotifier upload,
+    EventService service,
+    List<XFile> selectedPhotos,
   ) async {
-    final service = ref.read(eventServiceProvider);
-    final selected = ref.read(expenseFormProvider).selectedPhotos;
     await upload.uploadAll(
-      selected,
+      selectedPhotos,
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
@@ -298,14 +367,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   }
 
   Future<String?> _showPayerConfirmDialog() async {
-    final staffName = ref.read(expenseFormProvider).staffName;
+    final staffName = ref.read(_provider).staffName;
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text(ExpensesLabels.expensePayerConfirmTitle),
-        content: Text(staffName != null && staffName.isNotEmpty
-            ? '${ExpensesLabels.expensePayerConfirmPrompt}\n\n$staffName'
-            : ExpensesLabels.expensePayerConfirmPrompt),
+        content: Text(
+          staffName != null && staffName.isNotEmpty
+              ? '${ExpensesLabels.expensePayerConfirmPrompt}\n\n$staffName'
+              : ExpensesLabels.expensePayerConfirmPrompt,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
@@ -323,9 +394,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           if (staffName != null && staffName.isNotEmpty)
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(staffName),
-              child: Text(
-                '${ExpensesLabels.expensePayerUseStaff}: $staffName',
-              ),
+              child: Text('${ExpensesLabels.expensePayerUseStaff}: $staffName'),
             ),
         ],
       ),
@@ -348,8 +417,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               hintText: ExpensesLabels.expensePayerCustomHint,
               border: OutlineInputBorder(),
             ),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? SharedLabels.fieldRequired
+                : null,
           ),
         ),
         actions: [
@@ -382,7 +452,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   }
 
   String _summary(ExpenseEventData data) {
-    final tail = data.paymentMethod == OrdersLabels.methodDebt && data.vendor.isNotEmpty
+    final tail =
+        data.paymentMethod == OrdersLabels.methodDebt && data.vendor.isNotEmpty
         ? '${data.paymentMethod} • ${data.vendor}'
         : data.paymentMethod;
     return '${ExpensesLabels.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - $tail';
@@ -393,18 +464,18 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      initialDate: ref.read(expenseFormProvider).eventDateTime,
+      initialDate: ref.read(_provider).eventDateTime,
     );
     if (picked == null || !mounted) return;
-    ref.read(expenseFormProvider.notifier).setDate(picked);
+    ref.read(_provider.notifier).setDate(picked);
   }
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(ref.read(expenseFormProvider).eventDateTime),
+      initialTime: TimeOfDay.fromDateTime(ref.read(_provider).eventDateTime),
     );
     if (picked == null || !mounted) return;
-    ref.read(expenseFormProvider.notifier).setTime(picked);
+    ref.read(_provider.notifier).setTime(picked);
   }
 }

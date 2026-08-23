@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/form_draft_session_notifier.dart';
+
 /// Form state for the login screen (DG-404 Phase 4.7).
 ///
 /// Holds the fields previously mutated via `setState` inside
@@ -29,8 +31,9 @@ class LoginFormState {
     return LoginFormState(
       obscurePassword: obscurePassword ?? this.obscurePassword,
       submitting: submitting ?? this.submitting,
-      errorMessage:
-          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
     );
   }
 }
@@ -43,25 +46,27 @@ class LoginFormState {
 /// `setState` is required.
 class LoginFormNotifier extends Notifier<LoginFormState> {
   @override
-  LoginFormState build() => const LoginFormState();
+  LoginFormState build() {
+    ref.watch(formDraftSessionEpochProvider);
+    return const LoginFormState();
+  }
 
   void toggleObscurePassword() =>
       state = state.copyWith(obscurePassword: !state.obscurePassword);
 
-  void startSubmitting() => state = state.copyWith(
-        submitting: true,
-        clearErrorMessage: true,
-      );
+  void startSubmitting() =>
+      state = state.copyWith(submitting: true, clearErrorMessage: true);
 
   void setErrorMessage(String message) =>
       state = state.copyWith(errorMessage: message);
 
-  void setSubmitting(bool value) =>
-      state = state.copyWith(submitting: value);
+  void setSubmitting(bool value) => state = state.copyWith(submitting: value);
+
+  void reset() => state = const LoginFormState();
 }
 
 /// Provider for the login form state. The widget reads this and calls
 /// the notifier's mutators; no `setState` is required.
-final loginFormProvider =
-    NotifierProvider<LoginFormNotifier, LoginFormState>(
-    LoginFormNotifier.new);
+final loginFormProvider = NotifierProvider<LoginFormNotifier, LoginFormState>(
+  LoginFormNotifier.new,
+);

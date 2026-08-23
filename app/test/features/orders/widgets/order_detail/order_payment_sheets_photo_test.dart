@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bakery_app/data/api/api_client.dart'
     show ApiBaseUrlNotifier, apiBaseUrlProvider;
 import 'package:bakery_app/data/api/payment_transaction_service.dart';
@@ -13,6 +15,9 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/features/orders/providers/order_draft_contexts.dart';
+import 'package:bakery_app/features/orders/providers/order_form_operation_notifier.dart';
+import 'package:bakery_app/providers/form_draft_session_notifier.dart';
 
 const _testRef = 'TEST-ORD-PHOTO-UI';
 const _testBaseUrl = 'http://test.local:8000';
@@ -41,6 +46,25 @@ class _FakeTxnPhotoService extends PaymentTransactionService {
   final PaymentTransactionPhoto? photo;
   String? lastAttachTxnId;
   String? lastDetachTxnId;
+  Completer<PaymentTransaction>? updateCompleter;
+
+  @override
+  Future<List<PaymentTransaction>> listTransactions(String orderRef) async => [];
+
+  @override
+  Future<PaymentTransaction> updateTransaction(
+    String orderRef,
+    String txnId, {
+    double? amount,
+    String? type,
+    String? method,
+    String? notes,
+    String? paymentSource,
+    DateTime? createdAt,
+  }) {
+    final completer = updateCompleter;
+    return completer == null ? Future.value(_txn()) : completer.future;
+  }
 
   @override
   Future<PaymentTransactionPhoto?> getTransactionPhoto(
@@ -90,6 +114,52 @@ Widget _wrap(Widget child, PaymentTransactionService service) => ProviderScope(
     );
 
 void main() {
+  testWidgets('edit success after dismissal clears and settles submitted draft', (
+    tester,
+  ) async {
+    final service = _FakeTxnPhotoService(photo: null)
+      ..updateCompleter = Completer<PaymentTransaction>();
+    final container = ProviderContainer(
+      overrides: [
+        apiBaseUrlProvider.overrideWith(_FakeApiBaseUrlNotifier.new),
+        paymentTransactionServiceProvider.overrideWithValue(service),
+      ],
+    );
+    Widget app(Widget child) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: child)),
+      ),
+    );
+
+    await tester.pumpWidget(
+      app(OrderEditPaymentSheet(orderRef: _testRef, txn: _txn())),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '300');
+    final submit = find.widgetWithText(
+      FilledButton,
+      OrdersLabels.editPayment,
+    );
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pump();
+
+    final context = OrderDraftContexts.editPayment(_testRef, 'txn-1');
+    expect(container.read(formDraftSessionProvider), contains(context));
+    expect(container.read(orderFormOperationProvider(context)).busy, isTrue);
+
+    await tester.pumpWidget(app(const SizedBox.shrink()));
+    service.updateCompleter!.complete(_txn());
+    await tester.pumpAndSettle();
+
+    expect(container.read(formDraftSessionProvider), isNot(contains(context)));
+    expect(container.read(orderFormOperationProvider(context)).busy, isFalse);
+    expect(container.read(orderFormOperationProvider(context)).error, isNull);
+    container.dispose();
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   group('OrderEditPaymentSheet photo section (FR3 / AC2)', () {
     testWidgets(
         'no attached photo shows the attach button (AC2 add)', (tester) async {

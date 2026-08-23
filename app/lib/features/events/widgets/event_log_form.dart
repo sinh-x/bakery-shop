@@ -1,12 +1,16 @@
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../data/api/event_service.dart';
 import '../../../data/providers/events_provider.dart';
 import '../../../providers/photo_upload_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../providers/event_log_form_notifier.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -52,13 +56,29 @@ class EventLogForm extends ConsumerStatefulWidget {
 }
 
 class _EventLogFormState extends ConsumerState<EventLogForm> {
-  final _summaryCtrl = TextEditingController();
-  final _customTagCtrl = TextEditingController();
+  late final TextEditingController _summaryCtrl;
+  late final TextEditingController _customTagCtrl;
   final _summaryFocus = FocusNode();
+  static const _draftContext = FormDraftContext(
+    formType: 'event-quick-log',
+    mode: FormDraftMode.create,
+  );
+  NotifierProvider<EventLogFormNotifier, EventLogFormState> get _provider =>
+      contextualEventLogFormProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
+    final draft = ref.read(_provider);
+    _summaryCtrl = TextEditingController(text: draft.summary)
+      ..addListener(
+        () => ref.read(_provider.notifier).setSummary(_summaryCtrl.text),
+      );
+    _customTagCtrl = TextEditingController(text: draft.customTagInput)
+      ..addListener(
+        () =>
+            ref.read(_provider.notifier).setCustomTagInput(_customTagCtrl.text),
+      );
     // Clear any stale upload state from a previous screen navigation
     // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
     // screens that share the global photoUploadNotifierProvider. Deferred
@@ -80,30 +100,42 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
-    final notifier = ref.read(eventLogFormProvider.notifier);
-    final form = ref.read(eventLogFormProvider);
+    final notifier = ref.read(_provider.notifier);
+    final form = ref.read(_provider);
+    final submittedDraft = notifier.draftSnapshot;
+    final eventsNotifier = ref.read(eventsProvider.notifier);
+    final loggedBy = ref.read(loggedByProvider);
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final photoService = ref.read(eventServiceProvider);
+    final selectedPhotos = List<XFile>.of(form.selectedPhotos);
     notifier.setSaving(true);
     try {
-      final loggedBy = ref.read(loggedByProvider);
-      final createdEvent = await ref.read(eventsProvider.notifier).logEvent(
-            summary: summary,
-            type: form.selectedType,
-            tags: form.selectedTags.toList(),
-            loggedBy: loggedBy,
-          );
-      if (form.selectedPhotos.isNotEmpty && mounted) {
-        await _uploadPhotos(createdEvent.id);
+      final createdEvent = await eventsNotifier.logEvent(
+        summary: summary,
+        type: form.selectedType,
+        tags: form.selectedTags.toList(),
+        loggedBy: loggedBy,
+      );
+      if (selectedPhotos.isNotEmpty) {
+        await _uploadPhotos(
+          createdEvent.id,
+          upload,
+          photoService,
+          selectedPhotos,
+        );
       }
+      notifier.clearAfterSuccess(submittedDraft);
       if (mounted) {
         showTopSnackBar(context, EventsLabels.eventLogged);
-        _reset();
+        _summaryCtrl.clear();
+        _summaryFocus.requestFocus();
       }
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) notifier.setSaving(false);
+      notifier.setSaving(false);
     }
   }
 
@@ -114,12 +146,14 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   /// upload reaches a terminal state (FR3 — race condition fix, AC5).
   /// Remaining photos continue after a failure; a snack bar is shown only when
   /// any photo errored.
-  Future<void> _uploadPhotos(int eventId) async {
-    final upload = ref.read(photoUploadNotifierProvider.notifier);
-    final service = ref.read(eventServiceProvider);
-    final form = ref.read(eventLogFormProvider);
+  Future<void> _uploadPhotos(
+    int eventId,
+    PhotoUploadNotifier upload,
+    EventService service,
+    List<XFile> selectedPhotos,
+  ) async {
     await upload.uploadAll(
-      form.selectedPhotos,
+      selectedPhotos,
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
@@ -129,7 +163,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
 
   void _reset() {
     _summaryCtrl.clear();
-    ref.read(eventLogFormProvider.notifier).reset();
+    ref.read(_provider.notifier).reset();
     _summaryFocus.requestFocus();
   }
 
@@ -165,9 +199,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
   }
 
   void _confirmCustomTag() {
-    ref
-        .read(eventLogFormProvider.notifier)
-        .confirmCustomTag(_customTagCtrl.text.trim());
+    ref.read(_provider.notifier).confirmCustomTag(_customTagCtrl.text.trim());
     _customTagCtrl.clear();
   }
 
@@ -176,7 +208,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final loggedBy = ref.watch(loggedByProvider);
-    final form = ref.watch(eventLogFormProvider);
+    final form = ref.watch(_provider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -210,7 +242,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                   ? Colors.orange.shade100
                   : colorScheme.primaryContainer,
               onSelected: (_) =>
-                  ref.read(eventLogFormProvider.notifier).setSelectedType(t.value),
+                  ref.read(_provider.notifier).setSelectedType(t.value),
             );
           }).toList(),
         ),
@@ -225,18 +257,16 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
               (tag) => FilterChip(
                 label: Text(tag.$2),
                 selected: form.selectedTags.contains(tag.$1),
-                onSelected: (v) => ref
-                    .read(eventLogFormProvider.notifier)
-                    .toggleTag(tag.$1, selected: v),
+                onSelected: (v) =>
+                    ref.read(_provider.notifier).toggleTag(tag.$1, selected: v),
               ),
             ),
             ...form.customTags.map(
               (tag) => FilterChip(
                 label: Text(tag),
                 selected: form.selectedTags.contains(tag),
-                onSelected: (v) => ref
-                    .read(eventLogFormProvider.notifier)
-                    .toggleTag(tag, selected: v),
+                onSelected: (v) =>
+                    ref.read(_provider.notifier).toggleTag(tag, selected: v),
               ),
             ),
             if (form.showCustomTagField)
@@ -263,7 +293,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
                 avatar: const Icon(Icons.add, size: 16),
                 label: const Text(EventsLabels.addTag),
                 onPressed: () =>
-                    ref.read(eventLogFormProvider.notifier).showCustomTagField(),
+                    ref.read(_provider.notifier).showCustomTagField(),
               ),
           ],
         ),
@@ -273,7 +303,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         QuickLogPhotoPicker(
           selectedPhotos: form.selectedPhotos,
           onSelectionChanged: (files) =>
-              ref.read(eventLogFormProvider.notifier).setSelectedPhotos(files),
+              ref.read(_provider.notifier).setSelectedPhotos(files),
         ),
         UploadProgressIndicator(
           states: ref.watch(photoUploadNotifierProvider).states,
@@ -285,7 +315,10 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           children: [
             const Icon(Icons.person_outline, size: 18),
             const SizedBox(width: 6),
-            Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
+            Text(
+              '${EventsLabels.loggedBy}: ',
+              style: theme.textTheme.bodyMedium,
+            ),
             Text(
               loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -301,6 +334,13 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
           ],
         ),
         const SizedBox(height: 16),
+
+        DiscardFormDraftAction(
+          isDirty: ref
+              .watch(formDraftSessionProvider)
+              .containsKey(_draftContext),
+          onDiscard: _reset,
+        ),
 
         // Submit button
         FilledButton(

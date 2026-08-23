@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blank_stock_provider.dart';
 import '../../../shared/utils/format_double.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 import '../providers/blank_stock_action_sheet_notifier.dart';
 
@@ -44,12 +46,44 @@ class _BlankStockActionSheet extends ConsumerStatefulWidget {
 class _BlankStockActionSheetState
     extends ConsumerState<_BlankStockActionSheet> {
   final _formKey = GlobalKey<FormState>();
-  final _qtyCtrl = TextEditingController(text: '1');
-  final _producedCtrl = TextEditingController();
-  final _expiryCtrl = TextEditingController();
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _producedCtrl;
+  late final TextEditingController _expiryCtrl;
+
+  FormDraftContext get _draftContext => blankStockActionDraftContext(
+    blankId: widget.summary.blankId,
+    action: widget.action.name,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    final draft = ref.read(blankStockActionSheetProvider(_draftContext));
+    _qtyCtrl = TextEditingController(text: draft.quantity)
+      ..addListener(_persistQuantity);
+    _producedCtrl = TextEditingController(text: draft.producedDate)
+      ..addListener(_persistProducedDate);
+    _expiryCtrl = TextEditingController(text: draft.expiryDate)
+      ..addListener(_persistExpiryDate);
+  }
+
+  void _persistQuantity() => ref
+      .read(blankStockActionSheetProvider(_draftContext).notifier)
+      .setQuantity(_qtyCtrl.text);
+
+  void _persistProducedDate() => ref
+      .read(blankStockActionSheetProvider(_draftContext).notifier)
+      .setProducedDate(_producedCtrl.text);
+
+  void _persistExpiryDate() => ref
+      .read(blankStockActionSheetProvider(_draftContext).notifier)
+      .setExpiryDate(_expiryCtrl.text);
 
   @override
   void dispose() {
+    _qtyCtrl.removeListener(_persistQuantity);
+    _producedCtrl.removeListener(_persistProducedDate);
+    _expiryCtrl.removeListener(_persistExpiryDate);
     _qtyCtrl.dispose();
     _producedCtrl.dispose();
     _expiryCtrl.dispose();
@@ -69,7 +103,11 @@ class _BlankStockActionSheetState
       showTopSnackBar(context, BlanksLabels.messageStockInvalidQuantity);
       return;
     }
-    ref.read(blankStockActionSheetProvider.notifier).setSaving(true);
+    final draftNotifier = ref.read(
+      blankStockActionSheetProvider(_draftContext).notifier,
+    );
+    final submittedDraft = draftNotifier.retainedDraft;
+    draftNotifier.setSaving(true);
     try {
       final notifier = ref.read(blankStockProvider.notifier);
       if (_isProduction) {
@@ -88,13 +126,14 @@ class _BlankStockActionSheetState
           producedDate: _producedCtrl.text.trim(),
         );
       }
+      draftNotifier.completeSuccess(submittedDraft);
       if (mounted) {
         Navigator.of(context).pop();
         showTopSnackBar(context, BlanksLabels.messageStockRecordSuccess);
       }
     } catch (e) {
+      draftNotifier.setSaving(false);
       if (mounted) {
-        ref.read(blankStockActionSheetProvider.notifier).setSaving(false);
         showTopSnackBar(context, BlanksLabels.messageStockRecordFailed);
       }
     }
@@ -102,7 +141,8 @@ class _BlankStockActionSheetState
 
   @override
   Widget build(BuildContext context) {
-    final saving = ref.watch(blankStockActionSheetProvider).saving;
+    final sheetState = ref.watch(blankStockActionSheetProvider(_draftContext));
+    final saving = sheetState.saving;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -123,14 +163,16 @@ class _BlankStockActionSheetState
                 '${widget.summary.name}'
                 '${widget.summary.unit.isNotEmpty ? ' (${widget.summary.unit})' : ''}'
                 ' — ${BlanksLabels.demandStock}: ${formatDouble(widget.summary.stock)}',
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: Colors.grey),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               ),
               const SizedBox(height: 20),
               TextFormField(
                 controller: _qtyCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: BlanksLabels.fieldQuantity,
                   border: OutlineInputBorder(),
@@ -162,13 +204,30 @@ class _BlankStockActionSheetState
                   ),
                 ),
               ],
+              DiscardFormDraftAction(
+                isDirty:
+                    sheetState.quantity != '1' ||
+                    sheetState.producedDate.isNotEmpty ||
+                    sheetState.expiryDate.isNotEmpty,
+                onDiscard: () {
+                  _qtyCtrl.text = '1';
+                  _producedCtrl.clear();
+                  _expiryCtrl.clear();
+                  ref
+                      .read(
+                        blankStockActionSheetProvider(_draftContext).notifier,
+                      )
+                      .clear();
+                },
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed:
-                        saving ? null : () => Navigator.of(context).pop(),
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: const Text(BlanksLabels.actionCancel),
                   ),
                   const SizedBox(width: 8),

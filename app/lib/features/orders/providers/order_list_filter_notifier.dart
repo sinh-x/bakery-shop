@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/date_filter_chips.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Filtered-orders screen search-query state (DG-404 Phase 4.6 / FR2).
 ///
@@ -10,7 +11,10 @@ import '../widgets/date_filter_chips.dart';
 /// [setQuery]/[clearQuery] methods; no `setState` is required.
 class FilteredOrdersSearchNotifier extends Notifier<String> {
   @override
-  String build() => '';
+  String build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) => state = '');
+    return '';
+  }
 
   void setQuery(String value) => state = value;
 
@@ -57,7 +61,13 @@ class OrderHistoryFilterState {
 
 class OrderHistoryFilterNotifier extends Notifier<OrderHistoryFilterState> {
   @override
-  OrderHistoryFilterState build() => const OrderHistoryFilterState();
+  OrderHistoryFilterState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const OrderHistoryFilterState(),
+    );
+    return const OrderHistoryFilterState();
+  }
 
   void setSearchQuery(String value) =>
       state = state.copyWith(searchQuery: value);
@@ -123,7 +133,13 @@ class OrderListFilterState {
 
 class OrderListFilterNotifier extends Notifier<OrderListFilterState> {
   @override
-  OrderListFilterState build() => const OrderListFilterState();
+  OrderListFilterState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const OrderListFilterState(),
+    );
+    return const OrderListFilterState();
+  }
 
   void setStatusFilter(String value) =>
       state = state.copyWith(statusFilter: value);
@@ -151,7 +167,10 @@ final orderListFilterProvider =
 /// counter bump the title watches.
 class OrderListTabRebuildNotifier extends Notifier<int> {
   @override
-  int build() => 0;
+  int build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) => state = 0);
+    return 0;
+  }
 
   void bump() => state++;
 }

@@ -22,8 +22,12 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
   }
   if (item.rutTien) {
     attrs['rut_tien'] = 'true';
-    if (item.cashFee != null) attrs['cash_fee'] = item.cashFee!.toInt().toString();
-    if (item.cashAmount != null) attrs['cash_amount'] = item.cashAmount!.toInt().toString();
+    if (item.cashFee != null) {
+      attrs['cash_fee'] = item.cashFee!.toInt().toString();
+    }
+    if (item.cashAmount != null) {
+      attrs['cash_amount'] = item.cashAmount!.toInt().toString();
+    }
   } else {
     attrs.remove('rut_tien');
     attrs.remove('cash_fee');
@@ -49,9 +53,11 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
 /// Converts a [DraftOrderItem] (wizard Stage 1 working copy) back into a
 /// [PosCartItem], preserving all attributes so the POS cart stays the single
 /// source of truth at submit (DG-218 FR-2, DG-223 FR-3).
-PosCartItem draftItemToCart(DraftOrderItem item) {
-  final useInventory =
-      item.attributes['useInventory']?.toString() != 'false';
+PosCartItem draftItemToCart(
+  DraftOrderItem item, {
+  bool includePendingPhotos = true,
+}) {
+  final useInventory = item.attributes['useInventory']?.toString() != 'false';
   final rutTien = item.attributes['rut_tien']?.toString() == 'true';
   final cashFeeStr = item.attributes['cash_fee']?.toString();
   final cashAmountStr = item.attributes['cash_amount']?.toString();
@@ -90,7 +96,9 @@ PosCartItem draftItemToCart(DraftOrderItem item) {
     selectedChipLabel: _resolveChipLabel(item),
     assignedPrice: item.assignedPrice,
     notes: item.notes,
-    pendingPhotos: List<XFile>.from(item.pendingPhotos),
+    pendingPhotos: includePendingPhotos
+        ? List<XFile>.from(item.pendingPhotos)
+        : const <XFile>[],
     attributes: Map<String, dynamic>.from(item.attributes),
   );
 }

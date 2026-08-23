@@ -10,6 +10,8 @@ import '../section_header.dart';
 import '../stage1_empty_state.dart';
 import '../stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../../providers/order_draft_contexts.dart';
+
 /// Stage 1 of the order edit wizard — product selection (work items + extras).
 ///
 /// FR11/FR14: aligned with create's Stage 1 layout — wrapped in
@@ -42,6 +44,9 @@ class _EditStage1ProductState extends ConsumerState<EditStage1Product> {
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => ProductPickerPage(
+          draftContext: OrderDraftContexts.productPicker(
+            'order-edit:${widget.orderRef}',
+          ),
           selectedItems: _pendingNewItems,
           onChanged: _commitNewItems,
         ),
@@ -52,7 +57,9 @@ class _EditStage1ProductState extends ConsumerState<EditStage1Product> {
   void _commitNewItems() {
     final toAdd = List<DraftOrderItem>.from(_pendingNewItems);
     for (final draft in toAdd) {
-      ref.read(orderWorkItemsProvider(widget.orderRef).notifier).add(
+      ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .add(
             productName: draft.product.name,
             productId: draft.product.productCode,
             quantity: draft.quantity,

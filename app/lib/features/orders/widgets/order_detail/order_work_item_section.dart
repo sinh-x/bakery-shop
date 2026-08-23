@@ -50,13 +50,14 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
       reason = r;
     }
 
-    ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(true);
+    final sectionNotifier = ref.read(orderWorkItemSectionProvider.notifier);
+    final workItems = ref.read(orderWorkItemsProvider(widget.orderRef).notifier);
+    final orderDetail = ref.read(orderDetailProvider(widget.orderRef).notifier);
+    sectionNotifier.setTransitioning(true);
     try {
-      await ref
-          .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .transitionStatus(item.id, targetStatus, reason: reason);
+      await workItems.transitionStatus(item.id, targetStatus, reason: reason);
       // Refresh order detail to pick up server-synced order status
-      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+      orderDetail.refresh();
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.workItemStatusChanged);
       }
@@ -72,7 +73,7 @@ class _OrderWorkItemSectionState extends ConsumerState<OrderWorkItemSection> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(orderWorkItemSectionProvider.notifier).setTransitioning(false);
+      sectionNotifier.setTransitioning(false);
     }
   }
 
