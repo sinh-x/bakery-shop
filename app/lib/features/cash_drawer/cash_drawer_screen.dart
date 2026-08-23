@@ -9,6 +9,8 @@ import '../../data/models/cash_drawer.dart';
 import '../../data/providers/cash_drawer_provider.dart';
 import '../../data/providers/staff_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../providers/form_draft_session_notifier.dart';
+import 'providers/cash_drawer_selector_notifier.dart';
 import 'package:bakery_app/shared/labels/cash_drawer.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/cash_drawer_action_dialogs.dart';
@@ -24,13 +26,15 @@ import 'widgets/cash_drawer_transaction_list.dart';
 /// Sync state per §4 of docs/flutter-coding-standards.md → `Notifier<bool>`.
 class _CashDrawerMutationNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() {
+    ref.watch(formDraftSessionEpochProvider);
+    return false;
+  }
 
-  Future<void> run(
+  Future<bool> run(
     BuildContext context,
     Future<CashDrawer> Function() action,
     String successMessage,
-    WidgetRef ref,
   ) async {
     state = true;
     try {
@@ -46,21 +50,25 @@ class _CashDrawerMutationNotifier extends Notifier<bool> {
           ? null
           : int.tryParse(activeDrawer.id);
       if (activeDrawerId != null) {
-        ref.invalidate(cashDrawerTransactionsProvider(
-          CashDrawerTransactionsFilter(drawerId: activeDrawerId),
-        ));
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMessage)),
+        ref.invalidate(
+          cashDrawerTransactionsProvider(
+            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+          ),
         );
       }
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+      return true;
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${SharedLabels.apiError}: $e')));
       }
+      return false;
     } finally {
       state = false;
     }
@@ -69,8 +77,8 @@ class _CashDrawerMutationNotifier extends Notifier<bool> {
 
 final _mutationInProgressProvider =
     NotifierProvider<_CashDrawerMutationNotifier, bool>(
-  _CashDrawerMutationNotifier.new,
-);
+      _CashDrawerMutationNotifier.new,
+    );
 
 class CashDrawerScreen extends ConsumerStatefulWidget {
   const CashDrawerScreen({super.key});
@@ -103,7 +111,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // TabBar's enabled state per-tab.
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) return;
-      if (_tabController.index == _transactionsTabIndex && !_transactionsTabEnabled) {
+      if (_tabController.index == _transactionsTabIndex &&
+          !_transactionsTabEnabled) {
         // Defer the snap-back so the TabBar finishes its current notification
         // round-trip before we mutate the controller.
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,19 +136,18 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // transaction page so the breakdown card on the status tab refreshes
     // within 30 seconds of a new transaction — reusing the same polling
     // cycle (no extra API call beyond the existing transaction fetch).
-    _statusPollTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) {
-        if (!mounted) return;
-        ref.invalidate(cashDrawerStatusProvider);
-        final activeDrawerId = _activeDrawerId;
-        if (activeDrawerId != null) {
-          ref.invalidate(cashDrawerTransactionsProvider(
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      ref.invalidate(cashDrawerStatusProvider);
+      final activeDrawerId = _activeDrawerId;
+      if (activeDrawerId != null) {
+        ref.invalidate(
+          cashDrawerTransactionsProvider(
             CashDrawerTransactionsFilter(drawerId: activeDrawerId),
-          ));
-        }
-      },
-    );
+          ),
+        );
+      }
+    });
   }
 
   /// Whether the "Chi tiết giao dịch" tab is currently enabled (FR3): only
@@ -177,11 +185,13 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
   @override
   Widget build(BuildContext context) {
     final statusAsync = ref.watch(cashDrawerStatusProvider);
-    final historyAsync =
-        ref.watch(cashDrawerHistoryProvider(const CashDrawerHistoryFilter()));
+    final historyAsync = ref.watch(
+      cashDrawerHistoryProvider(const CashDrawerHistoryFilter()),
+    );
     final mutating = ref.watch(_mutationInProgressProvider);
-    final accountingBalance1101Async =
-        ref.watch(cashDrawerAccountingBalance1101Provider);
+    final accountingBalance1101Async = ref.watch(
+      cashDrawerAccountingBalance1101Provider,
+    );
     final previousCloseAsync = ref.watch(cashDrawerPreviousCloseProvider);
 
     // DG-343 Phase 3 FR3: the "Chi tiết giao dịch" tab is disabled (greyed
@@ -197,9 +207,11 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // transaction tab would fetch.
     final transactionsResponseAsync = activeDrawerId == null
         ? null
-        : ref.watch(cashDrawerTransactionsProvider(
-            CashDrawerTransactionsFilter(drawerId: activeDrawerId),
-          ));
+        : ref.watch(
+            cashDrawerTransactionsProvider(
+              CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+            ),
+          );
 
     return Scaffold(
       appBar: AppBar(
@@ -214,9 +226,11 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
               // DG-343 Phase 3 FR3: refresh the active drawer's transactions
               // too so the manual refresh button updates both views.
               if (activeDrawerId != null) {
-                ref.invalidate(cashDrawerTransactionsProvider(
-                  CashDrawerTransactionsFilter(drawerId: activeDrawerId),
-                ));
+                ref.invalidate(
+                  cashDrawerTransactionsProvider(
+                    CashDrawerTransactionsFilter(drawerId: activeDrawerId),
+                  ),
+                );
               }
             },
           ),
@@ -235,11 +249,16 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
               icon: Icon(Icons.point_of_sale),
               text: CashDrawerLabels.cashDrawerStatusOpen,
             ),
-            const Tab(icon: Icon(Icons.history), text: CashDrawerLabels.cashDrawerHistory),
+            const Tab(
+              icon: Icon(Icons.history),
+              text: CashDrawerLabels.cashDrawerHistory,
+            ),
             Tab(
               icon: Icon(
                 Icons.receipt_long,
-                color: transactionsEnabled ? null : Theme.of(context).disabledColor,
+                color: transactionsEnabled
+                    ? null
+                    : Theme.of(context).disabledColor,
               ),
               text: CashDrawerLabels.cashDrawerTransactionsTab,
             ),
@@ -290,7 +309,8 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     if (id == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => CashDrawerDrawerTransactionsScreen(drawer: drawer, drawerId: id),
+        builder: (_) =>
+            CashDrawerDrawerTransactionsScreen(drawer: drawer, drawerId: id),
       ),
     );
   }
@@ -313,8 +333,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
       previousClose = null;
     }
     try {
-      accountingBalance1101 =
-          await ref.read(cashDrawerAccountingBalance1101Provider.future);
+      accountingBalance1101 = await ref.read(
+        cashDrawerAccountingBalance1101Provider.future,
+      );
     } on Exception catch (e, st) {
       debugPrint('cashDrawerAccountingBalance1101Provider failed: $e\n$st');
       // CQ-4: invalidate the failed async provider so the cached error does
@@ -348,7 +369,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
 
     while (true) {
       try {
-        await ref.read(cashDrawerServiceProvider).openDrawer(
+        await ref
+            .read(cashDrawerServiceProvider)
+            .openDrawer(
               openingBalance: result.amount,
               note: result.note,
               carryOverConfirmed: carryOverConfirmed,
@@ -401,9 +424,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
             : 'equity_loss';
       } catch (e) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${SharedLabels.apiError}: $e')));
         return;
       }
     }
@@ -425,25 +448,38 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // Phase 4.1 F5: show the current expected balance as helper text so the
     // owner knows how much is already in the drawer.
     final drawer = ref.read(cashDrawerStatusProvider).value;
+    final draftContext = cashDrawerActionContext(
+      drawer?.id ?? 'active',
+      'cash-in',
+    );
     final expectedBalance = drawer?.expectedBalance ?? 0;
     final result = await showCashInDialog(
       context,
       ref,
       staff: staff,
       expectedBalance: expectedBalance,
+      drawerId: drawer?.id ?? 'active',
     );
     if (result == null || !context.mounted) return;
-    await ref.read(_mutationInProgressProvider.notifier).run(
-          context,
-          () => ref.read(cashDrawerServiceProvider).cashIn(
-                amount: result.amount,
-                note: result.note,
-                source: result.source ?? 'equity',
-                staffName: result.staffName,
-              ),
-          CashDrawerLabels.cashDrawerCashInSuccess,
-          ref,
-        );
+    final operation = ref.read(_mutationInProgressProvider.notifier);
+    final service = ref.read(cashDrawerServiceProvider);
+    final registry = ref.read(formDraftSessionProvider.notifier);
+    final submittedDraft =
+        ref.read(formDraftSessionProvider)[draftContext]
+            as CashDrawerSelectorState?;
+    final succeeded = await operation.run(
+      context,
+      () => service.cashIn(
+        amount: result.amount,
+        note: result.note,
+        source: result.source ?? 'equity',
+        staffName: result.staffName,
+      ),
+      CashDrawerLabels.cashDrawerCashInSuccess,
+    );
+    if (succeeded && submittedDraft != null) {
+      registry.clearDraftIfUnchanged(draftContext, submittedDraft);
+    }
   }
 
   Future<void> _handleCashOut(BuildContext context) async {
@@ -451,25 +487,38 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
     // Phase 4.1 F6: show the current expected balance as helper text so the
     // owner knows how much they can withdraw.
     final drawer = ref.read(cashDrawerStatusProvider).value;
+    final draftContext = cashDrawerActionContext(
+      drawer?.id ?? 'active',
+      'cash-out',
+    );
     final expectedBalance = drawer?.expectedBalance ?? 0;
     final result = await showCashOutDialog(
       context,
       ref,
       staff: staff,
       expectedBalance: expectedBalance,
+      drawerId: drawer?.id ?? 'active',
     );
     if (result == null || !context.mounted) return;
-    await ref.read(_mutationInProgressProvider.notifier).run(
-          context,
-          () => ref.read(cashDrawerServiceProvider).cashOut(
-                amount: result.amount,
-                note: result.note,
-                destination: result.destination ?? 'owner',
-                staffName: result.staffName,
-              ),
-          CashDrawerLabels.cashDrawerCashOutSuccess,
-          ref,
-        );
+    final operation = ref.read(_mutationInProgressProvider.notifier);
+    final service = ref.read(cashDrawerServiceProvider);
+    final registry = ref.read(formDraftSessionProvider.notifier);
+    final submittedDraft =
+        ref.read(formDraftSessionProvider)[draftContext]
+            as CashDrawerSelectorState?;
+    final succeeded = await operation.run(
+      context,
+      () => service.cashOut(
+        amount: result.amount,
+        note: result.note,
+        destination: result.destination ?? 'owner',
+        staffName: result.staffName,
+      ),
+      CashDrawerLabels.cashDrawerCashOutSuccess,
+    );
+    if (succeeded && submittedDraft != null) {
+      registry.clearDraftIfUnchanged(draftContext, submittedDraft);
+    }
   }
 
   Future<void> _handleClose(BuildContext context) async {
@@ -513,7 +562,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
         ref.invalidate(cashDrawerPreviousCloseProvider);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text(CashDrawerLabels.cashDrawerCloseSuccess)),
+            const SnackBar(
+              content: Text(CashDrawerLabels.cashDrawerCloseSuccess),
+            ),
           );
         }
         return;
@@ -545,9 +596,9 @@ class _CashDrawerScreenState extends ConsumerState<CashDrawerScreen>
             : 'equity_loss';
       } catch (e) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${SharedLabels.apiError}: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${SharedLabels.apiError}: $e')));
         return;
       }
     }

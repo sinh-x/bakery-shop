@@ -1,14 +1,18 @@
-import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel;
+import 'package:bakery_app/shared/utils.dart'
+    show formatVND, paymentMethodLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_models.dart';
 import '../../../providers/reconciliation_provider.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../providers/reconciliation_sell_waste_modal_notifier.dart';
 import 'reconciliation_shared_widgets.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
+
 /// Opens the reconciliation sale modal bottom sheet for a single product
 /// option.
 ///
@@ -33,8 +37,15 @@ Future<bool?> showReconciliationSaleModal(
 }) {
   final editingRow =
       editingRowIndex == null || editingRowIndex >= saleRows.length
-          ? null
-          : saleRows[editingRowIndex];
+      ? null
+      : saleRows[editingRowIndex];
+  final draftContext = reconciliationActionDraftContext(
+    productId: product.productId,
+    optionKey: optionKey,
+    action: 'sale',
+    variantId: editingRowIndex == null ? 'add' : 'edit:$editingRowIndex',
+  );
+  final providerContainer = ProviderScope.containerOf(context);
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -50,9 +61,14 @@ Future<bool?> showReconciliationSaleModal(
       notifier: notifier,
       editingRowIndex: editingRowIndex,
       initialQty: editingRow?.quantity ?? 0,
-      initialUnitPrice: editingRow?.unitPrice ?? option.normalizedPrice.toDouble(),
+      initialUnitPrice:
+          editingRow?.unitPrice ?? option.normalizedPrice.toDouble(),
       initialPaymentMethod: editingRow?.paymentMethod,
     ),
+  ).whenComplete(
+    () => providerContainer
+        .read(reconciliationSellWasteModalProvider(draftContext).notifier)
+        .settleTransient(),
   );
 }
 
@@ -77,6 +93,12 @@ Future<bool?> showReconciliationWasteModal(
   required String wasteReason,
   required ReconciliationNotifier notifier,
 }) {
+  final draftContext = reconciliationActionDraftContext(
+    productId: product.productId,
+    optionKey: optionKey,
+    action: 'waste',
+  );
+  final providerContainer = ProviderScope.containerOf(context);
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -91,6 +113,10 @@ Future<bool?> showReconciliationWasteModal(
       initialWasteReason: wasteReason,
       notifier: notifier,
     ),
+  ).whenComplete(
+    () => providerContainer
+        .read(reconciliationSellWasteModalProvider(draftContext).notifier)
+        .settleTransient(),
   );
 }
 
@@ -134,26 +160,56 @@ class _ReconciliationSaleModalContentState
   late final TextEditingController _priceController;
   final FocusNode _priceFocusNode = FocusNode();
 
+  bool get _isEdit => widget.editingRowIndex != null;
+
+  FormDraftContext get _draftContext => reconciliationActionDraftContext(
+    productId: widget.product.productId,
+    optionKey: widget.optionKey,
+    action: 'sale',
+    variantId: _isEdit ? 'edit:${widget.editingRowIndex}' : 'add',
+  );
+
   @override
   void initState() {
     super.initState();
-    _qtyController = TextEditingController(text: '${widget.initialQty}');
-    _priceController = TextEditingController(
-      text: reconciliationPriceToText(widget.initialUnitPrice),
+    final draft = ref.read(reconciliationSellWasteModalProvider(_draftContext));
+    _qtyController = TextEditingController(
+      text: draft.initialized ? draft.quantity : '${widget.initialQty}',
     );
+    _priceController = TextEditingController(
+      text: draft.initialized
+          ? draft.unitPrice
+          : reconciliationPriceToText(widget.initialUnitPrice),
+    );
+    _qtyController.addListener(_persistQuantity);
+    _priceController.addListener(_persistUnitPrice);
     final seedMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
     // Deferred to a microtask so we don't mutate providers during the
     // widget-tree build phase (DG-404 Phase 4.7).
     Future.microtask(() {
       if (!mounted) return;
       ref
-          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
-          .seedPaymentMethod(seedMethod);
+          .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+          .initializeSale(
+            quantity: _qtyController.text,
+            unitPrice: _priceController.text,
+            method: seedMethod,
+          );
     });
   }
 
+  void _persistQuantity() => ref
+      .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+      .setQuantity(_qtyController.text);
+
+  void _persistUnitPrice() => ref
+      .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+      .setUnitPrice(_priceController.text);
+
   @override
   void dispose() {
+    _qtyController.removeListener(_persistQuantity);
+    _priceController.removeListener(_persistUnitPrice);
     _qtyController.dispose();
     _priceController.dispose();
     _priceFocusNode.dispose();
@@ -169,18 +225,21 @@ class _ReconciliationSaleModalContentState
 
   void _submit() {
     final editingIndex = widget.editingRowIndex;
-    final modalState =
-        ref.read(reconciliationSellWasteModalProvider(widget.optionKey));
+    final modalState = ref.read(
+      reconciliationSellWasteModalProvider(_draftContext),
+    );
     final paymentMethod = modalState.paymentMethod;
     if (editingIndex == null) {
       if (_qty <= 0) {
+        ref
+            .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+            .clear();
         Navigator.of(context).pop(true);
         return;
       }
       if (_qty > 0 && paymentMethod == null) {
         ref
-            .read(reconciliationSellWasteModalProvider(widget.optionKey)
-                .notifier)
+            .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
             .setPaymentMethodError(true);
         return;
       }
@@ -189,7 +248,9 @@ class _ReconciliationSaleModalContentState
         defaultUnitPrice: widget.option.normalizedPrice,
       );
       final rowIndex =
-          (ref.read(reconciliationProvider).saleRowsByOption[widget.optionKey] ??
+          (ref
+                      .read(reconciliationProvider)
+                      .saleRowsByOption[widget.optionKey] ??
                   const <ReconciliationSaleRowInput>[])
               .length -
           1;
@@ -219,6 +280,9 @@ class _ReconciliationSaleModalContentState
         paymentMethod,
       );
     }
+    ref
+        .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+        .clear();
     Navigator.of(context).pop(true);
   }
 
@@ -236,7 +300,9 @@ class _ReconciliationSaleModalContentState
     final variance = widget.option.expectedQty - counted - saleQty - waste;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -268,6 +334,41 @@ class _ReconciliationSaleModalContentState
                 _buildExistingSaleRows(context, saleRows),
               const SizedBox(height: 16),
               _buildSaleForm(context),
+              Consumer(
+                builder: (context, ref, _) {
+                  final draft = ref.watch(
+                    reconciliationSellWasteModalProvider(_draftContext),
+                  );
+                  return DiscardFormDraftAction(
+                    isDirty:
+                        draft.initialized &&
+                        (draft.quantity != draft.initialQuantity ||
+                            draft.unitPrice != draft.initialUnitPrice ||
+                            draft.paymentMethod != draft.initialPaymentMethod),
+                    onDiscard: () {
+                      _qtyController.text = '${widget.initialQty}';
+                      _priceController.text = reconciliationPriceToText(
+                        widget.initialUnitPrice,
+                      );
+                      ref
+                          .read(
+                            reconciliationSellWasteModalProvider(
+                              _draftContext,
+                            ).notifier,
+                          )
+                          .discardSale(
+                            quantity: '${widget.initialQty}',
+                            unitPrice: reconciliationPriceToText(
+                              widget.initialUnitPrice,
+                            ),
+                            paymentMethod:
+                                widget.initialPaymentMethod ??
+                                kPaymentMethodCash,
+                          );
+                    },
+                  );
+                },
+              ),
               const SizedBox(height: 16),
               buildReconciliationModalActions(context, onSubmit: _submit),
             ],
@@ -279,7 +380,9 @@ class _ReconciliationSaleModalContentState
 
   Widget _buildTitle(BuildContext context) {
     return Text(
-      widget.editingRowIndex == null ? OrdersLabels.banHang : '${OrdersLabels.banHang} - ${StockLabels.sua}',
+      widget.editingRowIndex == null
+          ? OrdersLabels.banHang
+          : '${OrdersLabels.banHang} - ${StockLabels.sua}',
       style: Theme.of(context).textTheme.titleLarge,
       textAlign: TextAlign.center,
     );
@@ -310,10 +413,9 @@ class _ReconciliationSaleModalContentState
                 children: [
                   Text(
                     '${StockLabels.dongBan} ${rowIndex + 1}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -342,8 +444,11 @@ class _ReconciliationSaleModalContentState
             key: ValueKey('${widget.optionKey}-sale-row-$rowIndex'),
             rowIndex: rowIndex,
             row: saleRows[rowIndex],
-            onQtyChanged: (value) =>
-                widget.notifier.setSaleRowQty(widget.optionKey, rowIndex, value),
+            onQtyChanged: (value) => widget.notifier.setSaleRowQty(
+              widget.optionKey,
+              rowIndex,
+              value,
+            ),
             onPriceChanged: (value) => widget.notifier.setSaleRowUnitPrice(
               widget.optionKey,
               rowIndex,
@@ -362,8 +467,9 @@ class _ReconciliationSaleModalContentState
   }
 
   Widget _buildSaleForm(BuildContext context) {
-    final modalState =
-        ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
+    final modalState = ref.watch(
+      reconciliationSellWasteModalProvider(_draftContext),
+    );
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -404,17 +510,23 @@ class _ReconciliationSaleModalContentState
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
+            key: ValueKey(
+              'reconciliation-payment-${widget.optionKey}-${modalState.paymentMethod}',
+            ),
             initialValue: modalState.paymentMethod,
             decoration: InputDecoration(
               labelText: StockLabels.phuongThucThanhToan,
               border: const OutlineInputBorder(),
               isDense: true,
-              errorText: modalState.paymentMethodError ? StockLabels.chonPhuongThucThanhToan : null,
+              errorText: modalState.paymentMethodError
+                  ? StockLabels.chonPhuongThucThanhToan
+                  : null,
             ),
             items: kReconciliationPaymentMethodItems,
             onChanged: (value) => ref
-                .read(reconciliationSellWasteModalProvider(widget.optionKey)
-                    .notifier)
+                .read(
+                  reconciliationSellWasteModalProvider(_draftContext).notifier,
+                )
                 .setPaymentMethod(value),
           ),
         ],
@@ -454,20 +566,48 @@ class _ReconciliationWasteModalContentState
   late final TextEditingController _wasteController;
   late final TextEditingController _wasteReasonController;
 
+  FormDraftContext get _draftContext => reconciliationActionDraftContext(
+    productId: widget.product.productId,
+    optionKey: widget.optionKey,
+    action: 'waste',
+  );
+
   @override
   void initState() {
     super.initState();
-    _wasteController = TextEditingController(text: '${widget.initialWaste}');
+    final draft = ref.read(reconciliationSellWasteModalProvider(_draftContext));
+    _wasteController = TextEditingController(
+      text: draft.initialized ? draft.quantity : '${widget.initialWaste}',
+    );
     _wasteReasonController = TextEditingController(
-      text: widget.initialWasteReason,
+      text: draft.initialized ? draft.wasteReason : widget.initialWasteReason,
     );
     _wasteController.addListener(_onWasteQtyChanged);
+    _wasteController.addListener(_persistQuantity);
+    _wasteReasonController.addListener(_persistWasteReason);
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+          .initializeWaste(
+            quantity: _wasteController.text,
+            reason: _wasteReasonController.text,
+          );
+    });
   }
+
+  void _persistQuantity() => ref
+      .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+      .setQuantity(_wasteController.text);
+
+  void _persistWasteReason() => ref
+      .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+      .setWasteReason(_wasteReasonController.text);
 
   void _onWasteQtyChanged() {
     if (mounted) {
       ref
-          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
           .rebuild();
     }
   }
@@ -475,6 +615,8 @@ class _ReconciliationWasteModalContentState
   @override
   void dispose() {
     _wasteController.removeListener(_onWasteQtyChanged);
+    _wasteController.removeListener(_persistQuantity);
+    _wasteReasonController.removeListener(_persistWasteReason);
     _wasteController.dispose();
     _wasteReasonController.dispose();
     super.dispose();
@@ -485,7 +627,7 @@ class _ReconciliationWasteModalContentState
   void _submit() {
     if (_qty > 0 && _wasteReasonController.text.trim().isEmpty) {
       ref
-          .read(reconciliationSellWasteModalProvider(widget.optionKey).notifier)
+          .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
           .setWasteReasonError(true);
       return;
     }
@@ -494,6 +636,9 @@ class _ReconciliationWasteModalContentState
       widget.optionKey,
       _wasteReasonController.text,
     );
+    ref
+        .read(reconciliationSellWasteModalProvider(_draftContext).notifier)
+        .clear();
     Navigator.of(context).pop(true);
   }
 
@@ -503,7 +648,9 @@ class _ReconciliationWasteModalContentState
     // Watch the modal form state so rebuilds triggered by the
     // waste-qty controller listener (via `rebuild()`) refresh the
     // conditional reason field, and so `wasteReasonError` updates.
-    ref.watch(reconciliationSellWasteModalProvider(widget.optionKey));
+    final modalDraft = ref.watch(
+      reconciliationSellWasteModalProvider(_draftContext),
+    );
     final counted =
         state.countedQtyByOption[widget.optionKey] ?? widget.initialCounted;
     final saleRows =
@@ -511,14 +658,17 @@ class _ReconciliationWasteModalContentState
     final waste =
         state.wasteQtyByOption[widget.optionKey] ?? widget.initialWaste;
     final wasteReason =
-        state.wasteReasonByOption[widget.optionKey] ?? widget.initialWasteReason;
+        state.wasteReasonByOption[widget.optionKey] ??
+        widget.initialWasteReason;
     final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
     final missing = widget.option.expectedQty - counted;
     final variance = widget.option.expectedQty - counted - saleQty - waste;
 
     final localQty = _qty;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -549,6 +699,27 @@ class _ReconciliationWasteModalContentState
               _buildExistingWaste(context, waste, wasteReason),
               const SizedBox(height: 16),
               _buildWasteForm(context, localQty),
+              DiscardFormDraftAction(
+                isDirty:
+                    modalDraft.initialized &&
+                    (modalDraft.quantity != modalDraft.initialQuantity ||
+                        modalDraft.wasteReason !=
+                            modalDraft.initialWasteReason),
+                onDiscard: () {
+                  _wasteController.text = '${widget.initialWaste}';
+                  _wasteReasonController.text = widget.initialWasteReason;
+                  ref
+                      .read(
+                        reconciliationSellWasteModalProvider(
+                          _draftContext,
+                        ).notifier,
+                      )
+                      .discardWaste(
+                        quantity: '${widget.initialWaste}',
+                        reason: widget.initialWasteReason,
+                      );
+                },
+              ),
               const SizedBox(height: 16),
               buildReconciliationModalActions(context, onSubmit: _submit),
             ],
@@ -566,7 +737,11 @@ class _ReconciliationWasteModalContentState
     );
   }
 
-  Widget _buildExistingWaste(BuildContext context, int waste, String wasteReason) {
+  Widget _buildExistingWaste(
+    BuildContext context,
+    int waste,
+    String wasteReason,
+  ) {
     if (waste <= 0 && wasteReason.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -625,23 +800,26 @@ class _ReconciliationWasteModalContentState
               decoration: InputDecoration(
                 labelText: StockLabels.lyDoHaoHut,
                 border: const OutlineInputBorder(),
-                errorText: ref
-                            .watch(reconciliationSellWasteModalProvider(
-                                widget.optionKey))
-                            .wasteReasonError
-                        ? StockLabels.lyDoRequired
-                        : null,
+                errorText:
+                    ref
+                        .watch(
+                          reconciliationSellWasteModalProvider(_draftContext),
+                        )
+                        .wasteReasonError
+                    ? StockLabels.lyDoRequired
+                    : null,
               ),
               controller: _wasteReasonController,
               onChanged: (_) {
                 if (ref
-                    .read(reconciliationSellWasteModalProvider(
-                        widget.optionKey))
+                    .read(reconciliationSellWasteModalProvider(_draftContext))
                     .wasteReasonError) {
                   ref
-                      .read(reconciliationSellWasteModalProvider(
-                              widget.optionKey)
-                          .notifier)
+                      .read(
+                        reconciliationSellWasteModalProvider(
+                          _draftContext,
+                        ).notifier,
+                      )
                       .clearWasteReasonError();
                 }
               },
@@ -651,7 +829,6 @@ class _ReconciliationWasteModalContentState
       ),
     );
   }
-
 }
 
 Widget _buildSummaryChips(
@@ -667,14 +844,20 @@ Widget _buildSummaryChips(
     spacing: 6,
     runSpacing: 6,
     children: [
-      ReconciliationSummaryChip(label: StockLabels.tonDuKien, value: expectedQty),
+      ReconciliationSummaryChip(
+        label: StockLabels.tonDuKien,
+        value: expectedQty,
+      ),
       ReconciliationSummaryChip(label: StockLabels.tonDaDem, value: counted),
       ReconciliationSummaryChip(
         label: StockLabels.soLuongThieu,
         value: missing < 0 ? 0 : missing,
       ),
       ReconciliationSummaryChip(label: StockLabels.soLuongBan, value: saleQty),
-      ReconciliationSummaryChip(label: StockLabels.soLuongHaoHut, value: wasteQty),
+      ReconciliationSummaryChip(
+        label: StockLabels.soLuongHaoHut,
+        value: wasteQty,
+      ),
       ReconciliationVarianceChip(variance: variance),
     ],
   );

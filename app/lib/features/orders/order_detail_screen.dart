@@ -1,4 +1,5 @@
-import 'package:bakery_app/shared/utils.dart' show showTopSnackBar, validTransitions;
+import 'package:bakery_app/shared/utils.dart'
+    show showTopSnackBar, validTransitions;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,7 @@ import 'widgets/order_detail/order_status_banner.dart';
 import 'widgets/order_detail/order_transaction_detail_sheet.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 class OrderDetailScreen extends ConsumerStatefulWidget {
   const OrderDetailScreen({super.key, required this.orderRef});
 
@@ -93,12 +95,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       if (r == null || !mounted) return;
       reason = r;
     }
-    ref.read(orderDetailScreenProvider.notifier).setTransitioning(true);
+    final screenNotifier = ref.read(orderDetailScreenProvider.notifier);
+    final orderDetail = ref.read(orderDetailProvider(order.orderRef).notifier);
+    final workItems = ref.read(orderWorkItemsProvider(order.orderRef).notifier);
+    screenNotifier.setTransitioning(true);
     try {
-      await ref
-          .read(orderDetailProvider(order.orderRef).notifier)
-          .transitionTo(targetStatus, reason: reason);
-      ref.read(orderWorkItemsProvider(order.orderRef).notifier).refresh();
+      await orderDetail.transitionTo(targetStatus, reason: reason);
+      workItems.refresh();
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.orderStatusUpdated);
       }
@@ -128,10 +131,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         return;
       }
       if (mounted) {
-        showTopSnackBar(context, '${SharedLabels.apiError}: ${normalized.message}');
+        showTopSnackBar(
+          context,
+          '${SharedLabels.apiError}: ${normalized.message}',
+        );
       }
     } finally {
-      if (mounted) ref.read(orderDetailScreenProvider.notifier).setTransitioning(false);
+      screenNotifier.setTransitioning(false);
     }
   }
 
@@ -247,17 +253,21 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           activeOrderStatuses.contains(order.status)) {
         if (order.isAssigned) {
           if (staff.isAdmin || order.isClaimedBy(staff.staffIdAsString)) {
-            items.add(const PopupMenuItem<String>(
-              value: 'unclaim',
-              child: Text(OrdersLabels.deliveryUnclaimButton),
-            ));
+            items.add(
+              const PopupMenuItem<String>(
+                value: 'unclaim',
+                child: Text(OrdersLabels.deliveryUnclaimButton),
+              ),
+            );
           }
         } else {
-          items.add(PopupMenuItem<String>(
-            value: 'claim',
-            enabled: !isClaiming,
-            child: const Text(OrdersLabels.deliveryClaimButton),
-          ));
+          items.add(
+            PopupMenuItem<String>(
+              value: 'claim',
+              enabled: !isClaiming,
+              child: const Text(OrdersLabels.deliveryClaimButton),
+            ),
+          );
         }
       }
     }
@@ -269,13 +279,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     BuildContext context,
     WidgetRef ref,
     String value,
-  ) =>
-      handleDeliveryClaimAction(
-        context,
-        ref,
-        widget.orderRef,
-        isClaim: value == 'claim',
-      );
+  ) => handleDeliveryClaimAction(
+    context,
+    ref,
+    widget.orderRef,
+    isClaim: value == 'claim',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -302,11 +311,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: SharedLabels.printReceipt,
-            onPressed: () => showOrderReceiptTypeSelector(
-              context,
-              ref,
-              widget.orderRef,
-            ),
+            onPressed: () =>
+                showOrderReceiptTypeSelector(context, ref, widget.orderRef),
           ),
           AppBarOverflowMenu(
             items: buildMenuItems(
@@ -385,27 +391,30 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
             orderPaymentTransactionsProvider(order.orderRef),
           );
           final txns = txnsAsync.value ?? [];
-          final amountPaid =
-              txnsAsync.hasValue ? computePaid(txns) : order.amountPaid;
+          final amountPaid = txnsAsync.hasValue
+              ? computePaid(txns)
+              : order.amountPaid;
           final remaining = order.totalPrice - amountPaid;
           // NFR1: parent fetches order photos once and forwards the
           // chuyen-khoan tagged subset to the Transactions tab — no extra
           // network fetch on tab switch (DG-364 Phase 4.2 / FR1 / AC1).
           final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
           final transferPhotos = (photosAsync.value ?? const [])
-              .where((p) => parseOrderPhotoTags(p.tags).contains('chuyen-khoan'))
+              .where(
+                (p) => parseOrderPhotoTags(p.tags).contains('chuyen-khoan'),
+              )
               .toList();
           final baseUrl = ref.watch(apiBaseUrlProvider);
           final paymentColor = amountPaid >= order.totalPrice
               ? Colors.green
               : amountPaid > 0
-                  ? Colors.orange
-                  : theme.colorScheme.error;
+              ? Colors.orange
+              : theme.colorScheme.error;
           final paymentLabel = amountPaid >= order.totalPrice
               ? OrdersLabels.paid
               : amountPaid > 0
-                  ? OrdersLabels.partialPaid
-                  : OrdersLabels.unpaid;
+              ? OrdersLabels.partialPaid
+              : OrdersLabels.unpaid;
 
           return Column(
             children: [

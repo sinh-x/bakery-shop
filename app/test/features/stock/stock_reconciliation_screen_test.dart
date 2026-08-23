@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/reconciliation_service.dart';
+import 'package:bakery_app/features/stock/providers/reconciliation_sell_waste_modal_notifier.dart';
 import 'package:bakery_app/features/stock/stock_reconciliation_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -1083,6 +1084,86 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Chi tiết #1'), findsOneWidget);
   });
+
+  testWidgets(
+    'contextual payment clear reaches production submission as null',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auth_token': kTestAdminToken,
+        'auth_username': 'An',
+        'auth_role': 'staff',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 1,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
+      await openSaleModal(tester);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(StockReconciliationScreen)),
+      );
+      final modalContext = reconciliationActionDraftContext(
+        productId: 1,
+        optionKey: '1:100000',
+        action: 'sale',
+        variantId: 'add',
+      );
+      container
+          .read(reconciliationSellWasteModalProvider(modalContext).notifier)
+          .setPaymentMethod(null);
+      await tester.pump();
+      expect(
+        container
+            .read(reconciliationSellWasteModalProvider(modalContext))
+            .paymentMethod,
+        isNull,
+      );
+
+      await confirmModal(tester);
+      await tester.tap(
+        find.widgetWithText(FilledButton, StockLabels.guiDoiSoat),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, StockLabels.guiDoiSoat),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.submitCalls, 1);
+      expect(service.lastSubmitRequest!.paymentMethod, isNull);
+      expect(service.lastSubmitRequest!.lines.single.normalizedPrice, 100000);
+    },
+  );
 
   testWidgets(
     'variance indicator updates value, sign, color, and wraps at 360',

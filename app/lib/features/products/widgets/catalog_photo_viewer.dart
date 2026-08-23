@@ -10,8 +10,10 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/providers/catalog_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import '../../../shared/utils/xfile_utils.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../providers/catalog_photo_viewer_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -42,6 +44,7 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
 
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   late PageController _pageController;
+  late final _viewerContext = catalogPhotoViewerContext(widget.productId);
 
   @override
   void initState() {
@@ -52,8 +55,8 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
     Future.microtask(() {
       if (!mounted) return;
       ref
-          .read(catalogPhotoViewerProvider.notifier)
-          .setCurrentIndex(widget.initialIndex);
+          .read(catalogPhotoViewerProvider(_viewerContext).notifier)
+          .reset(widget.initialIndex);
     });
     _pageController = PageController(initialPage: widget.initialIndex);
   }
@@ -65,18 +68,19 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   }
 
   Future<void> _downloadPhoto(List<CatalogPhoto> photos) async {
-    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
-    final viewerState = ref.read(catalogPhotoViewerProvider);
-    if (viewerState.downloading ||
-        viewerState.currentIndex >= photos.length) {
+    final viewerNotifier = ref.read(
+      catalogPhotoViewerProvider(_viewerContext).notifier,
+    );
+    final viewerState = ref.read(catalogPhotoViewerProvider(_viewerContext));
+    if (viewerState.downloading || viewerState.currentIndex >= photos.length) {
       return;
     }
     viewerNotifier.setDownloading(true);
+    final dio = ref.read(dioProvider);
     final photo = photos[viewerState.currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
-      final dio = ref.read(dioProvider);
       final resp = await dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
@@ -87,23 +91,24 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
     } catch (e) {
       if (mounted) showTopSnackBar(context, ProductsLabels.khongTheTaiAnh);
     } finally {
-      if (mounted) viewerNotifier.setDownloading(false);
+      viewerNotifier.setDownloading(false);
     }
   }
 
   Future<void> _sharePhoto(List<CatalogPhoto> photos) async {
-    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
-    final viewerState = ref.read(catalogPhotoViewerProvider);
-    if (viewerState.sharing ||
-        viewerState.currentIndex >= photos.length) {
+    final viewerNotifier = ref.read(
+      catalogPhotoViewerProvider(_viewerContext).notifier,
+    );
+    final viewerState = ref.read(catalogPhotoViewerProvider(_viewerContext));
+    if (viewerState.sharing || viewerState.currentIndex >= photos.length) {
       return;
     }
     viewerNotifier.setSharing(true);
+    final dio = ref.read(dioProvider);
     final photo = photos[viewerState.currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
-      final dio = ref.read(dioProvider);
       final resp = await dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
@@ -121,7 +126,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
     } catch (e) {
       if (mounted) showTopSnackBar(context, ProductsLabels.khongTheChiaSe);
     } finally {
-      if (mounted) viewerNotifier.setSharing(false);
+      viewerNotifier.setSharing(false);
     }
   }
 
@@ -137,8 +142,10 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   Widget build(BuildContext context) {
     final catalogAsync = ref.watch(catalogProvider(widget.productId));
     final photos = catalogAsync.value ?? widget.photos;
-    final viewerState = ref.watch(catalogPhotoViewerProvider);
-    final viewerNotifier = ref.read(catalogPhotoViewerProvider.notifier);
+    final viewerState = ref.watch(catalogPhotoViewerProvider(_viewerContext));
+    final viewerNotifier = ref.read(
+      catalogPhotoViewerProvider(_viewerContext).notifier,
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -181,9 +188,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                     )
                   : const Icon(Icons.share, color: Colors.white),
               tooltip: ProductsLabels.chiaSe,
-              onPressed: viewerState.sharing
-                  ? null
-                  : () => _sharePhoto(photos),
+              onPressed: viewerState.sharing ? null : () => _sharePhoto(photos),
             ),
           ],
           AppBarOverflowMenu(
@@ -297,38 +302,73 @@ class _EditCaptionSheet extends ConsumerStatefulWidget {
 
 class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
   late final TextEditingController _captionCtrl;
+  late final _draftContext = catalogPhotoTagEditContext(
+    widget.productId,
+    widget.photo.id,
+  );
 
   @override
   void initState() {
     super.initState();
-    _captionCtrl = TextEditingController(text: widget.photo.caption);
+    final notifier = ref.read(
+      catalogEditCaptionProvider(_draftContext).notifier,
+    );
+    final draft = ref.read(catalogEditCaptionProvider(_draftContext));
+    _captionCtrl = TextEditingController(
+      text: notifier.hasRetainedDraft ? draft.caption : widget.photo.caption,
+    )..addListener(_persistCaption);
     // Seed the notifier with the photo's existing tags so the chip
     // selector reflects the initial selection without setState. Deferred
     // to a microtask because Riverpod disallows provider mutation during
     // widget life-cycle hooks (initState/build).
     Future.microtask(() {
       if (!mounted) return;
-      ref.read(catalogEditCaptionProvider.notifier).seed(widget.photo);
+      final notifier = ref.read(
+        catalogEditCaptionProvider(_draftContext).notifier,
+      );
+      notifier
+        ..resetOperation()
+        ..seed(widget.photo);
     });
   }
 
   @override
   void dispose() {
+    _captionCtrl.removeListener(_persistCaption);
     _captionCtrl.dispose();
     super.dispose();
   }
 
+  void _persistCaption() => ref
+      .read(catalogEditCaptionProvider(_draftContext).notifier)
+      .setCaption(_captionCtrl.text);
+
   Future<void> _save() async {
-    final notifier = ref.read(catalogEditCaptionProvider.notifier);
+    final notifier = ref.read(
+      catalogEditCaptionProvider(_draftContext).notifier,
+    );
+    final registry = ref.read(formDraftSessionProvider.notifier);
+    final submittedDraft =
+        ref.read(formDraftSessionProvider)[_draftContext]
+            as CatalogEditCaptionState?;
+    final catalogNotifier = ref.read(
+      catalogProvider(widget.productId).notifier,
+    );
+    final caption = _captionCtrl.text.trim();
+    final tags = ref
+        .read(catalogEditCaptionProvider(_draftContext))
+        .selectedTags
+        .join(',');
     notifier.setSaving(true);
     try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .updatePhoto(
-            widget.photo.id,
-            caption: _captionCtrl.text.trim(),
-            tags: ref.read(catalogEditCaptionProvider).selectedTags.join(','),
-          );
+      await catalogNotifier.updatePhoto(
+        widget.photo.id,
+        caption: caption,
+        tags: tags,
+      );
+      if (submittedDraft != null) {
+        registry.clearDraftIfUnchanged(_draftContext, submittedDraft);
+      }
       if (mounted) {
         Navigator.pop(context);
         showTopSnackBar(context, ProductsLabels.catalogPhotoUpdated);
@@ -338,15 +378,25 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
         showTopSnackBar(context, e.message ?? SharedLabels.apiError);
       }
     } finally {
-      if (mounted) notifier.setSaving(false);
+      notifier.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
-    final captionState = ref.watch(catalogEditCaptionProvider);
-    final notifier = ref.read(catalogEditCaptionProvider.notifier);
+    final captionState = ref.watch(catalogEditCaptionProvider(_draftContext));
+    final notifier = ref.read(
+      catalogEditCaptionProvider(_draftContext).notifier,
+    );
+    final initialTags = widget.photo.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    final isDirty =
+        _captionCtrl.text != widget.photo.caption ||
+        !setEquals(captionState.selectedTags, initialTags);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -366,7 +416,9 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           const SizedBox(height: 16),
           TextField(
             controller: _captionCtrl,
-            decoration: const InputDecoration(labelText: ProductsLabels.captionLabel),
+            decoration: const InputDecoration(
+              labelText: ProductsLabels.captionLabel,
+            ),
             maxLines: 2,
           ),
           const SizedBox(height: 12),
@@ -398,6 +450,14 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             ),
           ),
           const SizedBox(height: 16),
+          DiscardFormDraftAction(
+            isDirty: isDirty,
+            onDiscard: () {
+              _captionCtrl.text = widget.photo.caption;
+              notifier.clear();
+              notifier.seed(widget.photo);
+            },
+          ),
           FilledButton(
             onPressed: captionState.saving ? null : _save,
             child: captionState.saving

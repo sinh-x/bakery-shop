@@ -100,13 +100,14 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       if (r == null || !mounted) return;
       reason = r;
     }
-    ref.read(cakeDetailScreenProvider.notifier).setTransitioning(true);
+    final screenNotifier = ref.read(cakeDetailScreenProvider.notifier);
+    final workItems = ref.read(orderWorkItemsProvider(widget.orderRef).notifier);
+    final orderDetail = ref.read(orderDetailProvider(widget.orderRef).notifier);
+    screenNotifier.setTransitioning(true);
     try {
-      await ref
-          .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .transitionStatus(item.id, targetStatus, reason: reason);
+      await workItems.transitionStatus(item.id, targetStatus, reason: reason);
       // Refresh order detail to pick up server-synced order status
-      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+      orderDetail.refresh();
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.workItemStatusChanged);
       }
@@ -123,7 +124,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setTransitioning(false);
+      screenNotifier.setTransitioning(false);
     }
   }
 
@@ -144,11 +145,11 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     required double unitPrice,
     Map<String, dynamic>? attributes,
   }) async {
-    ref.read(cakeDetailScreenProvider.notifier).setSaving(true);
+    final screenNotifier = ref.read(cakeDetailScreenProvider.notifier);
+    final workItems = ref.read(orderWorkItemsProvider(widget.orderRef).notifier);
+    screenNotifier.setSaving(true);
     try {
-      await ref
-          .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .edit(
+      await workItems.edit(
             item.id,
             notes: notes,
             isBirthday: isBirthday,
@@ -165,7 +166,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
         rethrow;
       }
     } finally {
-      if (mounted) ref.read(cakeDetailScreenProvider.notifier).setSaving(false);
+      screenNotifier.setSaving(false);
     }
   }
 

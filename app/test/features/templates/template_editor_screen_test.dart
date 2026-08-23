@@ -1,6 +1,7 @@
 import 'package:bakery_app/data/api/template_service.dart';
 import 'package:bakery_app/data/models/message_template.dart';
 import 'package:bakery_app/features/templates/widgets/template_editor_screen.dart';
+import 'package:bakery_app/features/templates/providers/template_editor_notifier.dart';
 import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -98,8 +99,9 @@ Future<ProviderContainer> _pumpEditor(
 
 void main() {
   group('TemplateEditorScreen (DG-375 Phase 4 / FR8 / AC8)', () {
-    testWidgets('create mode shows create title and empty fields',
-        (tester) async {
+    testWidgets('create mode shows create title and empty fields', (
+      tester,
+    ) async {
       await _pumpEditor(tester, isAdmin: false);
       expect(find.text(TemplatesLabels.editorCreateTitle), findsOneWidget);
       expect(find.text(TemplatesLabels.editorNameLabel), findsOneWidget);
@@ -107,8 +109,9 @@ void main() {
       expect(find.text(TemplatesLabels.editorScenarioLabel), findsOneWidget);
     });
 
-    testWidgets('edit mode shows edit title and pre-filled fields',
-        (tester) async {
+    testWidgets('edit mode shows edit title and pre-filled fields', (
+      tester,
+    ) async {
       const template = MessageTemplate(
         id: 5,
         scenario: 'ask_info',
@@ -140,7 +143,9 @@ void main() {
       await tester.pumpAndSettle();
       // The body field now contains the inserted placeholder. Find the
       // multi-line TextField (the body field is the only one with maxLines != 1).
-      final multilineFields = tester.widgetList<TextField>(find.byType(TextField));
+      final multilineFields = tester.widgetList<TextField>(
+        find.byType(TextField),
+      );
       final bodyCtrl = multilineFields
           .firstWhere((f) => f.maxLines != 1)
           .controller!;
@@ -152,8 +157,9 @@ void main() {
       expect(find.text(TemplatesLabels.editorIsSystemLabel), findsOneWidget);
     });
 
-    testWidgets('non-admin does NOT see the system-template toggle (FR7)',
-        (tester) async {
+    testWidgets('non-admin does NOT see the system-template toggle (FR7)', (
+      tester,
+    ) async {
       await _pumpEditor(tester, isAdmin: false);
       expect(find.text(TemplatesLabels.editorIsSystemLabel), findsNothing);
     });
@@ -177,19 +183,72 @@ void main() {
       expect(find.text(TemplatesLabels.editorBodyRequired), findsOneWidget);
     });
 
-    testWidgets('valid create persists template and pops the screen',
-        (tester) async {
-      await _pumpEditor(tester, isAdmin: false);
+    testWidgets('valid create persists template and pops the screen', (
+      tester,
+    ) async {
+      final container = await _pumpEditor(tester, isAdmin: false);
       // Name field is the first TextFormField.
       await tester.enterText(find.byType(TextFormField).at(0), 'Mẫu chào');
       // Body field is the multi-line one.
-      final bodyField = tester.widgetList<TextField>(find.byType(TextField))
+      final bodyField = tester
+          .widgetList<TextField>(find.byType(TextField))
           .firstWhere((f) => f.maxLines != 1);
-      await tester.enterText(find.byWidget(bodyField), 'Xin chào {customer_name}');
+      await tester.enterText(
+        find.byWidget(bodyField),
+        'Xin chào {customer_name}',
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Lưu'));
       await tester.pumpAndSettle();
       // Pops back — the editor screen is no longer present.
       expect(find.byType(TemplateEditorScreen), findsNothing);
+      expect(
+        container.read(templateEditorProvider.notifier).newDraft.name,
+        isEmpty,
+      );
+    });
+
+    testWidgets('unfinished NEW text survives reopen but EDIT never seeds it', (
+      tester,
+    ) async {
+      final fake = _FakeTemplateService([]);
+      final container = ProviderContainer(
+        overrides: [templateServiceProvider.overrideWithValue(fake)],
+      );
+      addTearDown(container.dispose);
+
+      Future<void> pump(MessageTemplate? template) async {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(home: TemplateEditorScreen(template: template)),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await pump(null);
+      await tester.enterText(find.byType(TextFormField).at(0), 'Mau dang viet');
+      await tester.enterText(find.byType(TextFormField).at(1), 'Noi dung nhap');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      const edited = MessageTemplate(
+        id: 9,
+        scenario: 'ask_info',
+        name: 'Mau da luu',
+        body: 'Noi dung da luu',
+        isSystem: false,
+      );
+      await pump(edited);
+      expect(find.text('Mau da luu'), findsOneWidget);
+      expect(find.text('Mau dang viet'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await pump(null);
+      expect(find.text('Mau dang viet'), findsOneWidget);
+      expect(find.text('Noi dung nhap'), findsOneWidget);
+      expect(container.read(templateEditorProvider).editing, isFalse);
     });
   });
 }

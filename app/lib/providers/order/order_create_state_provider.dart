@@ -8,6 +8,7 @@ import '../../features/orders/widgets/order_wizard.dart';
 import '../../shared/gift_config.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../data/providers/products_provider.dart';
+import '../form_draft_session_notifier.dart';
 
 class OrderCreateState {
   final List<DraftOrderItem> items;
@@ -38,7 +39,9 @@ class OrderCreateState {
     if (stage <= currentStage) return true;
     if (stage >= 2 && items.isEmpty) return false;
     if (stage >= 3 && wizardData.customerName.isEmpty) return false;
-    if (stage >= 4 && wizardData.needsAddress && wizardData.deliveryAddress.trim().isEmpty) {
+    if (stage >= 4 &&
+        wizardData.needsAddress &&
+        wizardData.deliveryAddress.trim().isEmpty) {
       return false;
     }
     return stage <= 5;
@@ -72,8 +75,9 @@ class OrderCreateState {
           : selectedCategorySlug ?? this.selectedCategorySlug,
       latitude: clearLatitude ? null : latitude ?? this.latitude,
       longitude: clearLongitude ? null : longitude ?? this.longitude,
-      googleMapsUrl:
-          clearGoogleMapsUrl ? null : googleMapsUrl ?? this.googleMapsUrl,
+      googleMapsUrl: clearGoogleMapsUrl
+          ? null
+          : googleMapsUrl ?? this.googleMapsUrl,
     );
   }
 }
@@ -81,6 +85,7 @@ class OrderCreateState {
 class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   @override
   OrderCreateState build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) => reset());
     final defaultDue = defaultDueDateTime(DateTime.now());
     return OrderCreateState(
       wizardData: const OrderWizardData(),
@@ -143,6 +148,7 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   }
 
   Future<void> restoreCustomerFromDraft(int customerId) async {
+    final epoch = ref.read(formDraftSessionEpochProvider);
     try {
       final service = ref.read(customerServiceProvider);
       final customer = await service.getCustomer(customerId);
@@ -151,7 +157,9 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
         customerName: customer.name,
         customerPhone: customer.phone,
       );
-      state = state.copyWith(wizardData: updated);
+      if (ref.read(formDraftSessionEpochProvider) == epoch) {
+        state = state.copyWith(wizardData: updated);
+      }
     } catch (e) {
       debugPrint('[OrderCreateState] restoreCustomerFromDraft failed: $e');
     }
@@ -203,11 +211,11 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   /// Waits for [phuKienProductsProvider] to load so the gift catalog is
   /// available on the first product selection (FB-3).
   Future<void> checkAutoGift() async {
+    final epoch = ref.read(formDraftSessionEpochProvider);
     final items = state.items;
     final hasTangKem = items.any(
       (i) =>
-          !i.isExtra &&
-          i.product.attributes['tang_kem']?.toString() == 'true',
+          !i.isExtra && i.product.attributes['tang_kem']?.toString() == 'true',
     );
     if (!hasTangKem) return;
 
@@ -222,7 +230,10 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     if (qualifiedTotal < GiftConfig.giftThreshold) return;
 
     final giftCatalog = await _giftCatalogByNormalizedName();
-    if (giftCatalog.isEmpty) return;
+    if (giftCatalog.isEmpty ||
+        ref.read(formDraftSessionEpochProvider) != epoch) {
+      return;
+    }
 
     final updated = List<DraftOrderItem>.from(items);
     var changed = false;
@@ -267,7 +278,9 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
         final loaded = await future;
         return _buildGiftCatalogMap(loaded);
       } catch (e) {
-        debugPrint('[OrderCreateState] checkAutoGift gift catalog load failed: $e');
+        debugPrint(
+          '[OrderCreateState] checkAutoGift gift catalog load failed: $e',
+        );
         return {};
       }
     }
@@ -297,13 +310,13 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
 
 final orderCreateStateProvider =
     NotifierProvider<OrderCreateStateNotifier, OrderCreateState>(
-  OrderCreateStateNotifier.new,
-);
+      OrderCreateStateNotifier.new,
+    );
 
 final posOrderStateProvider =
     NotifierProvider<PosOrderCreateStateNotifier, OrderCreateState>(
-  PosOrderCreateStateNotifier.new,
-);
+      PosOrderCreateStateNotifier.new,
+    );
 
 class PosOrderCreateStateNotifier extends OrderCreateStateNotifier {
   @override

@@ -6,7 +6,10 @@ import '../../../../data/api/receipt_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../shared/providers/logged_by_provider.dart';
 import '../../providers/order_print_dialog_notifiers.dart';
+import '../../providers/order_draft_contexts.dart';
+import '../../../../shared/models/form_draft_context.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Internal receipt print dialog shown when confirming a work item that has
 /// not yet been printed. Offers to print the work ticket(s) immediately.
 class OrderInternalPrintDialog extends ConsumerStatefulWidget {
@@ -26,22 +29,32 @@ class OrderInternalPrintDialog extends ConsumerStatefulWidget {
 
 class _OrderInternalPrintDialogState
     extends ConsumerState<OrderInternalPrintDialog> {
+  late final FormDraftContext _draftContext = OrderDraftContexts.printWorkItem(
+    widget.orderRef,
+    widget.itemId,
+  );
+
   Future<void> _printInternal() async {
-    ref.read(orderWorkItemPrintProvider.notifier).startPrinting();
+    final container = ProviderScope.containerOf(context, listen: false);
+    final provider = orderWorkItemPrintProvider(_draftContext);
+    final printNotifier = container.read(provider.notifier);
+    final receiptService = container.read(receiptServiceProvider);
+    final printedBy = container.read(loggedByProvider);
+    final workItems =
+        container.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+    final orderDetail = container.read(
+      orderDetailProvider(widget.orderRef).notifier,
+    );
+    printNotifier.startPrinting();
 
     try {
-      final receiptService = ref.read(receiptServiceProvider);
-      final printedBy = ref.read(loggedByProvider);
-
       // Determine which items to print
       List<int> itemIds;
       if (widget.itemId != null) {
         itemIds = [widget.itemId!];
       } else {
         // Print all main (non-extra, non-gift) items
-        final items =
-            ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
-        itemIds = items
+        itemIds = workItems
             .where((i) => !i.isExtra && !i.isGift)
             .map((i) => int.tryParse(i.id))
             .whereType<int>()
@@ -54,9 +67,7 @@ class _OrderInternalPrintDialogState
       }
 
       for (final id in itemIds) {
-        ref
-            .read(orderWorkItemPrintProvider.notifier)
-            .setStatusText(SharedLabels.printingInternalReceipt);
+        printNotifier.setStatusText(SharedLabels.printingInternalReceipt);
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
@@ -65,7 +76,7 @@ class _OrderInternalPrintDialogState
         );
       }
 
-      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+      orderDetail.refresh();
       if (mounted) {
         showTopSnackBar(context, SharedLabels.internalReceiptPrinted);
         Navigator.pop(context);
@@ -75,15 +86,13 @@ class _OrderInternalPrintDialogState
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) {
-        ref.read(orderWorkItemPrintProvider.notifier).finishPrinting();
-      }
+      printNotifier.finishPrinting();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderWorkItemPrintProvider);
+    final state = ref.watch(orderWorkItemPrintProvider(_draftContext));
     return AlertDialog(
       title: const Text(SharedLabels.printChecklistTitle),
       content: state.printing
@@ -109,7 +118,10 @@ class _OrderInternalPrintDialogState
           child: const Text(SharedLabels.printSkip),
         ),
         if (!state.printing)
-          FilledButton(onPressed: _printInternal, child: const Text(SharedLabels.print)),
+          FilledButton(
+            onPressed: _printInternal,
+            child: const Text(SharedLabels.print),
+          ),
       ],
     );
   }

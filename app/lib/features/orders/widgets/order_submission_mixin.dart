@@ -7,12 +7,15 @@ import '../../../data/api/work_item_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../providers/order_submission_guard_notifier.dart';
+import '../providers/order_draft_contexts.dart';
+import '../../../shared/models/form_draft_context.dart';
 import '../../../data/providers/order/order_list_providers.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/services/session_cache.dart';
 import '../../../shared/utils/api_error.dart';
 import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/utils/delivery_helpers.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
 import 'order_creation_config.dart';
 import 'order_submission_host.dart';
@@ -45,21 +48,27 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
 
   /// The provider backing the wizard state. Provided by the host state class
   /// for the same reason as [config].
-  NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
-      get provider;
+  NotifierProvider<OrderCreateStateNotifier, OrderCreateState> get provider;
+
   /// Guards `submitOrder` against double-tap re-entry (matches the prior
   /// `_submitting` flag in `order_create_screen.dart` and `_isProcessing` in
   /// `pos_checkout_screen.dart`). The host screen reads this via
   /// [OrderCreationController.isSubmitting] to drive its submit button's
   /// `onPressed: null` disabled state. Now backed by
   /// [orderSubmissionGuardProvider].
-  bool get isSubmitting => ref.read(orderSubmissionGuardProvider);
+  FormDraftContext get submissionContext => config.posMode
+      ? OrderDraftContexts.posCheckout
+      : OrderDraftContexts.createOrder;
+
+  bool get isSubmitting =>
+      ref.read(orderSubmissionGuardProvider(submissionContext));
 
   /// Post-submit latch read by the host's `_saveDraft` helper so it
   /// skips persisting a draft after a successful submission (FR6).
   /// Mirrors `_submitted` in `order_create_screen.dart`. Now backed by
   /// [orderSubmissionLatchProvider].
-  bool get submitted => ref.read(orderSubmissionLatchProvider);
+  bool get submitted =>
+      ref.read(orderSubmissionLatchProvider(submissionContext));
 
   /// Shared submission entrypoint invoked by the stage-4 review widget's
   /// submit button (normal order) or the POS payment step's pay-later/pay-now
@@ -68,38 +77,61 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// The [status] / [paymentMethod] parameters carry optional
   /// workflow-specific createOrder arguments (POS); normal order passes
   /// `null` and the orchestrator derives the fields from `state`.
-  Future<bool> submitOrder({
-    String? status,
-    String? paymentMethod,
-  }) async {
-    if (ref.read(orderSubmissionGuardProvider)) return false;
-    final state = ref.read(provider);
+  Future<bool> submitOrder({String? status, String? paymentMethod}) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final guardProvider = orderSubmissionGuardProvider(submissionContext);
+    if (container.read(guardProvider)) return false;
+    final state = container.read(provider);
     if (state.items.isEmpty) {
       if (mounted) {
-        showTopSnackBar(context, OrdersLabels.validationSelectAtLeastOneProduct);
+        showTopSnackBar(
+          context,
+          OrdersLabels.validationSelectAtLeastOneProduct,
+        );
       }
       return false;
     }
 
-    ref.read(orderSubmissionGuardProvider.notifier).setSubmitting(true);
+    final guard = container.read(guardProvider.notifier);
+    final generation = guard.start();
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[submissionContext];
+    final expectedPosOptions = config.posMode
+        ? container.read(
+            formDraftSessionProvider,
+          )[OrderDraftContexts.posCheckoutOptions]
+        : null;
     try {
-      final hookCtx = SubmitHookContext(state: state, ref: ref, context: context);
+      final hookCtx = SubmitHookContext(
+        state: state,
+        ref: container,
+        context: context,
+      );
       final prep = await _validateAndPrepare(state, hookCtx);
       final order = await _createOrder(
+        container: container,
         state: state,
         prep: prep,
         hookCtx: hookCtx,
         status: status,
         paymentMethod: paymentMethod,
       );
-      return await _handlePostSubmit(state, order, hookCtx);
+      return await _handlePostSubmit(
+        container,
+        state,
+        order,
+        hookCtx,
+        expectedDraft,
+        expectedPosOptions,
+      );
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
       }
       return false;
     } finally {
-      if (mounted) ref.read(orderSubmissionGuardProvider.notifier).setSubmitting(false);
+      guard.finishIfCurrent(generation);
     }
   }
 
@@ -120,6 +152,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// Returns the freshly created [Order]. Extracted from `submitOrder`
   /// (DG-322 / CQ-6).
   Future<Order> _createOrder({
+    required ProviderContainer container,
     required OrderCreateState state,
     required SubmitPreparation? prep,
     required SubmitHookContext hookCtx,
@@ -129,7 +162,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     final resolvedCustomerId =
         prep?.customerId ?? state.wizardData.selectedCustomer?.id;
 
-    final service = ref.read(orderServiceProvider);
+    final service = container.read(orderServiceProvider);
     final customerName = state.wizardData.customerName.isEmpty
         ? OrdersLabels.walkInCustomerFallback
         : state.wizardData.customerName;
@@ -137,7 +170,7 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     // `loggedByProvider`; POS leaves it empty to match pre-refactor
     // behaviour). Resolved here so the shared spine stays the single
     // `createOrder` call site.
-    final createdBy = config.createdByResolver?.call(ref) ?? '';
+    final createdBy = config.createdByResolver?.call(container) ?? '';
 
     // Price floor enforcement (FR3/AC3): clamp selling price to the
     // assigned price for trưng bày markup items before submitting.
@@ -175,7 +208,8 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
       googleMapsUrl: state.googleMapsUrl,
       deliveryTimeSlot: state.dueTime != null
           ? deriveTimeSlot(
-              formatHourMinute(state.dueTime!.hour, state.dueTime!.minute))
+              formatHourMinute(state.dueTime!.hour, state.dueTime!.minute),
+            )
           : null,
     );
   }
@@ -185,16 +219,19 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// returns `true` when navigation fired. Extracted from `submitOrder`
   /// (DG-322 / CQ-6).
   Future<bool> _handlePostSubmit(
+    ProviderContainer container,
     OrderCreateState state,
     Order order,
     SubmitHookContext hookCtx,
+    Object? expectedDraft,
+    Object? expectedPosOptions,
   ) async {
     // Shared per-item photo upload. Workflows can override via
     // `onUploadPendingPhotos` (e.g. POS adds transfer-photo upload).
     if (config.onUploadPendingPhotos != null) {
-      await config.onUploadPendingPhotos!(ref, order, state);
+      await config.onUploadPendingPhotos!(container, order, state);
     } else {
-      await uploadPendingPhotosDefault(order, state);
+      await uploadPendingPhotosDefault(container, order, state);
     }
 
     // Refresh the order list so the new order appears in the list screen
@@ -203,19 +240,34 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     // to the receipt, not the order list, and the pre-refactor POS flow
     // did not refresh the list). DG-322 Phase 4.
     if (config.enableOrderListRefresh) {
-      await ref.read(orderListProvider.notifier).refresh();
+      await container.read(orderListProvider.notifier).refresh();
     }
     // DG-409 Phase 5 (FR13, AC6): a new order is a mutation on the order
     // entity type, so invalidate the session-level order-history cache so
     // the next history-tab visit re-fetches fresh data.
-    ref
+    container
         .read(sessionCacheProvider)
         .invalidateEntityType(SessionCacheEntity.orderHistory);
 
+    await config.onAfterSubmit?.call(hookCtx, order);
+    final drafts = container.read(formDraftSessionProvider.notifier);
+    if (expectedDraft != null) {
+      drafts.clearDraftIfUnchanged(submissionContext, expectedDraft);
+    }
+    if (config.posMode) {
+      if (expectedPosOptions != null) {
+        drafts.clearDraftIfUnchanged(
+          OrderDraftContexts.posCheckoutOptions,
+          expectedPosOptions,
+        );
+      }
+    }
+
     if (!mounted) return false;
 
-    ref.read(orderSubmissionLatchProvider.notifier).setSubmitted();
-    await config.onAfterSubmit?.call(hookCtx, order);
+    container
+        .read(orderSubmissionLatchProvider(submissionContext).notifier)
+        .setSubmitted();
 
     if (!mounted) return false;
     config.onNavigateAfterSubmit?.call(context, order.orderRef);
@@ -267,15 +319,14 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
   /// order workflow keeps its existing photo-upload behavior (with the
   /// failed-photo summary snackbar) after extraction.
   Future<void> uploadPendingPhotosDefault(
+    ProviderContainer container,
     Order order,
     OrderCreateState state,
   ) async {
-    final hasPerItemPhotos = state.items.any(
-      (i) => i.pendingPhotos.isNotEmpty,
-    );
+    final hasPerItemPhotos = state.items.any((i) => i.pendingPhotos.isNotEmpty);
     if (!hasPerItemPhotos) return;
-    final service = ref.read(orderServiceProvider);
-    final workItemSvc = ref.read(workItemServiceProvider);
+    final service = container.read(orderServiceProvider);
+    final workItemSvc = container.read(workItemServiceProvider);
     final workItems = await workItemSvc.listWorkItems(order.orderRef);
     workItems.sort((a, b) => a.position.compareTo(b.position));
 
@@ -284,8 +335,9 @@ mixin OrderSubmissionMixin<W extends ConsumerStatefulWidget>
     for (var idx = 0; idx < state.items.length; idx++) {
       final draftItem = state.items[idx];
       if (draftItem.pendingPhotos.isEmpty) continue;
-      final workItemId =
-          idx < workItems.length ? int.tryParse(workItems[idx].id) : null;
+      final workItemId = idx < workItems.length
+          ? int.tryParse(workItems[idx].id)
+          : null;
       for (final xfile in draftItem.pendingPhotos) {
         totalPhotos++;
         try {

@@ -1,6 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/services/printer_service.dart';
+import 'form_draft_session_notifier.dart';
+
+/// Collision-safe identity for one mounted printer-picker operation.
+///
+/// Equality intentionally uses object identity. The matching provider family is
+/// auto-disposed when its dialog stops listening, so completed dialog tokens do
+/// not accumulate for the application session.
+class PrinterPickerDialogContext {}
 
 /// Phases of the printer picker flow (DG-404 Phase 4.7 / FR2).
 /// Public equivalent of the pre-migration private `_PickerState` enum
@@ -43,8 +51,9 @@ class PrinterPickerDialogState {
     return PrinterPickerDialogState(
       phase: phase ?? this.phase,
       devices: devices ?? this.devices,
-      errorMessage:
-          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage: clearErrorMessage
+          ? null
+          : (errorMessage ?? this.errorMessage),
       connectingToName: clearConnectingToName
           ? null
           : (connectingToName ?? this.connectingToName),
@@ -57,37 +66,43 @@ class PrinterPickerDialogState {
 /// local; the actual Bluetooth scan / connect / print flow is driven
 /// by the widget, which reports outcomes back to this notifier.
 class PrinterPickerNotifier extends Notifier<PrinterPickerDialogState> {
-  @override
-  PrinterPickerDialogState build() => const PrinterPickerDialogState();
+  PrinterPickerNotifier(this.context);
 
-  void startLoading() => state = state.copyWith(
-        phase: PrinterPickerPhase.loading,
-        clearErrorMessage: true,
-        clearConnectingToName: true,
-      );
+  final PrinterPickerDialogContext context;
+
+  @override
+  PrinterPickerDialogState build() {
+    ref.watch(formDraftSessionEpochProvider);
+    return const PrinterPickerDialogState();
+  }
+
+  void startLoading() => state = const PrinterPickerDialogState();
 
   void setError(String message) => state = state.copyWith(
-        phase: PrinterPickerPhase.error,
-        errorMessage: message,
-      );
+    phase: PrinterPickerPhase.error,
+    errorMessage: message,
+  );
 
   void setDevices(List<DiscoveredPrinter> devices) => state = state.copyWith(
-        phase: devices.isEmpty
-            ? PrinterPickerPhase.noDevices
-            : PrinterPickerPhase.deviceList,
-        devices: devices,
-      );
+    phase: devices.isEmpty
+        ? PrinterPickerPhase.noDevices
+        : PrinterPickerPhase.deviceList,
+    devices: devices,
+  );
 
   void startConnecting(String deviceName) => state = state.copyWith(
-        phase: PrinterPickerPhase.connecting,
-        connectingToName: deviceName,
-      );
+    phase: PrinterPickerPhase.connecting,
+    connectingToName: deviceName,
+  );
 
   void setPrinting() =>
       state = state.copyWith(phase: PrinterPickerPhase.printing);
 }
 
 /// Provider for the printer picker bottom-sheet state.
-final printerPickerProvider =
-    NotifierProvider<PrinterPickerNotifier, PrinterPickerDialogState>(
-        PrinterPickerNotifier.new);
+final printerPickerProvider = NotifierProvider.autoDispose
+    .family<
+      PrinterPickerNotifier,
+      PrinterPickerDialogState,
+      PrinterPickerDialogContext
+    >(PrinterPickerNotifier.new);

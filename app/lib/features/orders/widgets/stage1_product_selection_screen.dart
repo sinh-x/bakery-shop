@@ -11,6 +11,8 @@ import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
 import 'stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../providers/order_draft_contexts.dart';
+
 /// Stage 1 of the order creation wizard — product selection.
 ///
 /// Two-step flow (DG-214):
@@ -30,7 +32,8 @@ class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
   });
 
   final VoidCallback onContinue;
-  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
+  orderStateProvider;
 
   /// DG-370 Phase 5.6-c1 (UX-2): optional POS-only "Giao ngay & Thanh toán"
   /// fast-path callback. When provided (POS checkout), a button is rendered
@@ -58,30 +61,38 @@ class _Stage1ProductSelectionScreenState
     // tien rut) when the picker appends a new item and commits the list.
     final current = ref.read(widget.orderStateProvider).items;
     _pickerItems = current
-        .map((i) => DraftOrderItem(
-              product: i.product,
-              quantity: i.quantity,
-              notes: i.notes,
-              isBirthday: i.isBirthday,
-              age: i.age,
-              customUnitPrice: i.customUnitPrice,
-              isExtra: i.isExtra,
-              isGift: i.isGift,
-              attributes: Map<String, dynamic>.from(i.attributes),
-              daDuaTienRut: i.daDuaTienRut,
-              priceChipId: i.priceChipId,
-              assignedPrice: i.assignedPrice,
-            )..pendingPhotos = List<XFile>.from(i.pendingPhotos))
+        .map(
+          (i) => DraftOrderItem(
+            product: i.product,
+            quantity: i.quantity,
+            notes: i.notes,
+            isBirthday: i.isBirthday,
+            age: i.age,
+            customUnitPrice: i.customUnitPrice,
+            isExtra: i.isExtra,
+            isGift: i.isGift,
+            attributes: Map<String, dynamic>.from(i.attributes),
+            daDuaTienRut: i.daDuaTienRut,
+            priceChipId: i.priceChipId,
+            assignedPrice: i.assignedPrice,
+          )..pendingPhotos = List<XFile>.from(i.pendingPhotos),
+        )
         .toList();
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => ProductPickerPage(
+          draftContext: OrderDraftContexts.productPicker(
+            widget.orderStateProvider == posOrderStateProvider
+                ? 'pos-checkout'
+                : 'order-create',
+          ),
           selectedItems: _pickerItems,
           onChanged: _commitNewItems,
-          initialCategorySlug:
-              ref.read(widget.orderStateProvider).selectedCategorySlug,
+          initialCategorySlug: ref
+              .read(widget.orderStateProvider)
+              .selectedCategorySlug,
           onCategorySelected: (slug) => ref
               .read(widget.orderStateProvider.notifier)
               .updateSelectedCategorySlug(slug),
@@ -108,7 +119,9 @@ class _Stage1ProductSelectionScreenState
     double? customUnitPrice,
     bool isGift,
   ) {
-    ref.read(widget.orderStateProvider.notifier).addCatalogExtra(
+    ref
+        .read(widget.orderStateProvider.notifier)
+        .addCatalogExtra(
           product: product,
           priceChipId: priceChipId,
           customUnitPrice: customUnitPrice,
@@ -208,8 +221,8 @@ class _ExtrasHeader extends StatelessWidget {
       child: Text(
         OrdersLabels.addExtra,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }

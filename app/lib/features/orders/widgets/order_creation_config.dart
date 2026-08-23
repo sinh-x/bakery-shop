@@ -13,20 +13,19 @@ import '../../../providers/order/order_create_state_provider.dart';
 ///
 /// The orchestrator owns the 4 stage widgets and the current stage number;
 /// the container decides how to present/animate them.
-typedef StageContainerBuilder = Widget Function(
-  BuildContext context,
-  List<Widget> stageWidgets,
-  int currentStage,
-);
+typedef StageContainerBuilder =
+    Widget Function(
+      BuildContext context,
+      List<Widget> stageWidgets,
+      int currentStage,
+    );
 
 /// Builds a single wizard stage widget. The [controller] exposes the
 /// orchestrator's stage-navigation primitive so the stage's
 /// `onContinue`/`onBack` callbacks can delegate back to the orchestrator
 /// without knowing which provider instance or container is in use.
-typedef StageBuilder = Widget Function(
-  BuildContext context,
-  OrderCreationController controller,
-);
+typedef StageBuilder =
+    Widget Function(BuildContext context, OrderCreationController controller);
 
 /// Surface handed to each stage builder so stages can drive wizard navigation
 /// without coupling to the host screen.
@@ -60,7 +59,7 @@ class OrderCreationController {
 /// the [WidgetRef] of the orchestrator so it can read/write providers.
 class SubmitHookContext {
   final OrderCreateState state;
-  final WidgetRef ref;
+  final ProviderContainer ref;
   final BuildContext context;
 
   const SubmitHookContext({
@@ -94,9 +93,8 @@ class SubmitPreparation {
 ///
 /// The hook may be async (e.g. calling `customerService.createCustomer`).
 /// Returning `null` is equivalent to `SubmitPreparation()`.
-typedef OnBeforeSubmitHook = Future<SubmitPreparation?> Function(
-  SubmitHookContext ctx,
-);
+typedef OnBeforeSubmitHook =
+    Future<SubmitPreparation?> Function(SubmitHookContext ctx);
 
 /// Hook invoked after `OrderService.createOrder` succeeds and the orchestrator
 /// has finished shared post-submission work (photo upload, order-list
@@ -107,10 +105,8 @@ typedef OnBeforeSubmitHook = Future<SubmitPreparation?> Function(
 ///
 /// The hook receives the created [Order] so it can derive the `orderRef` if
 /// needed (e.g. for payment transactions).
-typedef OnAfterSubmitHook = Future<void> Function(
-  SubmitHookContext ctx,
-  Order order,
-);
+typedef OnAfterSubmitHook =
+    Future<void> Function(SubmitHookContext ctx, Order order);
 
 /// Hook invoked after `onAfterSubmit` completes successfully. Workflows use it
 /// to navigate to the workflow-specific destination via `pushReplacement`:
@@ -119,10 +115,8 @@ typedef OnAfterSubmitHook = Future<void> Function(
 ///
 /// The orchestrator passes the current [BuildContext] so the hook can use
 /// `go_router` without the orchestrator importing it.
-typedef OnNavigateAfterSubmitHook = void Function(
-  BuildContext context,
-  String orderRef,
-);
+typedef OnNavigateAfterSubmitHook =
+    void Function(BuildContext context, String orderRef);
 
 /// Workflow-specific configuration consumed by [OrderCreationOrchestrator].
 ///
@@ -135,7 +129,7 @@ class OrderCreationConfig {
   /// Provider instance backing this wizard — `orderCreateStateProvider` for
   /// normal orders, `posOrderStateProvider` for POS.
   final NotifierProvider<OrderCreateStateNotifier, OrderCreateState>
-      orderStateProvider;
+  orderStateProvider;
 
   /// Whether the stage indicator renders the 5-stage POS variant. Only the
   /// first 4 stages are rendered by the orchestrator; stage 5 stays in the
@@ -186,7 +180,7 @@ class OrderCreationConfig {
   /// from `loggedByProvider`; POS does not set `createdBy` (matches the
   /// pre-refactor POS behaviour). Returning an empty string omits the field
   /// (see `OrderService.createOrder`).
-  final String Function(WidgetRef ref)? createdByResolver;
+  final String Function(ProviderContainer ref)? createdByResolver;
 
   /// Workflow-specific pre-submission hook (Phase 2, FR2/FR3/FR6/FR7).
   ///
@@ -218,7 +212,12 @@ class OrderCreationConfig {
   /// upload entirely (used by POS when `skipPayment` is true).
   ///
   /// The hook receives the created [Order] and the orchestrator's [WidgetRef].
-  final Future<void> Function(WidgetRef ref, Order order, OrderCreateState state)? onUploadPendingPhotos;
+  final Future<void> Function(
+    ProviderContainer ref,
+    Order order,
+    OrderCreateState state,
+  )?
+  onUploadPendingPhotos;
 
   /// Whether the orchestrator should refresh `orderListProvider` after a
   /// successful `createOrder` so the new order appears in the order list

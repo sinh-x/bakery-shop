@@ -1,3 +1,7 @@
+// EXEMPT: 300-line screen threshold exceeded because the pre-existing customer
+// form owns multi-phone controller lifecycle, duplicate resolution, and submit
+// orchestration. Draft synchronization is kept beside those controllers to
+// avoid duplicating mutable controller state. Reviewed 2026-08-23.
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/providers/customers_provider.dart';
+import '../../providers/form_draft_session_notifier.dart';
+import '../../shared/models/form_draft_context.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/services/session_cache.dart';
 import 'package:bakery_app/shared/utils/phone_formatter.dart';
@@ -13,6 +20,7 @@ import 'widgets/duplicate_warning_dialog.dart';
 import 'widgets/phone_entry_row.dart';
 import 'widgets/shared_phone_banner.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Show the add/edit customer bottom sheet.
 ///
 /// Pass [customer] for edit mode; omit for add mode. Returns `true` when the
@@ -34,10 +42,8 @@ Future<bool?> showCustomerForm(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (ctx) => _CustomerForm(
-      customer: customer,
-      onUseExisting: onUseExisting,
-    ),
+    builder: (ctx) =>
+        _CustomerForm(customer: customer, onUseExisting: onUseExisting),
   );
 }
 
@@ -57,16 +63,32 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   final List<PhoneEntry> _phones = [];
 
   bool get _isEditing => widget.customer != null;
+  late final FormDraftContext _draftContext;
+  NotifierProvider<CustomerFormNotifier, CustomerFormState> get _provider =>
+      contextualCustomerFormProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
     final c = widget.customer;
-    _nameCtrl = TextEditingController(text: c?.name ?? '');
+    _draftContext = FormDraftContext(
+      formType: 'customer',
+      mode: _isEditing ? FormDraftMode.edit : FormDraftMode.create,
+      entityId: c?.id.toString(),
+    );
+    final draftState = ref.read(_provider);
+    final draft = draftState.newDraft;
+    final restore = ref.read(_provider.notifier).hasRetainedDraft;
+    _nameCtrl = TextEditingController(
+      text: restore ? draft.name : c?.name ?? '',
+    );
+    _nameCtrl.addListener(_persistNewDraft);
     // Pre-populate phone fields from customer.phones (multi-phone). Falls back
     // to the legacy single `phone` field when the API returns no phones list,
     // keeping backward compatibility for customers created before v58.
-    final phones = c?.phones ?? const <CustomerPhone>[];
+    final phones = restore
+        ? draft.phones
+        : c?.phones ?? const <CustomerPhone>[];
     if (phones.isNotEmpty) {
       for (final p in phones) {
         _phones.add(
@@ -85,10 +107,30 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
         ),
       );
     }
+    for (final entry in _phones) {
+      entry.controller.addListener(_persistNewDraft);
+    }
     // Ensure at least one entry is marked primary if any phone is non-empty.
     if (!_phones.any((e) => e.isPrimary)) {
       _phones.first.isPrimary = true;
     }
+    Future.microtask(() {
+      if (!mounted) return;
+      ref
+          .read(_provider.notifier)
+          .initialize(
+            CustomerFormDraft(
+              name: _nameCtrl.text,
+              phones: [
+                for (final entry in _phones)
+                  CustomerPhone(
+                    phone: entry.controller.text,
+                    isPrimary: entry.isPrimary,
+                  ),
+              ],
+            ),
+          );
+    });
   }
 
   @override
@@ -101,8 +143,11 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   }
 
   void _addPhone() {
-    _phones.add(PhoneEntry(controller: TextEditingController()));
-    ref.read(customerFormProvider.notifier).rebuild();
+    final entry = PhoneEntry(controller: TextEditingController());
+    entry.controller.addListener(_persistNewDraft);
+    _phones.add(entry);
+    _persistNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _removePhone(int index) {
@@ -114,14 +159,31 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     if (wasPrimary && _phones.isNotEmpty) {
       _phones.first.isPrimary = true;
     }
-    ref.read(customerFormProvider.notifier).rebuild();
+    _persistNewDraft();
+    ref.read(_provider.notifier).rebuild();
   }
 
   void _setPrimary(int index) {
     for (var i = 0; i < _phones.length; i++) {
       _phones[i].isPrimary = i == index;
     }
-    ref.read(customerFormProvider.notifier).rebuild();
+    _persistNewDraft();
+    ref.read(_provider.notifier).rebuild();
+  }
+
+  void _persistNewDraft() {
+    ref
+        .read(_provider.notifier)
+        .updateNewDraft(
+          name: _nameCtrl.text,
+          phones: [
+            for (final entry in _phones)
+              CustomerPhone(
+                phone: entry.controller.text,
+                isPrimary: entry.isPrimary,
+              ),
+          ],
+        );
   }
 
   /// Collect validated, trimmed phones for submission. Returns null when the
@@ -155,7 +217,9 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     _duplicateError = null;
     // Require exactly one primary among the non-empty phones; ensure one is
     // selected automatically if none is.
-    if (!_phones.any((e) => e.isPrimary && e.controller.text.trim().isNotEmpty)) {
+    if (!_phones.any(
+      (e) => e.isPrimary && e.controller.text.trim().isNotEmpty,
+    )) {
       // Auto-pick the first non-empty entry as primary before sending.
       final firstNonEmptyIdx = _phones.indexWhere(
         (e) => e.controller.text.trim().isNotEmpty,
@@ -187,16 +251,24 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       return;
     }
     final name = _nameCtrl.text.trim();
+    final formNotifier = ref.read(_provider.notifier);
+    final submittedDraft = formNotifier.draftSnapshot;
+    final service = ref.read(customerServiceProvider);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final sessionCache = ref.read(sessionCacheProvider);
     // FR8/AC6: in add mode, warn when name or any phone matches an existing
     // customer before hitting the create endpoint. The user can pick an
     // existing customer ("use existing"), proceed ("create anyway"), or
     // cancel. Edit mode skips this check — the customer is already linked.
     if (!_isEditing) {
-      ref.read(customerFormProvider.notifier).setSaving(true);
+      formNotifier.setSaving(true);
       final matches = await _findDuplicateCandidates(name, phones);
-      if (!mounted) return;
+      if (!mounted) {
+        formNotifier.clearSaving();
+        return;
+      }
       if (matches.isNotEmpty) {
-        ref.read(customerFormProvider.notifier).setSaving(false);
+        formNotifier.setSaving(false);
         final choice = await _showDuplicateWarningDialog(matches);
         if (!mounted) return;
         if (choice == null) return;
@@ -210,11 +282,10 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
         }
         // choice.createAnyway == true → fall through to the create call.
       } else {
-        ref.read(customerFormProvider.notifier).setSaving(false);
+        formNotifier.setSaving(false);
       }
     }
-    ref.read(customerFormProvider.notifier).startSubmit();
-    final service = ref.read(customerServiceProvider);
+    formNotifier.startSubmit();
     try {
       final CustomerMutationResult result;
       if (_isEditing) {
@@ -226,28 +297,28 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       } else {
         result = await service.createCustomer(name: name, phones: phones);
       }
+      formNotifier.clearAfterSuccess(submittedDraft);
+      formNotifier.clearSaving();
       if (!mounted) return;
-      ref
-          .read(customerFormProvider.notifier)
-          .setSharedPhone(result.sharedPhoneCustomers);
+      formNotifier.setSharedPhone(result.sharedPhoneCustomers);
       // Invalidate the customer list so the parent screen refreshes.
-      ref.invalidate(customerListProvider);
+      container.invalidate(customerListProvider);
       // DG-409 Phase 5 (FR13, AC6): invalidate the session cache so the
       // paginated customer list re-fetches on the next visit.
-      ref
-          .read(sessionCacheProvider)
-          .invalidateEntityType(SessionCacheEntity.customers);
+      sessionCache.invalidateEntityType(SessionCacheEntity.customers);
       if (_isEditing) {
-        ref.invalidate(customerProvider(widget.customer!.id));
+        container.invalidate(customerProvider(widget.customer!.id));
       }
       showTopSnackBar(
         context,
-        _isEditing ? CustomersLabels.customerUpdated : CustomersLabels.customerCreated,
+        _isEditing
+            ? CustomersLabels.customerUpdated
+            : CustomersLabels.customerCreated,
       );
       Navigator.of(context).pop(true);
     } catch (e) {
+      formNotifier.clearSaving();
       if (!mounted) return;
-      ref.read(customerFormProvider.notifier).clearSaving();
       showTopSnackBar(context, e.toString());
     }
   }
@@ -289,9 +360,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   /// choice. Returns `null` when cancelled, otherwise a record indicating
   /// either a chosen existing customer (`useExisting`) or a request to
   /// proceed with the create (`createAnyway`).
-  Future<DuplicateChoice?> _showDuplicateWarningDialog(
-    List<Customer> matches,
-  ) {
+  Future<DuplicateChoice?> _showDuplicateWarningDialog(List<Customer> matches) {
     return showDialog<DuplicateChoice>(
       context: context,
       barrierDismissible: false,
@@ -304,7 +373,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     // Watch the form state so the widget rebuilds when saving/sharedPhone
     // change, and when the rebuild counter bumps (phone-list structural
     // changes driven by _addPhone/_removePhone/_setPrimary).
-    final form = ref.watch(customerFormProvider);
+    final form = ref.watch(_provider);
     final saving = form.saving;
     final sharedPhone = form.sharedPhone;
     return Padding(
@@ -322,7 +391,9 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _isEditing ? CustomersLabels.editCustomer : CustomersLabels.addCustomer,
+                _isEditing
+                    ? CustomersLabels.editCustomer
+                    : CustomersLabels.addCustomer,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 20),
@@ -335,8 +406,9 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                   labelText: CustomersLabels.customerNameField,
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? SharedLabels.fieldRequired
+                    : null,
               ),
               const SizedBox(height: 12),
               for (var i = 0; i < _phones.length; i++)
@@ -359,6 +431,15 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
                 const SizedBox(height: 16),
                 SharedPhoneBanner(customers: sharedPhone),
               ],
+              DiscardFormDraftAction(
+                isDirty: ref
+                    .watch(formDraftSessionProvider)
+                    .containsKey(_draftContext),
+                onDiscard: () {
+                  ref.read(_provider.notifier).clearNewDraft();
+                  Navigator.of(context).pop(false);
+                },
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,

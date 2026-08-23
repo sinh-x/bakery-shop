@@ -9,7 +9,12 @@ import 'package:image_picker/image_picker.dart';
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
 import '../providers/order_photo_tag_edit_notifier.dart';
+import '../providers/order_draft_contexts.dart';
+import '../providers/order_form_operation_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../../../providers/photo_upload_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/upload_progress_indicator.dart';
 import 'package:bakery_app/shared/utils/order_photo_tags.dart';
@@ -126,7 +131,8 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
               (i) => i.state.status == PhotoUploadStatus.error,
               orElse: () => batch.items.first,
             )
-            .state.errorMessage;
+            .state
+            .errorMessage;
         showTopSnackBar(
           context,
           firstError == null || firstError.isEmpty
@@ -533,41 +539,65 @@ class _TagEditSheet extends ConsumerStatefulWidget {
 }
 
 class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
+  late final FormDraftContext _draftContext;
+
   @override
   void initState() {
     super.initState();
+    _draftContext = OrderDraftContexts.photoTags(
+      widget.orderRef,
+      widget.photo.id,
+    );
     final tags = parseOrderPhotoTags(widget.photo.tags);
     // Defer the seed to avoid modifying a provider during the build phase.
     Future.microtask(() {
       if (mounted) {
-        ref.read(orderPhotoTagEditProvider.notifier).seedTags(tags);
+        ref
+            .read(orderPhotoTagEditProvider(_draftContext).notifier)
+            .seedTags(tags);
       }
     });
   }
 
   Future<void> _save() async {
-    ref.read(orderPhotoTagEditProvider.notifier).setSaving(true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final draftProvider = orderPhotoTagEditProvider(_draftContext);
+    final draft = container.read(draftProvider);
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[_draftContext];
+    final operation = container.read(
+      orderFormOperationProvider(_draftContext).notifier,
+    );
+    final generation = operation.start();
+    final photos = container.read(
+      orderPhotosProvider(widget.orderRef).notifier,
+    );
     try {
-      final tags = ref.read(orderPhotoTagEditProvider).selectedTags.join(',');
-      await ref
-          .read(orderPhotosProvider(widget.orderRef).notifier)
-          .updateTags(widget.photo.id, tags);
+      await photos.updateTags(widget.photo.id, draft.selectedTags.join(','));
+      if (expectedDraft != null) {
+        container
+            .read(formDraftSessionProvider.notifier)
+            .clearDraftIfUnchanged(_draftContext, expectedDraft);
+      }
       if (mounted) {
         Navigator.pop(context);
         showTopSnackBar(context, OrdersLabels.photoTagsUpdated);
       }
     } catch (e) {
+      operation.failIfCurrent(generation, e);
       if (mounted) {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(orderPhotoTagEditProvider.notifier).setSaving(false);
+      operation.finishIfCurrent(generation);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderPhotoTagEditProvider);
+    final state = ref.watch(orderPhotoTagEditProvider(_draftContext));
+    final operation = ref.watch(orderFormOperationProvider(_draftContext));
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -593,7 +623,7 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
                 label: Text(tag.label),
                 selected: selected,
                 onSelected: (val) => ref
-                    .read(orderPhotoTagEditProvider.notifier)
+                    .read(orderPhotoTagEditProvider(_draftContext).notifier)
                     .toggleTag(tag.key, val),
                 selectedColor: tag.color.withAlpha(50),
                 checkmarkColor: tag.color,
@@ -604,9 +634,18 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
             }).toList(),
           ),
           const SizedBox(height: 16),
+          DiscardFormDraftAction(
+            isDirty: state.isDirty,
+            onDiscard: () {
+              ref
+                  .read(orderPhotoTagEditProvider(_draftContext).notifier)
+                  .clearDraft();
+              Navigator.pop(context);
+            },
+          ),
           FilledButton(
-            onPressed: state.saving ? null : _save,
-            child: state.saving
+            onPressed: operation.busy ? null : _save,
+            child: operation.busy
                 ? const SizedBox(
                     height: 20,
                     width: 20,

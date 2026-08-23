@@ -10,6 +10,7 @@ import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'providers/pos_receipt_notifier.dart';
+import '../../providers/form_draft_session_notifier.dart';
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
 class PosReceiptScreen extends ConsumerStatefulWidget {
@@ -29,31 +30,37 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   }
 
   Future<void> _fetchReceipt() async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final epoch = container.read(formDraftSessionEpochProvider);
+    final receiptService = container.read(receiptServiceProvider);
+    final receiptNotifier = container.read(posReceiptProvider.notifier);
+    final orderRef = widget.orderRef;
     try {
-      final receiptService = ref.read(receiptServiceProvider);
       final bytes = await receiptService.fetchReceipt(
-        orderRef: widget.orderRef,
+        orderRef: orderRef,
         type: ReceiptType.customer,
       );
-      if (mounted) {
-        ref.read(posReceiptProvider.notifier).setLoaded(bytes);
+      if (container.read(formDraftSessionEpochProvider) == epoch) {
+        receiptNotifier.setLoaded(bytes);
       }
     } catch (e) {
-      if (mounted) {
-        ref.read(posReceiptProvider.notifier).setError(e.toString());
+      if (container.read(formDraftSessionEpochProvider) == epoch) {
+        receiptNotifier.setError(e.toString());
       }
     }
   }
 
   Future<void> _printReceipt() async {
-    ref.read(posReceiptProvider.notifier).startPrinting();
+    final container = ProviderScope.containerOf(context, listen: false);
+    final receiptNotifier = container.read(posReceiptProvider.notifier);
+    final generation = receiptNotifier.startPrinting();
+    final receiptService = container.read(receiptServiceProvider);
+    final printedBy = container.read(loggedByProvider);
+    final orderRef = widget.orderRef;
     try {
-      final receiptService = ref.read(receiptServiceProvider);
-      final printedBy = ref.read(loggedByProvider);
-
       // Always use server-side print API (USB thermal printer)
       await receiptService.printReceipt(
-        orderRef: widget.orderRef,
+        orderRef: orderRef,
         type: ReceiptType.customer,
         printedBy: printedBy,
       );
@@ -64,7 +71,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(posReceiptProvider.notifier).stopPrinting();
+      receiptNotifier.stopPrintingIfCurrent(generation);
     }
   }
 

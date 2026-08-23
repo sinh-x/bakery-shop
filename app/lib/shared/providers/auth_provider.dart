@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
+import '../../providers/form_draft_session_notifier.dart';
 import 'auth_service.dart';
 import 'jwt_claims.dart';
 import 'token_storage.dart';
@@ -17,11 +18,11 @@ class AuthState {
   });
 
   const AuthState.unauthenticated()
-      : token = null,
-        username = null,
-        role = null,
-        status = AuthStatus.unauthenticated,
-        forcePasswordChange = false;
+    : token = null,
+      username = null,
+      role = null,
+      status = AuthStatus.unauthenticated,
+      forcePasswordChange = false;
 
   AuthState.authenticated({
     required this.token,
@@ -95,7 +96,10 @@ class AuthNotifier extends Notifier<AuthState> {
 
   TokenStorage _storage() => TokenStorage(ref.read(sharedPreferencesProvider));
 
-  Future<void> login({required String username, required String password}) async {
+  Future<void> login({
+    required String username,
+    required String password,
+  }) async {
     final service = ref.read(authServiceProvider);
     final result = await service.login(username: username, password: password);
     final storage = _storage();
@@ -105,6 +109,7 @@ class AuthNotifier extends Notifier<AuthState> {
       role: result.role,
       forcePasswordChange: result.forcePasswordChange,
     );
+    ref.read(formDraftSessionProvider.notifier).clearAll();
     state = AuthState.authenticated(
       token: result.token,
       username: result.username,
@@ -134,8 +139,7 @@ class AuthNotifier extends Notifier<AuthState> {
     );
     // Backend revoked all sessions (including this one). Clear local state so
     // the router guard redirects to /login for a fresh login.
-    await _storage().clear();
-    state = const AuthState.unauthenticated();
+    await _endSession();
   }
 
   /// Clears a forced-password-change flag from local auth state after the user
@@ -159,14 +163,18 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await _storage().clear();
-    state = const AuthState.unauthenticated();
+    await _endSession();
   }
 
   /// Called by [AuthInterceptor] when the server returns 401. Clears the
   /// stored token so the router guard routes back to the login screen.
   Future<void> handle401() async {
+    await _endSession();
+  }
+
+  Future<void> _endSession() async {
     await _storage().clear();
+    ref.read(formDraftSessionProvider.notifier).clearAll();
     state = const AuthState.unauthenticated();
   }
 
@@ -177,4 +185,6 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 }
 
-final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+final authProvider = NotifierProvider<AuthNotifier, AuthState>(
+  AuthNotifier.new,
+);

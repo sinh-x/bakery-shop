@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+
 /// Quick-log form state for recording bakery events from the phone
 /// (DG-404 Phase 4.2 / FR2).
 ///
@@ -17,6 +20,8 @@ class EventLogFormState {
     this.showCustomTagField = false,
     this.saving = false,
     this.selectedPhotos = const <XFile>[],
+    this.summary = '',
+    this.customTagInput = '',
   });
 
   final String selectedType;
@@ -25,6 +30,8 @@ class EventLogFormState {
   final bool showCustomTagField;
   final bool saving;
   final List<XFile> selectedPhotos;
+  final String summary;
+  final String customTagInput;
 
   EventLogFormState copyWith({
     String? selectedType,
@@ -33,6 +40,8 @@ class EventLogFormState {
     bool? showCustomTagField,
     bool? saving,
     List<XFile>? selectedPhotos,
+    String? summary,
+    String? customTagInput,
   }) {
     return EventLogFormState(
       selectedType: selectedType ?? this.selectedType,
@@ -41,6 +50,8 @@ class EventLogFormState {
       showCustomTagField: showCustomTagField ?? this.showCustomTagField,
       saving: saving ?? this.saving,
       selectedPhotos: selectedPhotos ?? this.selectedPhotos,
+      summary: summary ?? this.summary,
+      customTagInput: customTagInput ?? this.customTagInput,
     );
   }
 }
@@ -51,11 +62,23 @@ class EventLogFormState {
 /// The widget reads the state via [eventLogFormProvider] and rebuilds
 /// on change — no `setState` is required.
 class EventLogFormNotifier extends Notifier<EventLogFormState> {
+  EventLogFormNotifier([this.context]);
+
+  final FormDraftContext? context;
+  EventLogFormState get draftSnapshot => state.copyWith(saving: false);
   @override
-  EventLogFormState build() => const EventLogFormState();
+  EventLogFormState build() {
+    ref.watch(formDraftSessionEpochProvider);
+    return context == null
+        ? const EventLogFormState()
+        : ref
+                  .read(formDraftSessionProvider.notifier)
+                  .readDraft<EventLogFormState>(context!) ??
+              const EventLogFormState();
+  }
 
   void setSelectedType(String value) =>
-      state = state.copyWith(selectedType: value);
+      _update(state.copyWith(selectedType: value));
 
   void toggleTag(String tag, {required bool selected}) {
     final next = Set<String>.from(state.selectedTags);
@@ -64,42 +87,81 @@ class EventLogFormNotifier extends Notifier<EventLogFormState> {
     } else {
       next.remove(tag);
     }
-    state = state.copyWith(selectedTags: next);
+    _update(state.copyWith(selectedTags: next));
   }
 
   void confirmCustomTag(String tag) {
     if (tag.isEmpty) {
-      state = state.copyWith(showCustomTagField: false);
+      _update(state.copyWith(showCustomTagField: false));
       return;
     }
     final customTags = List<String>.from(state.customTags);
     if (!customTags.contains(tag)) customTags.add(tag);
     final selectedTags = Set<String>.from(state.selectedTags)..add(tag);
-    state = state.copyWith(
-      customTags: customTags,
-      selectedTags: selectedTags,
-      showCustomTagField: false,
+    _update(
+      state.copyWith(
+        customTags: customTags,
+        selectedTags: selectedTags,
+        showCustomTagField: false,
+      ),
     );
   }
 
-  void cancelCustomTag() =>
-      state = state.copyWith(showCustomTagField: false);
+  void cancelCustomTag() => _update(state.copyWith(showCustomTagField: false));
 
   void showCustomTagField() =>
-      state = state.copyWith(showCustomTagField: true);
+      _update(state.copyWith(showCustomTagField: true));
 
   void setSelectedPhotos(List<XFile> files) =>
-      state = state.copyWith(selectedPhotos: files);
+      _update(state.copyWith(selectedPhotos: files));
+
+  void setSummary(String value) => _update(state.copyWith(summary: value));
+
+  void setCustomTagInput(String value) =>
+      _update(state.copyWith(customTagInput: value));
 
   void setSaving(bool value) => state = state.copyWith(saving: value);
 
   /// Reset the form to its initial state after a successful submit.
-  void reset() => state = const EventLogFormState();
+  void reset() {
+    state = const EventLogFormState();
+    if (context != null) {
+      ref.read(formDraftSessionProvider.notifier).clearDraft(context!);
+    }
+  }
+
+  bool clearAfterSuccess(EventLogFormState expected) {
+    if (context == null) {
+      reset();
+      return true;
+    }
+    final cleared = ref
+        .read(formDraftSessionProvider.notifier)
+        .clearDraftIfUnchanged(context!, expected);
+    if (cleared) state = const EventLogFormState();
+    return cleared;
+  }
+
+  void _update(EventLogFormState next) {
+    state = next;
+    if (context != null) {
+      ref
+          .read(formDraftSessionProvider.notifier)
+          .retainDraft(context!, next.copyWith(saving: false));
+    }
+  }
 }
 
 /// Provider for the quick-log form state. The widget reads this and
 /// calls the notifier's mutators; no `setState` is required.
 final eventLogFormProvider =
     NotifierProvider<EventLogFormNotifier, EventLogFormState>(
-  EventLogFormNotifier.new,
-);
+      EventLogFormNotifier.new,
+    );
+
+final contextualEventLogFormProvider =
+    NotifierProvider.family<
+      EventLogFormNotifier,
+      EventLogFormState,
+      FormDraftContext
+    >(EventLogFormNotifier.new);

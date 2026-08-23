@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import '../data/models/product.dart';
 import '../data/providers/products_provider.dart';
 import '../shared/gift_config.dart';
+import 'form_draft_session_notifier.dart';
 
 /// A single item in the POS cart.
 class PosCartItem {
@@ -78,7 +79,13 @@ class PosCartState {
 /// POS cart notifier for counter sales (Phase 2B).
 class PosCartNotifier extends Notifier<PosCartState> {
   @override
-  PosCartState build() => PosCartState();
+  PosCartState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = PosCartState(),
+    );
+    return PosCartState();
+  }
 
   /// Adds a product to the POS cart.
   ///

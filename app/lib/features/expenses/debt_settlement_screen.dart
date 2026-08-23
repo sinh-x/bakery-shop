@@ -4,6 +4,9 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/providers/debt_settlement_notifier.dart';
 import 'package:bakery_app/shared/providers/logged_by_provider.dart';
+import 'package:bakery_app/providers/form_draft_session_notifier.dart';
+import 'package:bakery_app/shared/models/form_draft_context.dart';
+import 'package:bakery_app/shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
@@ -48,7 +51,7 @@ class DebtSettlementScreen extends ConsumerStatefulWidget {
     required String note,
     required String settledBy,
   })?
-      submitSettlement;
+  submitSettlement;
 
   @override
   ConsumerState<DebtSettlementScreen> createState() =>
@@ -57,12 +60,25 @@ class DebtSettlementScreen extends ConsumerStatefulWidget {
 
 class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _noteCtrl;
+  late final FormDraftContext _draftContext;
+  NotifierProvider<DebtSettlementNotifier, DebtSettlementState> get _provider =>
+      contextualDebtSettlementProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
+    _draftContext = FormDraftContext(
+      formType: 'debt-settlement',
+      mode: FormDraftMode.action,
+      entityId: widget.eventId.toString(),
+    );
+    final notifier = ref.read(_provider.notifier);
+    _amountCtrl = TextEditingController(text: notifier.draft.amount)
+      ..addListener(() => notifier.setAmount(_amountCtrl.text));
+    _noteCtrl = TextEditingController(text: notifier.draft.note)
+      ..addListener(() => notifier.setNote(_noteCtrl.text));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadDebt());
   }
 
@@ -75,7 +91,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
 
   Future<void> _loadDebt() async {
     if (!mounted) return;
-    final notifier = ref.read(debtSettlementProvider.notifier);
+    final notifier = ref.read(_provider.notifier);
     notifier.startLoading();
     try {
       final loader = widget.loadEvent;
@@ -86,15 +102,12 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
       final amount = data['amount_vnd'];
       final total = amount is int ? amount : int.tryParse('$amount') ?? 0;
       final settlements = data['settlements'] as List? ?? const <dynamic>[];
-      final settled = settlements.fold<int>(
-        0,
-        (sum, entry) {
-          if (entry is! Map) return sum;
-          final value = entry['amount'];
-          final parsed = value is int ? value : int.tryParse('$value') ?? 0;
-          return sum + parsed;
-        },
-      );
+      final settled = settlements.fold<int>(0, (sum, entry) {
+        if (entry is! Map) return sum;
+        final value = entry['amount'];
+        final parsed = value is int ? value : int.tryParse('$value') ?? 0;
+        return sum + parsed;
+      });
       if (!mounted) return;
       notifier.setLoadedEvent(
         event: event,
@@ -116,8 +129,9 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
     final amount = int.tryParse(_amountCtrl.text.trim());
     if (amount == null || amount <= 0) return;
     if (!mounted) return;
-    final notifier = ref.read(debtSettlementProvider.notifier);
-    final state = ref.read(debtSettlementProvider);
+    final notifier = ref.read(_provider.notifier);
+    final state = ref.read(_provider);
+    final submittedDraft = notifier.draftSnapshot;
     notifier.setSubmitting(true);
     try {
       final settledBy = ref.read(loggedByProvider);
@@ -132,7 +146,9 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
           settledBy: settledBy,
         );
       } else {
-        await ref.read(eventServiceProvider).settleDebt(
+        await ref
+            .read(eventServiceProvider)
+            .settleDebt(
               eventId: widget.eventId,
               amount: amount,
               paymentMethod: state.paymentMethod,
@@ -142,6 +158,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             );
       }
       if (!mounted) return;
+      notifier.clearAfterSuccess(submittedDraft);
       showTopSnackBar(context, ExpensesLabels.debtSettlementSuccess);
       context.pop(true);
     } catch (e) {
@@ -153,25 +170,38 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             : ExpensesLabels.debtSettlementFailure,
       );
     } finally {
-      if (mounted) notifier.setSubmitting(false);
+      notifier.setSubmitting(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(debtSettlementProvider);
-    final notifier = ref.read(debtSettlementProvider.notifier);
+    final state = ref.watch(_provider);
+    final notifier = ref.read(_provider.notifier);
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text(ExpensesLabels.debtSettlementTitle)),
+      appBar: AppBar(
+        title: const Text(ExpensesLabels.debtSettlementTitle),
+        actions: [
+          DiscardFormDraftAction(
+            isDirty: ref
+                .watch(formDraftSessionProvider)
+                .containsKey(_draftContext),
+            onDiscard: () {
+              notifier.clearDraft();
+              context.pop(false);
+            },
+          ),
+        ],
+      ),
       body: state.loading
           ? const Center(child: CircularProgressIndicator())
           : state.loadError != null
-              ? Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(state.loadError!),
-                )
-              : _buildForm(theme, state, notifier),
+          ? Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(state.loadError!),
+            )
+          : _buildForm(theme, state, notifier),
     );
   }
 
@@ -194,12 +224,21 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(ExpensesLabels.debtSettlementSummary, style: theme.textTheme.titleMedium),
+                  Text(
+                    ExpensesLabels.debtSettlementSummary,
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 6),
                   Text('${ExpensesLabels.debtSettlementCreditor}: $creditor'),
-                  Text('${ExpensesLabels.debtSettlementTotalDebt}: ${formatVND(state.totalDebt.toDouble())}'),
-                  Text('${ExpensesLabels.debtSettlementSettledSoFar}: ${formatVND(state.settledSoFar.toDouble())}'),
-                  Text('${ExpensesLabels.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}'),
+                  Text(
+                    '${ExpensesLabels.debtSettlementTotalDebt}: ${formatVND(state.totalDebt.toDouble())}',
+                  ),
+                  Text(
+                    '${ExpensesLabels.debtSettlementSettledSoFar}: ${formatVND(state.settledSoFar.toDouble())}',
+                  ),
+                  Text(
+                    '${ExpensesLabels.debtSettlementRemainingLabel}: ${formatVND(remaining.toDouble())}',
+                  ),
                 ],
               ),
             ),
@@ -215,7 +254,9 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
             ),
             validator: (value) {
               final raw = value?.trim() ?? '';
-              if (raw.isEmpty) return ExpensesLabels.debtSettlementAmountRequired;
+              if (raw.isEmpty) {
+                return ExpensesLabels.debtSettlementAmountRequired;
+              }
               final parsed = int.tryParse(raw);
               if (parsed == null || parsed <= 0) {
                 return ExpensesLabels.debtSettlementAmountInvalid;
@@ -234,7 +275,10 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               border: OutlineInputBorder(),
             ),
             items: const [
-              DropdownMenuItem(value: OrdersLabels.methodCash, child: Text(OrdersLabels.methodCash)),
+              DropdownMenuItem(
+                value: OrdersLabels.methodCash,
+                child: Text(OrdersLabels.methodCash),
+              ),
               DropdownMenuItem(
                 value: OrdersLabels.methodTransfer,
                 child: Text(OrdersLabels.methodTransfer),
@@ -254,12 +298,12 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               for (final source in expensePaymentSources)
                 DropdownMenuItem(value: source, child: Text(source)),
             ],
-            validator: (value) =>
-                (value == null || value.isEmpty)
-                    ? ExpensesLabels.debtSettlementPaymentSourceRequired
-                    : null,
+            validator: (value) => (value == null || value.isEmpty)
+                ? ExpensesLabels.debtSettlementPaymentSourceRequired
+                : null,
             onChanged: (value) => notifier.setPaymentSource(
-                value ?? ExpensesLabels.paymentSourceDrawerCash),
+              value ?? ExpensesLabels.paymentSourceDrawerCash,
+            ),
           ),
           const SizedBox(height: 12),
           TextFormField(

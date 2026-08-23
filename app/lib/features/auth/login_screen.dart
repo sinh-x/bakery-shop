@@ -30,6 +30,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (mounted) ref.read(loginFormProvider.notifier).reset();
+    });
+  }
+
+  @override
   void dispose() {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
@@ -39,12 +47,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final notifier = ref.read(loginFormProvider.notifier);
+    final authNotifier = ref.read(authProvider.notifier);
     notifier.startSubmitting();
     try {
-      await ref.read(authProvider.notifier).login(
-            username: _usernameCtrl.text.trim(),
-            password: _passwordCtrl.text,
-          );
+      await authNotifier.login(
+        username: _usernameCtrl.text.trim(),
+        password: _passwordCtrl.text,
+      );
       // On success the router redirect guard will navigate to /orders; no
       // explicit navigation here.
     } on DioException catch (e) {
@@ -54,7 +63,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (!mounted) return;
       notifier.setErrorMessage(AuthLabels.loginErrorGeneric);
     } finally {
-      if (mounted) notifier.setSubmitting(false);
+      notifier.setSubmitting(false);
     }
   }
 
@@ -97,8 +106,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.bakery_dining_rounded,
-                        size: 64, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.bakery_dining_rounded,
+                      size: 64,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       AuthLabels.loginTitle,

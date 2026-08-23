@@ -26,6 +26,13 @@ class SharedLabels {
   static const dong = 'Đóng';
   static const currency = 'đ';
 
+  // Form drafts
+  static const clearDraft = 'Xóa bản nháp';
+  static const clearDraftConfirmationTitle = 'Xóa bản nháp?';
+  static const clearDraftConfirmationMessage =
+      'Các thay đổi chưa lưu trong biểu mẫu này sẽ bị xóa.';
+  static const keepDraft = 'Giữ bản nháp';
+
   // Common error / loading messages
   static const apiError = 'Không thể kết nối máy chủ';
   static const apiTimeout = 'Kết nối máy chủ quá thời gian, vui lòng thử lại';
@@ -414,5 +421,4 @@ class SharedLabels {
   static const knowledgeTagsField = 'Nhãn';
   static const knowledgePhotosField = 'Ảnh';
   static const knowledgeNoPhotos = 'Chưa có ảnh';
-
 }

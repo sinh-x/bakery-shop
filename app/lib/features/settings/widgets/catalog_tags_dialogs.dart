@@ -5,28 +5,38 @@ import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/api/config_service.dart';
 import '../../../data/providers/catalog_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../providers/catalog_tag_form_notifier.dart';
+
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
+  ref.read(catalogTagFormOperationProvider.notifier).setSaving(false);
   await showDialog<bool>(
     context: context,
-    builder: (ctx) => _AddTagDialog(ref: ref),
+    builder: (ctx) => const _AddTagDialog(),
   );
 }
 
 Future<void> showEditDialog(
-    BuildContext context, WidgetRef ref, CatalogTagDef tag) async {
+  BuildContext context,
+  WidgetRef ref,
+  CatalogTagDef tag,
+) async {
   if (!context.mounted) return;
   await showDialog<bool>(
     context: context,
-    builder: (ctx) => _EditTagDialog(ref: ref, tag: tag),
+    builder: (ctx) => _EditTagDialog(tag: tag),
   );
 }
 
 Future<void> showDeleteDialog(
-    BuildContext context, WidgetRef ref, CatalogTagDef tag) async {
+  BuildContext context,
+  WidgetRef ref,
+  CatalogTagDef tag,
+) async {
   try {
     final usage = await ref.read(configServiceProvider).getTagUsage(tag.key);
 
@@ -104,9 +114,7 @@ Future<void> showDeleteDialog(
 }
 
 class _AddTagDialog extends ConsumerStatefulWidget {
-  const _AddTagDialog({required this.ref});
-
-  final WidgetRef ref;
+  const _AddTagDialog();
 
   @override
   ConsumerState<_AddTagDialog> createState() => _AddTagDialogState();
@@ -114,8 +122,8 @@ class _AddTagDialog extends ConsumerStatefulWidget {
 
 class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _keyCtrl = TextEditingController();
-  final _labelCtrl = TextEditingController();
+  late final TextEditingController _keyCtrl;
+  late final TextEditingController _labelCtrl;
   static final _categories = [
     ProductsLabels.tagCategoriesDoiTuong,
     ProductsLabels.tagCategoriesDip,
@@ -123,7 +131,24 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    final draft = ref.read(catalogTagFormProvider);
+    _keyCtrl = TextEditingController(text: draft.key)..addListener(_persistKey);
+    _labelCtrl = TextEditingController(text: draft.label)
+      ..addListener(_persistLabel);
+  }
+
+  void _persistKey() =>
+      ref.read(catalogTagFormProvider.notifier).setKey(_keyCtrl.text);
+
+  void _persistLabel() =>
+      ref.read(catalogTagFormProvider.notifier).setLabel(_labelCtrl.text);
+
+  @override
   void dispose() {
+    _keyCtrl.removeListener(_persistKey);
+    _labelCtrl.removeListener(_persistLabel);
     _keyCtrl.dispose();
     _labelCtrl.dispose();
     super.dispose();
@@ -131,20 +156,29 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final operation = ref.read(catalogTagFormOperationProvider.notifier);
+    final registry = ref.read(formDraftSessionProvider.notifier);
+    final submittedDraft =
+        ref.read(formDraftSessionProvider)[catalogTagCreateContext]
+            as CatalogTagFormState?;
+    final configService = ref.read(configServiceProvider);
+    final container = ProviderScope.containerOf(context, listen: false);
+    operation.setSaving(true);
     final selectedCategory = ref.read(catalogTagFormProvider).selectedCategory;
     try {
       final value =
           '$selectedCategory:${_keyCtrl.text.trim()}:${_labelCtrl.text.trim()}';
-      await widget.ref
-          .read(configServiceProvider)
-          .createConfigValue('catalog_tag', value);
-      widget.ref.invalidate(catalogTagDefsProvider);
-      widget.ref.invalidate(catalogBrowseProvider);
+      await configService.createConfigValue('catalog_tag', value);
+      container.invalidate(catalogTagDefsProvider);
+      container.invalidate(catalogBrowseProvider);
+      if (submittedDraft != null) {
+        registry.clearDraftIfUnchanged(catalogTagCreateContext, submittedDraft);
+      }
       if (mounted) {
         Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(ProductsLabels.tagAdded)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(ProductsLabels.tagAdded)));
       }
     } catch (e) {
       if (mounted) {
@@ -155,12 +189,16 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
           ),
         );
       }
+    } finally {
+      operation.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final selectedCategory = ref.watch(catalogTagFormProvider).selectedCategory;
+    final draft = ref.watch(catalogTagFormProvider);
+    final saving = ref.watch(catalogTagFormOperationProvider);
     return AlertDialog(
       title: const Text(ProductsLabels.addCatalogTag),
       content: Form(
@@ -185,7 +223,8 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
                     .read(catalogTagFormProvider.notifier)
                     .setSelectedCategory(value);
               },
-              validator: (value) => value == null ? SharedLabels.fieldRequired : null,
+              validator: (value) =>
+                  value == null ? SharedLabels.fieldRequired : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -230,13 +269,27 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
         ),
       ),
       actions: [
+        DiscardFormDraftAction(
+          isDirty: draft.isDirty,
+          onDiscard: () {
+            ref.read(catalogTagFormProvider.notifier).clear();
+            _keyCtrl.clear();
+            _labelCtrl.clear();
+          },
+        ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: saving ? null : () => Navigator.of(context).pop(false),
           child: const Text(SharedLabels.cancel),
         ),
         FilledButton(
-          onPressed: _save,
-          child: const Text(SharedLabels.save),
+          onPressed: saving ? null : _save,
+          child: saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text(SharedLabels.save),
         ),
       ],
     );
@@ -244,9 +297,8 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
 }
 
 class _EditTagDialog extends ConsumerStatefulWidget {
-  const _EditTagDialog({required this.ref, required this.tag});
+  const _EditTagDialog({required this.tag});
 
-  final WidgetRef ref;
   final CatalogTagDef tag;
 
   @override
@@ -267,16 +319,16 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final configService = ref.read(configServiceProvider);
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       final oldValue =
           '${widget.tag.category}:${widget.tag.key}:${widget.tag.label}';
       final newValue =
           '${widget.tag.category}:${_keyCtrl.text.trim()}:${_labelCtrl.text.trim()}';
-      await widget.ref
-          .read(configServiceProvider)
-          .updateConfigValue('catalog_tag', oldValue, newValue);
-      widget.ref.invalidate(catalogTagDefsProvider);
-      widget.ref.invalidate(catalogBrowseProvider);
+      await configService.updateConfigValue('catalog_tag', oldValue, newValue);
+      container.invalidate(catalogTagDefsProvider);
+      container.invalidate(catalogBrowseProvider);
       if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -358,10 +410,7 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
           onPressed: () => Navigator.of(context).pop(false),
           child: const Text(SharedLabels.cancel),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text(SharedLabels.save),
-        ),
+        FilledButton(onPressed: _save, child: const Text(SharedLabels.save)),
       ],
     );
   }

@@ -1,4 +1,5 @@
-import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, categoryMap;
+import 'package:bakery_app/shared/utils.dart'
+    show categoryEmojiMap, categoryMap;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../data/models/category.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 class ProductFormBasicInfoSection extends StatelessWidget {
   const ProductFormBasicInfoSection({
     super.key,
@@ -45,8 +47,12 @@ class ProductFormBasicInfoSection extends StatelessWidget {
         const SizedBox(height: 24),
         TextFormField(
           controller: nameController,
-          decoration: const InputDecoration(labelText: ProductsLabels.productName),
-          validator: (v) => (v == null || v.trim().isEmpty) ? SharedLabels.fieldRequired : null,
+          decoration: const InputDecoration(
+            labelText: ProductsLabels.productName,
+          ),
+          validator: (v) => (v == null || v.trim().isEmpty)
+              ? SharedLabels.fieldRequired
+              : null,
         ),
         const SizedBox(height: 16),
         TextFormField(
@@ -63,26 +69,36 @@ class ProductFormBasicInfoSection extends StatelessWidget {
         categoriesAsync.when(
           loading: () => _fallbackCategoryDropdown(
             category,
-            labelResolver: (slug) => '${categoryEmojiMap[slug] ?? ''} ${categoryMap[slug] ?? slug}',
+            labelResolver: (slug) =>
+                '${categoryEmojiMap[slug] ?? ''} ${categoryMap[slug] ?? slug}',
           ),
           error: (_, _) => _fallbackCategoryDropdown(
-            categoryMap.containsKey(category) ? category : categoryMap.keys.first,
-            labelResolver: (slug) => '${categoryEmojiMap[slug] ?? ''} ${categoryMap[slug] ?? slug}',
+            categoryMap.containsKey(category)
+                ? category
+                : categoryMap.keys.first,
+            labelResolver: (slug) =>
+                '${categoryEmojiMap[slug] ?? ''} ${categoryMap[slug] ?? slug}',
           ),
           data: (categories) {
             final active = categories.where((c) => c.active == 1).toList();
             final validSlugs = active.map((c) => c.slug).toList();
-            final selected = validSlugs.contains(category) && validSlugs.isNotEmpty
+            final selected =
+                validSlugs.contains(category) && validSlugs.isNotEmpty
                 ? category
                 : (validSlugs.isNotEmpty ? validSlugs.first : category);
             return DropdownButtonFormField<String>(
+              key: ValueKey(selected),
               initialValue: selected,
-              decoration: const InputDecoration(labelText: ProductsLabels.productCategory),
+              decoration: const InputDecoration(
+                labelText: ProductsLabels.productCategory,
+              ),
               items: active
                   .map(
                     (cat) => DropdownMenuItem(
                       value: cat.slug,
-                      child: Text('${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}'),
+                      child: Text(
+                        '${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}',
+                      ),
                     ),
                   )
                   .toList(),
@@ -96,12 +112,23 @@ class ProductFormBasicInfoSection extends StatelessWidget {
     );
   }
 
-  Widget _fallbackCategoryDropdown(String initialValue, {required String Function(String slug) labelResolver}) {
+  Widget _fallbackCategoryDropdown(
+    String initialValue, {
+    required String Function(String slug) labelResolver,
+  }) {
     return DropdownButtonFormField<String>(
+      key: ValueKey(initialValue),
       initialValue: initialValue,
-      decoration: const InputDecoration(labelText: ProductsLabels.productCategory),
+      decoration: const InputDecoration(
+        labelText: ProductsLabels.productCategory,
+      ),
       items: categoryMap.entries
-          .map((e) => DropdownMenuItem(value: e.key, child: Text(labelResolver(e.key))))
+          .map(
+            (e) => DropdownMenuItem(
+              value: e.key,
+              child: Text(labelResolver(e.key)),
+            ),
+          )
           .toList(),
       onChanged: (v) {
         if (v != null) onCategoryChanged(v);

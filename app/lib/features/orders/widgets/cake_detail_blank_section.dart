@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/work_item.dart';
 import '../../../data/providers/blanks_provider.dart';
-import '../providers/cake_detail_blank_notifier.dart';
+import '../providers/order_draft_contexts.dart';
+import '../providers/order_form_operation_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
 import '../../../shared/labels/blanks.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import 'add_blank_modal.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///
 /// Shows a "Thêm phôi bánh" button that opens the [showAddBlankModal] and a
@@ -38,14 +42,16 @@ class CakeDetailBlankSection extends ConsumerStatefulWidget {
     required int blankId,
     double quantity,
     String notes,
-  }) onAddBlank;
+  })
+  onAddBlank;
 
   final Future<BlankAssignment> Function(
     String itemId,
     int blankItemId, {
     double? quantity,
     String? notes,
-  }) onUpdateBlank;
+  })
+  onUpdateBlank;
 
   final Future<void> Function(String itemId, int blankItemId) onDeleteBlank;
 
@@ -56,30 +62,56 @@ class CakeDetailBlankSection extends ConsumerStatefulWidget {
 
 class _CakeDetailBlankSectionState
     extends ConsumerState<CakeDetailBlankSection> {
-  Future<void> _withBusy(Future<void> Function() action) async {
-    if (ref.read(cakeDetailBlankBusyProvider)) return;
-    ref.read(cakeDetailBlankBusyProvider.notifier).setBusy(true);
+  FormDraftContext get _operationContext => OrderDraftContexts.addBlank(
+    orderRef: widget.orderRef,
+    workItemId: widget.item.id,
+  );
+
+  Future<void> _withBusy(
+    ProviderContainer container,
+    FormDraftContext operationContext,
+    Future<void> Function() action,
+  ) async {
+    final provider = orderFormOperationProvider(operationContext);
+    if (container.read(provider).busy) return;
+    final operation = container.read(provider.notifier);
+    final generation = operation.start();
     try {
       await action();
     } catch (e) {
+      operation.failIfCurrent(generation, e);
       if (mounted) {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(cakeDetailBlankBusyProvider.notifier).setBusy(false);
+      operation.finishIfCurrent(generation);
     }
   }
 
   Future<void> _openAddModal() async {
-    final result = await showAddBlankModal(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final itemId = widget.item.id;
+    final onAddBlank = widget.onAddBlank;
+    final result = await showAddBlankModal(
+      context,
+      draftContext: _operationContext,
+    );
     if (result == null) return;
-    await _withBusy(() async {
-      await widget.onAddBlank(
-        widget.item.id,
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[_operationContext];
+    await _withBusy(container, _operationContext, () async {
+      await onAddBlank(
+        itemId,
         blankId: result.blankId,
         quantity: result.quantity,
         notes: result.notes,
       );
+      if (expectedDraft != null) {
+        container
+            .read(formDraftSessionProvider.notifier)
+            .clearDraftIfUnchanged(_operationContext, expectedDraft);
+      }
       if (mounted) {
         showTopSnackBar(context, BlanksLabels.messageBlankAdded);
       }
@@ -87,21 +119,38 @@ class _CakeDetailBlankSectionState
   }
 
   Future<void> _openEditModal(BlankAssignment assignment) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final itemId = widget.item.id;
+    final onUpdateBlank = widget.onUpdateBlank;
+    final draftContext = OrderDraftContexts.addBlank(
+      orderRef: widget.orderRef,
+      workItemId: widget.item.id,
+      assignmentId: assignment.id,
+    );
     final result = await showAddBlankModal(
       context,
       initialBlankId: assignment.blankId,
       initialQuantity: assignment.quantity,
       initialNotes: assignment.notes,
       isEdit: true,
+      draftContext: draftContext,
     );
     if (result == null) return;
-    await _withBusy(() async {
-      await widget.onUpdateBlank(
-        widget.item.id,
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[draftContext];
+    await _withBusy(container, draftContext, () async {
+      await onUpdateBlank(
+        itemId,
         assignment.id!,
         quantity: result.quantity,
         notes: result.notes,
       );
+      if (expectedDraft != null) {
+        container
+            .read(formDraftSessionProvider.notifier)
+            .clearDraftIfUnchanged(draftContext, expectedDraft);
+      }
       if (mounted) {
         showTopSnackBar(context, BlanksLabels.messageBlankUpdated);
       }
@@ -129,8 +178,14 @@ class _CakeDetailBlankSectionState
         ],
       ),
     );
-    if (confirmed != true) return;
-    await _withBusy(() async {
+    if (confirmed != true || !mounted) return;
+    final operationContext = OrderDraftContexts.addBlank(
+      orderRef: widget.orderRef,
+      workItemId: widget.item.id,
+      assignmentId: assignment.id,
+    );
+    final container = ProviderScope.containerOf(context, listen: false);
+    await _withBusy(container, operationContext, () async {
       await widget.onDeleteBlank(widget.item.id, assignment.id!);
       if (mounted) {
         showTopSnackBar(context, BlanksLabels.messageBlankDeleted);
@@ -142,13 +197,13 @@ class _CakeDetailBlankSectionState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final blanks = widget.item.blanks;
-    final busy = ref.watch(cakeDetailBlankBusyProvider);
+    final busy = ref.watch(orderFormOperationProvider(_operationContext)).busy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const _SectionLabel(BlanksLabels.sectionBlanks),
         const SizedBox(height: 8),
-          if (blanks.isEmpty)
+        if (blanks.isEmpty)
           Text(
             BlanksLabels.emptyBlanksAssigned,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -161,7 +216,17 @@ class _CakeDetailBlankSectionState
             child: _BlankLineItem(
               assignment: assignment,
               blankName: _resolveBlankName(assignment),
-              busy: busy,
+              busy: ref
+                  .watch(
+                    orderFormOperationProvider(
+                      OrderDraftContexts.addBlank(
+                        orderRef: widget.orderRef,
+                        workItemId: widget.item.id,
+                        assignmentId: assignment.id,
+                      ),
+                    ),
+                  )
+                  .busy,
               onEdit: () => _openEditModal(assignment),
               onDelete: () => _confirmDelete(assignment),
             ),
@@ -271,8 +336,8 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        color: Theme.of(context).colorScheme.primary,
+      ),
     );
   }
 }

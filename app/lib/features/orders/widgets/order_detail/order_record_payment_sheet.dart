@@ -1,17 +1,24 @@
 import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart' show ImagePicker, ImageSource, XFile;
+import 'package:image_picker/image_picker.dart'
+    show ImagePicker, ImageSource, XFile;
 
 import '../../../../data/api/order_service.dart';
 import '../../../../providers/order_providers.dart';
 import '../../providers/order_record_payment_notifier.dart';
+import '../../providers/order_draft_contexts.dart';
+import '../../providers/order_form_operation_notifier.dart';
+import '../../../../shared/models/form_draft_context.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
 import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/widgets/discard_form_draft_action.dart';
 import 'txn_date_time_picker_row.dart';
+import '../../../../providers/form_draft_session_notifier.dart';
+
 /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
 /// special chars stripped (FR4). E.g. `TK Phượng VCB` → `TK-Phượng-VCB`.
 /// Unicode letters/digits are preserved; only ASCII punctuation/symbols
@@ -21,7 +28,10 @@ String sanitizeAccountTag(String? account) {
   if (account == null || account.isEmpty) return '';
   var sanitized = account.replaceAll(' ', '-');
   // Strip any character that is not a Unicode letter, digit, or hyphen.
-  sanitized = sanitized.replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '');
+  sanitized = sanitized.replaceAll(
+    RegExp(r'[^\p{L}\p{N}-]', unicode: true),
+    '',
+  );
   // Collapse repeated hyphens and trim leading/trailing hyphens.
   sanitized = sanitized.replaceAll(RegExp(r'-+'), '-');
   if (sanitized.startsWith('-')) sanitized = sanitized.substring(1);
@@ -49,17 +59,32 @@ class OrderRecordPaymentSheet extends ConsumerStatefulWidget {
 
 class _OrderRecordPaymentSheetState
     extends ConsumerState<OrderRecordPaymentSheet> {
-  final _amountCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _notesCtrl;
+  late final OrderRecordPaymentNotifier _draftNotifier;
+  late final FormDraftContext _draftContext;
   final _formKey = GlobalKey<FormState>();
 
   @override
   void initState() {
     super.initState();
+    _draftContext = OrderDraftContexts.recordPayment(widget.orderRef);
+    _draftNotifier = ref.read(
+      orderRecordPaymentDraftProvider(_draftContext).notifier,
+    );
+    final draft = ref.read(orderRecordPaymentDraftProvider(_draftContext));
+    _amountCtrl = TextEditingController(text: draft.amount)
+      ..addListener(_persistAmount);
+    _notesCtrl = TextEditingController(text: draft.notes)
+      ..addListener(_persistNotes);
   }
 
+  void _persistAmount() => _draftNotifier.setAmount(_amountCtrl.text);
+
+  void _persistNotes() => _draftNotifier.setNotes(_notesCtrl.text);
+
   void _onTypeSelected(String type) {
-    ref.read(orderRecordPaymentProvider.notifier).setType(type);
+    _draftNotifier.setType(type);
     if (type == 'full_payment' && widget.remaining > 0) {
       // Display the amount in thousands (user types 200 → means 200,000)
       _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
@@ -67,7 +92,7 @@ class _OrderRecordPaymentSheetState
   }
 
   void _onMethodSelected(String method) {
-    ref.read(orderRecordPaymentProvider.notifier).setMethod(method);
+    _draftNotifier.setMethod(method);
   }
 
   /// Opens the camera/gallery picker (FR2) reusing the POS checkout
@@ -84,11 +109,13 @@ class _OrderRecordPaymentSheetState
       imageQuality: 85,
     );
     if (image == null || !mounted) return;
-    ref.read(orderRecordPaymentProvider.notifier).setPendingTransferPhoto(image);
+    _draftNotifier.setPendingTransferPhoto(image);
   }
 
   @override
   void dispose() {
+    _amountCtrl.removeListener(_persistAmount);
+    _notesCtrl.removeListener(_persistNotes);
     _amountCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
@@ -96,46 +123,54 @@ class _OrderRecordPaymentSheetState
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    // Multiply by 1000: staff types 200 → actual amount 200,000
+    final container = ProviderScope.containerOf(context, listen: false);
+    final draftProvider = orderRecordPaymentDraftProvider(_draftContext);
+    final draft = container.read(draftProvider);
+    final expectedDraft = container.read(
+      formDraftSessionProvider,
+    )[_draftContext];
+    final operation = container.read(
+      orderFormOperationProvider(_draftContext).notifier,
+    );
+    final generation = operation.start();
+    final transactions = container.read(
+      orderPaymentTransactionsProvider(widget.orderRef).notifier,
+    );
+    final orderService = container.read(orderServiceProvider);
+    final notes = _notesCtrl.text.trim();
     final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
-    ref.read(orderRecordPaymentProvider.notifier).setSubmitting(true);
+    XFile? uploadedPendingPhoto;
     try {
-      final s = ref.read(orderRecordPaymentProvider);
-      // Capture the created txn so its id can link the uploaded photo (FR2).
-      final txn = await ref
-          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
-          .record(
-            amount: amount,
-            type: s.type,
-            method: s.method,
-            notes: _notesCtrl.text.trim(),
-            paymentSource: s.paymentSource,
-            createdAt: s.createdAt,
-          );
+      final txn = await transactions.record(
+        amount: amount,
+        type: draft.type,
+        method: draft.method,
+        notes: notes,
+        paymentSource: draft.paymentSource,
+        createdAt: draft.createdAt,
+      );
       // Upload the transfer proof photo after the payment is recorded (FR3).
       // Tags = 'chuyen-khoan,<sanitized-account>' (FR3/FR4). The photo upload
       // is best-effort: a failure does not roll back the recorded payment.
-      final pendingPhoto = s.pendingTransferPhoto;
-      if (s.method == 'transfer' && pendingPhoto != null) {
-        final accountTag = sanitizeAccountTag(s.paymentSource);
+      final pendingPhoto = draft.pendingTransferPhoto;
+      if (draft.method == 'transfer' && pendingPhoto != null) {
+        final accountTag = sanitizeAccountTag(draft.paymentSource);
         final tags = accountTag.isEmpty
             ? 'chuyen-khoan'
             : 'chuyen-khoan,$accountTag';
         try {
-          final photo = await ref.read(orderServiceProvider).uploadOrderPhoto(
-                widget.orderRef,
-                pendingPhoto,
-                tags: tags,
-              );
-          ref.invalidate(orderPhotosProvider(widget.orderRef));
+          final photo = await orderService.uploadOrderPhoto(
+            widget.orderRef,
+            pendingPhoto,
+            tags: tags,
+          );
+          uploadedPendingPhoto = pendingPhoto;
+          container.invalidate(orderPhotosProvider(widget.orderRef));
           // Link the just-uploaded order-level photo to the new transaction
           // via the join table (FR2 / AC1). Best-effort: a link failure does
           // not roll back the recorded payment or the order-level upload.
           try {
-            await ref
-                .read(orderPaymentTransactionsProvider(widget.orderRef)
-                    .notifier)
-                .linkPhoto(txn.id, photo.photoHash);
+            await transactions.linkPhoto(txn.id, photo.photoHash);
             if (mounted) {
               showTopSnackBar(context, OrdersLabels.txnPhotoLinked);
             }
@@ -152,12 +187,17 @@ class _OrderRecordPaymentSheetState
             showTopSnackBar(context, OrdersLabels.transferPhotoUploadFailed);
           }
         }
-        // Clear the pending photo after the upload attempt (both success and
-        // failure) so the field does not outlive its purpose and the
-        // payment-recorded snackbar suppression logic below stays consistent
-        // (DG-364 review-auto cycle 1, MN-3).
-        if (mounted) {
-          ref.read(orderRecordPaymentProvider.notifier).clearPendingTransferPhoto();
+      }
+      if (operation.isCurrent(generation)) {
+        final cleared =
+            expectedDraft != null &&
+            container
+                .read(formDraftSessionProvider.notifier)
+                .clearDraftIfUnchanged(_draftContext, expectedDraft);
+        if (!cleared && uploadedPendingPhoto != null) {
+          container
+              .read(draftProvider.notifier)
+              .removeUploadedPendingPhoto(uploadedPendingPhoto);
         }
       }
       if (mounted) {
@@ -169,18 +209,20 @@ class _OrderRecordPaymentSheetState
         showTopSnackBar(context, OrdersLabels.paymentRecorded);
       }
     } catch (e) {
+      operation.failIfCurrent(generation, e);
       if (mounted) {
         showTopSnackBar(context, '${SharedLabels.apiError}: $e');
       }
     } finally {
-      if (mounted) ref.read(orderRecordPaymentProvider.notifier).setSubmitting(false);
+      operation.finishIfCurrent(generation);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final s = ref.watch(orderRecordPaymentProvider);
+    final s = ref.watch(orderRecordPaymentDraftProvider(_draftContext));
+    final operation = ref.watch(orderFormOperationProvider(_draftContext));
 
     const types = [
       ('deposit', OrdersLabels.txnTypeDeposit),
@@ -189,7 +231,10 @@ class _OrderRecordPaymentSheetState
       ('tien_rut', OrdersLabels.txnTypeRutTien),
       ('refund', OrdersLabels.txnTypeRefund),
     ];
-    const methods = [('cash', OrdersLabels.methodCash), ('transfer', OrdersLabels.methodTransfer)];
+    const methods = [
+      ('cash', OrdersLabels.methodCash),
+      ('transfer', OrdersLabels.methodTransfer),
+    ];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -222,7 +267,10 @@ class _OrderRecordPaymentSheetState
                   .toList(),
             ),
             const SizedBox(height: 12),
-            Text(OrdersLabels.paymentMethod, style: theme.textTheme.labelMedium),
+            Text(
+              OrdersLabels.paymentMethod,
+              style: theme.textTheme.labelMedium,
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -248,9 +296,13 @@ class _OrderRecordPaymentSheetState
               keyboardType: TextInputType.number,
               autofocus: true,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return SharedLabels.fieldRequired;
+                if (v == null || v.trim().isEmpty) {
+                  return SharedLabels.fieldRequired;
+                }
                 final n = double.tryParse(v.trim());
-                if (n == null || n <= 0) return SharedLabels.invalidPrice;
+                if (n == null || n <= 0) {
+                  return SharedLabels.invalidPrice;
+                }
                 return null;
               },
             ),
@@ -269,10 +321,10 @@ class _OrderRecordPaymentSheetState
             TxnDateTimePickerRow(
               dateTime: s.createdAt ?? DateTime.now(),
               onDateChanged: ref
-                  .read(orderRecordPaymentProvider.notifier)
+                  .read(orderRecordPaymentDraftProvider(_draftContext).notifier)
                   .setCreatedDate,
               onTimeChanged: ref
-                  .read(orderRecordPaymentProvider.notifier)
+                  .read(orderRecordPaymentDraftProvider(_draftContext).notifier)
                   .setCreatedTime,
             ),
             if (s.method == 'transfer') ...[
@@ -280,7 +332,9 @@ class _OrderRecordPaymentSheetState
               TargetAccountDropdown(
                 value: s.paymentSource,
                 onChanged: (value) => ref
-                    .read(orderRecordPaymentProvider.notifier)
+                    .read(
+                      orderRecordPaymentDraftProvider(_draftContext).notifier,
+                    )
                     .setPaymentSource(value),
               ),
               const SizedBox(height: 8),
@@ -317,9 +371,16 @@ class _OrderRecordPaymentSheetState
               ],
             ],
             const SizedBox(height: 16),
+            DiscardFormDraftAction(
+              isDirty: s.isDirty,
+              onDiscard: () {
+                _draftNotifier.clearDraft();
+                Navigator.pop(context);
+              },
+            ),
             FilledButton(
-              onPressed: s.submitting ? null : _submit,
-              child: s.submitting
+              onPressed: operation.busy ? null : _submit,
+              child: operation.busy
                   ? const SizedBox(
                       height: 20,
                       width: 20,

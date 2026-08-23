@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/checklist_template.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'providers/checklist_config_add_notifier.dart';
+
 class ChecklistConfigScreen extends ConsumerStatefulWidget {
   const ChecklistConfigScreen({super.key});
 
@@ -31,50 +34,77 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
   }
 
   Future<void> _showAddDialog(String period) async {
-    final nameCtrl = TextEditingController();
+    final draftContext = checklistConfigAddDraftContext(period);
+    final draftNotifier = ref.read(
+      checklistConfigAddProvider(draftContext).notifier,
+    );
+    final nameCtrl = TextEditingController(
+      text: ref.read(checklistConfigAddProvider(draftContext)).name,
+    );
+    void persistName() => draftNotifier.setName(nameCtrl.text);
+    nameCtrl.addListener(persistName);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          period == 'opening' ? 'Thêm mục mở cửa' : 'Thêm mục đóng cửa',
+      builder: (ctx) => Consumer(
+        builder: (context, ref, _) => AlertDialog(
+          title: Text(
+            period == 'opening' ? 'Thêm mục mở cửa' : 'Thêm mục đóng cửa',
+          ),
+          content: TextField(
+            controller: nameCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Tên mục',
+              hintText: 'Nhập tên công việc...',
+              border: OutlineInputBorder(),
+            ),
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          actions: [
+            DiscardFormDraftAction(
+              isDirty: ref
+                  .watch(checklistConfigAddProvider(draftContext))
+                  .name
+                  .isNotEmpty,
+              onDiscard: () {
+                nameCtrl.clear();
+                draftNotifier.clear();
+              },
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(SharedLabels.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Thêm'),
+            ),
+          ],
         ),
-        content: TextField(
-          controller: nameCtrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Tên mục',
-            hintText: 'Nhập tên công việc...',
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.sentences,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(SharedLabels.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Thêm'),
-          ),
-        ],
       ),
     );
 
     if (confirmed == true && nameCtrl.text.trim().isNotEmpty) {
+      final submittedDraft = draftNotifier.retainedDraft;
       try {
         await ref
             .read(checklistTemplatesProvider.notifier)
             .createTemplate(name: nameCtrl.text.trim(), period: period);
+        draftNotifier.completeSuccess(submittedDraft);
         if (mounted) {
           showTopSnackBar(context, 'Đã thêm mục checklist');
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(
+            context,
+            SharedLabels.apiError,
+            backgroundColor: Colors.red,
+          );
         }
       }
     }
+    nameCtrl.removeListener(persistName);
     nameCtrl.dispose();
   }
 
@@ -116,7 +146,11 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(
+            context,
+            SharedLabels.apiError,
+            backgroundColor: Colors.red,
+          );
         }
       }
     }
@@ -155,7 +189,11 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
         }
       } catch (e) {
         if (mounted) {
-          showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
+          showTopSnackBar(
+            context,
+            SharedLabels.apiError,
+            backgroundColor: Colors.red,
+          );
         }
       }
     }
@@ -175,7 +213,11 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
       await ref.read(checklistTemplatesProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(
+          context,
+          SharedLabels.apiError,
+          backgroundColor: Colors.red,
+        );
       }
     }
   }
@@ -194,7 +236,11 @@ class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
       await ref.read(checklistTemplatesProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, SharedLabels.apiError, backgroundColor: Colors.red);
+        showTopSnackBar(
+          context,
+          SharedLabels.apiError,
+          backgroundColor: Colors.red,
+        );
       }
     }
   }

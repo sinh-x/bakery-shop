@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Cake-detail screen transition/save-flag state (DG-404 Phase 4.6 / FR2).
 ///
@@ -27,7 +28,13 @@ class CakeDetailScreenState {
 
 class CakeDetailScreenNotifier extends Notifier<CakeDetailScreenState> {
   @override
-  CakeDetailScreenState build() => const CakeDetailScreenState();
+  CakeDetailScreenState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const CakeDetailScreenState(),
+    );
+    return const CakeDetailScreenState();
+  }
 
   void setTransitioning(bool value) =>
       state = state.copyWith(transitioning: value);
@@ -47,7 +54,10 @@ final cakeDetailScreenProvider =
 /// required.
 class OrderDetailScreenNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) => state = false);
+    return false;
+  }
 
   void setTransitioning(bool value) => state = value;
 }

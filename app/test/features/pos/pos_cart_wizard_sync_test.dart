@@ -21,33 +21,37 @@ Product _product({int id = 1, double price = 20000, String name = 'Banh mi'}) {
 
 void main() {
   group('pos_cart_wizard_sync (pure conversions)', () {
-    test('cartItemToDraft preserves quantity, gift, chip, and inventory flag',
-        () {
-      final product = _product();
-      final cartItem = PosCartItem(
-        product: product,
-        quantity: 3,
-        useInventory: false,
-        selectedPrice: 25000,
-        selectedChipId: 7,
-      );
+    test(
+      'cartItemToDraft preserves quantity, gift, chip, and inventory flag',
+      () {
+        final product = _product();
+        final cartItem = PosCartItem(
+          product: product,
+          quantity: 3,
+          useInventory: false,
+          selectedPrice: 25000,
+          selectedChipId: 7,
+        );
 
-      final draft = cartItemToDraft(cartItem);
+        final draft = cartItemToDraft(cartItem);
 
-      expect(draft.product.id, product.id);
-      expect(draft.quantity, 3);
-      expect(draft.isGift, isFalse);
-      expect(draft.customUnitPrice, 25000);
-      expect(draft.priceChipId, 7);
-      expect(draft.attributes['useInventory'], 'false');
-    });
+        expect(draft.product.id, product.id);
+        expect(draft.quantity, 3);
+        expect(draft.isGift, isFalse);
+        expect(draft.customUnitPrice, 25000);
+        expect(draft.priceChipId, 7);
+        expect(draft.attributes['useInventory'], 'false');
+      },
+    );
 
-    test('cartItemToDraft omits useInventory override when inventory is used',
-        () {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-      final draft = cartItemToDraft(cartItem);
-      expect(draft.attributes['useInventory'], isNot('false'));
-    });
+    test(
+      'cartItemToDraft omits useInventory override when inventory is used',
+      () {
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+        final draft = cartItemToDraft(cartItem);
+        expect(draft.attributes['useInventory'], isNot('false'));
+      },
+    );
 
     test('cartItemToDraft preserves gift flag', () {
       final cartItem = PosCartItem(
@@ -59,34 +63,36 @@ void main() {
       expect(draft.isGift, isTrue);
     });
 
-    test('draftItemToCart preserves quantity, chip selection, and inventory',
-        () {
-      const chip = PriceChip(id: 7, label: 'Lớn', price: 25000);
-      const product = Product(
-        id: 1,
-        name: 'Banh mi',
-        basePrice: 20000,
-        category: 'bread',
-        active: 1,
-        priceChips: [chip],
-      );
-      final draft = DraftOrderItem(
-        product: product,
-        quantity: 2,
-        customUnitPrice: 25000,
-        priceChipId: 7,
-        attributes: const {'useInventory': 'false'},
-      );
+    test(
+      'draftItemToCart preserves quantity, chip selection, and inventory',
+      () {
+        const chip = PriceChip(id: 7, label: 'Lớn', price: 25000);
+        const product = Product(
+          id: 1,
+          name: 'Banh mi',
+          basePrice: 20000,
+          category: 'bread',
+          active: 1,
+          priceChips: [chip],
+        );
+        final draft = DraftOrderItem(
+          product: product,
+          quantity: 2,
+          customUnitPrice: 25000,
+          priceChipId: 7,
+          attributes: const {'useInventory': 'false'},
+        );
 
-      final cartItem = draftItemToCart(draft);
+        final cartItem = draftItemToCart(draft);
 
-      expect(cartItem.product.id, 1);
-      expect(cartItem.quantity, 2);
-      expect(cartItem.selectedChipId, 7);
-      expect(cartItem.selectedChipLabel, 'Lớn');
-      expect(cartItem.selectedPrice, 25000);
-      expect(cartItem.useInventory, isFalse);
-    });
+        expect(cartItem.product.id, 1);
+        expect(cartItem.quantity, 2);
+        expect(cartItem.selectedChipId, 7);
+        expect(cartItem.selectedChipLabel, 'Lớn');
+        expect(cartItem.selectedPrice, 25000);
+        expect(cartItem.useInventory, isFalse);
+      },
+    );
 
     test('draftItemToCart defaults useInventory true when not overridden', () {
       final draft = DraftOrderItem(product: _product(), quantity: 1);
@@ -106,14 +112,28 @@ void main() {
     });
 
     test('draftItemToCart preserves notes and pendingPhotos', () {
+      final photo = XFile('/tmp/order.jpg');
       final draft = DraftOrderItem(
         product: _product(),
         quantity: 1,
         notes: 'Ít ngọt',
-        pendingPhotos: <XFile>[],
+        pendingPhotos: [photo],
       );
       final cartItem = draftItemToCart(draft);
       expect(cartItem.notes, 'Ít ngọt');
+      expect(cartItem.pendingPhotos, [photo]);
+    });
+
+    test('draftItemToCart can strip photos when leaving checkout', () {
+      final draft = DraftOrderItem(
+        product: _product(),
+        notes: 'Retained note',
+        pendingPhotos: [XFile('/tmp/order.jpg')],
+      );
+
+      final cartItem = draftItemToCart(draft, includePendingPhotos: false);
+
+      expect(cartItem.notes, 'Retained note');
       expect(cartItem.pendingPhotos, isEmpty);
     });
 
@@ -196,52 +216,66 @@ void main() {
       expect(cartItem.age, '7');
     });
 
-    test('draftItemToCart preserves rutTien, cashFee, cashAmount from attributes', () {
-      final draft = DraftOrderItem(
-        product: _product(),
-        quantity: 1,
-        attributes: {'rut_tien': 'true', 'cash_fee': '5000', 'cash_amount': '20000'},
-      );
-      final cartItem = draftItemToCart(draft);
-      expect(cartItem.rutTien, isTrue);
-      expect(cartItem.cashFee, 5000);
-      expect(cartItem.cashAmount, 20000);
-    });
+    test(
+      'draftItemToCart preserves rutTien, cashFee, cashAmount from attributes',
+      () {
+        final draft = DraftOrderItem(
+          product: _product(),
+          quantity: 1,
+          attributes: {
+            'rut_tien': 'true',
+            'cash_fee': '5000',
+            'cash_amount': '20000',
+          },
+        );
+        final cartItem = draftItemToCart(draft);
+        expect(cartItem.rutTien, isTrue);
+        expect(cartItem.cashFee, 5000);
+        expect(cartItem.cashAmount, 20000);
+      },
+    );
 
     test('cartItemToDraft omits rut_tien attributes when rutTien is false', () {
-      final cartItem = PosCartItem(product: _product(), quantity: 1, rutTien: false);
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        rutTien: false,
+      );
       final draft = cartItemToDraft(cartItem);
       expect(draft.attributes['rut_tien'], isNot('true'));
     });
 
-    test('round trip cart -> draft -> cart preserves all birthday and rut_tien attributes', () {
-      const chip = PriceChip(id: 1, label: 'Lớn', price: 25000);
-      const product = Product(
-        id: 1,
-        name: 'Banh sinh nhat',
-        basePrice: 200000,
-        category: 'cake',
-        active: 1,
-        priceChips: [chip],
-      );
-      final original = PosCartItem(
-        product: product,
-        quantity: 2,
-        isBirthday: true,
-        age: '5',
-        rutTien: true,
-        cashFee: 10000,
-        cashAmount: 50000,
-        useInventory: false,
-      );
-      final roundTripped = draftItemToCart(cartItemToDraft(original));
-      expect(roundTripped.isBirthday, isTrue);
-      expect(roundTripped.age, '5');
-      expect(roundTripped.rutTien, isTrue);
-      expect(roundTripped.cashFee, 10000);
-      expect(roundTripped.cashAmount, 50000);
-      expect(roundTripped.useInventory, isFalse);
-    });
+    test(
+      'round trip cart -> draft -> cart preserves all birthday and rut_tien attributes',
+      () {
+        const chip = PriceChip(id: 1, label: 'Lớn', price: 25000);
+        const product = Product(
+          id: 1,
+          name: 'Banh sinh nhat',
+          basePrice: 200000,
+          category: 'cake',
+          active: 1,
+          priceChips: [chip],
+        );
+        final original = PosCartItem(
+          product: product,
+          quantity: 2,
+          isBirthday: true,
+          age: '5',
+          rutTien: true,
+          cashFee: 10000,
+          cashAmount: 50000,
+          useInventory: false,
+        );
+        final roundTripped = draftItemToCart(cartItemToDraft(original));
+        expect(roundTripped.isBirthday, isTrue);
+        expect(roundTripped.age, '5');
+        expect(roundTripped.rutTien, isTrue);
+        expect(roundTripped.cashFee, 10000);
+        expect(roundTripped.cashAmount, 50000);
+        expect(roundTripped.useInventory, isFalse);
+      },
+    );
 
     test('round trip with partial rutTien (true but no fee/amount)', () {
       final original = PosCartItem(
@@ -268,45 +302,46 @@ void main() {
 
   group('syncWizardItemsToCart contract (M1)', () {
     testWidgets(
-        'leaves the POS cart unchanged when wizard items is empty (M1)',
-        (tester) async {
-      final seededItems = [
-        PosCartItem(product: _product(), quantity: 2),
-      ];
+      'leaves the POS cart unchanged when wizard items is empty (M1)',
+      (tester) async {
+        final seededItems = [PosCartItem(product: _product(), quantity: 2)];
 
-      late WidgetRef capturedRef;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            posCartProvider.overrideWith(
-              () => _SeededCartNotifier(seededItems),
-            ),
-          ],
-          child: MaterialApp(
-            home: Consumer(
-              builder: (context, ref, _) {
-                capturedRef = ref;
-                return const SizedBox.shrink();
-              },
+        late WidgetRef capturedRef;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              posCartProvider.overrideWith(
+                () => _SeededCartNotifier(seededItems),
+              ),
+            ],
+            child: MaterialApp(
+              home: Consumer(
+                builder: (context, ref, _) {
+                  capturedRef = ref;
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
           ),
-        ),
-      );
+        );
 
-      expect(capturedRef.read(posCartProvider).items, hasLength(1));
+        expect(capturedRef.read(posCartProvider).items, hasLength(1));
 
-      // Wizard items are empty by default (fresh state) — invoking the sync
-      // must NOT clear the cart (M1: empty items are ignored).
-      syncWizardItemsToCart(capturedRef);
+        // Wizard items are empty by default (fresh state) — invoking the sync
+        // must NOT clear the cart (M1: empty items are ignored).
+        syncWizardItemsToCart(capturedRef);
 
-      expect(
-        capturedRef.read(posCartProvider).items,
-        hasLength(1),
-        reason: 'M1: empty wizard items must leave the cart unchanged',
-      );
-    });
+        expect(
+          capturedRef.read(posCartProvider).items,
+          hasLength(1),
+          reason: 'M1: empty wizard items must leave the cart unchanged',
+        );
+      },
+    );
 
-    testWidgets('writes wizard items back to the cart when non-empty', (tester) async {
+    testWidgets('writes wizard items back to the cart when non-empty', (
+      tester,
+    ) async {
       late WidgetRef capturedRef;
       await tester.pumpWidget(
         ProviderScope(
@@ -322,9 +357,9 @@ void main() {
       );
 
       final product = _product(id: 2, name: 'Banh cuon');
-      capturedRef
-          .read(orderCreateStateProvider.notifier)
-          .updateItems([DraftOrderItem(product: product, quantity: 3)]);
+      capturedRef.read(orderCreateStateProvider.notifier).updateItems([
+        DraftOrderItem(product: product, quantity: 3),
+      ]);
 
       syncWizardItemsToCart(capturedRef);
 

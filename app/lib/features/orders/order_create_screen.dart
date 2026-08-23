@@ -7,6 +7,7 @@ import '../../data/api/customer_service.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import 'providers/order_submission_guard_notifier.dart';
+import 'providers/order_draft_contexts.dart';
 import '../../providers/order/order_draft_provider.dart';
 import '../../shared/labels/templates.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -19,6 +20,7 @@ import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
 import 'widgets/stage4_review_screen.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+
 /// Normal order creation wizard.
 ///
 /// Thin wrapper over [OrderCreationOrchestrator] (Phase 3 of DG-322). The
@@ -55,7 +57,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     // existing seed pattern (see `order_edit_screen._initFrom`).
     Future.microtask(() {
       if (mounted) {
-        ref.read(orderSubmissionLatchProvider.notifier).resetSubmitted();
+        ref
+            .read(
+              orderSubmissionLatchProvider(
+                OrderDraftContexts.createOrder,
+              ).notifier,
+            )
+            .resetSubmitted();
       }
     });
     // Sync the PageController's initial page with the draft-restored stage so
@@ -152,9 +160,16 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         return SubmitPreparation(customerId: customerId);
       },
       onAfterSubmit: (hookCtx, order) async {
-        hookCtx.ref.read(orderDraftProvider.notifier).clear();
-        hookCtx.ref.read(orderCreateStateProvider.notifier).reset();
-        showTopSnackBar(hookCtx.context, OrdersLabels.orderCreated);
+        if (identical(
+          hookCtx.ref.read(orderCreateStateProvider),
+          hookCtx.state,
+        )) {
+          hookCtx.ref.read(orderDraftProvider.notifier).clear();
+          hookCtx.ref.read(orderCreateStateProvider.notifier).reset();
+        }
+        if (hookCtx.context.mounted) {
+          showTopSnackBar(hookCtx.context, OrdersLabels.orderCreated);
+        }
       },
       onNavigateAfterSubmit: (ctx, orderRef) {
         ctx.pushReplacement('/orders/$orderRef');
@@ -181,9 +196,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           ),
         ],
       ),
-      body: OrderCreationOrchestrator(
-        config: _buildConfig(),
-      ),
+      body: OrderCreationOrchestrator(config: _buildConfig()),
     );
   }
 }

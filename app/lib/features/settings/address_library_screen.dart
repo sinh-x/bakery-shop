@@ -5,12 +5,15 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/address.dart';
 import '../../../data/providers/address_library_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import '../../../shared/labels/address_labels.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import 'providers/address_library_editor_notifier.dart';
 import 'widgets/address_library_empty_view.dart';
 import 'widgets/address_library_error_view.dart';
 import 'widgets/address_library_row.dart';
+
 /// Address-library management screen (DG-385 Phase 5 / FR6/FR8/AC6).
 ///
 /// A full-screen management surface accessible from Settings. It lists
@@ -78,12 +81,17 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
   }
 
   Future<void> _confirmDelete(AddressLibraryEntry entry) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text(AddressLabels.libraryDeleteConfirmTitle),
-            content: Text(AddressLabels.libraryDeleteConfirmBody
-                .replaceAll('{address}', entry.displayAddress)),
+            content: Text(
+              AddressLabels.libraryDeleteConfirmBody.replaceAll(
+                '{address}',
+                entry.displayAddress,
+              ),
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -103,8 +111,10 @@ class _AddressLibraryScreenState extends ConsumerState<AddressLibraryScreen> {
       if (mounted) {
         showTopSnackBar(
           context,
-          AddressLabels.libraryDeletedSnack
-              .replaceAll('{address}', entry.displayAddress),
+          AddressLabels.libraryDeletedSnack.replaceAll(
+            '{address}',
+            entry.displayAddress,
+          ),
         );
       }
     } catch (e) {
@@ -207,18 +217,53 @@ class _AddressLibraryEditorDialogState
     extends ConsumerState<AddressLibraryEditorDialog> {
   late final TextEditingController _addressController;
   late final TextEditingController _linkController;
+  late final _draftContext = addressLibraryEditorContext(widget.initial?.id);
 
   @override
   void initState() {
     super.initState();
-    _addressController =
-        TextEditingController(text: widget.initial?.displayAddress ?? '');
-    _linkController =
-        TextEditingController(text: widget.initial?.googleMapsUrl ?? '');
+    final notifier = ref.read(
+      addressLibraryEditorProvider(_draftContext).notifier,
+    );
+    final draft = ref.read(addressLibraryEditorProvider(_draftContext));
+    final restoreDraft = notifier.hasRetainedDraft;
+    _addressController = TextEditingController(
+      text: restoreDraft
+          ? draft.address
+          : (widget.initial?.displayAddress ?? draft.address),
+    );
+    _linkController = TextEditingController(
+      text: restoreDraft
+          ? draft.googleMapsUrl
+          : (widget.initial?.googleMapsUrl ?? draft.googleMapsUrl),
+    );
+    _addressController.addListener(_persistDraft);
+    _linkController.addListener(_persistDraft);
+    Future.microtask(() {
+      if (mounted) {
+        ref
+            .read(addressLibraryEditorProvider(_draftContext).notifier)
+            .resetOperation();
+      }
+    });
   }
+
+  bool get _isDirty =>
+      _addressController.text != (widget.initial?.displayAddress ?? '') ||
+      _linkController.text != (widget.initial?.googleMapsUrl ?? '');
+
+  void _persistDraft() => ref
+      .read(addressLibraryEditorProvider(_draftContext).notifier)
+      .updateDraft(
+        address: _addressController.text,
+        googleMapsUrl: _linkController.text,
+        isDirty: _isDirty,
+      );
 
   @override
   void dispose() {
+    _addressController.removeListener(_persistDraft);
+    _linkController.removeListener(_persistDraft);
     _addressController.dispose();
     _linkController.dispose();
     super.dispose();
@@ -234,25 +279,31 @@ class _AddressLibraryEditorDialogState
     final address = _addressController.text.trim();
     if (address.isEmpty) {
       ref
-          .read(addressLibraryEditorProvider.notifier)
+          .read(addressLibraryEditorProvider(_draftContext).notifier)
           .setAddressError(AddressLabels.editorAddressRequired);
       ok = false;
     } else {
-      ref.read(addressLibraryEditorProvider.notifier).setAddressError(null);
+      ref
+          .read(addressLibraryEditorProvider(_draftContext).notifier)
+          .setAddressError(null);
     }
     final link = _linkController.text.trim();
     if (link.isNotEmpty) {
       final uri = Uri.tryParse(link);
       if (uri == null || !uri.hasScheme || !uri.host.contains('.')) {
         ref
-            .read(addressLibraryEditorProvider.notifier)
+            .read(addressLibraryEditorProvider(_draftContext).notifier)
             .setLinkError(AddressLabels.editorMapsLinkInvalid);
         ok = false;
       } else {
-        ref.read(addressLibraryEditorProvider.notifier).setLinkError(null);
+        ref
+            .read(addressLibraryEditorProvider(_draftContext).notifier)
+            .setLinkError(null);
       }
     } else {
-      ref.read(addressLibraryEditorProvider.notifier).setLinkError(null);
+      ref
+          .read(addressLibraryEditorProvider(_draftContext).notifier)
+          .setLinkError(null);
     }
     return ok;
   }
@@ -261,43 +312,48 @@ class _AddressLibraryEditorDialogState
     if (!_validate()) {
       return;
     }
-    ref.read(addressLibraryEditorProvider.notifier).setSaving(true);
+    final formNotifier = ref.read(
+      addressLibraryEditorProvider(_draftContext).notifier,
+    );
+    final registry = ref.read(formDraftSessionProvider.notifier);
+    final submittedDraft =
+        ref.read(formDraftSessionProvider)[_draftContext]
+            as AddressLibraryEditorState?;
+    final libraryNotifier = ref.read(addressLibraryProvider.notifier);
+    formNotifier.setSaving(true);
     final address = _addressController.text.trim();
     final link = _linkController.text.trim();
     final linkValue = link.isEmpty ? null : link;
     try {
-      final notifier = ref.read(addressLibraryProvider.notifier);
       final AddressLibraryEntry result;
       if (_isEdit) {
-        result = await notifier.updateEntry(
+        result = await libraryNotifier.updateEntry(
           widget.initial!.id,
           displayAddress: address,
           googleMapsUrl: linkValue,
         );
       } else {
-        result = await notifier.createEntry(
+        result = await libraryNotifier.createEntry(
           displayAddress: address,
           googleMapsUrl: linkValue,
         );
       }
+      if (submittedDraft != null) {
+        registry.clearDraftIfUnchanged(_draftContext, submittedDraft);
+      }
       if (mounted) {
-        ref.read(addressLibraryEditorProvider.notifier).setSaving(false);
         Navigator.of(context).pop(result);
       }
-    } catch (e) {
-      if (mounted) {
-        // Surface the backend error (e.g. 409 collision) under the
-        // address field, since that's the most common conflict point.
-        ref.read(addressLibraryEditorProvider.notifier)
-          ..setSaving(false)
-          ..setAddressError(AddressLabels.libraryErrorSnack);
-      }
+    } catch (_) {
+      formNotifier.setAddressError(AddressLabels.libraryErrorSnack);
+    } finally {
+      formNotifier.setSaving(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final editorState = ref.watch(addressLibraryEditorProvider);
+    final editorState = ref.watch(addressLibraryEditorProvider(_draftContext));
     return AlertDialog(
       title: Text(
         _isEdit
@@ -338,8 +394,20 @@ class _AddressLibraryEditorDialogState
         ),
       ),
       actions: [
+        DiscardFormDraftAction(
+          isDirty: _isDirty,
+          onDiscard: () {
+            ref
+                .read(addressLibraryEditorProvider(_draftContext).notifier)
+                .clear();
+            _addressController.text = widget.initial?.displayAddress ?? '';
+            _linkController.text = widget.initial?.googleMapsUrl ?? '';
+          },
+        ),
         TextButton(
-          onPressed: editorState.saving ? null : () => Navigator.of(context).pop(),
+          onPressed: editorState.saving
+              ? null
+              : () => Navigator.of(context).pop(),
           child: const Text(SharedLabels.cancel),
         ),
         FilledButton(

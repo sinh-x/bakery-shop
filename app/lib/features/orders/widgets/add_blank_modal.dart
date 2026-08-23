@@ -7,9 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blanks_provider.dart';
 import '../providers/add_blank_modal_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import '../../../shared/labels/blanks.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+
 /// Result of the add/edit blank modal (DG-294 FR3-FR5).
 ///
 /// Carries the user-entered values back to [CakeDetailScreen] which then
@@ -33,6 +37,7 @@ class BlankModalResult {
 /// [BlankModalResult] or `null` when the user cancels.
 Future<BlankModalResult?> showAddBlankModal(
   BuildContext context, {
+
   /// Pre-selected blank id when editing (FR5), `null` when adding.
   int? initialBlankId,
 
@@ -44,6 +49,7 @@ Future<BlankModalResult?> showAddBlankModal(
 
   /// When true, the title shows the edit label (FR5).
   bool isEdit = false,
+  required FormDraftContext draftContext,
 }) {
   return showModalBottomSheet<BlankModalResult>(
     context: context,
@@ -54,6 +60,7 @@ Future<BlankModalResult?> showAddBlankModal(
       initialQuantity: initialQuantity,
       initialNotes: initialNotes,
       isEdit: isEdit,
+      draftContext: draftContext,
     ),
   );
 }
@@ -64,12 +71,14 @@ class _AddBlankModal extends ConsumerStatefulWidget {
     this.initialQuantity = 1.0,
     this.initialNotes = '',
     this.isEdit = false,
+    required this.draftContext,
   });
 
   final int? initialBlankId;
   final double initialQuantity;
   final String initialNotes;
   final bool isEdit;
+  final FormDraftContext draftContext;
 
   @override
   ConsumerState<_AddBlankModal> createState() => _AddBlankModalState();
@@ -86,20 +95,42 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
     Future.microtask(() {
       if (mounted) {
         ref
-            .read(addBlankModalProvider.notifier)
-            .seedInitialBlankId(widget.initialBlankId);
+            .read(addBlankModalProvider(widget.draftContext).notifier)
+            .seed(
+              blankId: widget.initialBlankId,
+              quantity: _formatQuantity(widget.initialQuantity),
+              notes: widget.initialNotes,
+            );
       }
     });
+    final draft = ref.read(addBlankModalProvider(widget.draftContext));
+    final hasDraft = ref
+        .read(formDraftSessionProvider)
+        .containsKey(widget.draftContext);
     _qtyController = TextEditingController(
-      text: widget.initialQuantity == widget.initialQuantity.roundToDouble()
-          ? widget.initialQuantity.toInt().toString()
-          : widget.initialQuantity.toString(),
-    );
-    _notesController = TextEditingController(text: widget.initialNotes);
+      text: hasDraft ? draft.quantity : _formatQuantity(widget.initialQuantity),
+    )..addListener(_persistQuantity);
+    _notesController = TextEditingController(
+      text: hasDraft ? draft.notes : widget.initialNotes,
+    )..addListener(_persistNotes);
   }
+
+  static String _formatQuantity(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
+
+  void _persistQuantity() => ref
+      .read(addBlankModalProvider(widget.draftContext).notifier)
+      .setQuantity(_qtyController.text);
+
+  void _persistNotes() => ref
+      .read(addBlankModalProvider(widget.draftContext).notifier)
+      .setNotes(_notesController.text);
 
   @override
   void dispose() {
+    _qtyController.removeListener(_persistQuantity);
+    _notesController.removeListener(_persistNotes);
     _qtyController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -107,12 +138,12 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
 
   double get _qty => double.tryParse(_qtyController.text.trim()) ?? 0.0;
 
-  static bool _isFinitePositive(double v) =>
-      v.isFinite && v > 0;
+  static bool _isFinitePositive(double v) => v.isFinite && v > 0;
 
   void _submit() {
-    ref.read(addBlankModalProvider.notifier).setSubmitted();
-    final s = ref.read(addBlankModalProvider);
+    final provider = addBlankModalProvider(widget.draftContext);
+    ref.read(provider.notifier).setSubmitted();
+    final s = ref.read(provider);
     if (s.blankId == null || _qty <= 0 || !_isFinitePositive(_qty)) return;
     Navigator.of(context).pop(
       BlankModalResult(
@@ -180,16 +211,14 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
 
   Widget _buildTitle(BuildContext context) {
     return Text(
-      widget.isEdit
-          ? BlanksLabels.editBlankTitle
-          : BlanksLabels.addBlankTitle,
+      widget.isEdit ? BlanksLabels.editBlankTitle : BlanksLabels.addBlankTitle,
       style: Theme.of(context).textTheme.titleLarge,
       textAlign: TextAlign.center,
     );
   }
 
   Widget _buildForm(BuildContext context, List<Blank> blanks) {
-    final modalState = ref.watch(addBlankModalProvider);
+    final modalState = ref.watch(addBlankModalProvider(widget.draftContext));
     final blankId = modalState.blankId;
     final submitted = modalState.submitted;
     final hasBlankError = submitted && blankId == null;
@@ -207,14 +236,12 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
           ),
           items: blanks
               .map(
-                (b) => DropdownMenuItem<int>(
-                  value: b.id,
-                  child: Text(b.name),
-                ),
+                (b) => DropdownMenuItem<int>(value: b.id, child: Text(b.name)),
               )
               .toList(),
-          onChanged: (v) =>
-              ref.read(addBlankModalProvider.notifier).setBlankId(v),
+          onChanged: (v) => ref
+              .read(addBlankModalProvider(widget.draftContext).notifier)
+              .setBlankId(v),
         ),
         const SizedBox(height: 12),
         TextFormField(
@@ -227,12 +254,17 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
             labelText: BlanksLabels.fieldBlankQuantity,
             border: const OutlineInputBorder(),
             isDense: true,
-            errorText:
-                hasQtyError ? BlanksLabels.messageBlankQuantityInvalid : null,
+            errorText: hasQtyError
+                ? BlanksLabels.messageBlankQuantityInvalid
+                : null,
           ),
           onChanged: (_) {
-            if (ref.read(addBlankModalProvider).submitted) {
-              ref.read(addBlankModalProvider.notifier).clearSubmitted();
+            if (ref
+                .read(addBlankModalProvider(widget.draftContext))
+                .submitted) {
+              ref
+                  .read(addBlankModalProvider(widget.draftContext).notifier)
+                  .clearSubmitted();
             }
           },
         ),
@@ -254,6 +286,17 @@ class _AddBlankModalState extends ConsumerState<_AddBlankModal> {
   Widget _buildActions(BuildContext context) {
     return Row(
       children: [
+        DiscardFormDraftAction(
+          isDirty: ref
+              .watch(addBlankModalProvider(widget.draftContext))
+              .isDirty,
+          onDiscard: () {
+            ref
+                .read(addBlankModalProvider(widget.draftContext).notifier)
+                .clearDraft();
+            Navigator.of(context).pop();
+          },
+        ),
         Expanded(
           child: TextButton(
             onPressed: () => Navigator.of(context).pop(),

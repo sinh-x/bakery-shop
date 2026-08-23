@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/form_draft_session_notifier.dart';
+import '../../../shared/models/form_draft_context.dart';
+
 /// Order photo tag-edit sheet state (DG-404 Phase 4.6 / FR2).
 ///
 /// Owns the `_selectedTags` and `_saving` fields previously mutated via
@@ -10,33 +13,55 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class OrderPhotoTagEditState {
   const OrderPhotoTagEditState({
     this.selectedTags = const <String>{},
-    this.saving = false,
+    this.initialTags = const <String>{},
   });
 
   final Set<String> selectedTags;
-  final bool saving;
+  final Set<String> initialTags;
+
+  bool get isDirty => !setEquals(selectedTags, initialTags);
 
   OrderPhotoTagEditState copyWith({
     Set<String>? selectedTags,
-    bool? saving,
-  }) =>
-      OrderPhotoTagEditState(
-        selectedTags: selectedTags ?? this.selectedTags,
-        saving: saving ?? this.saving,
-      );
+    Set<String>? initialTags,
+  }) => OrderPhotoTagEditState(
+    selectedTags: selectedTags ?? this.selectedTags,
+    initialTags: initialTags ?? this.initialTags,
+  );
 }
 
 class OrderPhotoTagEditNotifier extends Notifier<OrderPhotoTagEditState> {
+  OrderPhotoTagEditNotifier(this.context);
+
+  final FormDraftContext context;
+
   @override
-  OrderPhotoTagEditState build() => const OrderPhotoTagEditState();
+  OrderPhotoTagEditState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const OrderPhotoTagEditState(),
+    );
+    ref.listen(formDraftSessionProvider, (previous, next) {
+      if ((previous?.containsKey(context) ?? false) &&
+          !next.containsKey(context)) {
+        state = const OrderPhotoTagEditState();
+      }
+    });
+    return ref
+            .read(formDraftSessionProvider.notifier)
+            .readDraft<OrderPhotoTagEditState>(context) ??
+        const OrderPhotoTagEditState();
+  }
 
   /// Seed the initial tag set from the photo being edited. Called once from
   /// the widget's `initState` before any mutation. Updates the state so the
   /// seeded tags are visible on the first build.
   void seedTags(Set<String> tags) {
-    if (!setEquals(state.selectedTags, tags) || state.saving) {
-      state = state.copyWith(selectedTags: Set<String>.from(tags));
-    }
+    if (ref.read(formDraftSessionProvider).containsKey(context)) return;
+    state = OrderPhotoTagEditState(
+      selectedTags: Set<String>.from(tags),
+      initialTags: Set<String>.from(tags),
+    );
   }
 
   void toggleTag(String tag, bool selected) {
@@ -47,11 +72,26 @@ class OrderPhotoTagEditNotifier extends Notifier<OrderPhotoTagEditState> {
       next.remove(tag);
     }
     state = state.copyWith(selectedTags: next);
+    final drafts = ref.read(formDraftSessionProvider.notifier);
+    if (state.isDirty) {
+      drafts.retainDraft(context, state);
+    } else {
+      drafts.clearDraft(context);
+    }
   }
 
-  void setSaving(bool value) => state = state.copyWith(saving: value);
+  void clearDraft() {
+    ref.read(formDraftSessionProvider.notifier).clearDraft(context);
+    state = OrderPhotoTagEditState(
+      selectedTags: Set<String>.from(state.initialTags),
+      initialTags: Set<String>.from(state.initialTags),
+    );
+  }
 }
 
 final orderPhotoTagEditProvider =
-    NotifierProvider<OrderPhotoTagEditNotifier, OrderPhotoTagEditState>(
-        OrderPhotoTagEditNotifier.new);
+    NotifierProvider.family<
+      OrderPhotoTagEditNotifier,
+      OrderPhotoTagEditState,
+      FormDraftContext
+    >(OrderPhotoTagEditNotifier.new);

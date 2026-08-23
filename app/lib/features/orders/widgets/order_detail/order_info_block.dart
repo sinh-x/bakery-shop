@@ -64,19 +64,21 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
     final notifier = ref.read(orderInfoBlockProvider.notifier);
     final current = ref.read(orderInfoBlockProvider);
     if (staffId == current.selectedStaffId || current.savingAssignment) return;
+    final assignedStaffId = widget.order.assignedStaffId;
+    final orderDetail = ref.read(
+      orderDetailProvider(widget.order.orderRef).notifier,
+    );
     notifier.startSave(staffId);
     try {
-      await ref
-          .read(orderDetailProvider(widget.order.orderRef).notifier)
-          .saveAssignedStaff(staffId);
+      await orderDetail.saveAssignedStaff(staffId);
       if (mounted) {
         showTopSnackBar(context, OrdersLabels.assignStaffSaved);
       }
     } catch (_) {
       // Revert the local selection on failure so the dropdown reflects the
       // authoritative server state (the order prop will refresh on rebuild).
+      notifier.revert(assignedStaffId);
       if (mounted) {
-        notifier.revert(widget.order.assignedStaffId);
         showTopSnackBar(
           context,
           OrdersLabels.assignStaffSaveFailed,
@@ -84,7 +86,7 @@ class _OrderInfoBlockState extends ConsumerState<OrderInfoBlock> {
         );
       }
     } finally {
-      if (mounted) notifier.finishSave();
+      notifier.finishSave();
     }
   }
 

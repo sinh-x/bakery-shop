@@ -1,13 +1,17 @@
-import 'package:bakery_app/shared/utils.dart' show categoryEmojiMap, showTopSnackBar;
+import 'package:bakery_app/shared/utils.dart'
+    show categoryEmojiMap, showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/stock_service.dart';
+import '../../../shared/models/form_draft_context.dart';
+import '../../../shared/widgets/discard_form_draft_action.dart';
 import '../providers/stock_action_sheet_notifier.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
+
 enum ActionType { restock, waste, adjust }
 
 /// Stock action bottom sheet for restock, waste, and adjust operations.
@@ -35,10 +39,26 @@ class StockActionSheet extends ConsumerStatefulWidget {
 }
 
 class _StockActionSheetState extends ConsumerState<StockActionSheet> {
-  final _quantityController = TextEditingController();
-  final _reasonController = TextEditingController();
-  final _noteController = TextEditingController();
+  late final TextEditingController _quantityController;
+  late final TextEditingController _reasonController;
+  late final TextEditingController _noteController;
   final _formKey = GlobalKey<FormState>();
+
+  int? get _initialNormalizedPrice {
+    final perChip = widget.item.perChip;
+    if (perChip.isEmpty) return null;
+    final provided = widget.initialPrice;
+    return provided != null &&
+            perChip.any((option) => option.normalizedPrice == provided)
+        ? provided
+        : perChip.first.normalizedPrice;
+  }
+
+  FormDraftContext get _draftContext => stockActionDraftContext(
+    productId: widget.item.productId,
+    action: widget.actionType.name,
+    normalizedPrice: _initialNormalizedPrice,
+  );
 
   String get _title {
     switch (widget.actionType) {
@@ -64,6 +84,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
   @override
   void dispose() {
+    _quantityController.removeListener(_persistQuantity);
+    _reasonController.removeListener(_persistReason);
+    _noteController.removeListener(_persistNote);
     _quantityController.dispose();
     _reasonController.dispose();
     _noteController.dispose();
@@ -73,39 +96,57 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   @override
   void initState() {
     super.initState();
-    final perChip = widget.item.perChip;
-    int? selected;
-    if (perChip.isNotEmpty) {
-      final provided = widget.initialPrice;
-      selected = (provided != null &&
-              perChip.any((c) => c.normalizedPrice == provided))
-          ? provided
-          : perChip.first.normalizedPrice;
-    } else {
-      selected = null;
-    }
+    final draft = ref.read(stockActionSheetProvider(_draftContext));
+    _quantityController = TextEditingController(text: draft.quantity)
+      ..addListener(_persistQuantity);
+    _reasonController = TextEditingController(text: draft.reason)
+      ..addListener(_persistReason);
+    _noteController = TextEditingController(text: draft.note)
+      ..addListener(_persistNote);
+    final selected = _initialNormalizedPrice;
     // Deferred to a microtask so we don't mutate providers during the
     // widget-tree build phase (DG-404 Phase 4.7).
     Future.microtask(() {
       if (!mounted) return;
       ref
-          .read(stockActionSheetProvider.notifier)
-          .seedSelectedNormalizedPrice(selected);
+          .read(stockActionSheetProvider(_draftContext).notifier)
+          .initialize(selected);
     });
   }
+
+  void _persistQuantity() => ref
+      .read(stockActionSheetProvider(_draftContext).notifier)
+      .setQuantity(_quantityController.text);
+
+  void _persistReason() => ref
+      .read(stockActionSheetProvider(_draftContext).notifier)
+      .setReason(_reasonController.text);
+
+  void _persistNote() => ref
+      .read(stockActionSheetProvider(_draftContext).notifier)
+      .setNote(_noteController.text);
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final quantity = int.tryParse(_quantityController.text) ?? 0;
     if (quantity <= 0) {
-      showTopSnackBar(context, StockLabels.soLuongInvalid, backgroundColor: Colors.red);
+      showTopSnackBar(
+        context,
+        StockLabels.soLuongInvalid,
+        backgroundColor: Colors.red,
+      );
       return;
     }
 
-    ref.read(stockActionSheetProvider.notifier).setLoading(true);
-    final selectedNormalizedPrice =
-        ref.read(stockActionSheetProvider).selectedNormalizedPrice;
+    final draftNotifier = ref.read(
+      stockActionSheetProvider(_draftContext).notifier,
+    );
+    final submittedDraft = draftNotifier.retainedDraft;
+    draftNotifier.setLoading(true);
+    final selectedNormalizedPrice = ref
+        .read(stockActionSheetProvider(_draftContext))
+        .selectedNormalizedPrice;
 
     try {
       final service = ref.read(stockServiceProvider);
@@ -132,19 +173,24 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
             normalizedPrice: selectedNormalizedPrice,
           );
       }
-      widget.onDone();
+      draftNotifier.completeSuccess(submittedDraft);
+      if (mounted) widget.onDone();
     } catch (e) {
       debugPrint('Stock action failed: $e');
-      ref.read(stockActionSheetProvider.notifier).setLoading(false);
+      draftNotifier.setLoading(false);
       if (mounted) {
-        showTopSnackBar(context, StockLabels.loiHeThong, backgroundColor: Colors.red);
+        showTopSnackBar(
+          context,
+          StockLabels.loiHeThong,
+          backgroundColor: Colors.red,
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final sheetState = ref.watch(stockActionSheetProvider);
+    final sheetState = ref.watch(stockActionSheetProvider(_draftContext));
     final isLoading = sheetState.isLoading;
     final selectedNormalizedPrice = sheetState.selectedNormalizedPrice;
     return Padding(
@@ -218,28 +264,31 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
 
                 if (widget.item.perChip.isNotEmpty) ...[
                   DropdownButtonFormField<int>(
+                    key: ValueKey(
+                      'stock-price-${widget.item.productId}-$selectedNormalizedPrice',
+                    ),
                     initialValue: selectedNormalizedPrice,
                     decoration: const InputDecoration(
                       labelText: StockLabels.tuyChonGia,
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.sell_outlined),
                     ),
-                    items: widget.item.perChip
-                        .map(
-                          (option) {
-                            final price = option.normalizedPrice;
-                            final priceText =
-                                '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ';
-                            return DropdownMenuItem<int>(
-                              value: option.normalizedPrice,
-                              child: Text('${option.displayLabel} - $priceText (${option.quantity})'),
-                            );
-                          },
-                        )
-                        .toList(),
+                    items: widget.item.perChip.map((option) {
+                      final price = option.normalizedPrice;
+                      final priceText =
+                          '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ';
+                      return DropdownMenuItem<int>(
+                        value: option.normalizedPrice,
+                        child: Text(
+                          '${option.displayLabel} - $priceText (${option.quantity})',
+                        ),
+                      );
+                    }).toList(),
                     onChanged: (value) {
                       ref
-                          .read(stockActionSheetProvider.notifier)
+                          .read(
+                            stockActionSheetProvider(_draftContext).notifier,
+                          )
                           .setSelectedNormalizedPrice(value);
                     },
                   ),
@@ -251,7 +300,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   children: [
                     IconButton.filled(
                       onPressed: () {
-                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        final current =
+                            int.tryParse(_quantityController.text) ?? 0;
                         if (current > 1) {
                           _quantityController.text = '${current - 1}';
                         }
@@ -263,7 +313,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                         controller: _quantityController,
                         autofocus: true,
                         keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
                         textAlign: TextAlign.center,
                         decoration: InputDecoration(
                           labelText: OrdersLabels.soLuong,
@@ -286,7 +338,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                     ),
                     IconButton.filled(
                       onPressed: () {
-                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        final current =
+                            int.tryParse(_quantityController.text) ?? 0;
                         _quantityController.text = '${current + 1}';
                       },
                       icon: const Icon(Icons.add),
@@ -332,6 +385,23 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                 ],
 
                 const SizedBox(height: 8),
+
+                DiscardFormDraftAction(
+                  isDirty:
+                      sheetState.quantity.isNotEmpty ||
+                      sheetState.reason.isNotEmpty ||
+                      sheetState.note.isNotEmpty ||
+                      sheetState.selectedNormalizedPrice !=
+                          sheetState.initialNormalizedPrice,
+                  onDiscard: () {
+                    _quantityController.clear();
+                    _reasonController.clear();
+                    _noteController.clear();
+                    ref
+                        .read(stockActionSheetProvider(_draftContext).notifier)
+                        .discard(_initialNormalizedPrice);
+                  },
+                ),
 
                 // Submit button
                 FilledButton(

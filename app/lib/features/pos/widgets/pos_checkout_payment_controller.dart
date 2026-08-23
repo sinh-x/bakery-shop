@@ -18,13 +18,12 @@ import '../../../data/providers/products_provider.dart';
 import '../../../features/stock/stock_screen.dart';
 import 'pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+
 /// Callback the controller uses to invoke the shared orchestrator's
 /// submission spine. Returns `true` when the order was created and
 /// navigation fired.
-typedef SubmitOrderFn = Future<bool> Function({
-  String? status,
-  String? paymentMethod,
-});
+typedef SubmitOrderFn =
+    Future<bool> Function({String? status, String? paymentMethod});
 
 /// Callback the controller uses to read the current POS wizard deliveryType
 /// so it can resolve the createOrder `status` (pickup/delivery/door +
@@ -123,14 +122,14 @@ class PosCheckoutPaymentController {
   }
 
   PosPaymentStepState _snapshot() => PosPaymentStepState(
-        orderTotal: _cartTotal,
-        initialAmount: _paidAmount,
-        hasTienRut: _hasTienRut,
-        tienRutAmount: _tienRutAmount,
-        selectedPaymentMethod: _selectedPaymentMethod,
-        selectedTargetAccount: _selectedTargetAccount,
-        isProcessing: _isProcessing,
-      );
+    orderTotal: _cartTotal,
+    initialAmount: _paidAmount,
+    hasTienRut: _hasTienRut,
+    tienRutAmount: _tienRutAmount,
+    selectedPaymentMethod: _selectedPaymentMethod,
+    selectedTargetAccount: _selectedTargetAccount,
+    isProcessing: _isProcessing,
+  );
 
   void backFromPaymentStep() {
     if (backFromPaymentStepOverride != null) {
@@ -191,10 +190,7 @@ class PosCheckoutPaymentController {
     _isProcessing = true;
     try {
       if (_selectedPaymentMethod == 'transfer') {
-        await _handleTransfer(
-          context,
-          deliverImmediately: deliverImmediately,
-        );
+        await _handleTransfer(context, deliverImmediately: deliverImmediately);
       } else {
         await _submit(
           context,
@@ -208,7 +204,10 @@ class PosCheckoutPaymentController {
     }
   }
 
-  Future<void> handlePayLater(BuildContext context, {bool mounted = true}) async {
+  Future<void> handlePayLater(
+    BuildContext context, {
+    bool mounted = true,
+  }) async {
     if (_isProcessing) return;
     _isProcessing = true;
     _skipPayment = true;
@@ -264,8 +263,8 @@ class PosCheckoutPaymentController {
     return isDelivery
         ? 'new'
         : deliverImmediately
-            ? 'delivered'
-            : 'confirmed';
+        ? 'delivered'
+        : 'confirmed';
   }
 
   Future<void> _submit(
@@ -299,7 +298,7 @@ class PosCheckoutPaymentController {
   /// the pre-refactor `skipPayment` branch which omitted both photo upload
   /// and payment-transaction creation.
   Future<void> uploadOrderPhotos(
-    WidgetRef ref,
+    ProviderContainer ref,
     Order order,
     OrderCreateState state,
   ) async {
@@ -314,17 +313,13 @@ class PosCheckoutPaymentController {
       );
     }
 
-    final hasPerItemPhotos =
-        state.items.any((i) => i.pendingPhotos.isNotEmpty);
+    final hasPerItemPhotos = state.items.any((i) => i.pendingPhotos.isNotEmpty);
     if (hasPerItemPhotos) {
       for (final draftItem in state.items) {
         if (draftItem.pendingPhotos.isEmpty) continue;
         for (final xfile in draftItem.pendingPhotos) {
           try {
-            await orderService.uploadOrderPhoto(
-              order.orderRef,
-              xfile,
-            );
+            await orderService.uploadOrderPhoto(order.orderRef, xfile);
           } catch (e) {
             if (kDebugMode) {
               debugPrint('Photo upload failed (${xfile.path}): $e');
@@ -341,7 +336,7 @@ class PosCheckoutPaymentController {
   Future<void> createPaymentTransactions(
     Order order,
     String paymentMethod,
-    WidgetRef ref,
+    ProviderContainer ref,
   ) async {
     if (_skipPayment) return;
     final txnSvc = ref.read(paymentTransactionServiceProvider);
@@ -370,7 +365,7 @@ class PosCheckoutPaymentController {
   /// POS-specific post-submit cleanup: clear the POS cart and invalidate the
   /// product / stock providers so the POS grid refreshes after a sale.
   /// Invoked by the orchestrator's onAfterSubmit hook.
-  void postSubmitCleanup(WidgetRef ref) {
+  void postSubmitCleanup(ProviderContainer ref) {
     ref.read(posCartProvider.notifier).clearCart();
     ref.invalidate(productsProvider);
     ref.invalidate(stockOverviewProvider);

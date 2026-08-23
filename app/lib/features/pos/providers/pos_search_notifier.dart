@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// POS product-grid filter state for the POS home screen
 /// (DG-404 Phase 4.5 / FR2).
@@ -41,9 +42,13 @@ class PosSearchState {
 /// `setState` is required.
 class PosSearchNotifier extends Notifier<PosSearchState> {
   @override
-  PosSearchState build() => PosSearchState(
-        lastStockRefreshAt: DateTime.now(),
-      );
+  PosSearchState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = PosSearchState(lastStockRefreshAt: DateTime.now()),
+    );
+    return PosSearchState(lastStockRefreshAt: DateTime.now());
+  }
 
   /// Update the search query (empty string clears the search).
   void setSearchQuery(String value) =>

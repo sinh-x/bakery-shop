@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/utils/delivery_helpers.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Day-calendar navigation state (DG-404 Phase 4.6 / FR2).
 ///
@@ -43,6 +44,10 @@ class DeliveryDayCalendarNotifier extends Notifier<DeliveryDayCalendarState> {
 
   @override
   DeliveryDayCalendarState build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) {
+      _initialDate = null;
+      state = DeliveryDayCalendarState(date: DateTime.now());
+    });
     final initial = _initialDate;
     return DeliveryDayCalendarState(date: initial ?? DateTime.now());
   }
@@ -85,6 +90,10 @@ class DeliveryWeekCalendarNotifier extends Notifier<DateTime> {
 
   @override
   DateTime build() {
+    ref.listen(formDraftSessionEpochProvider, (_, _) {
+      _initialWeekStart = null;
+      state = startOfWeek(DateTime.now());
+    });
     final initial = _initialWeekStart;
     return initial ?? startOfWeek(DateTime.now());
   }

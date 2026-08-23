@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Delivery tab content state (DG-404 Phase 4.6 / FR2).
 ///
@@ -34,7 +35,13 @@ class DeliveryContentState {
 
 class DeliveryContentNotifier extends Notifier<DeliveryContentState> {
   @override
-  DeliveryContentState build() => const DeliveryContentState();
+  DeliveryContentState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const DeliveryContentState(),
+    );
+    return const DeliveryContentState();
+  }
 
   void setShowToday(bool value) => state = state.copyWith(showToday: value);
 

@@ -2,6 +2,7 @@ import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 // EXEMPT: 300-line screen threshold exceeded because the event form owns
 // type/tag selection, photo upload lifecycle, and submit flow in one screen
@@ -12,9 +13,12 @@ import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
 import '../../data/providers/events_provider.dart';
 import '../../providers/photo_upload_provider.dart';
+import '../../providers/form_draft_session_notifier.dart';
+import '../../shared/models/form_draft_context.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/upload_progress_indicator.dart';
+import '../../shared/widgets/discard_form_draft_action.dart';
 import 'providers/event_form_notifier.dart';
 import 'widgets/event_form_photo_section.dart';
 import 'package:bakery_app/shared/labels/events.dart';
@@ -51,12 +55,7 @@ const _kStandardTags = [
 ];
 
 class EventFormScreen extends ConsumerStatefulWidget {
-  const EventFormScreen({
-    super.key,
-    this.event,
-    this.orderRef,
-    this.orderId,
-  });
+  const EventFormScreen({super.key, this.event, this.orderRef, this.orderId});
 
   final BakeryEvent? event;
   final String? orderRef;
@@ -68,14 +67,25 @@ class EventFormScreen extends ConsumerStatefulWidget {
 
 class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   late final TextEditingController _summaryCtrl;
-  final _customTagCtrl = TextEditingController();
+  late final TextEditingController _customTagCtrl;
 
   bool get _isEditing => widget.event != null;
   bool get _isOrderLinked => widget.orderId != null;
+  String get _draftKey =>
+      widget.orderId == null ? 'standalone' : 'order:${widget.orderId}';
+  late final FormDraftContext _draftContext;
+  NotifierProvider<EventFormNotifier, EventFormState> get _provider =>
+      contextualEventFormProvider(_draftContext);
 
   @override
   void initState() {
     super.initState();
+    _draftContext = FormDraftContext(
+      formType: 'event',
+      mode: _isEditing ? FormDraftMode.edit : FormDraftMode.create,
+      entityId: widget.event?.id.toString(),
+      optionId: widget.orderId?.toString(),
+    );
     // Clear any stale upload state from a previous screen navigation
     // (DG-333 Phase 5.6-c1-fix m2) so progress/errors don't leak across
     // screens that share the global photoUploadNotifierProvider. Deferred
@@ -85,13 +95,32 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
       () => ref.read(photoUploadNotifierProvider.notifier).reset(),
     );
     final e = widget.event;
-    _summaryCtrl = TextEditingController(text: e?.summary ?? '');
+    final formNotifier = ref.read(_provider.notifier);
+    final draft = formNotifier.draftFor(_draftKey);
+    final restore = formNotifier.hasRetainedDraft;
+    _summaryCtrl = TextEditingController(
+      text: restore ? draft.summary : e?.summary ?? '',
+    );
+    _customTagCtrl = TextEditingController(
+      text: e == null ? draft.customTagInput : '',
+    );
+    _summaryCtrl.addListener(() {
+      ref.read(_provider.notifier).setSummary(_summaryCtrl.text);
+    });
+    _customTagCtrl.addListener(() {
+      ref.read(_provider.notifier).setCustomTagInput(_customTagCtrl.text);
+    });
     // Defer provider mutations to a microtask because Riverpod disallows
     // provider mutation during widget life-cycle hooks (initState/build).
     Future.microtask(() {
       if (!mounted) return;
-      ref.read(eventFormProvider.notifier).seed(e);
-      if (e != null) _loadExistingPhotos(e.id);
+      final notifier = ref.read(_provider.notifier);
+      if (e == null) {
+        notifier.startNew(_draftKey);
+      } else {
+        notifier.startEdit(e);
+        _loadExistingPhotos(e.id);
+      }
     });
   }
 
@@ -99,7 +128,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     try {
       final service = ref.read(eventServiceProvider);
       final photos = await service.getEventPhotos(eventId);
-      if (mounted) ref.read(eventFormProvider.notifier).addExistingPhotos(photos);
+      if (mounted) {
+        ref.read(_provider.notifier).addExistingPhotos(photos);
+      }
     } catch (e) {
       debugPrint('_loadExistingPhotos failed: $e');
       // Non-fatal: edit form still works without existing photo display.
@@ -116,50 +147,61 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   Future<void> _submit() async {
     final summary = _summaryCtrl.text.trim();
     if (summary.isEmpty) return;
-    final formNotifier = ref.read(eventFormProvider.notifier);
-    final form = ref.read(eventFormProvider);
+    final formNotifier = ref.read(_provider.notifier);
+    final form = ref.read(_provider);
+    final submittedDraft = formNotifier.draftSnapshot;
+    final eventsNotifier = ref.read(eventsProvider.notifier);
+    final loggedBy = ref.read(loggedByProvider);
+    final upload = ref.read(photoUploadNotifierProvider.notifier);
+    final photoService = ref.read(eventServiceProvider);
+    final selectedPhotos = List<XFile>.of(form.selectedPhotos);
     formNotifier.setSaving(true);
     try {
-      final loggedBy = ref.read(loggedByProvider);
       final hasNewPhotos = form.selectedPhotos.isNotEmpty;
-      final upload = ref.read(photoUploadNotifierProvider.notifier);
       if (_isEditing) {
-        await ref
-            .read(eventsProvider.notifier)
-            .updateEvent(
-              id: widget.event!.id,
-              summary: summary,
-              type: form.selectedType,
-              tags: form.selectedTags.toList(),
-              loggedBy: loggedBy,
-            );
-        if (hasNewPhotos && mounted) {
-          await _uploadPhotos(widget.event!.id, upload);
+        await eventsNotifier.updateEvent(
+          id: widget.event!.id,
+          summary: summary,
+          type: form.selectedType,
+          tags: form.selectedTags.toList(),
+          loggedBy: loggedBy,
+        );
+        if (hasNewPhotos) {
+          await _uploadPhotos(
+            widget.event!.id,
+            upload,
+            photoService,
+            selectedPhotos,
+          );
         }
         if (mounted) showTopSnackBar(context, EventsLabels.eventUpdated);
       } else {
-        final createdEvent = await ref
-            .read(eventsProvider.notifier)
-            .logEvent(
-              summary: summary,
-              type: form.selectedType,
-              tags: form.selectedTags.toList(),
-              loggedBy: loggedBy,
-              orderId: widget.orderId,
-            );
+        final createdEvent = await eventsNotifier.logEvent(
+          summary: summary,
+          type: form.selectedType,
+          tags: form.selectedTags.toList(),
+          loggedBy: loggedBy,
+          orderId: widget.orderId,
+        );
 
-        if (hasNewPhotos && mounted) {
-          await _uploadPhotos(createdEvent.id, upload);
+        if (hasNewPhotos) {
+          await _uploadPhotos(
+            createdEvent.id,
+            upload,
+            photoService,
+            selectedPhotos,
+          );
         }
         if (mounted) showTopSnackBar(context, EventsLabels.eventLogged);
       }
+      formNotifier.clearAfterSuccess(submittedDraft);
       if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, e.toString());
       }
     } finally {
-      if (mounted) formNotifier.setSaving(false);
+      formNotifier.setSaving(false);
     }
   }
 
@@ -173,11 +215,11 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   Future<void> _uploadPhotos(
     int eventId,
     PhotoUploadNotifier upload,
+    EventService service,
+    List<XFile> selectedPhotos,
   ) async {
-    final form = ref.read(eventFormProvider);
-    final service = ref.read(eventServiceProvider);
     await upload.uploadAll(
-      form.selectedPhotos,
+      selectedPhotos,
       (file) => service.uploadEventPhoto(eventId, file),
     );
     if (mounted && ref.read(photoUploadNotifierProvider).hasErrors) {
@@ -217,7 +259,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   }
 
   void _confirmCustomTag() {
-    ref.read(eventFormProvider.notifier).confirmCustomTag(_customTagCtrl.text.trim());
+    ref.read(_provider.notifier).confirmCustomTag(_customTagCtrl.text.trim());
     _customTagCtrl.clear();
   }
 
@@ -226,18 +268,29 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final loggedBy = ref.watch(loggedByProvider);
-    final form = ref.watch(eventFormProvider);
+    final form = ref.watch(_provider);
 
     final title = _isEditing
         ? EventsLabels.editEvent
         : _isOrderLinked
-            ? EventsLabels.addOrderIncident
-            : EventsLabels.createEvent;
+        ? EventsLabels.addOrderIncident
+        : EventsLabels.createEvent;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        actions: const [AppBarOverflowMenu()],
+        actions: [
+          DiscardFormDraftAction(
+            isDirty: ref
+                .watch(formDraftSessionProvider)
+                .containsKey(_draftContext),
+            onDiscard: () {
+              ref.read(_provider.notifier).clearNewDraft();
+              context.pop();
+            },
+          ),
+          const AppBarOverflowMenu(),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -275,7 +328,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(EventsLabels.eventType, style: theme.textTheme.titleSmall),
+            child: Text(
+              EventsLabels.eventType,
+              style: theme.textTheme.titleSmall,
+            ),
           ),
           Wrap(
             spacing: 6,
@@ -290,7 +346,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                     ? Colors.orange.shade100
                     : colorScheme.primaryContainer,
                 onSelected: (_) =>
-                    ref.read(eventFormProvider.notifier).setSelectedType(t.value),
+                    ref.read(_provider.notifier).setSelectedType(t.value),
               );
             }).toList(),
           ),
@@ -298,7 +354,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(ProductsLabels.tagsLabel, style: theme.textTheme.titleSmall),
+            child: Text(
+              ProductsLabels.tagsLabel,
+              style: theme.textTheme.titleSmall,
+            ),
           ),
           Wrap(
             spacing: 6,
@@ -309,7 +368,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   label: Text(tag.$2),
                   selected: form.selectedTags.contains(tag.$1),
                   onSelected: (v) => ref
-                      .read(eventFormProvider.notifier)
+                      .read(_provider.notifier)
                       .toggleTag(tag.$1, selected: v),
                 ),
               ),
@@ -317,9 +376,8 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                 (tag) => FilterChip(
                   label: Text(tag),
                   selected: form.selectedTags.contains(tag),
-                  onSelected: (v) => ref
-                      .read(eventFormProvider.notifier)
-                      .toggleTag(tag, selected: v),
+                  onSelected: (v) =>
+                      ref.read(_provider.notifier).toggleTag(tag, selected: v),
                 ),
               ),
               if (form.showCustomTagField)
@@ -346,7 +404,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                   avatar: const Icon(Icons.add, size: 16),
                   label: const Text(EventsLabels.addTag),
                   onPressed: () =>
-                      ref.read(eventFormProvider.notifier).showCustomTagField(),
+                      ref.read(_provider.notifier).showCustomTagField(),
                 ),
             ],
           ),
@@ -356,7 +414,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             selectedPhotos: form.selectedPhotos,
             baseUrl: ref.read(apiBaseUrlProvider),
             onSelectionChanged: (files) =>
-                ref.read(eventFormProvider.notifier).setSelectedPhotos(files),
+                ref.read(_provider.notifier).setSelectedPhotos(files),
           ),
           UploadProgressIndicator(
             states: ref.watch(photoUploadNotifierProvider).states,
@@ -365,7 +423,10 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             children: [
               const Icon(Icons.person_outline, size: 18),
               const SizedBox(width: 6),
-              Text('${EventsLabels.loggedBy}: ', style: theme.textTheme.bodyMedium),
+              Text(
+                '${EventsLabels.loggedBy}: ',
+                style: theme.textTheme.bodyMedium,
+              ),
               Text(
                 loggedBy.isNotEmpty ? loggedBy : EventsLabels.setYourName,
                 style: theme.textTheme.bodyMedium?.copyWith(

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 
 /// Cake-detail body edit-form state (DG-404 Phase 4.6 / FR2).
 ///
@@ -43,7 +44,13 @@ class CakeDetailBodyState {
 
 class CakeDetailBodyNotifier extends Notifier<CakeDetailBodyState> {
   @override
-  CakeDetailBodyState build() => const CakeDetailBodyState();
+  CakeDetailBodyState build() {
+    ref.listen(
+      formDraftSessionEpochProvider,
+      (_, _) => state = const CakeDetailBodyState(),
+    );
+    return const CakeDetailBodyState();
+  }
 
   /// Enter edit mode. The widget seeds the TextEditingController-backed
   /// fields and the birthday/candle defaults in its `_startEdit` helper
