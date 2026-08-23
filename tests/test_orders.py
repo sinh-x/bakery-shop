@@ -441,10 +441,22 @@ def test_urgency_urgent_when_new_and_unacknowledged():
     assert compute_urgency(far_future, "10:00", "new", None) == "normal"
 
 
-def test_urgency_urgent_when_due_today_and_active():
-    from baker.models.order import compute_urgency
+def test_urgency_urgent_when_due_today_and_active(monkeypatch):
     from datetime import datetime, timezone
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    from baker.config import TIMEZONE
+    from baker.models import order as order_module
+
+    fixed_now = datetime(2026, 8, 23, 5, 0, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.astimezone(tz)
+
+    monkeypatch.setattr(order_module, "datetime", FixedDateTime)
+    today = fixed_now.astimezone(TIMEZONE).strftime("%Y-%m-%d")
+    compute_urgency = order_module.compute_urgency
     assert compute_urgency(today, "23:59", "new", None) == "urgent"
     assert compute_urgency(today, "23:59", "confirmed", None) == "urgent"
 
