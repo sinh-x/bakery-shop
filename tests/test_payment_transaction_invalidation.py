@@ -211,3 +211,67 @@ def test_invalidated_at_none_for_valid_transaction(api_client):
     assert list_resp.status_code == 200
     txn = next(t for t in list_resp.json() if t["id"] == txn_id)
     assert txn["invalidatedAt"] is None
+
+
+def _revenue_2100_debit(conn, order_id):
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ? AND a.code = '2100'
+        """,
+        (order_id,),
+    ).fetchone()
+    return float(row["balance"])
+
+
+def _seed_delivered_payment(api_client, amount=100000):
+    from baker.services.journal_sync import _sync_delivered_order_journal
+
+    order_resp = api_client.post("/api/orders", json={
+        "customerName": "Revenue test",
+        "dueDate": "2026-06-25",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 300000}],
+    })
+    assert order_resp.status_code == 201
+    order = order_resp.json()
+    txn_resp = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions", json={"amount": amount}
+    )
+    assert txn_resp.status_code == 201
+    with get_db() as conn:
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (order["id"],))
+        _sync_delivered_order_journal(conn, int(order["id"]), order["orderRef"])
+    return order, txn_resp.json()
+
+
+def test_invalidate_recalculates_delivered_order_revenue(api_client):
+    order, txn = _seed_delivered_payment(api_client, 100000)
+    with get_db() as conn:
+        assert _revenue_2100_debit(conn, int(order["id"])) == 100000.0
+
+    response = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions/{txn['id']}/invalidate",
+        json={"invalidatedBy": "sinh"},
+    )
+    assert response.status_code == 200
+    with get_db() as conn:
+        assert _revenue_2100_debit(conn, int(order["id"])) == 0.0
+
+
+def test_restore_recalculates_delivered_order_revenue(api_client):
+    order, txn = _seed_delivered_payment(api_client, 100000)
+    invalidate = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions/{txn['id']}/invalidate",
+        json={"invalidatedBy": "sinh"},
+    )
+    assert invalidate.status_code == 200
+
+    response = api_client.post(
+        f"/api/orders/{order['orderRef']}/transactions/{txn['id']}/restore"
+    )
+    assert response.status_code == 200
+    with get_db() as conn:
+        assert _revenue_2100_debit(conn, int(order["id"])) == 100000.0

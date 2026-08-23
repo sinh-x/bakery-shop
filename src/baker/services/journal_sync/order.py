@@ -185,6 +185,17 @@ def _find_order_entry_by_prefix(conn, order_id: int, prefix: str) -> Optional[in
     ).fetchone()
     return int(row["id"]) if row else None
 
+
+def _find_order_entry_chain_by_prefix(conn, order_id: int, prefix: str) -> list[int]:
+    """Return all entries in a prefix chain, including their reversals."""
+    rows = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order' AND source_id = ? "
+        "AND (description LIKE ? OR description LIKE ?) ORDER BY id",
+        (order_id, prefix + "%", "Reversal: " + prefix + "%"),
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
+
 def _replace_order_entry(
     conn,
     existing_id: int,
@@ -196,6 +207,13 @@ def _replace_order_entry(
         _reverse_journal_entry(conn, existing_id)
     else:
         _delete_journal_entry_cascade(conn, existing_id)
+
+
+def _replace_order_entry_chain(
+    conn, entry_ids: list[int], *, respect_locks: bool
+) -> None:
+    for entry_id in entry_ids:
+        _replace_order_entry(conn, entry_id, respect_locks=respect_locks)
 
 def _sync_cancelled_order_journal(conn, order_id: int) -> None:
     """Reverse (locked) or delete (unlocked) accounting entries for a cancelled order.
@@ -257,9 +275,20 @@ def _reconcile_revenue_entry_lines(
     """
     is_ar = deposit_balance <= 0 and (deposits_in - tien_rut_total) <= 0
     prefix = _AR_ENTRY_PREFIX if is_ar else _REVENUE_ENTRY_PREFIX
-    existing_id = _find_order_entry_by_prefix(conn, order_id, prefix)
+    existing_ids = _find_order_entry_chain_by_prefix(conn, order_id, prefix)
 
     if is_ar:
+        # A payment can be invalidated or deleted after delivery, changing a
+        # paid order into an AR order. Remove the prior revenue entry so the
+        # stale deposit balance is not retained alongside the AR entry.
+        stale_revenue_ids = _find_order_entry_chain_by_prefix(
+            conn, order_id, _REVENUE_ENTRY_PREFIX
+        )
+        if stale_revenue_ids:
+            _replace_order_entry_chain(
+                conn, stale_revenue_ids, respect_locks=respect_locks
+            )
+
         # Truly unpaid (no deposits and no refunds): record the order total
         # as accounts receivable (customer debt). Bus shipping exclusion does
         # not apply here because there were no deposits to hold shipping in
@@ -272,24 +301,25 @@ def _reconcile_revenue_entry_lines(
             return  # nothing to recognise
         expected_debit = float(total_price)
         expected_credit_4100 = float(total_price)
-        if existing_id is not None:
+        if existing_ids:
+            placeholders = ",".join("?" for _ in existing_ids)
             row = conn.execute(
-                """
+                f"""
                 SELECT
-                  COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END), 0) AS debit_1500,
-                  COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_4100
+                  COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_1500,
+                  COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_4100
                 FROM journal_lines jl
                 JOIN accounts a ON a.id = jl.account_id
-                WHERE jl.journal_entry_id = ?
-                """,
-                (ACCOUNTS_RECEIVABLE_CODE, ORDER_REVENUE_CODE, existing_id),
+                  WHERE jl.journal_entry_id IN ({placeholders})
+                """,  # nosec B608
+                (ACCOUNTS_RECEIVABLE_CODE, ORDER_REVENUE_CODE, *existing_ids),
             ).fetchone()
-            mismatch = abs(float(row["debit_1500"]) - expected_debit) + abs(
-                float(row["credit_4100"]) - expected_credit_4100
+            mismatch = abs(float(row["net_1500"]) - expected_debit) + abs(
+                float(row["net_4100"]) + expected_credit_4100
             )
             if mismatch <= REVENUE_UPDATE_TOLERANCE:
                 return
-            _replace_order_entry(conn, existing_id, respect_locks=respect_locks)
+            _replace_order_entry_chain(conn, existing_ids, respect_locks=respect_locks)
         _insert_journal_entry(
             conn,
             description=f"Order revenue (AR): {order_ref}",
@@ -308,9 +338,9 @@ def _reconcile_revenue_entry_lines(
     # the order was unpaid but is now paid (e.g. payment arrived between
     # delivery and completion). Without this the AR entry persists alongside
     # the revenue entry, doubling 4100 credit and inflating AR debit.
-    stale_ar_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
-    if stale_ar_id is not None:
-        _replace_order_entry(conn, stale_ar_id, respect_locks=respect_locks)
+    stale_ar_ids = _find_order_entry_chain_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+    if stale_ar_ids:
+        _replace_order_entry_chain(conn, stale_ar_ids, respect_locks=respect_locks)
 
     # Paid: clear the full 2100 deposit balance to revenue (DR 2100, CR 4100).
     # Deposits only — tien_rut is returned separately. Lines with a zero amount
@@ -318,28 +348,29 @@ def _reconcile_revenue_entry_lines(
     if deposit_balance <= 0:
         # deposit_balance <= 0 but deposits existed (nothing held, e.g. fully
         # refunded) → no revenue to recognise; remove any stale revenue entry.
-        if existing_id is not None:
-            _replace_order_entry(conn, existing_id, respect_locks=respect_locks)
+        if existing_ids:
+            _replace_order_entry_chain(conn, existing_ids, respect_locks=respect_locks)
         return
 
-    if existing_id is not None:
+    if existing_ids:
+        placeholders = ",".join("?" for _ in existing_ids)
         row = conn.execute(
-            """
+            f"""
             SELECT
-              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END), 0) AS debit_2100,
-              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_4100
+              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_2100,
+              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS net_4100
             FROM journal_lines jl
             JOIN accounts a ON a.id = jl.account_id
-            WHERE jl.journal_entry_id = ?
-            """,
-            (CUSTOMER_DEPOSITS_CODE, ORDER_REVENUE_CODE, existing_id),
+              WHERE jl.journal_entry_id IN ({placeholders})
+            """,  # nosec B608
+            (CUSTOMER_DEPOSITS_CODE, ORDER_REVENUE_CODE, *existing_ids),
         ).fetchone()
-        mismatch = abs(float(row["debit_2100"]) - deposit_balance) + abs(
-            float(row["credit_4100"]) - revenue_amount
+        mismatch = abs(float(row["net_2100"]) - deposit_balance) + abs(
+            float(row["net_4100"]) + revenue_amount
         )
         if mismatch <= REVENUE_UPDATE_TOLERANCE:
             return
-        _replace_order_entry(conn, existing_id, respect_locks=respect_locks)
+        _replace_order_entry_chain(conn, existing_ids, respect_locks=respect_locks)
 
     lines: list[tuple[int, float, float, str]] = [
         (deposits_account_id, deposit_balance, 0.0, "Chuyển cọc sang doanh thu"),
