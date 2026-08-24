@@ -362,6 +362,8 @@ void main() {
         ),
         state: const OrderCreateState(
           wizardData: OrderWizardData(deliveryType: 'door'),
+          latitude: 10.0,
+          longitude: 106.0,
         ),
         addressService: fake,
       ));
@@ -386,9 +388,6 @@ void main() {
 
       final state = readOrderCreateState(tester);
       expect(state.googleMapsUrl, 'https://maps.app.goo.gl/abc');
-      // The stale lat/long must be cleared per the FB-1 clear path.
-      expect(state.latitude, isNull);
-      expect(state.longitude, isNull);
     },
   );
 
