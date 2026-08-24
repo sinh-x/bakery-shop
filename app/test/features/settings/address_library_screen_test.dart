@@ -229,9 +229,22 @@ void main() {
       'open-maps shortcut appears only on rows with a googleMapsUrl (FB-2)',
       (tester) async {
         await _pumpScreen(tester, seed: _seedStore());
-        // _seedStore() has one entry with a link ('123 Lê Lợi') and one
-        // without ('45 Trần Phú'), so exactly one open-in-new icon renders.
-        expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+        final linkedRow = find.widgetWithText(ListTile, '123 Lê Lợi');
+        final unlinkedRow = find.widgetWithText(ListTile, '45 Trần Phú');
+        expect(
+          find.descendant(
+            of: linkedRow,
+            matching: find.byIcon(Icons.open_in_new),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: unlinkedRow,
+            matching: find.byIcon(Icons.open_in_new),
+          ),
+          findsNothing,
+        );
       },
     );
   });
