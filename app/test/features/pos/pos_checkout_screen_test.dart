@@ -225,12 +225,12 @@ void main() {
       );
       expect(resolvePosCheckoutErrorMessage(error), 'Sản phẩm Bánh su kem không đủ tồn kho');
     });
-    test('returns vietnamese fallback when 422 detail is missing', () {
+    test('returns shared validation fallback when 422 detail is missing', () {
       final error = DioException(
         requestOptions: RequestOptions(path: '/api/orders'),
         response: Response(requestOptions: RequestOptions(path: '/api/orders'), statusCode: 422, data: <String, dynamic>{}),
       );
-      expect(resolvePosCheckoutErrorMessage(error), OrdersLabels.loiKhongXacDinhTuMayChu);
+      expect(resolvePosCheckoutErrorMessage(error), SharedLabels.apiValidationError);
       expect(resolvePosCheckoutErrorMessage(error), isNot(contains('DioException')));
     });
     test('returns SharedLabels.apiError when DioException response is null', () {
