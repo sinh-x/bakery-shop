@@ -18,6 +18,31 @@ class WorkItemMutationOutcome {
   bool get refreshFailed => refreshError != null;
 }
 
+/// A retryable detail-refresh failure after a successful item removal.
+class WorkItemRemovalRefreshFailure {
+  const WorkItemRemovalRefreshFailure(this.error);
+
+  final Object error;
+}
+
+class OrderWorkItemRemovalRefreshFailureNotifier
+    extends Notifier<WorkItemRemovalRefreshFailure?> {
+  OrderWorkItemRemovalRefreshFailureNotifier(this.orderRef);
+
+  final String orderRef;
+
+  @override
+  WorkItemRemovalRefreshFailure? build() => null;
+
+  void report(Object error) {
+    state = WorkItemRemovalRefreshFailure(error);
+  }
+
+  void clear() {
+    state = null;
+  }
+}
+
 class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   final String orderRef;
 
@@ -158,18 +183,38 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   /// Removes an item locally after DELETE succeeds and reports a later detail
   /// refresh failure without turning the successful deletion into an error.
   Future<WorkItemMutationOutcome> removeWithOutcome(String itemId) async {
+    final refreshFailure = ref.read(
+      orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier,
+    );
+    refreshFailure.clear();
     final service = ref.read(workItemServiceProvider);
     await service.deleteWorkItem(orderRef, itemId);
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
-    return WorkItemMutationOutcome(
-      refreshError: await retryOrderDetailRefresh(),
-    );
+    final refreshError = await retryOrderDetailRefresh();
+    if (refreshError != null) {
+      refreshFailure.report(refreshError);
+    }
+    return WorkItemMutationOutcome(refreshError: refreshError);
   }
 
   /// Retries only the order-detail reconciliation step.
   Future<Object?> retryOrderDetailRefresh() =>
       ref.read(orderDetailProvider(orderRef).notifier).refresh();
+
+  /// Retries removal reconciliation and updates stable, order-scoped feedback.
+  Future<Object?> retryRemovalOrderDetailRefresh() async {
+    final refreshError = await retryOrderDetailRefresh();
+    final refreshFailure = ref.read(
+      orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier,
+    );
+    if (refreshError == null) {
+      refreshFailure.clear();
+    } else {
+      refreshFailure.report(refreshError);
+    }
+    return refreshError;
+  }
 
   /// Adds a blank assignment to a work item (DG-294 FR3/FR4).
   ///
@@ -273,3 +318,10 @@ final orderWorkItemsProvider =
       List<WorkItem>,
       String
     >(OrderWorkItemsNotifier.new);
+
+final orderWorkItemRemovalRefreshFailureProvider =
+    NotifierProvider.family<
+      OrderWorkItemRemovalRefreshFailureNotifier,
+      WorkItemRemovalRefreshFailure?,
+      String
+    >(OrderWorkItemRemovalRefreshFailureNotifier.new);

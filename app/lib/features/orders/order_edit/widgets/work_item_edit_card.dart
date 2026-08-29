@@ -414,15 +414,9 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     );
     if (confirm == true && mounted) {
       try {
-        final outcome = await ref
+        await ref
             .read(orderWorkItemsProvider(widget.orderRef).notifier)
-            .removeWithOutcome(widget.item.id);
-        if (mounted && outcome.refreshError != null) {
-          _showRefreshFailure(
-            OrdersLabels.removeProductRefreshFailed,
-            outcome.refreshError!,
-          );
-        }
+            .remove(widget.item.id);
       } catch (error) {
         if (mounted) {
           showWorkItemMutationFailure(

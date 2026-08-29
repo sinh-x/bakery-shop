@@ -4,6 +4,7 @@
 // product PATCHes only `productId`/`productName` (all other fields are
 // omitted so the backend's `exclude_unset` preserves them).
 // ignore_for_file: prefer_const_declarations // DG-138#todo: const audit
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bakery_app/data/api/api_client.dart';
@@ -16,6 +17,7 @@ import 'package:bakery_app/data/providers/order/order_detail_notifier.dart';
 import 'package:bakery_app/data/providers/order/order_work_item_providers.dart';
 import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/features/orders/order_edit/widgets/work_item_edit_card.dart';
+import 'package:bakery_app/features/orders/order_edit/widgets/work_items_section.dart';
 import 'package:bakery_app/features/orders/widgets/product_picker_page.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -284,9 +286,30 @@ class _FailOnceOrderDetailNotifier extends OrderDetailNotifier {
   }
 }
 
+class _DelayedFailOnceOrderDetailNotifier extends _FailOnceOrderDetailNotifier {
+  final Completer<Object?> _firstRefresh = Completer<Object?>();
+
+  void failFirstRefresh() {
+    _firstRefresh.complete(
+      DioException(
+        requestOptions: RequestOptions(path: '/api/orders/ORD-SWAP'),
+        type: DioExceptionType.connectionTimeout,
+      ),
+    );
+  }
+
+  @override
+  Future<Object?> refresh() async {
+    refreshCalls += 1;
+    if (refreshCalls == 1) return _firstRefresh.future;
+    return null;
+  }
+}
+
 Future<ProviderContainer> _buildContainer(
   Interceptor interceptor, {
   bool failDetailRefreshOnce = false,
+  bool delayDetailRefreshOnce = false,
 }) async {
   SharedPreferences.setMockInitialValues(<String, Object>{});
   final prefs = await SharedPreferences.getInstance();
@@ -313,6 +336,10 @@ Future<ProviderContainer> _buildContainer(
         orderDetailProvider(
           'ORD-SWAP',
         ).overrideWith(_FailOnceOrderDetailNotifier.new),
+      if (delayDetailRefreshOnce)
+        orderDetailProvider(
+          'ORD-SWAP',
+        ).overrideWith(_DelayedFailOnceOrderDetailNotifier.new),
     ],
   );
   addTearDown(container.dispose);
@@ -340,6 +367,27 @@ Future<void> _pumpCard(
   // productsProvider + categoriesProvider resolve async.
   await tester.pumpAndSettle();
 }
+
+Future<void> _pumpSection(
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: WorkItemsSection(orderRef: 'ORD-SWAP', onAddTap: _noop),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void _noop() {}
 
 void main() {
   setUp(() {
@@ -638,29 +686,55 @@ void main() {
     );
 
     testWidgets(
-      'AC8: successful removal survives refresh failure and exposes retry',
+      'AC8: WorkItemsSection owns delayed removal refresh failure and retry',
       (tester) async {
         final container = await _buildContainer(
           _RemoveInterceptor(),
-          failDetailRefreshOnce: true,
+          delayDetailRefreshOnce: true,
         );
-        await _pumpCard(tester, _richItem(), container);
+        await _pumpSection(tester, container);
+        final detailNotifier =
+            container.read(orderDetailProvider('ORD-SWAP').notifier)
+                as _DelayedFailOnceOrderDetailNotifier;
 
         await tester.tap(find.widgetWithIcon(IconButton, Icons.close));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(TextButton, SharedLabels.remove));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
         expect(
           container.read(orderWorkItemsProvider('ORD-SWAP')).requireValue,
           isEmpty,
         );
+        expect(find.byType(WorkItemEditCard), findsNothing);
+        expect(find.byType(SnackBar), findsNothing);
+
+        detailNotifier.failFirstRefresh();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
         expect(
           find.textContaining(OrdersLabels.removeProductRefreshFailed),
           findsOneWidget,
         );
+        expect(
+          find.textContaining(SharedLabels.failureReasonLabel),
+          findsOneWidget,
+        );
+        expect(find.textContaining(SharedLabels.nextStepLabel), findsOneWidget);
         final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
         expect(snackBar.action?.label, SharedLabels.retry);
+
+        await tester.tap(find.text(SharedLabels.retry));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(detailNotifier.refreshCalls, 2);
+        expect(
+          find.text(OrdersLabels.orderDetailRefreshSucceeded),
+          findsOneWidget,
+        );
       },
     );
 

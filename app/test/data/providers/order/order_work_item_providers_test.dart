@@ -176,6 +176,24 @@ void main() {
         container.read(orderDetailProvider('ORD-STATE')).hasError,
         isFalse,
       );
+      expect(
+        container
+            .read(orderWorkItemRemovalRefreshFailureProvider('ORD-STATE'))
+            ?.error,
+        same(outcome.refreshError),
+      );
+
+      interceptor.failDetailRefresh = false;
+      expect(
+        await container
+            .read(orderWorkItemsProvider('ORD-STATE').notifier)
+            .retryRemovalOrderDetailRefresh(),
+        isNull,
+      );
+      expect(
+        container.read(orderWorkItemRemovalRefreshFailureProvider('ORD-STATE')),
+        isNull,
+      );
     });
   });
 }
