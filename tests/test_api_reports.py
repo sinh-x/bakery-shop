@@ -61,6 +61,23 @@ def _set_stock(conn, product_id: int, quantity: int):
         create_lot_with_items(conn, product_id, None, quantity)
 
 
+def _freeze_reconciliation_date(monkeypatch) -> str:
+    """Freeze the business date so UTC/local midnight skew cannot change setup."""
+    from datetime import date as real_date
+
+    from baker.api import reconciliations
+
+    report_date = "2026-08-23"
+
+    class FrozenDate(real_date):
+        @classmethod
+        def today(cls):
+            return cls.fromisoformat(report_date)
+
+    monkeypatch.setattr(reconciliations, "date", FrozenDate)
+    return report_date
+
+
 def _submit_reconciliation_with_sale(client, payment_method="cash", sale_qty=2,
                                      unit_price=12000, product_id=1):
     """Submit a reconciliation with one sale row and return the API response.
@@ -480,13 +497,14 @@ def test_today_summary_cash_in_out_zero_on_empty_day(api_client):
 # ---------------------------------------------------------------------------
 
 
-def test_today_summary_includes_reconciliation_orders(api_client):
-    """DG-384 AC1: a stock reconciliation submitted today creates sale orders
+def test_today_summary_includes_reconciliation_orders(api_client, monkeypatch):
+    """DG-384 AC1: reconciliation for the report date creates sale orders
     with ``source='reconciliation'`` and a non-empty ``publicOrderCode``. The
     today-summary endpoint must count them in ``orderCount`` and surface
     their 'delivered' status via ``statusBreakdown`` (DG-409 Phase 1: the
     full order list is no longer embedded; verify order presence via
-    ``GET /api/orders?due_date=<today>`` instead)."""
+    ``GET /api/orders?due_date=<report-date>`` instead)."""
+    report_date = _freeze_reconciliation_date(monkeypatch)
     session = _submit_reconciliation_with_sale(api_client, payment_method="cash",
                                                sale_qty=2, unit_price=15000)
     assert session["id"] > 0
@@ -497,13 +515,16 @@ def test_today_summary_includes_reconciliation_orders(api_client):
             "FROM orders WHERE source = 'reconciliation' ORDER BY id"
         ).fetchall()
     assert len(rows) == 2, f"expected 2 reconciliation orders, got {len(rows)}"
+    assert {r["due_date"] for r in rows} == {report_date}
     recon_refs = {r["order_ref"] for r in rows}
 
-    body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": report_date}
+    ).json()
     # DG-409 Phase 1: the orders list is no longer embedded in the summary
     # response — fetch via the dedicated orders endpoint to verify the
     # reconciliation orders are present and well-formed.
-    orders_resp = api_client.get("/api/orders", params={"due_date": _today()})
+    orders_resp = api_client.get("/api/orders", params={"due_date": report_date})
     assert orders_resp.status_code == 200
     summary_refs = {o["orderRef"] for o in orders_resp.json()}
 
@@ -532,17 +553,22 @@ def test_today_summary_includes_reconciliation_orders(api_client):
     assert body["statusBreakdown"].get("delivered", 0) >= 2
 
 
-def test_today_summary_reconciliation_orders_revenue_counted_once(api_client):
+def test_today_summary_reconciliation_orders_revenue_counted_once(
+    api_client, monkeypatch
+):
     """DG-384 AC1 (supplementary): reconciliation order revenue is counted
     exactly once via the journal 4100 credit — the reconciliation orders
     appear in the orders list but revenue is not double-counted by
     totalPrice."""
     unit_price = 20000
     sale_qty = 2
+    report_date = _freeze_reconciliation_date(monkeypatch)
     _submit_reconciliation_with_sale(api_client, payment_method="cash",
                                      sale_qty=sale_qty, unit_price=unit_price)
 
-    body = api_client.get("/api/reports/today-summary", params={"date": _today()}).json()
+    body = api_client.get(
+        "/api/reports/today-summary", params={"date": report_date}
+    ).json()
     # Revenue equals sum of journal 4100 credits (one per delivered order),
     # i.e. sale_qty * unit_price — not 2x that from double-counting.
     assert body["revenue"] == pytest.approx(sale_qty * unit_price)
