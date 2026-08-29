@@ -424,11 +424,12 @@ def test_urgency_critical_when_past_due():
     assert compute_urgency("2020-01-01", "00:00", "new", None) == "critical"
 
 
-def test_urgency_urgent_when_due_soon():
+def test_urgency_urgent_when_due_soon(monkeypatch):
     from baker.models.order import compute_urgency
-    from baker.config import TIMEZONE
-    from datetime import datetime, timedelta
-    soon_local = (datetime.now(TIMEZONE) + timedelta(hours=1))
+    from datetime import timedelta
+
+    frozen = _freeze_now_local(monkeypatch, hour=12)
+    soon_local = frozen + timedelta(hours=1)
     soon = soon_local.strftime("%Y-%m-%d")
     soon_time = soon_local.strftime("%H:%M")
     result = compute_urgency(soon, soon_time, "new", None)
@@ -512,10 +513,13 @@ def test_delivery_critical_past_due():
     assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
 
 
-def test_pickup_not_critical_within_threshold():
+def test_pickup_not_critical_within_threshold(monkeypatch):
     """AC3: pickup order due within threshold -> urgent (not critical)."""
     from baker.models.order import compute_urgency
-    soon = _soon_local_dt(30)
+    from datetime import timedelta
+
+    frozen = _freeze_now_local(monkeypatch, hour=12)
+    soon = frozen + timedelta(minutes=30)
     due_date, due_time = _format_due(soon)
     assert compute_urgency(due_date, due_time, "new", None, "pickup") == "urgent"
 
@@ -548,11 +552,11 @@ def test_configurable_threshold_respected(monkeypatch):
     """
     from baker.models.order import compute_urgency
     import baker.config
-    from datetime import datetime, timedelta
-    from baker.config import TIMEZONE
+    from datetime import timedelta
 
     monkeypatch.setattr(baker.config, "DELIVERY_CRITICAL_THRESHOLD_MINUTES", 30)
-    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
+    frozen = _freeze_now_local(monkeypatch, hour=12)
+    soon_local = frozen + timedelta(minutes=45)
     due_date, due_time = _format_due(soon_local)
     assert compute_urgency(due_date, due_time, "new", None, "delivery") == "urgent"
 
@@ -579,9 +583,7 @@ def _freeze_now_local(monkeypatch, hour, minute=0):
     from baker.models import order as order_mod
     from baker.config import TIMEZONE
     from datetime import datetime as _real_dt, timezone as _tz
-    frozen_local = _real_dt.now(TIMEZONE).replace(
-        hour=hour, minute=minute, second=0, microsecond=0
-    )
+    frozen_local = _real_dt(2026, 8, 23, hour, minute, tzinfo=TIMEZONE)
     frozen_utc = frozen_local.astimezone(_tz.utc)
 
     class _FrozenDateTime(_real_dt):
@@ -632,6 +634,15 @@ def test_urgency_2h_window_does_not_cross_midnight(monkeypatch):
     frozen = _freeze_now_local(monkeypatch, hour=23, minute=0)
     tomorrow = (frozen + timedelta(days=1)).strftime("%Y-%m-%d")
     assert compute_urgency(tomorrow, "00:30", "confirmed", None) == "normal"
+
+
+def test_urgency_same_day_due_soon_near_midnight(monkeypatch):
+    """A same-day order remains urgent immediately before midnight."""
+    from baker.models.order import compute_urgency
+
+    frozen = _freeze_now_local(monkeypatch, hour=23, minute=58)
+    today = frozen.strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "confirmed", None) == "urgent"
 
 
 def test_urgency_due_today_urgent_for_new_and_confirmed():
@@ -1002,17 +1013,17 @@ def test_delivery_critical_boundary_exactly_threshold():
     assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
 
 
-def test_compute_urgency_threshold_minutes_param_overrides_env():
+def test_compute_urgency_threshold_minutes_param_overrides_env(monkeypatch):
     """threshold_minutes param takes precedence over env-var default.
 
     With threshold_minutes=30 and an order due in 45 min, urgency is 'urgent'
     (not critical) — same as the env-var-override test but via the new param.
     """
     from baker.models.order import compute_urgency
-    from datetime import datetime, timedelta
-    from baker.config import TIMEZONE
+    from datetime import timedelta
 
-    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
+    frozen = _freeze_now_local(monkeypatch, hour=12)
+    soon_local = frozen + timedelta(minutes=45)
     due_date, due_time = _format_due(soon_local)
     assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=30) == "urgent"
 
