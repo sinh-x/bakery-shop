@@ -48,6 +48,61 @@ def _create_swap_product(code, category="bread"):
     return cursor.lastrowid
 
 
+def _attach_deletion_links(client, order, item):
+    """Attach one blank and one photo to an item for removal integrity tests."""
+    from baker.db.connection import get_db
+
+    blank = client.post(
+        "/api/blanks",
+        json={"name": "Phôi xóa", "category": "cot", "unit": "cai"},
+    ).json()
+    assignment = client.post(
+        f"/api/orders/{order['orderRef']}/items/{item['id']}/blanks",
+        json={"blankId": blank["id"], "quantity": 1.5, "notes": "giữ nguyên"},
+    ).json()
+    with get_db() as conn:
+        photo_id = conn.execute(
+            "INSERT INTO photos (hash, original_name) VALUES ('delete-photo', 'delete.jpg')"
+        ).lastrowid
+        photo_link_id = conn.execute(
+            """INSERT INTO order_photos (order_id, photo_id, work_item_id)
+               VALUES (?, ?, ?)""",
+            (int(order["id"]), photo_id, int(item["id"])),
+        ).lastrowid
+    return assignment["id"], photo_id, photo_link_id
+
+
+def _snapshot_removal_state(order_id, item_id, assignment_id, photo_link_id):
+    """Capture every persistence surface that DELETE must mutate atomically."""
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        return {
+            "item": dict(
+                conn.execute(
+                    "SELECT * FROM order_items WHERE id = ?", (item_id,)
+                ).fetchone()
+            ),
+            "photo": dict(
+                conn.execute(
+                    "SELECT * FROM order_photos WHERE id = ?", (photo_link_id,)
+                ).fetchone()
+            ),
+            "blank": dict(
+                conn.execute(
+                    "SELECT * FROM order_item_blanks WHERE id = ?", (assignment_id,)
+                ).fetchone()
+            ),
+            "order": dict(
+                conn.execute(
+                    """SELECT items, total_price, updated_at FROM orders
+                       WHERE id = ?""",
+                    (order_id,),
+                ).fetchone()
+            ),
+        }
+
+
 # --- List work items ---
 
 
@@ -224,16 +279,221 @@ def test_update_work_item_wrong_order(api_client):
 # --- Delete work item ---
 
 
-def test_delete_work_item(api_client):
+@pytest.mark.parametrize("status", ["pending", "confirmed", "working", "ready"])
+def test_delete_work_item_allows_non_terminal_statuses(api_client, status):
+    """FR5: each non-terminal lifecycle status remains directly removable."""
+    from baker.db.connection import get_db
+
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)
-    item_id = item["id"]
+    item_id = int(item["id"])
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?", (status, item_id)
+        )
+
     resp = api_client.delete(f"/api/orders/{ref}/items/{item_id}")
+
     assert resp.status_code == 204
-    # Confirm gone
-    list_resp = api_client.get(f"/api/orders/{ref}/items")
-    assert list_resp.json() == []
+    assert api_client.get(f"/api/orders/{ref}/items").json() == []
+
+
+def test_delete_work_item_detaches_photos_cascades_blanks_and_syncs_order(api_client):
+    """AC1/AC3: allowed removal reconciles links, JSON, fees, and total."""
+    import json
+
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    removed = _create_item(
+        api_client,
+        ref,
+        productName="Sản phẩm cần xóa",
+        quantity=2,
+        unitPrice=100,
+        attributes={"rut_tien": "true", "cash_fee": "10"},
+    )
+    remaining = _create_item(
+        api_client,
+        ref,
+        productName="Sản phẩm còn lại",
+        quantity=3,
+        unitPrice=50,
+        attributes={"rut_tien": "true", "cash_fee": "7"},
+    )
+    gift = _create_item(
+        api_client,
+        ref,
+        productName="Quà tặng",
+        quantity=5,
+        unitPrice=999,
+        isGift=True,
+    )
+    inactive_fee = _create_item(
+        api_client,
+        ref,
+        productName="Phí rút tiền không hoạt động",
+        quantity=1,
+        unitPrice=20,
+        attributes={"rut_tien": "false", "cash_fee": "100"},
+    )
+    assignment_id, photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, removed
+    )
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE orders SET shipping_fee = 30, items = '[{"stale": true}]',
+               total_price = -1 WHERE id = ?""",
+            (order_id,),
+        )
+
+    resp = api_client.delete(f"/api/orders/{ref}/items/{removed['id']}")
+
+    assert resp.status_code == 204
+    with get_db() as conn:
+        assert conn.execute(
+            "SELECT 1 FROM order_items WHERE id = ?", (int(removed["id"]),)
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM order_item_blanks WHERE id = ?", (assignment_id,)
+        ).fetchone() is None
+        photo = conn.execute(
+            "SELECT photo_id, work_item_id FROM order_photos WHERE id = ?",
+            (photo_link_id,),
+        ).fetchone()
+        assert photo is not None
+        assert photo["photo_id"] == photo_id
+        assert photo["work_item_id"] is None
+        assert conn.execute(
+            "SELECT 1 FROM photos WHERE id = ?", (photo_id,)
+        ).fetchone() is not None
+        saved_order = conn.execute(
+            "SELECT items, total_price FROM orders WHERE id = ?", (order_id,)
+        ).fetchone()
+
+    synced_items = json.loads(saved_order["items"])
+    assert [item["product"] for item in synced_items] == [
+        remaining["productName"],
+        gift["productName"],
+        inactive_fee["productName"],
+    ]
+    assert all(item["product"] != removed["productName"] for item in synced_items)
+    assert saved_order["total_price"] == 207
+
+
+@pytest.mark.parametrize(
+    ("status", "message_key"),
+    [("delivered", "đã được giao"), ("cancelled", "đã bị hủy")],
+)
+def test_delete_work_item_rejects_terminal_without_state_change(
+    api_client, status, message_key
+):
+    """AC2/NFR2: terminal rejection is safe Vietnamese and mutation-free."""
+    from baker.api.work_items import WORK_ITEM_DELETE_TERMINAL_MESSAGES
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?", (status, item_id)
+        )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+
+    resp = api_client.delete(f"/api/orders/{ref}/items/{item_id}")
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail == WORK_ITEM_DELETE_TERMINAL_MESSAGES[status]
+    assert "Không thể xóa" in detail
+    assert message_key in detail
+    assert "Hãy giữ nguyên" in detail
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
+
+
+def test_delete_work_item_rolls_back_photo_detachment_on_delete_failure(
+    api_client, monkeypatch
+):
+    """AC7: a failure after photo detachment rolls back every state surface."""
+    from baker.api import work_items
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    item = _create_item(api_client, order["orderRef"], quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+
+    def fail_delete(conn, scoped_order_id, scoped_item_id):
+        raise RuntimeError("injected work-item deletion failure")
+
+    monkeypatch.setattr(work_items, "_delete_work_item_row", fail_delete)
+    with pytest.raises(RuntimeError, match="injected work-item deletion failure"):
+        api_client.delete(
+            f"/api/orders/{order['orderRef']}/items/{item_id}"
+        )
+
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
+
+
+def test_delete_work_item_rolls_back_all_state_on_post_sync_failure(
+    api_client, monkeypatch
+):
+    """AC7/NFR1: even completed JSON/total sync rolls back on later failure."""
+    from baker.api import work_items
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    item = _create_item(api_client, order["orderRef"], quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    _create_item(api_client, order["orderRef"], quantity=3, unitPrice=50)
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE orders SET items = '[{"sentinel": true}]',
+               total_price = 4321 WHERE id = ?""",
+            (order_id,),
+        )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+    sync_order_items_json = work_items._sync_order_items_json
+
+    def fail_after_sync(conn, scoped_order_id):
+        sync_order_items_json(conn, scoped_order_id)
+        raise RuntimeError("injected post-sync failure")
+
+    monkeypatch.setattr(work_items, "_sync_order_items_json", fail_after_sync)
+    with pytest.raises(RuntimeError, match="injected post-sync failure"):
+        api_client.delete(
+            f"/api/orders/{order['orderRef']}/items/{item_id}"
+        )
+
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
 
 
 def test_delete_work_item_not_found(api_client):
@@ -241,6 +501,21 @@ def test_delete_work_item_not_found(api_client):
     ref = order["orderRef"]
     resp = api_client.delete(f"/api/orders/{ref}/items/9999")
     assert resp.status_code == 404
+
+
+def test_delete_work_item_second_mutation_is_not_found(api_client):
+    """FR12: a second removal sees the committed deletion as not found."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+
+    assert api_client.delete(
+        f"/api/orders/{ref}/items/{item['id']}"
+    ).status_code == 204
+    second = api_client.delete(f"/api/orders/{ref}/items/{item['id']}")
+
+    assert second.status_code == 404
+    assert second.json()["detail"] == "Không tìm thấy công việc"
 
 
 def test_delete_work_item_wrong_order(api_client):

@@ -348,6 +348,30 @@ def test_dedup_per_item_photo(api_client):
     assert first.json()["id"] == second.json()["id"]
 
 
+def test_delete_work_item_keeps_uploaded_photo_at_order_level(api_client):
+    """FR6/AC1: item removal retains both uploaded file and order photo row."""
+    import baker.config
+
+    order, work_item_id = _create_order_with_item(api_client)
+    ref = order["orderRef"]
+    uploaded = _upload_photo_with_item(
+        api_client, ref, work_item_id=work_item_id
+    ).json()
+    photo_path = baker.config.DATA_DIR / "photos" / f"{uploaded['photo_hash']}.jpg"
+    assert photo_path.is_file()
+
+    deleted = api_client.delete(f"/api/orders/{ref}/items/{work_item_id}")
+
+    assert deleted.status_code == 204
+    photos = api_client.get(f"/api/orders/{ref}/photos").json()
+    assert len(photos) == 1
+    assert photos[0]["id"] == uploaded["id"]
+    assert photos[0]["photo_hash"] == uploaded["photo_hash"]
+    assert photos[0]["work_item_id"] is None
+    assert photo_path.is_file()
+    assert api_client.get(f"/api/photos/{uploaded['photo_hash']}.jpg").status_code == 200
+
+
 # ─── Timestamp format (DG-202 TC-12) ────────────────────────────────────────
 
 

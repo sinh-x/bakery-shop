@@ -54,6 +54,19 @@ _PROTECTED_REPLACEMENT_ATTRIBUTES = frozenset({
     "cash_fee",
 })
 
+# DG-424 Phase 2 / FR5 / NFR2 — safe Vietnamese action/reason/next-step
+# details for direct API clients blocked from deleting terminal work items.
+WORK_ITEM_DELETE_TERMINAL_MESSAGES = {
+    WorkItemStatus.DELIVERED.value: (
+        "Không thể xóa công việc vì sản phẩm đã được giao. "
+        "Hãy giữ nguyên công việc và liên hệ quản lý nếu cần điều chỉnh."
+    ),
+    WorkItemStatus.CANCELLED.value: (
+        "Không thể xóa công việc vì công việc đã bị hủy. "
+        "Hãy giữ nguyên công việc và liên hệ quản lý nếu cần điều chỉnh."
+    ),
+}
+
 
 def _replacement_attributes(conn, product_id: int, category: str, attributes: dict) -> dict:
     """Return old item attributes that are compatible with a replacement product.
@@ -534,19 +547,41 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         return wi.to_api_dict()
 
 
+def _delete_work_item_row(conn, order_id: int, item_id: int) -> None:
+    """Delete one scoped item, preserving not-found behavior for a stale mutation."""
+    result = conn.execute(
+        "DELETE FROM order_items WHERE id = ? AND order_id = ?",
+        (item_id, order_id),
+    )
+    if result.rowcount != 1:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+
 @router.delete("/{ref}/items/{item_id}", status_code=204)
 def delete_work_item(ref: str, item_id: int):
-    """Xóa công việc khỏi đơn hàng."""
+    """Xóa công việc chưa kết thúc và giữ ảnh ở cấp đơn hàng."""
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
-            "SELECT id FROM order_items WHERE id = ? AND order_id = ?",
+            "SELECT id, status FROM order_items WHERE id = ? AND order_id = ?",
             (item_id, order_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
-        conn.execute("DELETE FROM order_items WHERE id = ?", (item_id,))
-        # Recalculate total_price and sync orders.items JSON after deletion
+
+        terminal_message = WORK_ITEM_DELETE_TERMINAL_MESSAGES.get(row["status"])
+        if terminal_message is not None:
+            raise HTTPException(status_code=422, detail=terminal_message)
+
+        # The photo FK has no ON DELETE SET NULL clause. Detach links before
+        # deleting, matching orders._sync_order_items_table; photo rows/files
+        # remain available at order level. Blank links cascade on item delete.
+        conn.execute(
+            """UPDATE order_photos SET work_item_id = NULL
+               WHERE order_id = ? AND work_item_id = ?""",
+            (order_id, item_id),
+        )
+        _delete_work_item_row(conn, order_id, item_id)
         _sync_order_items_json(conn, order_id)
         conn.execute(
             "UPDATE orders SET updated_at = ? WHERE id = ?",
