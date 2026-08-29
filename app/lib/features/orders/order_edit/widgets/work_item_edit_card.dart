@@ -17,6 +17,7 @@ import '../../../../shared/models/form_draft_context.dart';
 import '../../../../providers/form_draft_session_notifier.dart';
 import '../../../../shared/utils/api_error.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
+import '../utils/work_item_mutation_feedback.dart';
 import '../../widgets/candle_type_radio_group.dart';
 import '../../widgets/order_photo_section.dart';
 import '../../widgets/product_picker_page.dart';
@@ -313,9 +314,9 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
 
   /// Opens `ProductPickerPage` (single-select, active products only) and
   /// applies the chosen product's `productId`/`productName` to the current
-  /// work item (DG-414 Phase 4.3 / FR6). All other item fields (quantity,
-  /// notes, attributes, blanks, price) are preserved — only `productId`
-  /// and `productName` are sent in the PATCH (FR2/AC1/AC5).
+  /// work item (DG-414 Phase 4.3 / FR6). Only those two fields are sent; the
+  /// server preserves workflow fields, prunes incompatible product attributes,
+  /// and returns the authoritative item rendered by the Riverpod provider.
   ///
   /// FR5 (DG-414 review UI-1): the swap button is gated by
   /// `_isSwapAllowed`, which is false for terminal statuses
@@ -323,6 +324,27 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   bool get _isSwapAllowed {
     final s = widget.item.status;
     return s != 'delivered' && s != 'cancelled';
+  }
+
+  void _showRefreshFailure(String action, Object error) {
+    showWorkItemRefreshFailure(
+      context,
+      action: action,
+      error: error,
+      onRetry: () => unawaited(_retryOrderDetailRefresh(action)),
+    );
+  }
+
+  Future<void> _retryOrderDetailRefresh(String action) async {
+    final error = await ref
+        .read(orderWorkItemsProvider(widget.orderRef).notifier)
+        .retryOrderDetailRefresh();
+    if (!mounted) return;
+    if (error == null) {
+      showTopSnackBar(context, OrdersLabels.orderDetailRefreshSucceeded);
+    } else {
+      _showRefreshFailure(action, error);
+    }
   }
 
   Future<void> _changeProduct() async {
@@ -343,16 +365,26 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     if (!mounted || picked.isEmpty) return;
     final draft = picked.first;
     try {
-      await ref
+      final outcome = await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .edit(
+          .replaceProduct(
             widget.item.id,
             productId: draft.product.productCode,
             productName: draft.product.name,
           );
-    } catch (e) {
+      if (mounted && outcome.refreshError != null) {
+        _showRefreshFailure(
+          OrdersLabels.replaceProductRefreshFailed,
+          outcome.refreshError!,
+        );
+      }
+    } catch (error) {
       if (mounted) {
-        showTopSnackBar(context, normalizeApiError(e).message);
+        showWorkItemMutationFailure(
+          context,
+          action: OrdersLabels.replaceProductFailed,
+          error: error,
+        );
       }
     }
   }
@@ -361,8 +393,10 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Xóa sản phẩm?'),
-        content: Text('Xóa "${widget.item.productName}" khỏi đơn hàng?'),
+        title: const Text(OrdersLabels.removeProductConfirmTitle),
+        content: Text(
+          OrdersLabels.removeProductConfirmMessage(widget.item.productName),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -380,12 +414,22 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     );
     if (confirm == true && mounted) {
       try {
-        await ref
+        final outcome = await ref
             .read(orderWorkItemsProvider(widget.orderRef).notifier)
-            .remove(widget.item.id);
-      } catch (e) {
+            .removeWithOutcome(widget.item.id);
+        if (mounted && outcome.refreshError != null) {
+          _showRefreshFailure(
+            OrdersLabels.removeProductRefreshFailed,
+            outcome.refreshError!,
+          );
+        }
+      } catch (error) {
         if (mounted) {
-          showTopSnackBar(context, '${SharedLabels.apiError}: $e');
+          showWorkItemMutationFailure(
+            context,
+            action: OrdersLabels.removeProductFailed,
+            error: error,
+          );
         }
       }
     }
@@ -625,7 +669,8 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   color: theme.colorScheme.error,
-                  onPressed: _confirmRemove,
+                  tooltip: OrdersLabels.removeProduct,
+                  onPressed: _isSwapAllowed ? _confirmRemove : null,
                 ),
               ],
             ),
