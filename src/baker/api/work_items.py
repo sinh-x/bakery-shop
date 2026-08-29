@@ -139,6 +139,20 @@ def _replacement_attributes(conn, product_id: int, category: str, attributes: di
     return compatible
 
 
+def _replacement_price_chip_id(conn, product_id: int, attributes: dict) -> int | None:
+    """Resolve a retained chip label to the replacement product's chip ID."""
+    label = attributes.get("price_chip_label")
+    if not isinstance(label, str):
+        return None
+    row = conn.execute(
+        """SELECT id FROM product_price_chips
+           WHERE product_id = ? AND label = ?
+           ORDER BY position, id LIMIT 1""",
+        (product_id, label),
+    ).fetchone()
+    return row["id"] if row is not None else None
+
+
 def _is_backward(current: str, target: str) -> bool:
     try:
         return _WORK_ITEM_RANK[WorkItemStatus(target)] < _WORK_ITEM_RANK[WorkItemStatus(current)]
@@ -500,11 +514,20 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         # PATCHes retain the existing opaque PATCH behavior.
         if replacement_product is not None:
             old_attributes = WorkItem.from_row(row).attributes
-            data["attributes"] = _replacement_attributes(
+            replacement_attributes = _replacement_attributes(
                 conn,
                 replacement_product["id"],
                 replacement_product["category"] or "",
                 old_attributes,
+            )
+            data["attributes"] = replacement_attributes
+            # A price-chip ID is product-scoped. Map it through the compatible
+            # retained label, or clear it so a stale old-product ID cannot
+            # block the next stock-synchronizing lifecycle transition.
+            data["priceChipId"] = _replacement_price_chip_id(
+                conn,
+                replacement_product["id"],
+                replacement_attributes,
             )
 
         field_map = {
@@ -519,6 +542,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "isExtra": "is_extra",
             "isGift": "is_gift",
             "attributes": "attributes",
+            "priceChipId": "price_chip_id",
             "assignedPrice": "assigned_price",
         }
         updates = []

@@ -1298,6 +1298,107 @@ def test_update_work_item_swap_retains_matching_chip_and_inventory_attribute(
     assert json.loads(order_row["items"])[0]["attributes"] == expected
 
 
+@pytest.mark.parametrize("matching_target_chip", [True, False])
+def test_update_work_item_swap_reconciles_chip_before_stock_sync(
+    api_client, matching_target_chip
+):
+    """A replacement maps a compatible chip label or clears the stale ID."""
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        old_product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-16'"
+        ).fetchone()
+        target_product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-20'"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM product_price_chips WHERE product_id IN (?, ?)",
+            (old_product["id"], target_product["id"]),
+        )
+        old_chip_id = conn.execute(
+            """INSERT INTO product_price_chips
+               (product_id, label, price, position)
+               VALUES (?, 'Nhỏ', 250000, 0)""",
+            (old_product["id"],),
+        ).lastrowid
+        target_chip_id = conn.execute(
+            """INSERT INTO product_price_chips
+               (product_id, label, price, position)
+               VALUES (?, ?, 350000, 0)""",
+            (
+                target_product["id"],
+                "Nhỏ" if matching_target_chip else "Lớn",
+            ),
+        ).lastrowid
+        conn.execute(
+            """INSERT INTO product_attribute_values
+               (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', 'true')
+               ON CONFLICT(product_id, attribute_type)
+               DO UPDATE SET value = excluded.value""",
+            (target_product["id"],),
+        )
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        unitPrice=251234,
+        assignedPrice=200000,
+        priceChipId=old_chip_id,
+        attributes={"price_chip_label": "Nhỏ", "useInventory": "false"},
+    )
+
+    swap = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    expected_chip_id = target_chip_id if matching_target_chip else None
+    expected_attributes = (
+        {"price_chip_label": "Nhỏ", "useInventory": "false"}
+        if matching_target_chip
+        else {"useInventory": "false"}
+    )
+    assert swap.status_code == 200
+    assert swap.json()["priceChipId"] == expected_chip_id
+    assert swap.json()["unitPrice"] == 251234
+    assert swap.json()["assignedPrice"] == 200000
+    assert swap.json()["attributes"] == expected_attributes
+    with get_db() as conn:
+        saved = conn.execute(
+            """SELECT product_id, price_chip_id, unit_price, assigned_price
+               FROM order_items WHERE id = ?""",
+            (int(item["id"]),),
+        ).fetchone()
+    assert saved["product_id"] == "BKS-20"
+    assert saved["price_chip_id"] == expected_chip_id
+    assert saved["unit_price"] == 251234
+    assert saved["assigned_price"] == 200000
+    assert saved["price_chip_id"] != old_chip_id
+
+    confirm = api_client.post(
+        f"/api/orders/{ref}/items/{item['id']}/status",
+        json={"status": "confirmed", "reason": ""},
+    )
+
+    assert confirm.status_code == 200
+    assert confirm.json()["status"] == "confirmed"
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT product_id, price_chip_id
+               FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'sale'""",
+            (ref,),
+        ).fetchone()
+    assert movement is not None
+    assert movement["product_id"] == target_product["id"]
+    assert movement["price_chip_id"] == expected_chip_id
+
+
 def test_update_work_item_swap_prunes_incompatible_chip_and_inventory_attribute(
     api_client,
 ):
