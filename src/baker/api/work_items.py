@@ -47,6 +47,84 @@ _ORDER_TO_WORK_ITEM_STATUS = {
 
 _AUTO_SYNC_REASON = "Tự động cập nhật theo trạng thái sản phẩm"
 
+_PROTECTED_REPLACEMENT_ATTRIBUTES = frozenset({
+    "candle_type",
+    "rut_tien",
+    "cash_amount",
+    "cash_fee",
+})
+
+
+def _replacement_attributes(conn, product_id: int, category: str, attributes: dict) -> dict:
+    """Return old item attributes that are compatible with a replacement product.
+
+    Enum definitions/options, price chips, and the ``trung_bay`` override are
+    queried from their authoritative tables. Workflow and unknown non-product
+    keys remain opaque and are preserved.
+    """
+    enum_rows = conn.execute(
+        """SELECT id, attribute_type, applicable_categories, active
+           FROM product_attributes
+           WHERE value_type = 'enum'"""
+    ).fetchall()
+    enum_keys = {row["attribute_type"] for row in enum_rows}
+    active_enum_values: dict[str, set[str]] = {}
+    for enum_row in enum_rows:
+        if not enum_row["active"]:
+            continue
+        try:
+            categories = (
+                json.loads(enum_row["applicable_categories"])
+                if enum_row["applicable_categories"]
+                else []
+            )
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(categories, list):
+            continue
+        if categories and category not in categories:
+            continue
+        option_rows = conn.execute(
+            """SELECT value_vi
+               FROM product_attribute_options
+               WHERE attribute_id = ? AND active = 1""",
+            (enum_row["id"],),
+        ).fetchall()
+        active_enum_values[enum_row["attribute_type"]] = {
+            option["value_vi"] for option in option_rows
+        }
+
+    chip_labels = {
+        row["label"]
+        for row in conn.execute(
+            "SELECT label FROM product_price_chips WHERE product_id = ?",
+            (product_id,),
+        ).fetchall()
+    }
+    is_trung_bay = conn.execute(
+        """SELECT 1 FROM product_attribute_values
+           WHERE product_id = ? AND attribute_type = 'trung_bay'
+             AND LOWER(TRIM(value)) = 'true'""",
+        (product_id,),
+    ).fetchone() is not None
+
+    compatible = {}
+    for key, value in attributes.items():
+        if key in _PROTECTED_REPLACEMENT_ATTRIBUTES:
+            compatible[key] = value
+        elif key == "price_chip_label":
+            if value in chip_labels:
+                compatible[key] = value
+        elif key == "useInventory":
+            if is_trung_bay:
+                compatible[key] = value
+        elif key in enum_keys:
+            if value in active_enum_values.get(key, set()):
+                compatible[key] = value
+        else:
+            compatible[key] = value
+    return compatible
+
 
 def _is_backward(current: str, target: str) -> bool:
     try:
@@ -381,6 +459,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         # swap guard and attempt `SET product_id = NULL`). An empty string
         # is preserved as a no-catalog sentinel for backward compatibility
         # (matches the create flow and historical order_items rows).
+        replacement_product = None
         if "productId" in data:
             new_pid = data["productId"]
             if new_pid is None:
@@ -390,7 +469,8 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
                 )
             if new_pid != "":
                 prod = conn.execute(
-                    "SELECT 1 FROM products WHERE product_code = ? AND active = 1",
+                    """SELECT id, category FROM products
+                       WHERE product_code = ? AND active = 1""",
                     (new_pid,),
                 ).fetchone()
                 if prod is None:
@@ -398,6 +478,21 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
                         status_code=422,
                         detail=f"Sản phẩm với mã '{new_pid}' không tồn tại hoặc đã ngừng",
                     )
+                if new_pid != (row["product_id"] or ""):
+                    replacement_product = prod
+
+        # A real active-product replacement keeps the existing attribute map
+        # as its source of truth, pruning only product-specific values that the
+        # target product cannot prove compatible. Same-product and non-swap
+        # PATCHes retain the existing opaque PATCH behavior.
+        if replacement_product is not None:
+            old_attributes = WorkItem.from_row(row).attributes
+            data["attributes"] = _replacement_attributes(
+                conn,
+                replacement_product["id"],
+                replacement_product["category"] or "",
+                old_attributes,
+            )
 
         field_map = {
             "productId": "product_id",
