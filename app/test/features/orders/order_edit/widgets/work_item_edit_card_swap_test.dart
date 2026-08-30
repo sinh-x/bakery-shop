@@ -17,8 +17,9 @@ import 'package:bakery_app/data/providers/order/order_detail_notifier.dart';
 import 'package:bakery_app/data/providers/order/order_work_item_providers.dart';
 import 'package:bakery_app/data/providers/products_provider.dart';
 import 'package:bakery_app/features/orders/order_edit/widgets/work_item_edit_card.dart';
-import 'package:bakery_app/features/orders/order_edit/widgets/work_items_section.dart';
+import 'package:bakery_app/features/orders/widgets/order_edit/edit_stage1_product.dart';
 import 'package:bakery_app/features/orders/widgets/product_picker_page.dart';
+import 'package:bakery_app/features/orders/widgets/stage1_empty_state.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
@@ -326,6 +327,7 @@ Future<ProviderContainer> _buildContainer(
       productsProvider.overrideWith(
         () => _FakeProductsNotifier(<Product>[_oldProduct, _newProduct]),
       ),
+      phuKienProductsProvider.overrideWith((_) async => const <Product>[]),
       categoriesProvider.overrideWith(
         () => _FakeCategoriesNotifier(_categories),
       ),
@@ -368,7 +370,7 @@ Future<void> _pumpCard(
   await tester.pumpAndSettle();
 }
 
-Future<void> _pumpSection(
+Future<void> _pumpStage(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
@@ -377,8 +379,10 @@ Future<void> _pumpSection(
       container: container,
       child: const MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: WorkItemsSection(orderRef: 'ORD-SWAP', onAddTap: _noop),
+          body: EditStage1Product(
+            orderRef: 'ORD-SWAP',
+            onBack: null,
+            onContinue: _noop,
           ),
         ),
       ),
@@ -686,13 +690,69 @@ void main() {
     );
 
     testWidgets(
-      'AC8: WorkItemsSection owns delayed removal refresh failure and retry',
+      'AC8: stage owner keeps non-final removal refresh failure and retry',
+      (tester) async {
+        final container = await _buildContainer(
+          _RemoveInterceptor(includeRemainingItem: true),
+          delayDetailRefreshOnce: true,
+        );
+        await _pumpStage(tester, container);
+        final detailNotifier =
+            container.read(orderDetailProvider('ORD-SWAP').notifier)
+                as _DelayedFailOnceOrderDetailNotifier;
+
+        expect(find.byType(WorkItemEditCard), findsNWidgets(2));
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.close).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(TextButton, SharedLabels.remove));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(
+          container.read(orderWorkItemsProvider('ORD-SWAP')).requireValue,
+          hasLength(1),
+        );
+        expect(find.byType(WorkItemEditCard), findsOneWidget);
+        expect(find.byType(Stage1EmptyState), findsNothing);
+        expect(find.byType(SnackBar), findsNothing);
+
+        detailNotifier.failFirstRefresh();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(
+          find.textContaining(OrdersLabels.removeProductRefreshFailed),
+          findsOneWidget,
+        );
+        final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+        expect(snackBar.action?.label, SharedLabels.retry);
+
+        await tester.tap(find.text(SharedLabels.retry));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(detailNotifier.refreshCalls, 2);
+        expect(
+          container.read(
+            orderWorkItemRemovalRefreshFailureProvider('ORD-SWAP'),
+          ),
+          isNull,
+        );
+        expect(
+          find.text(OrdersLabels.orderDetailRefreshSucceeded),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'AC8: final removal keeps refresh-only feedback across empty state',
       (tester) async {
         final container = await _buildContainer(
           _RemoveInterceptor(),
           delayDetailRefreshOnce: true,
         );
-        await _pumpSection(tester, container);
+        await _pumpStage(tester, container);
         final detailNotifier =
             container.read(orderDetailProvider('ORD-SWAP').notifier)
                 as _DelayedFailOnceOrderDetailNotifier;
@@ -708,12 +768,14 @@ void main() {
           isEmpty,
         );
         expect(find.byType(WorkItemEditCard), findsNothing);
+        expect(find.byType(Stage1EmptyState), findsOneWidget);
         expect(find.byType(SnackBar), findsNothing);
 
         detailNotifier.failFirstRefresh();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
+        expect(find.byType(Stage1EmptyState), findsOneWidget);
         expect(
           find.textContaining(OrdersLabels.removeProductRefreshFailed),
           findsOneWidget,
@@ -731,6 +793,12 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
 
         expect(detailNotifier.refreshCalls, 2);
+        expect(
+          container.read(
+            orderWorkItemRemovalRefreshFailureProvider('ORD-SWAP'),
+          ),
+          isNull,
+        );
         expect(
           find.text(OrdersLabels.orderDetailRefreshSucceeded),
           findsOneWidget,
@@ -844,11 +912,48 @@ void main() {
 /// Interceptor that rejects the swap PATCH with a 422 (mirrors the backend's
 /// FR5/SEC-1 rejection). Used by the CQ-1 error-handling test.
 class _RemoveInterceptor extends Interceptor {
+  _RemoveInterceptor({this.includeRemainingItem = false});
+
+  final bool includeRemainingItem;
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     if (options.path == '/api/orders/ORD-SWAP/items/10' &&
         options.method == 'DELETE') {
       handler.resolve(Response<void>(requestOptions: options, statusCode: 204));
+      return;
+    }
+    if (includeRemainingItem &&
+        options.path == '/api/orders/ORD-SWAP/items' &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': '10',
+              'orderId': 'ORD-SWAP',
+              'productId': 'P-OLD',
+              'productName': 'Bánh cũ',
+              'quantity': 3,
+              'unitPrice': 250000,
+              'status': 'pending',
+              'attributes': <String, dynamic>{},
+            },
+            <String, dynamic>{
+              'id': '11',
+              'orderId': 'ORD-SWAP',
+              'productId': 'P-OLD',
+              'productName': 'Bánh còn lại',
+              'quantity': 1,
+              'unitPrice': 250000,
+              'status': 'pending',
+              'attributes': <String, dynamic>{},
+            },
+          ],
+        ),
+      );
       return;
     }
     _SwapInterceptor().onRequest(options, handler);

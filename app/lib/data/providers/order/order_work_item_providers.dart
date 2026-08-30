@@ -183,17 +183,20 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   /// Removes an item locally after DELETE succeeds and reports a later detail
   /// refresh failure without turning the successful deletion into an error.
   Future<WorkItemMutationOutcome> removeWithOutcome(String itemId) async {
-    final refreshFailure = ref.read(
-      orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier,
-    );
-    refreshFailure.clear();
+    ref
+        .read(orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier)
+        .clear();
     final service = ref.read(workItemServiceProvider);
     await service.deleteWorkItem(orderRef, itemId);
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
     final refreshError = await retryOrderDetailRefresh();
     if (refreshError != null) {
-      refreshFailure.report(refreshError);
+      // Re-read after the async gap because the feedback provider may have
+      // auto-disposed when no edit-stage owner was mounted.
+      ref
+          .read(orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier)
+          .report(refreshError);
     }
     return WorkItemMutationOutcome(refreshError: refreshError);
   }
@@ -319,8 +322,9 @@ final orderWorkItemsProvider =
       String
     >(OrderWorkItemsNotifier.new);
 
-final orderWorkItemRemovalRefreshFailureProvider =
-    NotifierProvider.family<
+/// Drops unconsumed failures when the owning edit stage leaves the tree.
+final orderWorkItemRemovalRefreshFailureProvider = NotifierProvider.autoDispose
+    .family<
       OrderWorkItemRemovalRefreshFailureNotifier,
       WorkItemRemovalRefreshFailure?,
       String

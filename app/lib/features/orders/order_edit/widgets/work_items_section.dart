@@ -1,13 +1,9 @@
-import 'dart:async';
-
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../providers/order_providers.dart';
-import '../utils/work_item_mutation_feedback.dart';
 import 'work_item_edit_card.dart';
 
 class WorkItemsSection extends ConsumerWidget {
@@ -20,30 +16,9 @@ class WorkItemsSection extends ConsumerWidget {
   final String orderRef;
   final VoidCallback onAddTap;
 
-  Future<void> _retryRemovalRefresh(BuildContext context, WidgetRef ref) async {
-    final error = await ref
-        .read(orderWorkItemsProvider(orderRef).notifier)
-        .retryRemovalOrderDetailRefresh();
-    if (error == null && context.mounted) {
-      showTopSnackBar(context, OrdersLabels.orderDetailRefreshSucceeded);
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    ref.listen(orderWorkItemRemovalRefreshFailureProvider(orderRef), (
-      _,
-      failure,
-    ) {
-      if (failure == null) return;
-      showWorkItemRefreshFailure(
-        context,
-        action: OrdersLabels.removeProductRefreshFailed,
-        error: failure.error,
-        onRetry: () => unawaited(_retryRemovalRefresh(context, ref)),
-      );
-    });
     final workItemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
 
     return workItemsAsync.when(
