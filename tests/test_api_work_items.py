@@ -19,6 +19,90 @@ def _create_item(client, ref, **kwargs):
     return resp.json()
 
 
+def _active_enum_value(attribute_type="nhan_banh"):
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT pao.value_vi
+               FROM product_attribute_options pao
+               JOIN product_attributes pa ON pa.id = pao.attribute_id
+               WHERE pa.attribute_type = ? AND pao.active = 1
+               ORDER BY pao.sort_order, pao.id LIMIT 1""",
+            (attribute_type,),
+        ).fetchone()
+    assert row is not None
+    return row["value_vi"]
+
+
+def _create_swap_product(code, category="bread"):
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        cursor = conn.execute(
+            """INSERT INTO products
+               (name, category, base_price, cost, recipe_notes, product_code, active)
+               VALUES (?, ?, 0, 0, '', ?, 1)""",
+            (f"Sản phẩm {code}", category, code),
+        )
+    return cursor.lastrowid
+
+
+def _attach_deletion_links(client, order, item):
+    """Attach one blank and one photo to an item for removal integrity tests."""
+    from baker.db.connection import get_db
+
+    blank = client.post(
+        "/api/blanks",
+        json={"name": "Phôi xóa", "category": "cot", "unit": "cai"},
+    ).json()
+    assignment = client.post(
+        f"/api/orders/{order['orderRef']}/items/{item['id']}/blanks",
+        json={"blankId": blank["id"], "quantity": 1.5, "notes": "giữ nguyên"},
+    ).json()
+    with get_db() as conn:
+        photo_id = conn.execute(
+            "INSERT INTO photos (hash, original_name) VALUES ('delete-photo', 'delete.jpg')"
+        ).lastrowid
+        photo_link_id = conn.execute(
+            """INSERT INTO order_photos (order_id, photo_id, work_item_id)
+               VALUES (?, ?, ?)""",
+            (int(order["id"]), photo_id, int(item["id"])),
+        ).lastrowid
+    return assignment["id"], photo_id, photo_link_id
+
+
+def _snapshot_removal_state(order_id, item_id, assignment_id, photo_link_id):
+    """Capture every persistence surface that DELETE must mutate atomically."""
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        return {
+            "item": dict(
+                conn.execute(
+                    "SELECT * FROM order_items WHERE id = ?", (item_id,)
+                ).fetchone()
+            ),
+            "photo": dict(
+                conn.execute(
+                    "SELECT * FROM order_photos WHERE id = ?", (photo_link_id,)
+                ).fetchone()
+            ),
+            "blank": dict(
+                conn.execute(
+                    "SELECT * FROM order_item_blanks WHERE id = ?", (assignment_id,)
+                ).fetchone()
+            ),
+            "order": dict(
+                conn.execute(
+                    """SELECT items, total_price, updated_at FROM orders
+                       WHERE id = ?""",
+                    (order_id,),
+                ).fetchone()
+            ),
+        }
+
+
 # --- List work items ---
 
 
@@ -195,16 +279,221 @@ def test_update_work_item_wrong_order(api_client):
 # --- Delete work item ---
 
 
-def test_delete_work_item(api_client):
+@pytest.mark.parametrize("status", ["pending", "confirmed", "working", "ready"])
+def test_delete_work_item_allows_non_terminal_statuses(api_client, status):
+    """FR5: each non-terminal lifecycle status remains directly removable."""
+    from baker.db.connection import get_db
+
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)
-    item_id = item["id"]
+    item_id = int(item["id"])
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?", (status, item_id)
+        )
+
     resp = api_client.delete(f"/api/orders/{ref}/items/{item_id}")
+
     assert resp.status_code == 204
-    # Confirm gone
-    list_resp = api_client.get(f"/api/orders/{ref}/items")
-    assert list_resp.json() == []
+    assert api_client.get(f"/api/orders/{ref}/items").json() == []
+
+
+def test_delete_work_item_detaches_photos_cascades_blanks_and_syncs_order(api_client):
+    """AC1/AC3: allowed removal reconciles links, JSON, fees, and total."""
+    import json
+
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    removed = _create_item(
+        api_client,
+        ref,
+        productName="Sản phẩm cần xóa",
+        quantity=2,
+        unitPrice=100,
+        attributes={"rut_tien": "true", "cash_fee": "10"},
+    )
+    remaining = _create_item(
+        api_client,
+        ref,
+        productName="Sản phẩm còn lại",
+        quantity=3,
+        unitPrice=50,
+        attributes={"rut_tien": "true", "cash_fee": "7"},
+    )
+    gift = _create_item(
+        api_client,
+        ref,
+        productName="Quà tặng",
+        quantity=5,
+        unitPrice=999,
+        isGift=True,
+    )
+    inactive_fee = _create_item(
+        api_client,
+        ref,
+        productName="Phí rút tiền không hoạt động",
+        quantity=1,
+        unitPrice=20,
+        attributes={"rut_tien": "false", "cash_fee": "100"},
+    )
+    assignment_id, photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, removed
+    )
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE orders SET shipping_fee = 30, items = '[{"stale": true}]',
+               total_price = -1 WHERE id = ?""",
+            (order_id,),
+        )
+
+    resp = api_client.delete(f"/api/orders/{ref}/items/{removed['id']}")
+
+    assert resp.status_code == 204
+    with get_db() as conn:
+        assert conn.execute(
+            "SELECT 1 FROM order_items WHERE id = ?", (int(removed["id"]),)
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM order_item_blanks WHERE id = ?", (assignment_id,)
+        ).fetchone() is None
+        photo = conn.execute(
+            "SELECT photo_id, work_item_id FROM order_photos WHERE id = ?",
+            (photo_link_id,),
+        ).fetchone()
+        assert photo is not None
+        assert photo["photo_id"] == photo_id
+        assert photo["work_item_id"] is None
+        assert conn.execute(
+            "SELECT 1 FROM photos WHERE id = ?", (photo_id,)
+        ).fetchone() is not None
+        saved_order = conn.execute(
+            "SELECT items, total_price FROM orders WHERE id = ?", (order_id,)
+        ).fetchone()
+
+    synced_items = json.loads(saved_order["items"])
+    assert [item["product"] for item in synced_items] == [
+        remaining["productName"],
+        gift["productName"],
+        inactive_fee["productName"],
+    ]
+    assert all(item["product"] != removed["productName"] for item in synced_items)
+    assert saved_order["total_price"] == 207
+
+
+@pytest.mark.parametrize(
+    ("status", "message_key"),
+    [("delivered", "đã được giao"), ("cancelled", "đã bị hủy")],
+)
+def test_delete_work_item_rejects_terminal_without_state_change(
+    api_client, status, message_key
+):
+    """AC2/NFR2: terminal rejection is safe Vietnamese and mutation-free."""
+    from baker.api.work_items import WORK_ITEM_DELETE_TERMINAL_MESSAGES
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?", (status, item_id)
+        )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+
+    resp = api_client.delete(f"/api/orders/{ref}/items/{item_id}")
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail == WORK_ITEM_DELETE_TERMINAL_MESSAGES[status]
+    assert "Không thể xóa" in detail
+    assert message_key in detail
+    assert "Hãy giữ nguyên" in detail
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
+
+
+def test_delete_work_item_rolls_back_photo_detachment_on_delete_failure(
+    api_client, monkeypatch
+):
+    """AC7: a failure after photo detachment rolls back every state surface."""
+    from baker.api import work_items
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    item = _create_item(api_client, order["orderRef"], quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+
+    def fail_delete(conn, scoped_order_id, scoped_item_id):
+        raise RuntimeError("injected work-item deletion failure")
+
+    monkeypatch.setattr(work_items, "_delete_work_item_row", fail_delete)
+    with pytest.raises(RuntimeError, match="injected work-item deletion failure"):
+        api_client.delete(
+            f"/api/orders/{order['orderRef']}/items/{item_id}"
+        )
+
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
+
+
+def test_delete_work_item_rolls_back_all_state_on_post_sync_failure(
+    api_client, monkeypatch
+):
+    """AC7/NFR1: even completed JSON/total sync rolls back on later failure."""
+    from baker.api import work_items
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    order_id = int(order["id"])
+    item = _create_item(api_client, order["orderRef"], quantity=2, unitPrice=125)
+    item_id = int(item["id"])
+    _create_item(api_client, order["orderRef"], quantity=3, unitPrice=50)
+    assignment_id, _photo_id, photo_link_id = _attach_deletion_links(
+        api_client, order, item
+    )
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE orders SET items = '[{"sentinel": true}]',
+               total_price = 4321 WHERE id = ?""",
+            (order_id,),
+        )
+    before = _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    )
+    sync_order_items_json = work_items._sync_order_items_json
+
+    def fail_after_sync(conn, scoped_order_id):
+        sync_order_items_json(conn, scoped_order_id)
+        raise RuntimeError("injected post-sync failure")
+
+    monkeypatch.setattr(work_items, "_sync_order_items_json", fail_after_sync)
+    with pytest.raises(RuntimeError, match="injected post-sync failure"):
+        api_client.delete(
+            f"/api/orders/{order['orderRef']}/items/{item_id}"
+        )
+
+    assert _snapshot_removal_state(
+        order_id, item_id, assignment_id, photo_link_id
+    ) == before
 
 
 def test_delete_work_item_not_found(api_client):
@@ -212,6 +501,21 @@ def test_delete_work_item_not_found(api_client):
     ref = order["orderRef"]
     resp = api_client.delete(f"/api/orders/{ref}/items/9999")
     assert resp.status_code == 404
+
+
+def test_delete_work_item_second_mutation_is_not_found(api_client):
+    """FR12: a second removal sees the committed deletion as not found."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+
+    assert api_client.delete(
+        f"/api/orders/{ref}/items/{item['id']}"
+    ).status_code == 204
+    second = api_client.delete(f"/api/orders/{ref}/items/{item['id']}")
+
+    assert second.status_code == 404
+    assert second.json()["detail"] == "Không tìm thấy công việc"
 
 
 def test_delete_work_item_wrong_order(api_client):
@@ -865,6 +1169,527 @@ def test_update_work_item_swap_only_name_keeps_product_id(api_client):
     assert updated["productId"] == "BKS-16"
 
 
+def test_update_work_item_swap_retains_active_compatible_enum_attribute(api_client):
+    """AC4: a target-exposed enum keeps the old active option without defaulting."""
+    value = _active_enum_value()
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        attributes={"nhan_banh": value, "custom_context": "keep"},
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"] == {
+        "nhan_banh": value,
+        "custom_context": "keep",
+    }
+
+
+@pytest.mark.parametrize("incompatibility", ["absent", "inactive", "invalid"])
+def test_update_work_item_swap_prunes_incompatible_enum_attribute(
+    api_client, incompatibility
+):
+    """AC4: absent/inactive/invalid enum values are removed with no default."""
+    from baker.db.connection import get_db
+
+    old_value = _active_enum_value()
+    target_code = "BKS-20"
+    if incompatibility == "absent":
+        target_code = "SWAP-NON-CAKE"
+        _create_swap_product(target_code)
+    elif incompatibility == "inactive":
+        with get_db() as conn:
+            conn.execute(
+                """UPDATE product_attribute_options SET active = 0
+                   WHERE id = (
+                       SELECT pao.id FROM product_attribute_options pao
+                       JOIN product_attributes pa ON pa.id = pao.attribute_id
+                       WHERE pa.attribute_type = 'nhan_banh'
+                         AND pao.value_vi = ?
+                       LIMIT 1
+                   )""",
+                (old_value,),
+            )
+    else:
+        old_value = "Giá trị không hợp lệ"
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        attributes={"nhan_banh": old_value, "custom_context": "keep"},
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": target_code, "productName": "Sản phẩm thay thế"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"] == {"custom_context": "keep"}
+
+
+def test_update_work_item_swap_retains_matching_chip_and_inventory_attribute(
+    api_client,
+):
+    """AC5: matching chip and trưng-bày inventory choice survive everywhere."""
+    import json
+
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-20'"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM product_price_chips WHERE product_id = ?",
+            (product["id"],),
+        )
+        conn.execute(
+            """INSERT INTO product_price_chips
+               (product_id, label, price, position)
+               VALUES (?, 'Nhỏ', 350000, 0)""",
+            (product["id"],),
+        )
+        conn.execute(
+            """INSERT INTO product_attribute_values
+               (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', 'true')
+               ON CONFLICT(product_id, attribute_type)
+               DO UPDATE SET value = excluded.value""",
+            (product["id"],),
+        )
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        attributes={"price_chip_label": "Nhỏ", "useInventory": "false"},
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    expected = {"price_chip_label": "Nhỏ", "useInventory": "false"}
+    assert resp.status_code == 200
+    assert resp.json()["attributes"] == expected
+    with get_db() as conn:
+        saved = conn.execute(
+            "SELECT attributes FROM order_items WHERE id = ?", (int(item["id"]),)
+        ).fetchone()
+        order_row = conn.execute(
+            "SELECT items FROM orders WHERE id = ?", (int(order["id"]),)
+        ).fetchone()
+    assert json.loads(saved["attributes"]) == expected
+    assert json.loads(order_row["items"])[0]["attributes"] == expected
+
+
+@pytest.mark.parametrize("matching_target_chip", [True, False])
+def test_update_work_item_swap_reconciles_chip_before_stock_sync(
+    api_client, matching_target_chip
+):
+    """A replacement maps a compatible chip label or clears the stale ID."""
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        old_product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-16'"
+        ).fetchone()
+        target_product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-20'"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM product_price_chips WHERE product_id IN (?, ?)",
+            (old_product["id"], target_product["id"]),
+        )
+        old_chip_id = conn.execute(
+            """INSERT INTO product_price_chips
+               (product_id, label, price, position)
+               VALUES (?, 'Nhỏ', 250000, 0)""",
+            (old_product["id"],),
+        ).lastrowid
+        target_chip_id = conn.execute(
+            """INSERT INTO product_price_chips
+               (product_id, label, price, position)
+               VALUES (?, ?, 350000, 0)""",
+            (
+                target_product["id"],
+                "Nhỏ" if matching_target_chip else "Lớn",
+            ),
+        ).lastrowid
+        conn.execute(
+            """INSERT INTO product_attribute_values
+               (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', 'true')
+               ON CONFLICT(product_id, attribute_type)
+               DO UPDATE SET value = excluded.value""",
+            (target_product["id"],),
+        )
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        unitPrice=251234,
+        assignedPrice=200000,
+        priceChipId=old_chip_id,
+        attributes={"price_chip_label": "Nhỏ", "useInventory": "false"},
+    )
+
+    swap = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    expected_chip_id = target_chip_id if matching_target_chip else None
+    expected_attributes = (
+        {"price_chip_label": "Nhỏ", "useInventory": "false"}
+        if matching_target_chip
+        else {"useInventory": "false"}
+    )
+    assert swap.status_code == 200
+    assert swap.json()["priceChipId"] == expected_chip_id
+    assert swap.json()["unitPrice"] == 251234
+    assert swap.json()["assignedPrice"] == 200000
+    assert swap.json()["attributes"] == expected_attributes
+    with get_db() as conn:
+        saved = conn.execute(
+            """SELECT product_id, price_chip_id, unit_price, assigned_price
+               FROM order_items WHERE id = ?""",
+            (int(item["id"]),),
+        ).fetchone()
+    assert saved["product_id"] == "BKS-20"
+    assert saved["price_chip_id"] == expected_chip_id
+    assert saved["unit_price"] == 251234
+    assert saved["assigned_price"] == 200000
+    assert saved["price_chip_id"] != old_chip_id
+
+    confirm = api_client.post(
+        f"/api/orders/{ref}/items/{item['id']}/status",
+        json={"status": "confirmed", "reason": ""},
+    )
+
+    assert confirm.status_code == 200
+    assert confirm.json()["status"] == "confirmed"
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT product_id, price_chip_id
+               FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'sale'""",
+            (ref,),
+        ).fetchone()
+    assert movement is not None
+    assert movement["product_id"] == target_product["id"]
+    assert movement["price_chip_id"] == expected_chip_id
+
+
+def test_update_work_item_swap_prunes_incompatible_chip_and_inventory_attribute(
+    api_client,
+):
+    """AC5: chip/inventory keys absent on the target are removed everywhere."""
+    import json
+
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        product = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-20'"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM product_price_chips WHERE product_id = ?",
+            (product["id"],),
+        )
+        conn.execute(
+            """DELETE FROM product_attribute_values
+               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+            (product["id"],),
+        )
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        attributes={
+            "price_chip_label": "Không tồn tại",
+            "useInventory": "true",
+            "custom_context": "keep",
+        },
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"] == {"custom_context": "keep"}
+    with get_db() as conn:
+        saved = conn.execute(
+            "SELECT attributes FROM order_items WHERE id = ?", (int(item["id"]),)
+        ).fetchone()
+        order_row = conn.execute(
+            "SELECT items FROM orders WHERE id = ?", (int(order["id"]),)
+        ).fetchone()
+    assert json.loads(saved["attributes"]) == {"custom_context": "keep"}
+    assert json.loads(order_row["items"])[0]["attributes"] == {
+        "custom_context": "keep"
+    }
+
+
+def test_update_work_item_same_product_id_does_not_prune_attributes(api_client):
+    """FR1/FR12: an unchanged productId PATCH keeps opaque attributes intact."""
+    attributes = {
+        "nhan_banh": "Giá trị cũ không hợp lệ",
+        "price_chip_label": "Chip cũ",
+        "useInventory": "true",
+    }
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        attributes=attributes,
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item['id']}",
+        json={"productId": "BKS-16", "notes": "Không phải thay sản phẩm"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"] == attributes
+
+
+def test_update_work_item_swap_preserves_fields_attributes_and_links(api_client):
+    """AC6: replacement changes product in place and preserves agreed context."""
+    import json
+
+    from baker.db.connection import get_db
+
+    enum_value = _active_enum_value()
+    with get_db() as conn:
+        target = conn.execute(
+            "SELECT id FROM products WHERE product_code = 'BKS-20'"
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM product_price_chips WHERE product_id = ?", (target["id"],)
+        )
+        conn.execute(
+            """DELETE FROM product_attribute_values
+               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+            (target["id"],),
+        )
+
+    old_attributes = {
+        "nhan_banh": enum_value,
+        "price_chip_label": "Chip cũ",
+        "useInventory": "true",
+        "candle_type": "nen_so",
+        "rut_tien": "true",
+        "cash_amount": "500000",
+        "cash_fee": "20000",
+        "unknown_non_product": "  giữ nguyên  ",
+    }
+    expected_attributes = {
+        key: value
+        for key, value in old_attributes.items()
+        if key not in {"price_chip_label", "useInventory"}
+    }
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        quantity=3,
+        unitPrice=250000,
+        assignedPrice=200000,
+        notes="Ghi chú giữ nguyên",
+        position=4,
+        isBirthday=True,
+        age=7,
+        isExtra=True,
+        isGift=True,
+        attributes=old_attributes,
+    )
+    item_id = int(item["id"])
+
+    blank = api_client.post(
+        "/api/blanks", json={"name": "Phôi giữ nguyên", "category": "cot", "unit": "cai"}
+    ).json()
+    assigned = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/blanks",
+        json={"blankId": blank["id"], "quantity": 2.5, "notes": "liên kết"},
+    ).json()
+    with get_db() as conn:
+        photo_id = conn.execute(
+            "INSERT INTO photos (hash, original_name) VALUES ('swap-photo', 'swap.jpg')"
+        ).lastrowid
+        photo_link_id = conn.execute(
+            """INSERT INTO order_photos (order_id, photo_id, work_item_id)
+               VALUES (?, ?, ?)""",
+            (int(order["id"]), photo_id, item_id),
+        ).lastrowid
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+    )
+
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["id"] == item["id"]
+    assert updated["productId"] == "BKS-20"
+    assert updated["quantity"] == 3
+    assert updated["unitPrice"] == 250000
+    assert updated["assignedPrice"] == 200000
+    assert updated["notes"] == "Ghi chú giữ nguyên"
+    assert updated["position"] == 4
+    assert updated["isBirthday"] is True
+    assert updated["age"] == 7
+    assert updated["isExtra"] is True
+    assert updated["isGift"] is True
+    assert updated["attributes"] == expected_attributes
+    assert updated["blanks"] == [assigned]
+
+    with get_db() as conn:
+        saved = conn.execute(
+            "SELECT * FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()
+        photo_link = conn.execute(
+            "SELECT work_item_id FROM order_photos WHERE id = ?", (photo_link_id,)
+        ).fetchone()
+        blank_link = conn.execute(
+            "SELECT * FROM order_item_blanks WHERE id = ?", (assigned["id"],)
+        ).fetchone()
+        order_row = conn.execute(
+            "SELECT items, total_price FROM orders WHERE id = ?", (int(order["id"]),)
+        ).fetchone()
+    assert saved["product_id"] == "BKS-20"
+    assert json.loads(saved["attributes"]) == expected_attributes
+    assert photo_link["work_item_id"] == item_id
+    assert blank_link["order_item_id"] == item_id
+    synced = json.loads(order_row["items"])[0]
+    assert synced["attributes"] == expected_attributes
+    assert synced["blanks"] == [
+        {"blankId": blank["id"], "quantity": 2.5, "notes": "liên kết"}
+    ]
+    assert order_row["total_price"] == 20000
+
+
+def test_update_work_item_swap_rolls_back_item_attributes_json_and_total(
+    api_client, monkeypatch
+):
+    """AC7/NFR1: a post-update sync failure rolls back every replacement value."""
+    import json
+
+    from baker.api import work_items
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(
+        api_client,
+        ref,
+        productId="BKS-16",
+        quantity=2,
+        unitPrice=123000,
+        attributes={"nhan_banh": "Giá trị cũ", "custom_context": "keep"},
+    )
+    item_id = int(item["id"])
+    blank = api_client.post(
+        "/api/blanks", json={"name": "Phôi rollback", "category": "cot", "unit": "cai"}
+    ).json()
+    assignment = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/blanks",
+        json={"blankId": blank["id"], "quantity": 1.5, "notes": "rollback"},
+    ).json()
+    with get_db() as conn:
+        photo_id = conn.execute(
+            """INSERT INTO photos (hash, original_name)
+               VALUES ('swap-rollback-photo', 'rollback.jpg')"""
+        ).lastrowid
+        photo_link_id = conn.execute(
+            """INSERT INTO order_photos (order_id, photo_id, work_item_id)
+               VALUES (?, ?, ?)""",
+            (int(order["id"]), photo_id, item_id),
+        ).lastrowid
+        before_item = dict(
+            conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
+        )
+        before_order = dict(
+            conn.execute(
+                "SELECT items, total_price FROM orders WHERE id = ?",
+                (int(order["id"]),),
+            ).fetchone()
+        )
+        before_blank = dict(
+            conn.execute(
+                "SELECT * FROM order_item_blanks WHERE id = ?", (assignment["id"],)
+            ).fetchone()
+        )
+        before_photo = dict(
+            conn.execute(
+                "SELECT * FROM order_photos WHERE id = ?", (photo_link_id,)
+            ).fetchone()
+        )
+
+    def fail_sync(conn, order_id):
+        raise RuntimeError("injected replacement sync failure")
+
+    monkeypatch.setattr(work_items, "_sync_order_items_json", fail_sync)
+    with pytest.raises(RuntimeError, match="injected replacement sync failure"):
+        api_client.patch(
+            f"/api/orders/{ref}/items/{item_id}",
+            json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
+        )
+
+    with get_db() as conn:
+        after_item = dict(
+            conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
+        )
+        after_order = dict(
+            conn.execute(
+                "SELECT items, total_price FROM orders WHERE id = ?",
+                (int(order["id"]),),
+            ).fetchone()
+        )
+        after_blank = dict(
+            conn.execute(
+                "SELECT * FROM order_item_blanks WHERE id = ?", (assignment["id"],)
+            ).fetchone()
+        )
+        after_photo = dict(
+            conn.execute(
+                "SELECT * FROM order_photos WHERE id = ?", (photo_link_id,)
+            ).fetchone()
+        )
+    assert after_item == before_item
+    assert json.loads(after_order["items"]) == json.loads(before_order["items"])
+    assert after_order["total_price"] == before_order["total_price"]
+    assert after_blank == before_blank
+    assert after_photo == before_photo
+
+
 def test_update_work_item_swap_preserves_blanks(api_client):
     """AC5: swap does not touch order_item_blanks junction rows."""
     from baker.db.connection import get_db
@@ -1003,6 +1828,13 @@ def test_update_work_item_swap_syncs_order_items_json(api_client):
     item = _create_item(api_client, ref, productId="BKS-16", unitPrice=200000.0, quantity=1)
     item_id = item["id"]
 
+    from baker.db.connection import get_db
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE orders SET items = '[]', total_price = 1 WHERE id = ?",
+            (int(order["id"]),),
+        )
+
     api_client.patch(
         f"/api/orders/{ref}/items/{item_id}",
         json={"productId": "BKS-20", "productName": "Bánh kem 20cm"},
@@ -1015,6 +1847,7 @@ def test_update_work_item_swap_syncs_order_items_json(api_client):
     synced = order_data["items"][0]
     assert synced["productId"] == "BKS-20"
     assert synced["productName"] == "Bánh kem 20cm"
+    assert order_data["totalPrice"] == 200000.0
 
 
 def test_update_work_item_without_product_id_backward_compatible(api_client):

@@ -64,8 +64,7 @@ class OrdersLabels {
   // Validation messages (DG-211 review cycle 1 — CQ-4)
   static const validationSelectAtLeastOneProduct =
       'Vui lòng chọn ít nhất một sản phẩm';
-  static const validationCustomerNameRequired =
-      'Vui lòng nhập tên khách hàng';
+  static const validationCustomerNameRequired = 'Vui lòng nhập tên khách hàng';
 
   // Product/extras count strings (DG-211 review cycle 1 — CQ-2)
   static String productCount(int count) => '$count sản phẩm';
@@ -115,7 +114,8 @@ class OrdersLabels {
   // Combined urgency listing title (critical + urgent) — DG-250 Phase 2
   static const combinedUrgencyTitle = 'Đơn hàng khẩn cấp & gấp';
   // Combined urgency listing empty state (critical + urgent) — DG-250 5.6-c1
-  static const combinedUrgencyFilterEmpty = 'Không có đơn hàng khẩn cấp hoặc gấp';
+  static const combinedUrgencyFilterEmpty =
+      'Không có đơn hàng khẩn cấp hoặc gấp';
 
   // Completeness labels (DG-241 Phase 2 — FR-3, FR-4)
   static const completenessIncompleteBadge = 'THIẾU THÔNG TIN';
@@ -124,7 +124,8 @@ class OrdersLabels {
 
   // Incomplete banner (DG-241 Phase 3 — FR-5)
   static const incompleteBannerTitle = 'Đơn hàng thiếu thông tin';
-  static String incompleteBannerText(int count) => '$count đơn hàng thiếu thông tin';
+  static String incompleteBannerText(int count) =>
+      '$count đơn hàng thiếu thông tin';
 
   // Incomplete badge tooltip (DG-241 Phase 3 — FR-6)
   static String incompleteBadgeTooltip(int count) =>
@@ -278,12 +279,15 @@ class OrdersLabels {
   static const assignStaffUnassign = 'Chưa gán';
   static const assignStaffLoadError = 'Không tải được danh sách nhân viên';
   static const assignStaffSaved = 'Đã cập nhật nhân viên giao hàng';
-  static const assignStaffSaveFailed = 'Không cập nhật được nhân viên giao hàng';
+  static const assignStaffSaveFailed =
+      'Không cập nhật được nhân viên giao hàng';
+
   /// Display label for an inactive (deactivated) staff member in the
   /// assignment dropdown. Shows the real name followed by the "(đã ngưng)"
   /// suffix only when the staff record exists but is deactivated (DG-329
   /// Phase 2 / FR3 / AC2).
-  static String assignStaffInactive(String staffName) => '$staffName (đã ngưng)';
+  static String assignStaffInactive(String staffName) =>
+      '$staffName (đã ngưng)';
 
   /// Fallback label for an assigned staff member whose record is missing
   /// entirely from the staff list (e.g. deleted). Shows "NV #`<id>`" without
@@ -357,6 +361,21 @@ class OrdersLabels {
   /// (DG-414 Phase 4.3 / FR6/FR7). Opens `ProductPickerPage` (single-select,
   /// active products only) and applies the chosen `productId`/`productName`.
   static const changeProduct = 'Đổi sản phẩm';
+  static const removeProduct = 'Xóa sản phẩm khỏi đơn hàng';
+  static const removeProductConfirmTitle = 'Xóa sản phẩm?';
+  static String removeProductConfirmMessage(String productName) =>
+      'Xóa "$productName" khỏi đơn hàng?';
+  static const replaceProductFailed = 'Không thể đổi sản phẩm';
+  static const removeProductFailed = 'Không thể xóa sản phẩm khỏi đơn hàng';
+  static const replaceProductRefreshFailed =
+      'Đã đổi sản phẩm nhưng chưa thể làm mới chi tiết đơn hàng';
+  static const removeProductRefreshFailed =
+      'Đã xóa sản phẩm nhưng chưa thể làm mới chi tiết đơn hàng';
+  static const workItemValidationRecovery =
+      'Kiểm tra trạng thái và dữ liệu sản phẩm rồi thử lại.';
+  static const orderDetailRefreshRecovery =
+      'Nhấn Thử lại để đồng bộ chi tiết đơn hàng mới nhất.';
+  static const orderDetailRefreshSucceeded = 'Đã làm mới chi tiết đơn hàng';
   static const dueDate = 'Hạn giao';
   static const deliveryType = 'Hình thức nhận hàng';
   static const pickup = 'Lấy tại tiệm';
@@ -790,5 +809,4 @@ class OrdersLabels {
       'Phụ kiện trả phí mới được quản lý từ Danh mục sản phẩm (nhóm phu_kien). Mục này chỉ giữ lại để hướng dẫn và không còn tạo/sửa dữ liệu order_extra.';
   static const extrasSettingsDeprecatedAction =
       'Vào Danh mục sản phẩm để thêm/sửa phụ kiện và mức giá.';
-
 }

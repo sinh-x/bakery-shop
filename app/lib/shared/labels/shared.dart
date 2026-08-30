@@ -41,6 +41,14 @@ class SharedLabels {
   static const loading = 'Đang tải...';
   static const errorLoading = 'Không thể tải dữ liệu';
   static const retry = 'Thử lại';
+  static const failureReasonLabel = 'Lý do';
+  static const nextStepLabel = 'Bước tiếp theo';
+  static const apiValidationError =
+      'Dữ liệu hoặc trạng thái hiện tại không hợp lệ';
+  static const checkConnectionAndRetry = 'Kiểm tra kết nối mạng rồi thử lại.';
+  static const retryWhenConnectionStable = 'Chờ kết nối ổn định rồi thử lại.';
+  static const retryOrContactAdmin =
+      'Thử lại; nếu lỗi tiếp diễn, liên hệ quản trị để được hỗ trợ.';
 
   // RBAC / UI gating
   static const accessDeniedTitle = 'Không có quyền truy cập';

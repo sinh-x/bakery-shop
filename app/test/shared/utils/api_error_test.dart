@@ -32,22 +32,120 @@ void main() {
       expect(normalized.kind, ApiErrorKind.timeout);
       expect(normalized.message, SharedLabels.apiTimeout);
     });
+
+    test('replaces raw backend diagnostics with a safe validation reason', () {
+      final request = RequestOptions(path: '/api/orders/ORD/items/10');
+      final error = DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 422,
+          data: <String, dynamic>{
+            'detail': 'SQLite exception: SQL syntax error\nTraceback',
+          },
+        ),
+      );
+
+      expect(normalizeApiError(error).message, SharedLabels.apiValidationError);
+    });
+  });
+
+  group('action failure messaging', () {
+    test(
+      'covers lifecycle, validation, network, timeout, 5xx, and unknown',
+      () {
+        final request = RequestOptions(path: '/api/orders/ORD/items/10');
+        final errors = <Object>[
+          DioException(
+            requestOptions: request,
+            response: Response(
+              requestOptions: request,
+              statusCode: 422,
+              data: <String, dynamic>{
+                'detail': 'Không thể xóa sản phẩm đã giao',
+              },
+            ),
+          ),
+          DioException(
+            requestOptions: request,
+            response: Response(
+              requestOptions: request,
+              statusCode: 422,
+              data: <String, dynamic>{'detail': 'Sản phẩm không hợp lệ'},
+            ),
+          ),
+          DioException(
+            requestOptions: request,
+            type: DioExceptionType.connectionError,
+          ),
+          DioException(
+            requestOptions: request,
+            type: DioExceptionType.receiveTimeout,
+          ),
+          DioException(
+            requestOptions: request,
+            response: Response(
+              requestOptions: request,
+              statusCode: 500,
+              data: <String, dynamic>{'detail': 'Python traceback SQL error'},
+            ),
+          ),
+          StateError('raw Dart diagnostic'),
+        ];
+
+        for (final error in errors) {
+          final message = buildApiActionFailureMessage(
+            action: OrdersLabels.replaceProductFailed,
+            error: error,
+          );
+          expect(message, contains(OrdersLabels.replaceProductFailed));
+          expect(message, contains(SharedLabels.failureReasonLabel));
+          expect(message, contains(SharedLabels.nextStepLabel));
+          expect(message, isNot(contains('DioException')));
+          expect(message, isNot(contains('StateError')));
+          expect(message.toLowerCase(), isNot(contains('traceback')));
+          expect(message.toLowerCase(), isNot(contains('sql error')));
+        }
+      },
+    );
+
+    test('refresh-only feedback keeps the successful action explicit', () {
+      final message = buildApiActionFailureMessage(
+        action: OrdersLabels.removeProductRefreshFailed,
+        error: DioException(
+          requestOptions: RequestOptions(path: '/api/orders/ORD'),
+          type: DioExceptionType.connectionTimeout,
+        ),
+        nextStep: OrdersLabels.orderDetailRefreshRecovery,
+      );
+
+      expect(message, contains(OrdersLabels.removeProductRefreshFailed));
+      expect(message, contains(SharedLabels.apiTimeout));
+      expect(message, contains(OrdersLabels.orderDetailRefreshRecovery));
+    });
   });
 
   group('order status failure messaging', () {
-    test('maps known backend transition detail strings to actionable recovery', () {
-      const backendDetails = <String>[
-        'Không đủ tồn kho cho sản phẩm',
-        'Invalid product price bucket for order item',
-        'Lý do là bắt buộc khi lùi trạng thái',
-        'Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu 12,000đ',
-      ];
+    test(
+      'maps known backend transition detail strings to actionable recovery',
+      () {
+        const backendDetails = <String>[
+          'Không đủ tồn kho cho sản phẩm',
+          'Invalid product price bucket for order item',
+          'Lý do là bắt buộc khi lùi trạng thái',
+          'Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu 12,000đ',
+        ];
 
-      for (final detail in backendDetails) {
-        final action = orderStatusRecoveryActionFromDetail(detail);
-        expect(action, isNot(OrdersLabels.orderStatusActionContactAdmin), reason: detail);
-      }
-    });
+        for (final detail in backendDetails) {
+          final action = orderStatusRecoveryActionFromDetail(detail);
+          expect(
+            action,
+            isNot(OrdersLabels.orderStatusActionContactAdmin),
+            reason: detail,
+          );
+        }
+      },
+    );
 
     test('maps known stock reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail('Không đủ tồn kho');

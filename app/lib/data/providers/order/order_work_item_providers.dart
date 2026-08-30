@@ -4,6 +4,45 @@ import '../../api/work_item_service.dart';
 import '../../models/work_item.dart';
 import 'order_detail_notifier.dart';
 
+/// Result of a completed work-item mutation and its optional detail refresh.
+///
+/// A non-null [refreshError] means the server mutation succeeded and local
+/// work-item state is authoritative, but the follow-up order-detail refresh
+/// needs to be retried separately.
+class WorkItemMutationOutcome {
+  const WorkItemMutationOutcome({this.updatedItem, this.refreshError});
+
+  final WorkItem? updatedItem;
+  final Object? refreshError;
+
+  bool get refreshFailed => refreshError != null;
+}
+
+/// A retryable detail-refresh failure after a successful item removal.
+class WorkItemRemovalRefreshFailure {
+  const WorkItemRemovalRefreshFailure(this.error);
+
+  final Object error;
+}
+
+class OrderWorkItemRemovalRefreshFailureNotifier
+    extends Notifier<WorkItemRemovalRefreshFailure?> {
+  OrderWorkItemRemovalRefreshFailureNotifier(this.orderRef);
+
+  final String orderRef;
+
+  @override
+  WorkItemRemovalRefreshFailure? build() => null;
+
+  void report(Object error) {
+    state = WorkItemRemovalRefreshFailure(error);
+  }
+
+  void clear() {
+    state = null;
+  }
+}
+
 class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   final String orderRef;
 
@@ -69,6 +108,47 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     Map<String, dynamic>? attributes,
     double? assignedPrice,
   }) async {
+    final outcome = await _editWithOutcome(
+      itemId,
+      productName: productName,
+      productId: productId,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      notes: notes,
+      position: position,
+      isBirthday: isBirthday,
+      age: age,
+      isExtra: isExtra,
+      isGift: isGift,
+      attributes: attributes,
+      assignedPrice: assignedPrice,
+    );
+    return outcome.updatedItem!;
+  }
+
+  /// Replaces a product and reports a follow-up refresh failure separately.
+  Future<WorkItemMutationOutcome> replaceProduct(
+    String itemId, {
+    required String productId,
+    required String productName,
+  }) =>
+      _editWithOutcome(itemId, productId: productId, productName: productName);
+
+  Future<WorkItemMutationOutcome> _editWithOutcome(
+    String itemId, {
+    String? productName,
+    String? productId,
+    int? quantity,
+    double? unitPrice,
+    String? notes,
+    int? position,
+    bool? isBirthday,
+    int? age,
+    bool? isExtra,
+    bool? isGift,
+    Map<String, dynamic>? attributes,
+    double? assignedPrice,
+  }) async {
     final service = ref.read(workItemServiceProvider);
     final updated = await service.updateWorkItem(
       orderRef,
@@ -90,16 +170,53 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     state = AsyncData(
       current.map((i) => i.id == itemId ? updated : i).toList(),
     );
-    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
-    return updated;
+    return WorkItemMutationOutcome(
+      updatedItem: updated,
+      refreshError: await retryOrderDetailRefresh(),
+    );
   }
 
   Future<void> remove(String itemId) async {
+    await removeWithOutcome(itemId);
+  }
+
+  /// Removes an item locally after DELETE succeeds and reports a later detail
+  /// refresh failure without turning the successful deletion into an error.
+  Future<WorkItemMutationOutcome> removeWithOutcome(String itemId) async {
+    ref
+        .read(orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier)
+        .clear();
     final service = ref.read(workItemServiceProvider);
     await service.deleteWorkItem(orderRef, itemId);
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
-    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    final refreshError = await retryOrderDetailRefresh();
+    if (refreshError != null) {
+      // Re-read after the async gap because the feedback provider may have
+      // auto-disposed when no edit-stage owner was mounted.
+      ref
+          .read(orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier)
+          .report(refreshError);
+    }
+    return WorkItemMutationOutcome(refreshError: refreshError);
+  }
+
+  /// Retries only the order-detail reconciliation step.
+  Future<Object?> retryOrderDetailRefresh() =>
+      ref.read(orderDetailProvider(orderRef).notifier).refresh();
+
+  /// Retries removal reconciliation and updates stable, order-scoped feedback.
+  Future<Object?> retryRemovalOrderDetailRefresh() async {
+    final refreshError = await retryOrderDetailRefresh();
+    final refreshFailure = ref.read(
+      orderWorkItemRemovalRefreshFailureProvider(orderRef).notifier,
+    );
+    if (refreshError == null) {
+      refreshFailure.clear();
+    } else {
+      refreshFailure.report(refreshError);
+    }
+    return refreshError;
   }
 
   /// Adds a blank assignment to a work item (DG-294 FR3/FR4).
@@ -120,9 +237,10 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       quantity: quantity,
       notes: notes,
     );
-    _replaceItem(itemId, (item) => item.copyWith(
-      blanks: [...item.blanks, assignment],
-    ));
+    _replaceItem(
+      itemId,
+      (item) => item.copyWith(blanks: [...item.blanks, assignment]),
+    );
     return assignment;
   }
 
@@ -144,11 +262,14 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       quantity: quantity,
       notes: notes,
     );
-    _replaceItem(itemId, (item) => item.copyWith(
-      blanks: item.blanks
-          .map((b) => b.id == blankItemId ? updated : b)
-          .toList(),
-    ));
+    _replaceItem(
+      itemId,
+      (item) => item.copyWith(
+        blanks: item.blanks
+            .map((b) => b.id == blankItemId ? updated : b)
+            .toList(),
+      ),
+    );
     return updated;
   }
 
@@ -159,15 +280,15 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   Future<void> removeBlank(String itemId, int blankItemId) async {
     final service = ref.read(workItemServiceProvider);
     await service.deleteBlank(orderRef, itemId, blankItemId);
-    _replaceItem(itemId, (item) => item.copyWith(
-      blanks: item.blanks.where((b) => b.id != blankItemId).toList(),
-    ));
+    _replaceItem(
+      itemId,
+      (item) => item.copyWith(
+        blanks: item.blanks.where((b) => b.id != blankItemId).toList(),
+      ),
+    );
   }
 
-  void _replaceItem(
-    String itemId,
-    WorkItem Function(WorkItem) update,
-  ) {
+  void _replaceItem(String itemId, WorkItem Function(WorkItem) update) {
     final current = state.value ?? [];
     state = AsyncData(
       current.map((i) => i.id == itemId ? update(i) : i).toList(),
@@ -200,3 +321,11 @@ final orderWorkItemsProvider =
       List<WorkItem>,
       String
     >(OrderWorkItemsNotifier.new);
+
+/// Drops unconsumed failures when the owning edit stage leaves the tree.
+final orderWorkItemRemovalRefreshFailureProvider = NotifierProvider.autoDispose
+    .family<
+      OrderWorkItemRemovalRefreshFailureNotifier,
+      WorkItemRemovalRefreshFailure?,
+      String
+    >(OrderWorkItemRemovalRefreshFailureNotifier.new);

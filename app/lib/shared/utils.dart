@@ -142,6 +142,8 @@ void showTopSnackBar(
   BuildContext context,
   String message, {
   Color? backgroundColor,
+  String? actionLabel,
+  VoidCallback? onAction,
 }) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -149,6 +151,9 @@ void showTopSnackBar(
       behavior: SnackBarBehavior.floating,
       backgroundColor: backgroundColor,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      action: actionLabel != null && onAction != null
+          ? SnackBarAction(label: actionLabel, onPressed: onAction)
+          : null,
     ),
   );
 }

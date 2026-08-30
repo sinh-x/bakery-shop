@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
+import '../../order_edit/utils/work_item_mutation_feedback.dart';
 import '../../order_edit/widgets/edit_extras_section.dart';
 import '../../order_edit/widgets/work_items_section.dart';
 import '../product_picker_page.dart';
@@ -10,6 +13,7 @@ import '../section_header.dart';
 import '../stage1_empty_state.dart';
 import '../stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/utils.dart' show showTopSnackBar;
 import '../../providers/order_draft_contexts.dart';
 
 /// Stage 1 of the order edit wizard — product selection (work items + extras).
@@ -71,8 +75,30 @@ class _EditStage1ProductState extends ConsumerState<EditStage1Product> {
     }
   }
 
+  Future<void> _retryRemovalRefresh() async {
+    if (!mounted) return;
+    final error = await ref
+        .read(orderWorkItemsProvider(widget.orderRef).notifier)
+        .retryRemovalOrderDetailRefresh();
+    if (error == null && mounted) {
+      showTopSnackBar(context, OrdersLabels.orderDetailRefreshSucceeded);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen(orderWorkItemRemovalRefreshFailureProvider(widget.orderRef), (
+      _,
+      failure,
+    ) {
+      if (failure == null) return;
+      showWorkItemRefreshFailure(
+        context,
+        action: OrdersLabels.removeProductRefreshFailed,
+        error: failure.error,
+        onRetry: () => unawaited(_retryRemovalRefresh()),
+      );
+    });
     final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
     final workItems = workItemsAsync.value ?? const <WorkItem>[];
     final hasRegular = workItems.any((i) => !i.isExtra);

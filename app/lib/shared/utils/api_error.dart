@@ -2,17 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/labels/stock.dart';
+
 // Keep one-line SnackBar messages readable before forcing wrapped formatting.
 const _orderStatusFailureInlineThreshold = 280;
 
 enum ApiErrorKind { network, timeout, validation, server, unknown }
 
 class ApiError {
-  const ApiError({
-    required this.kind,
-    required this.message,
-    this.statusCode,
-  });
+  const ApiError({required this.kind, required this.message, this.statusCode});
 
   final ApiErrorKind kind;
   final String message;
@@ -27,6 +24,27 @@ String? extractBackendDetail(Object? data) {
     }
   }
   return null;
+}
+
+String? _safeBackendDetail(Object? data) {
+  final detail = extractBackendDetail(data);
+  if (detail == null || detail.length > 240) return null;
+  final normalized = detail.toLowerCase();
+  const diagnosticMarkers = <String>[
+    'dioexception',
+    'exception:',
+    'traceback',
+    'stack trace',
+    'package:',
+    'sqlite',
+    'sqlstate',
+    'syntax error',
+    'python',
+  ];
+  if (detail.contains('\n') || diagnosticMarkers.any(normalized.contains)) {
+    return null;
+  }
+  return detail;
 }
 
 String orderStatusRecoveryActionFromDetail(String detail) {
@@ -72,6 +90,31 @@ String buildOrderStatusFailureMessage({
   return '${OrdersLabels.orderStatusChangeFailedPrefix}: $reason.\n${OrdersLabels.orderStatusRecoveryLabel}: $action.\n${OrdersLabels.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
 }
 
+String apiErrorRecoveryAction(ApiErrorKind kind) {
+  switch (kind) {
+    case ApiErrorKind.network:
+      return SharedLabels.checkConnectionAndRetry;
+    case ApiErrorKind.timeout:
+      return SharedLabels.retryWhenConnectionStable;
+    case ApiErrorKind.validation:
+      return OrdersLabels.workItemValidationRecovery;
+    case ApiErrorKind.server:
+    case ApiErrorKind.unknown:
+      return SharedLabels.retryOrContactAdmin;
+  }
+}
+
+String buildApiActionFailureMessage({
+  required String action,
+  required Object error,
+  String? nextStep,
+}) {
+  final normalized = normalizeApiError(error);
+  final recovery = nextStep ?? apiErrorRecoveryAction(normalized.kind);
+  return '$action. ${SharedLabels.failureReasonLabel}: '
+      '${normalized.message}. ${SharedLabels.nextStepLabel}: $recovery';
+}
+
 ApiError normalizeApiError(Object error) {
   if (error is DioException) {
     if (error.type == DioExceptionType.connectionTimeout ||
@@ -85,15 +128,18 @@ ApiError normalizeApiError(Object error) {
 
     if (error.type == DioExceptionType.connectionError ||
         error.response == null) {
-      return const ApiError(kind: ApiErrorKind.network, message: SharedLabels.apiError);
+      return const ApiError(
+        kind: ApiErrorKind.network,
+        message: SharedLabels.apiError,
+      );
     }
 
     final statusCode = error.response?.statusCode;
-    final detail = extractBackendDetail(error.response?.data);
+    final detail = _safeBackendDetail(error.response?.data);
     if (statusCode == 422) {
       return ApiError(
         kind: ApiErrorKind.validation,
-        message: detail ?? OrdersLabels.loiKhongXacDinhTuMayChu,
+        message: detail ?? SharedLabels.apiValidationError,
         statusCode: statusCode,
       );
     }
@@ -113,5 +159,8 @@ ApiError normalizeApiError(Object error) {
     );
   }
 
-  return const ApiError(kind: ApiErrorKind.unknown, message: StockLabels.loiHeThong);
+  return const ApiError(
+    kind: ApiErrorKind.unknown,
+    message: StockLabels.loiHeThong,
+  );
 }

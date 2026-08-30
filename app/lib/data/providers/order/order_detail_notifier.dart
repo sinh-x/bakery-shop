@@ -15,9 +15,9 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
   /// cache after any order mutation so the next history-tab visit re-fetches
   /// fresh data instead of serving stale cached pages.
   void _invalidateOrderHistoryCache() {
-    ref.read(sessionCacheProvider).invalidateEntityType(
-      SessionCacheEntity.orderHistory,
-    );
+    ref
+        .read(sessionCacheProvider)
+        .invalidateEntityType(SessionCacheEntity.orderHistory);
   }
 
   @override
@@ -26,11 +26,21 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     return service.getOrder(orderRef);
   }
 
-  Future<void> refresh() async {
-    state = await AsyncValue.guard(() async {
+  /// Refreshes the server snapshot without discarding already-rendered order
+  /// data when the request fails. The caller receives the normalized failure
+  /// source so a successful mutation can report this as a refresh-only issue.
+  Future<Object?> refresh() async {
+    final previous = state.value;
+    try {
       final service = ref.read(orderServiceProvider);
-      return service.getOrder(orderRef);
-    });
+      state = AsyncData(await service.getOrder(orderRef));
+      return null;
+    } catch (error, stackTrace) {
+      state = previous == null
+          ? AsyncError(error, stackTrace)
+          : AsyncData(previous);
+      return error;
+    }
   }
 
   Future<Order> transitionTo(String targetStatus, {String reason = ''}) async {
