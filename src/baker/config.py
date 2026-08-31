@@ -1,6 +1,7 @@
 import os
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
@@ -28,6 +29,7 @@ LOG_LEVEL: str
 LOG_DIR: Path
 BUILD_FINGERPRINT: str
 PRINT_IPP_URL: str | None
+PRINT_IPP_SOCKS5: str | None
 TIMEZONE: ZoneInfo
 JWT_SECRET: str
 JWT_SECRET_EPHEMERAL: bool
@@ -44,13 +46,30 @@ def _load_from(path: Path) -> dict:
     return {}
 
 
+def _validate_ipp_socks5(endpoint: str) -> str:
+    """Validate a host:port SOCKS5 endpoint used for remote-DNS IPP routing."""
+    try:
+        parsed = urlsplit(f"//{endpoint}")
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Invalid IPP SOCKS5 endpoint") from exc
+    if not parsed.hostname or port is None:
+        raise ValueError("IPP SOCKS5 endpoint must use host:port format")
+    if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+        raise ValueError("IPP SOCKS5 endpoint must contain only host and port")
+    return endpoint
+
+
 def reload(config_path: Path | str | None = None) -> None:
     """Load (or reload) config from the given path.
 
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS, DELIVERY_CRITICAL_THRESHOLD_MINUTES, CORS_ORIGINS
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR
+    global BUILD_FINGERPRINT, PRINT_IPP_URL, PRINT_IPP_SOCKS5, TIMEZONE
+    global JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS
+    global DELIVERY_CRITICAL_THRESHOLD_MINUTES, CORS_ORIGINS
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -64,6 +83,8 @@ def reload(config_path: Path | str | None = None) -> None:
     LOG_DIR = Path(os.environ.get("BAKER_LOG_DIR") or cfg.get("log_dir", DATA_DIR / "logs")).expanduser()
     BUILD_FINGERPRINT = os.environ.get("BAKER_BUILD_FINGERPRINT") or "unknown"
     PRINT_IPP_URL = os.environ.get("BAKER_PRINT_IPP_URL") or None
+    _socks5_endpoint = os.environ.get("BAKER_PRINT_IPP_SOCKS5", "").strip()
+    PRINT_IPP_SOCKS5 = _validate_ipp_socks5(_socks5_endpoint) if _socks5_endpoint else None
 
     # Configured timezone for display conversion (DG-202 FR4).
     # Default: Asia/Ho_Chi_Minh; override via BAKER_TIMEZONE env var.
@@ -72,6 +93,11 @@ def reload(config_path: Path | str | None = None) -> None:
         TIMEZONE = ZoneInfo(tz_name)
     except ZoneInfoNotFoundError:
         TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+    AUTH_REQUIRED = (
+        os.environ.get("BAKER_AUTH_REQUIRED", "false").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
 
     # JWT secret for auth tokens (DG-029 Phase 1). Minimum 256-bit random key
     # loaded from BAKER_JWT_SECRET. Falls back to an auto-generated key with a
@@ -82,6 +108,10 @@ def reload(config_path: Path | str | None = None) -> None:
     JWT_SECRET = os.environ.get("BAKER_JWT_SECRET") or ""
     JWT_SECRET_EPHEMERAL = False
     if not JWT_SECRET:
+        if AUTH_REQUIRED:
+            raise RuntimeError(
+                "Authentication-required startup needs stable JWT configuration"
+            )
         import secrets
 
         JWT_SECRET = secrets.token_urlsafe(32)
@@ -91,10 +121,6 @@ def reload(config_path: Path | str | None = None) -> None:
             "Tokens will be invalidated on server restart. Set BAKER_JWT_SECRET "
             "in the environment for production use."
         )
-
-    AUTH_REQUIRED = (
-        os.environ.get("BAKER_AUTH_REQUIRED", "false").strip().lower() in ("1", "true", "yes", "on")
-    )
 
     # CORS allowed origins (DG-345 Phase 1).
     # Comma-separated list via BAKER_CORS_ORIGINS, whitespace stripped per

@@ -1,12 +1,16 @@
 """Tests for IPP client module using mock CUPS HTTP server."""
 
 import http.server
-import struct
+import select
 import socket
+import socketserver
+import struct
 import threading
 import time
 
 import pytest
+
+import baker.ipp_client as ipp_client
 
 from baker.ipp_client import (
     IPP_VERSION,
@@ -24,6 +28,7 @@ from baker.ipp_client import (
     _attr_value_pair,
     _build_ipp_print_job_request,
     _parse_ipp_status,
+    _parse_socks5_endpoint,
     _parse_url,
     _send_single_request,
     send_tspl_to_ipp,
@@ -72,6 +77,7 @@ class MockIppHandler(http.server.BaseHTTPRequestHandler):
 
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
+        self.server.request_bodies.append(body)
 
         if hasattr(self.server, "response_code"):
             self.send_response(self.server.response_code)
@@ -94,6 +100,67 @@ class MockIppHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def _recv_exact(sock, length):
+    data = b""
+    while len(data) < length:
+        chunk = sock.recv(length - len(data))
+        if not chunk:
+            raise ConnectionError("unexpected EOF")
+        data += chunk
+    return data
+
+
+class MockSocks5Handler(socketserver.BaseRequestHandler):
+    def handle(self):
+        version, method_count = _recv_exact(self.request, 2)
+        assert version == 5
+        _recv_exact(self.request, method_count)
+        self.request.sendall(b"\x05\x00")
+
+        version, command, _, address_type = _recv_exact(self.request, 4)
+        assert (version, command) == (5, 1)
+        if address_type == 3:
+            name_length = _recv_exact(self.request, 1)[0]
+            requested_host = _recv_exact(self.request, name_length).decode("ascii")
+        elif address_type == 1:
+            requested_host = socket.inet_ntoa(_recv_exact(self.request, 4))
+        else:
+            raise AssertionError(f"unexpected SOCKS5 address type {address_type}")
+        requested_port = struct.unpack("!H", _recv_exact(self.request, 2))[0]
+        self.server.requests.append((address_type, requested_host, requested_port))
+
+        upstream = socket.create_connection(self.server.upstream, timeout=2)
+        try:
+            self.request.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
+            sockets = [self.request, upstream]
+            while sockets:
+                readable, _, _ = select.select(sockets, [], [], 2)
+                if not readable:
+                    break
+                for source in readable:
+                    data = source.recv(65536)
+                    if not data:
+                        return
+                    destination = upstream if source is self.request else self.request
+                    destination.sendall(data)
+        finally:
+            upstream.close()
+
+
+class MockSocks5Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+def _start_socks5_proxy(upstream):
+    server = MockSocks5Server(("127.0.0.1", 0), MockSocks5Handler)
+    server.upstream = upstream
+    server.requests = []
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, server.server_address[1], thread
+
+
 def _start_server(handler_class=None, **kwargs):
     # Retry bind on OSError to tolerate ephemeral-port races with other
     # pytest-xdist workers (DG-029 Post-UAT Item 1). _free_port() closes the
@@ -113,6 +180,7 @@ def _start_server(handler_class=None, **kwargs):
             continue
     else:
         raise RuntimeError("could not bind a free port after 10 attempts")
+    server.request_bodies = []
     for k, v in kwargs.items():
         setattr(server, k, v)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -254,12 +322,34 @@ class TestParseUrl:
         assert path == "/printers/Y41BT"
 
     def test_malformed_url_no_hostname_raises_value_error(self):
-        with pytest.raises(ValueError, match="cannot extract hostname"):
+        with pytest.raises(ValueError, match="hostname is required"):
             _parse_url("not-a-valid-url")
 
     def test_empty_string_raises_value_error(self):
-        with pytest.raises(ValueError, match="cannot extract hostname"):
+        with pytest.raises(ValueError, match="hostname is required"):
             _parse_url("")
+
+    def test_invalid_url_error_redacts_input(self):
+        marker = "private-url-marker"
+        with pytest.raises(ValueError) as exc_info:
+            _parse_url(f"{marker}-without-host")
+        assert marker not in str(exc_info.value)
+
+
+class TestParseSocks5Endpoint:
+
+    def test_host_and_port(self):
+        assert _parse_socks5_endpoint("127.0.0.1:1055") == ("127.0.0.1", 1055)
+
+    def test_missing_port_is_rejected(self):
+        with pytest.raises(ValueError, match="host:port"):
+            _parse_socks5_endpoint("127.0.0.1")
+
+    def test_endpoint_details_are_redacted_from_errors(self):
+        marker = "private-proxy-marker"
+        with pytest.raises(ValueError) as exc_info:
+            _parse_socks5_endpoint(f"user:{marker}@127.0.0.1:1055")
+        assert marker not in str(exc_info.value)
 
 
 class TestSendSingleRequest:
@@ -270,9 +360,45 @@ class TestSendSingleRequest:
             url = f"http://127.0.0.1:{port}/printers/Y41BT"
             tspl = b"SIZE 76 mm,50.0 mm\r\nGAP 3 mm,0 mm\r\nPRINT 1,1\r\n"
             _send_single_request(tspl, url)
+            assert len(server.request_bodies) == 1
+            assert server.request_bodies[0].endswith(tspl)
         finally:
             server.shutdown()
             thread.join(timeout=2)
+
+    def test_socks5_proxy_uses_remote_dns_with_mock_cups(self):
+        cups, cups_port, cups_thread = _start_server()
+        proxy, proxy_port, proxy_thread = _start_socks5_proxy(("127.0.0.1", cups_port))
+        try:
+            _send_single_request(
+                b"TSPL_OVER_PROXY",
+                "http://lily.tail10c2c6.ts.net:631/printers/Y41BT",
+                socks5_endpoint=f"127.0.0.1:{proxy_port}",
+            )
+            assert proxy.requests == [
+                (3, "lily.tail10c2c6.ts.net", 631),
+            ]
+            assert len(cups.request_bodies) == 1
+            assert cups.request_bodies[0].endswith(b"TSPL_OVER_PROXY")
+        finally:
+            proxy.shutdown()
+            proxy.server_close()
+            proxy_thread.join(timeout=2)
+            cups.shutdown()
+            cups_thread.join(timeout=2)
+
+    def test_transport_error_redacts_payload_and_endpoint(self):
+        payload_marker = b"private-print-payload"
+        endpoint_marker = "private-proxy-marker"
+        with pytest.raises(IppConnectionError) as exc_info:
+            _send_single_request(
+                payload_marker,
+                "http://lily:631/printers/Y41BT",
+                socks5_endpoint=f"user:{endpoint_marker}@127.0.0.1:1055",
+            )
+        message = str(exc_info.value)
+        assert payload_marker.decode() not in message
+        assert endpoint_marker not in message
 
     def test_http_error_raises(self):
         server, port, thread = _start_server(response_code=500)
@@ -416,6 +542,19 @@ class TestSendTsplToIppRetry:
             server.shutdown()
 
 
+    def test_default_is_exactly_three_connection_attempts(self, monkeypatch):
+        attempts = []
+
+        def always_fail(*args, **kwargs):
+            attempts.append((args, kwargs))
+            raise IppConnectionError("transient")
+
+        monkeypatch.setattr(ipp_client, "_send_single_request", always_fail)
+        with pytest.raises(IppConnectionError, match="Failed after 3 attempts"):
+            send_tspl_to_ipp(b"TSPL_DATA", "http://lily:631/printers/Y41BT", retry_delay=0)
+        assert len(attempts) == 3
+
+
 class TestIppClientIntegration:
 
     def test_full_flow_sends_correct_content_type(self):
@@ -505,3 +644,8 @@ class TestIppClientExceptionHierarchy:
     def test_ipp_http_error_message_includes_status(self):
         exc = IppHttpError(503)
         assert "503" in str(exc)
+
+    def test_ipp_http_error_does_not_render_response_body(self):
+        marker = b"private-response-marker"
+        exc = IppHttpError(503, marker)
+        assert marker.decode() not in str(exc)

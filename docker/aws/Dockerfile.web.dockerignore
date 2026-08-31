@@ -1,0 +1,15 @@
+**
+!app/
+app/**
+!app/pubspec.yaml
+!app/pubspec.lock
+!app/.metadata
+!app/lib/
+!app/lib/**
+!app/web/
+!app/web/**
+!docker/
+docker/**
+!docker/aws/
+docker/aws/**
+!docker/aws/Caddyfile

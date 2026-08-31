@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1.7
+ARG ALPINE_IMAGE=alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
+
+FROM ${ALPINE_IMAGE} AS tools
+ARG TARGETARCH=amd64
+ARG RUSTIC_VERSION=0.11.4
+ARG RUSTIC_AMD64_SHA256=628b26785f3787fa1d52e61b3289493f483230a1ed6e86a84ae9c76d7a41a81e
+ARG RUSTIC_ARM64_SHA256=35ccd40ff565b9760245dd391f9fef04c46778ce5e073d833288abe2e5eabd20
+ARG SQLITE_VERSION=3500400
+ARG SQLITE_SHA256=a3db587a1b92ee5ddac2f66b3edb41b26f9c867275782d46c3a088977d6a5b18
+RUN apk add --no-cache build-base ca-certificates curl tar \
+    && case "$TARGETARCH" in \
+         amd64) rustic_arch=x86_64; rustic_sha="$RUSTIC_AMD64_SHA256" ;; \
+         arm64) rustic_arch=aarch64; rustic_sha="$RUSTIC_ARM64_SHA256" ;; \
+         *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+       esac \
+    && rustic_archive="rustic-v${RUSTIC_VERSION}-${rustic_arch}-unknown-linux-musl.tar.gz" \
+    && curl --fail --show-error --location \
+         "https://github.com/rustic-rs/rustic/releases/download/v${RUSTIC_VERSION}/${rustic_archive}" \
+         --output "/tmp/${rustic_archive}" \
+    && echo "${rustic_sha}  /tmp/${rustic_archive}" | sha256sum -c - \
+    && tar -xzf "/tmp/${rustic_archive}" -C /usr/local/bin rustic \
+    && curl --fail --show-error --location \
+         "https://www.sqlite.org/2025/sqlite-autoconf-${SQLITE_VERSION}.tar.gz" \
+         --output /tmp/sqlite.tar.gz \
+    && echo "${SQLITE_SHA256}  /tmp/sqlite.tar.gz" | sha256sum -c - \
+    && mkdir /tmp/sqlite-src \
+    && tar -xzf /tmp/sqlite.tar.gz -C /tmp/sqlite-src --strip-components=1 \
+    && cd /tmp/sqlite-src \
+    && ./configure --disable-shared --enable-static --disable-readline \
+    && make -j"$(nproc)" sqlite3 \
+    && install -m 0755 sqlite3 /usr/local/bin/sqlite3 \
+    && sqlite3 --version \
+    && rustic --version
+
+FROM ${ALPINE_IMAGE}
+RUN apk add --no-cache bash ca-certificates coreutils \
+    && adduser -D -u 1000 -h /var/lib/baker backup \
+    && mkdir -p /var/lib/baker \
+    && chown backup:backup /var/lib/baker
+COPY --from=tools /usr/local/bin/rustic /usr/local/bin/rustic
+COPY --from=tools /usr/local/bin/sqlite3 /usr/local/bin/sqlite3
+COPY --chmod=0755 scripts/aws-backup.sh /usr/local/bin/aws-backup.sh
+COPY --chmod=0755 scripts/verify-backup-restore.sh /usr/local/bin/verify-backup-restore.sh
+
+ENV BAKER_DATA_DIR=/var/lib/baker
+ENV STAGING_ROOT=/tmp
+USER backup
+WORKDIR /var/lib/baker
+ENTRYPOINT ["/usr/local/bin/aws-backup.sh"]

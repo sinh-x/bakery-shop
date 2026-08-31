@@ -12,10 +12,13 @@ Usage:
 
 import http.client
 import itertools
+import socket
 import struct
 import time
 import urllib.parse
 from typing import Optional, Tuple
+
+import socks
 
 IPP_VERSION = b"\x02\x00"
 OP_PRINT_JOB = b"\x00\x02"
@@ -143,7 +146,7 @@ def _parse_url(ipp_url: str) -> Tuple[str, int, str]:
     parsed = urllib.parse.urlparse(ipp_url)
     host = parsed.hostname
     if not host:
-        raise ValueError(f"Invalid IPP URL: cannot extract hostname from {ipp_url!r}")
+        raise ValueError("Invalid IPP URL: hostname is required")
     port = parsed.port or 631
     path = parsed.path or "/"
     if parsed.query:
@@ -151,13 +154,62 @@ def _parse_url(ipp_url: str) -> Tuple[str, int, str]:
     return host, port, path
 
 
-def _send_single_request(tspl_bytes: bytes, ipp_url: str, timeout: float = 10.0) -> bytes:
+def _parse_socks5_endpoint(endpoint: str) -> Tuple[str, int]:
+    """Parse a credential-free SOCKS5 host:port endpoint."""
+    try:
+        parsed = urllib.parse.urlsplit(f"//{endpoint}")
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Invalid IPP SOCKS5 endpoint") from exc
+    if not parsed.hostname or port is None:
+        raise ValueError("IPP SOCKS5 endpoint must use host:port format")
+    if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+        raise ValueError("IPP SOCKS5 endpoint must contain only host and port")
+    return parsed.hostname, port
+
+
+def _create_connection(
+    host: str,
+    port: int,
+    *,
+    timeout: float,
+    socks5_endpoint: str | None = None,
+) -> socket.socket:
+    """Open a direct socket or a SOCKS5 socket with proxy-side DNS."""
+    if not socks5_endpoint:
+        return socket.create_connection((host, port), timeout=timeout)
+
+    proxy_host, proxy_port = _parse_socks5_endpoint(socks5_endpoint)
+    proxied_socket = socks.socksocket()
+    proxied_socket.set_proxy(
+        socks.SOCKS5,
+        proxy_host,
+        proxy_port,
+        rdns=True,
+    )
+    proxied_socket.settimeout(timeout)
+    try:
+        proxied_socket.connect((host, port))
+    except Exception:
+        proxied_socket.close()
+        raise
+    return proxied_socket
+
+
+def _send_single_request(
+    tspl_bytes: bytes,
+    ipp_url: str,
+    timeout: float = 10.0,
+    *,
+    socks5_endpoint: str | None = None,
+) -> bytes:
     """Send a single IPP Print-Job request and return the response body.
 
     Args:
         tspl_bytes: TSPL command bytes.
         ipp_url: IPP printer URI.
         timeout: HTTP connection timeout in seconds.
+        socks5_endpoint: Optional SOCKS5 host:port. DNS is resolved by the proxy.
 
     Returns:
         IPP response body bytes.
@@ -170,8 +222,15 @@ def _send_single_request(tspl_bytes: bytes, ipp_url: str, timeout: float = 10.0)
     host, port, path = _parse_url(ipp_url)
     request_body = _build_ipp_print_job_request(tspl_bytes, ipp_url)
 
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
     try:
-        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        if socks5_endpoint:
+            conn.sock = _create_connection(
+                host,
+                port,
+                timeout=timeout,
+                socks5_endpoint=socks5_endpoint,
+            )
         conn.putrequest("POST", path)
         conn.putheader("Content-Type", "application/ipp")
         conn.putheader("Content-Length", str(len(request_body)))
@@ -179,12 +238,14 @@ def _send_single_request(tspl_bytes: bytes, ipp_url: str, timeout: float = 10.0)
         conn.send(request_body)
         response = conn.getresponse()
         response_body = response.read()
+        response_status = response.status
+    except (OSError, http.client.HTTPException, ValueError) as e:
+        raise IppConnectionError(f"IPP transport failed ({type(e).__name__})") from e
+    finally:
         conn.close()
-    except (OSError, http.client.HTTPException) as e:
-        raise IppConnectionError(str(e)) from e
 
-    if response.status != 200:
-        raise IppHttpError(response.status, response_body)
+    if response_status != 200:
+        raise IppHttpError(response_status, response_body)
 
     status_code, _ = _parse_ipp_status(response_body)
     if status_code != IPP_STATUS_SUCCESSFUL_OK:
@@ -200,6 +261,7 @@ def send_tspl_to_ipp(
     retries: int = 3,
     retry_delay: float = 1.0,
     timeout: float = 10.0,
+    socks5_endpoint: str | None = None,
 ) -> None:
     """Send pre-rendered TSPL bytes to a CUPS IPP endpoint.
 
@@ -213,6 +275,7 @@ def send_tspl_to_ipp(
         retries: Maximum number of attempts (default 3).
         retry_delay: Seconds to wait between retries (default 1.0).
         timeout: HTTP connection timeout in seconds (default 10.0).
+        socks5_endpoint: Optional SOCKS5 host:port using proxy-side DNS.
 
     Raises:
         IppConnectionError: If all retry attempts fail on connection.
@@ -223,7 +286,12 @@ def send_tspl_to_ipp(
 
     for attempt in range(1, retries + 1):
         try:
-            _send_single_request(tspl_bytes, ipp_url, timeout=timeout)
+            _send_single_request(
+                tspl_bytes,
+                ipp_url,
+                timeout=timeout,
+                socks5_endpoint=socks5_endpoint,
+            )
             return
         except IppConnectionError as e:
             last_exception = e

@@ -24,6 +24,9 @@ services:
       # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
       PAPER_MODE: ${PAPER_MODE:-label}
       BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      # Optional task-local Tailscale SOCKS5 endpoint. MagicDNS lookup is sent
+      # through the proxy; use host:port format (for example, 127.0.0.1:1055).
+      BAKER_PRINT_IPP_SOCKS5: ${BAKER_PRINT_IPP_SOCKS5:-}
       # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
       # When the endpoint is on the Tailscale tailnet (default deployment),
       # WireGuard provides transport encryption between baker-prod and Lily.
@@ -117,6 +120,7 @@ services:
       # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
       PAPER_MODE: ${PAPER_MODE:-label}
       BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      BAKER_PRINT_IPP_SOCKS5: ${BAKER_PRINT_IPP_SOCKS5:-}
       # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
       # When the endpoint is on the Tailscale tailnet (default deployment),
       # WireGuard provides transport encryption between baker-dev and Lily.

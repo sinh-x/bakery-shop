@@ -65,6 +65,32 @@ def test_work_ticket_print_inserts_log_and_sets_first_print(mock_tspl, mock_open
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
+def test_ipp_print_passes_configured_socks5_endpoint_once(api_client):
+    ipp_url = "http://lily.tail10c2c6.ts.net:631/printers/Y41BT"
+    socks5_endpoint = "127.0.0.1:1055"
+    with (
+        patch("baker.api.printing.PRINT_IPP_URL", ipp_url),
+        patch("baker.api.printing.PRINT_IPP_SOCKS5", socks5_endpoint),
+        patch(
+            "baker.api.printing.usb_printer.png_to_tspl",
+            return_value=b"FAKE_TSPL_DATA",
+        ),
+        patch("baker.api.printing.ipp_client.send_tspl_to_ipp") as mock_send,
+    ):
+        order = _create_order(api_client)
+        order_ref = order["orderRef"]
+        item_id = _first_work_item_id(api_client, order_ref)
+
+        response = _print_work_ticket(api_client, order_ref, item_id, printed_by="An")
+
+    assert response.status_code == 200
+    mock_send.assert_called_once_with(
+        b"FAKE_TSPL_DATA",
+        ipp_url,
+        socks5_endpoint=socks5_endpoint,
+    )
+
+
 @patch("baker.api.printing.os.close")
 @patch("baker.api.printing.os.write")
 @patch("baker.api.printing.usb_printer.open_printer")

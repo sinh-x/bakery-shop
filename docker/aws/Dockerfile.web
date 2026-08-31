@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7
+ARG FLUTTER_IMAGE=ghcr.io/cirruslabs/flutter:3.44.0@sha256:46691e311715845de03a3ba4753a475476936805b29431b1f00f1816981033f8
+ARG CADDY_IMAGE=caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+
+FROM ${FLUTTER_IMAGE} AS web-build
+USER root
+WORKDIR /src/app
+COPY app/pubspec.yaml app/pubspec.lock ./
+RUN flutter pub get
+COPY app/ ./
+RUN flutter build web --release
+
+FROM ${CADDY_IMAGE}
+RUN addgroup -g 1000 caddy \
+    && adduser -D -u 1000 -G caddy caddy \
+    && mkdir -p /srv/web /config/caddy /data/caddy \
+    && chown -R caddy:caddy /srv/web /config /data
+COPY --from=web-build --chown=caddy:caddy /src/app/build/web/ /srv/web/
+COPY --chown=caddy:caddy docker/aws/Caddyfile /etc/caddy/Caddyfile
+
+USER caddy
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+ENTRYPOINT ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

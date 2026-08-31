@@ -16,7 +16,7 @@ import baker.config
 # at import time and would break if a config test regenerated the secret).
 _CONFIG_GLOBALS = [
     "DATA_DIR", "DB_PATH", "PHOTOS_DIR", "HOST", "PORT", "LOG_LEVEL", "LOG_DIR",
-    "BUILD_FINGERPRINT", "PRINT_IPP_URL", "TIMEZONE", "JWT_SECRET",
+    "BUILD_FINGERPRINT", "PRINT_IPP_URL", "PRINT_IPP_SOCKS5", "TIMEZONE", "JWT_SECRET",
     "JWT_SECRET_EPHEMERAL", "AUTH_REQUIRED", "BCRYPT_ROUNDS",
     "DELIVERY_CRITICAL_THRESHOLD_MINUTES", "CORS_ORIGINS",
 ]
@@ -41,6 +41,7 @@ def test_reload_loads_defaults(monkeypatch):
     assert baker.config.LOG_LEVEL == "INFO"
     assert baker.config.BUILD_FINGERPRINT == "unknown"
     assert baker.config.PRINT_IPP_URL is None
+    assert baker.config.PRINT_IPP_SOCKS5 is None
 
 
 def test_reload_reads_env_vars(monkeypatch):
@@ -49,6 +50,7 @@ def test_reload_reads_env_vars(monkeypatch):
     monkeypatch.setenv("BAKER_LOG_LEVEL", "debug")
     monkeypatch.setenv("BAKER_BUILD_FINGERPRINT", "fp-abc")
     monkeypatch.setenv("BAKER_PRINT_IPP_URL", "ipp://printer")
+    monkeypatch.setenv("BAKER_PRINT_IPP_SOCKS5", "127.0.0.1:1055")
     monkeypatch.setenv("BAKER_TIMEZONE", "Asia/Bangkok")
     monkeypatch.setenv("BAKER_JWT_SECRET", "secret-key")
     monkeypatch.setenv("BAKER_AUTH_REQUIRED", "true")
@@ -58,10 +60,25 @@ def test_reload_reads_env_vars(monkeypatch):
     assert baker.config.LOG_LEVEL == "DEBUG"
     assert baker.config.BUILD_FINGERPRINT == "fp-abc"
     assert baker.config.PRINT_IPP_URL == "ipp://printer"
+    assert baker.config.PRINT_IPP_SOCKS5 == "127.0.0.1:1055"
     assert str(baker.config.TIMEZONE) == "Asia/Bangkok"
     assert baker.config.JWT_SECRET == "secret-key"
     assert baker.config.JWT_SECRET_EPHEMERAL is False
     assert baker.config.AUTH_REQUIRED is True
+
+
+def test_reload_rejects_invalid_ipp_socks5_endpoint(monkeypatch):
+    monkeypatch.setenv("BAKER_PRINT_IPP_SOCKS5", "missing-port")
+    with pytest.raises(ValueError, match="host:port"):
+        baker.config.reload()
+
+
+def test_reload_ipp_socks5_error_redacts_endpoint(monkeypatch):
+    marker = "private-proxy-marker"
+    monkeypatch.setenv("BAKER_PRINT_IPP_SOCKS5", f"user:{marker}@127.0.0.1:1055")
+    with pytest.raises(ValueError) as exc_info:
+        baker.config.reload()
+    assert marker not in str(exc_info.value)
 
 
 def test_reload_invalid_timezone_falls_back(monkeypatch):
@@ -75,6 +92,13 @@ def test_reload_generates_ephemeral_jwt_when_unset(monkeypatch):
     baker.config.reload()
     assert baker.config.JWT_SECRET != ""
     assert baker.config.JWT_SECRET_EPHEMERAL is True
+
+
+def test_reload_auth_required_fails_without_stable_jwt(monkeypatch):
+    monkeypatch.setenv("BAKER_AUTH_REQUIRED", "true")
+    monkeypatch.delenv("BAKER_JWT_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="stable JWT configuration"):
+        baker.config.reload()
 
 
 def test_reload_bcrypt_rounds_clamps_below_four(monkeypatch):

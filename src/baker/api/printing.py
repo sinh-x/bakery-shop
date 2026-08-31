@@ -9,7 +9,6 @@ POST /api/orders/{ref}/print triggers server-side thermal printing:
 import io
 import logging
 import os
-import socket
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -28,7 +27,7 @@ from baker.api.receipts import (
     _split_pages,
     _main_item_index_total,
 )
-from baker.config import PRINT_IPP_URL
+from baker.config import PRINT_IPP_SOCKS5, PRINT_IPP_URL
 from baker.db.connection import get_db
 from baker import ipp_client, usb_printer
 from baker.utils.time import now_utc
@@ -256,7 +255,11 @@ def print_receipt(
                 if PRINT_IPP_URL:
                     # IPP transport: send pre-rendered TSPL to CUPS endpoint.
                     try:
-                        ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
+                        ipp_client.send_tspl_to_ipp(
+                            tspl_data,
+                            PRINT_IPP_URL,
+                            socks5_endpoint=PRINT_IPP_SOCKS5,
+                        )
                     except ipp_client.IppConnectionError as e:
                         raise _TransportAbort(
                             status_code=503,
@@ -425,7 +428,12 @@ def print_status():
         try:
             parsed = ipp_client._parse_url(PRINT_IPP_URL)
             ipp_host, ipp_port = parsed[0], parsed[1]
-            sock = socket.create_connection((ipp_host, ipp_port), timeout=3.0)
+            sock = ipp_client._create_connection(
+                ipp_host,
+                ipp_port,
+                timeout=3.0,
+                socks5_endpoint=PRINT_IPP_SOCKS5,
+            )
             sock.close()
             ipp_available = True
         except (ValueError, OSError):
