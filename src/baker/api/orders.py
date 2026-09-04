@@ -34,8 +34,24 @@ from baker.services.customer_resolver import (
     _resolve_or_create_customer_id,
 )
 from baker.services.order_stock import (
+    audited_auto_decrement_stock,
+    audited_reverse_order_stock_for_edit,
     auto_decrement_stock,
+    load_order_inventory_rows,
     reverse_order_stock_for_edit,
+)
+from baker.services.order_inventory_audit import (
+    AuditAction,
+    AuditActor,
+    AuditEntryDraft,
+    AuditOutcome,
+    AuditReason,
+    AuditTrigger,
+    OperationContext,
+    append_entry,
+    create_operation_context,
+    execute_inventory_audit_savepoint,
+    operation_context_for,
 )
 from baker.services.address_library import (
     sync_on_order_edit as _sync_address_library_on_edit,
@@ -287,6 +303,55 @@ def _log_order_history(
 def _auto_decrement_stock(conn, order_id: int, order_ref: str):
     """Backward-compatible wrapper for stock decrement service."""
     auto_decrement_stock(conn, order_id, order_ref)
+
+
+def _inventory_audit_actor(conn, request: Request, fallback: str = "") -> AuditActor:
+    """Snapshot the trusted resolve_actor identity and linked staff metadata."""
+    identifier = resolve_actor(request, fallback)
+    username = getattr(request.state, "auth_username", None)
+    role = getattr(request.state, "auth_role", None)
+    staff_id = None
+    staff_name = None
+    if username:
+        row = conn.execute(
+            """SELECT st.id AS staff_id, st.name AS staff_name, st.role AS staff_role
+               FROM users u LEFT JOIN staff st ON st.id = u.staff_id
+               WHERE u.username = ? AND u.active = 1""",
+            (username,),
+        ).fetchone()
+        if row is not None:
+            staff_id = row["staff_id"]
+            staff_name = row["staff_name"]
+            role = role or row["staff_role"]
+    return AuditActor(
+        identifier=identifier,
+        username=username,
+        staff_id=staff_id,
+        staff_name=staff_name,
+        role=role,
+    )
+
+
+def _record_status_rejection(
+    conn,
+    context: OperationContext,
+    detail_code: str,
+) -> None:
+    """Durably append a sanitized rejection before the HTTP rollback path."""
+    try:
+        append_entry(
+            conn,
+            AuditEntryDraft(
+                context=context,
+                outcome=AuditOutcome.FAILED,
+                reason=AuditReason.FAILURE_UNEXPECTED,
+                applied_delta=0,
+                detail=detail_code,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("order inventory status rejection evidence unavailable")
 
 
 def _sync_order_items_table(conn, order_id: int, items: list[OrderItem]) -> None:
@@ -904,7 +969,8 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
-        actor = resolve_actor(request, body.createdBy)
+        inventory_actor = _inventory_audit_actor(conn, request, body.createdBy)
+        actor = inventory_actor.identifier
         created_staff_name = resolve_staff_name(request)
 
         if body.customerId is not None:
@@ -1013,7 +1079,24 @@ def create_order(body: OrderCreate, request: Request):
             _log_order_history(
                 conn, order.id, "status_change", "status", "new", "delivered", actor
             )
-            auto_decrement_stock(conn, order.id, order.order_ref)
+            creation_context = create_operation_context(
+                order_id=order.id,
+                order_ref=order.order_ref,
+                trigger=AuditTrigger.ORDER_CREATION,
+                action=AuditAction.INVENTORY_DEDUCT,
+                actor=inventory_actor,
+                status_before="new",
+                status_after="delivered",
+            )
+            execute_inventory_audit_savepoint(
+                conn,
+                context=creation_context,
+                operation=lambda: audited_auto_decrement_stock(
+                    conn, order.id, order.order_ref, creation_context
+                ),
+                failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+                failure_detail="delivered_creation_inventory_failed",
+            )
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
             from baker.services.journal_sync import (
@@ -1175,6 +1258,26 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
                 status_code=422,
                 detail="Không thể sửa đơn hàng đã hủy",
             )
+
+        inventory_edit_context = None
+        old_inventory_rows = []
+        if (
+            "items" in data
+            and _ORDER_STATUS_RANK.get(OrderStatus(row["status"]), 0)
+            >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]
+        ):
+            inventory_edit_context = create_operation_context(
+                order_id=row["id"],
+                order_ref=row["order_ref"],
+                trigger=AuditTrigger.ORDER_EDIT,
+                action=AuditAction.ORDER_EDIT,
+                actor=_inventory_audit_actor(
+                    conn, request, data.get("changedBy", "")
+                ),
+                status_before=row["status"],
+                status_after=row["status"],
+            )
+            old_inventory_rows = load_order_inventory_rows(conn, row["id"])
 
         if "customerId" in data and data["customerId"] is not None:
             exists = conn.execute(
@@ -1389,20 +1492,49 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
         # the client can warn the user instead of silently dropping the
         # failure.
         edit_sync_warning = None
-        if (
-            items_changed
-            and _ORDER_STATUS_RANK.get(OrderStatus(row["status"]), 0)
-            >= _ORDER_STATUS_RANK[OrderStatus.CONFIRMED]
-        ):
-            try:
-                reverse_order_stock_for_edit(conn, row["id"], row["order_ref"])
-                auto_decrement_stock(conn, row["id"], row["order_ref"])
-            except Exception:
-                logger.exception(
-                    "edit_order stock reversal/re-deduction failed for order %s (%s)",
+        if inventory_edit_context is not None:
+            reversal_context = operation_context_for(
+                inventory_edit_context,
+                trigger=AuditTrigger.REVERSAL,
+                action=AuditAction.INVENTORY_REVERSE,
+            )
+            reevaluation_context = operation_context_for(
+                inventory_edit_context,
+                trigger=AuditTrigger.RE_EVALUATION,
+                action=AuditAction.INVENTORY_REEVALUATE,
+            )
+
+            def _audit_edit_inventory() -> None:
+                reversal_entries = audited_reverse_order_stock_for_edit(
+                    conn,
                     row["id"],
                     row["order_ref"],
+                    reversal_context,
+                    item_rows=old_inventory_rows,
+                    reverse_operation=reverse_order_stock_for_edit,
                 )
+                related = {
+                    entry.item.order_item_id: entry.id
+                    for entry in reversal_entries
+                    if entry.item.order_item_id is not None
+                }
+                audited_auto_decrement_stock(
+                    conn,
+                    row["id"],
+                    row["order_ref"],
+                    reevaluation_context,
+                    effect_reason=AuditReason.EDIT_RE_EVALUATION,
+                    related_entry_ids=related,
+                )
+
+            stock_ok = execute_inventory_audit_savepoint(
+                conn,
+                context=inventory_edit_context,
+                operation=_audit_edit_inventory,
+                failure_reason=AuditReason.FAILURE_UNEXPECTED,
+                failure_detail="edit_inventory_failed",
+            )
+            if not stock_ok:
                 edit_sync_warning = "journal_sync_failed"
 
         # DG-342 Phase 5 (FR6, FR7, FR10, NFR1, NFR3, AC4, AC5): when items
@@ -1812,10 +1944,31 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                 rejection_detail="Không tìm thấy đơn hàng",
             )
 
+        audit_context = create_operation_context(
+            order_id=row["id"],
+            order_ref=row["order_ref"],
+            trigger=AuditTrigger.STATUS_ACTION,
+            action=AuditAction.STATUS_CHANGE,
+            actor=_inventory_audit_actor(conn, request, body.changedBy),
+            status_before=row["status"],
+            status_after=body.status,
+        )
+
+        if body.status not in {status.value for status in OrderStatus}:
+            _record_status_rejection(conn, audit_context, "invalid_status")
+            _raise_status_transition_rejection(
+                requested_ref=ref,
+                order_row=row,
+                target_status=body.status,
+                status_code=422,
+                rejection_detail="Không thể chuyển trạng thái",
+            )
+
         if (
             is_backward_transition(row["status"], body.status)
             and not body.reason.strip()
         ):
+            _record_status_rejection(conn, audit_context, "backward_reason_required")
             _raise_status_transition_rejection(
                 requested_ref=ref,
                 order_row=row,
@@ -1830,6 +1983,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid
+                _record_status_rejection(conn, audit_context, "payment_incomplete")
                 _raise_status_transition_rejection(
                     requested_ref=ref,
                     order_row=row,
@@ -1841,11 +1995,16 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
         # Pre-update side effects (stock decrement/restore + cancellation
         # journal sync) must run before Order.update_status.
         prior_warning = apply_pre_update_side_effects(
-            conn, row["id"], row["order_ref"], body.status
+            conn,
+            row["id"],
+            row["order_ref"],
+            body.status,
+            audit_context=audit_context,
         )
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
+            _record_status_rejection(conn, audit_context, "status_transition_rejected")
             _raise_status_transition_rejection(
                 requested_ref=ref,
                 order_row=row,
@@ -1861,7 +2020,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
             "status",
             row["status"],
             body.status,
-            resolve_actor(request, body.changedBy),
+            audit_context.actor.identifier,
         )
 
         # Post-update side effects (delivered/completed journal sync, item

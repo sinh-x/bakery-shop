@@ -30,6 +30,16 @@ This split is preserved by exposing two entry points — see
 import logging
 
 from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+from baker.services.order_inventory_audit import (
+    AuditAction,
+    AuditEntryDraft,
+    AuditOutcome,
+    AuditReason,
+    OperationContext,
+    append_entry,
+    execute_inventory_audit_savepoint,
+    operation_context_for,
+)
 
 logger = logging.getLogger("baker.server")
 
@@ -76,6 +86,7 @@ def apply_pre_update_side_effects(
     order_id: int,
     order_ref: str,
     to_status: str,
+    audit_context: OperationContext | None = None,
 ) -> str | None:
     """Run side effects that must precede ``Order.update_status``.
 
@@ -90,30 +101,60 @@ def apply_pre_update_side_effects(
     accounting_sync_warning: str | None = None
 
     if to_status == "confirmed":
-        from baker.services.order_stock import auto_decrement_stock
+        from baker.services.order_stock import (
+            audited_auto_decrement_stock,
+            auto_decrement_stock,
+        )
 
-        # OPS-3 (DG-308): wrap stock mutation so failures are observable via
-        # logs rather than crashing the status transition. Stock errors do not
-        # block the order status change itself (NFR1 mirrors journal-sync).
-        try:
-            auto_decrement_stock(conn, order_id, order_ref)
-        except Exception:
-            logger.exception(
-                "auto_decrement_stock failed for order %s (%s)",
-                order_id, order_ref,
+        if audit_context is None:
+            try:
+                auto_decrement_stock(conn, order_id, order_ref)
+            except Exception:
+                logger.exception(
+                    "auto_decrement_stock failed for order %s (%s)",
+                    order_id, order_ref,
+                )
+        else:
+            deduct_context = operation_context_for(
+                audit_context, action=AuditAction.INVENTORY_DEDUCT
+            )
+            execute_inventory_audit_savepoint(
+                conn,
+                context=deduct_context,
+                operation=lambda: audited_auto_decrement_stock(
+                    conn, order_id, order_ref, deduct_context
+                ),
+                failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+                failure_detail="inventory_deduction_failed",
             )
 
     if to_status == "cancelled":
-        from baker.services.order_stock import restore_stock_for_order
+        from baker.services.order_stock import (
+            audited_restore_stock_for_order,
+            restore_stock_for_order,
+        )
         from baker.services.journal_sync import _sync_cancelled_order_journal
 
-        # OPS-3 (DG-308): wrap stock restoration for the same reason as above.
-        try:
-            restore_stock_for_order(conn, order_id, order_ref)
-        except Exception:
-            logger.exception(
-                "restore_stock_for_order failed for order %s (%s)",
-                order_id, order_ref,
+        if audit_context is None:
+            try:
+                restore_stock_for_order(conn, order_id, order_ref)
+            except Exception:
+                logger.exception(
+                    "restore_stock_for_order failed for order %s (%s)",
+                    order_id, order_ref,
+                )
+        else:
+            restore_context = operation_context_for(
+                audit_context, action=AuditAction.INVENTORY_RESTORE
+            )
+            execute_inventory_audit_savepoint(
+                conn,
+                context=restore_context,
+                operation=lambda: audited_restore_stock_for_order(
+                    conn, order_id, order_ref, restore_context
+                ),
+                failure_reason=AuditReason.FAILURE_RESTORE_MUTATION,
+                failure_detail="inventory_restore_failed",
             )
         sync_status = run_journal_sync(
             _sync_cancelled_order_journal,
@@ -123,6 +164,23 @@ def apply_pre_update_side_effects(
             source_id=order_id,
         )
         accounting_sync_warning = sync_status_to_warning(sync_status)
+
+    if audit_context is not None and to_status not in ("confirmed", "cancelled"):
+        append_entry(
+            conn,
+            AuditEntryDraft(
+                context=operation_context_for(
+                    audit_context, action=AuditAction.STATUS_CHANGE
+                ),
+                outcome=AuditOutcome.NO_EFFECT,
+                reason=(
+                    AuditReason.IDEMPOTENT_REPEAT
+                    if audit_context.status_before == to_status
+                    else AuditReason.STATUS_NO_EFFECT
+                ),
+                applied_delta=0,
+            ),
+        )
 
     return accounting_sync_warning
 

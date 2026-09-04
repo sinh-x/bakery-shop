@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
@@ -722,7 +722,12 @@ def delete_blank_assignment(ref: str, item_id: int, blank_item_id: int):
 
 
 @router.post("/{ref}/items/{item_id}/status")
-def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTransition):
+def transition_work_item_status(
+    ref: str,
+    item_id: int,
+    body: WorkItemStatusTransition,
+    request: Request,
+):
     """Chuyển trạng thái công việc. Lý do bắt buộc khi lùi trạng thái."""
     valid_statuses = [s.value for s in WorkItemStatus]
     if body.status not in valid_statuses:
@@ -765,13 +770,74 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                     conn, order_row["order_ref"], derived_order_status, _AUTO_SYNC_REASON
                 )
 
-                if derived_order_status in ("delivered", "completed", "confirmed"):
-                    from baker.services.order_stock import auto_decrement_stock
-                    auto_decrement_stock(conn, order_row["id"], order_row["order_ref"])
+                from baker.api.orders import _inventory_audit_actor
+                from baker.services.order_inventory_audit import (
+                    AuditAction,
+                    AuditEntryDraft,
+                    AuditOutcome,
+                    AuditReason,
+                    AuditTrigger,
+                    append_entry,
+                    create_operation_context,
+                    execute_inventory_audit_savepoint,
+                    operation_context_for,
+                )
 
-                if derived_order_status == "cancelled":
-                    from baker.services.order_stock import restore_stock_for_order
-                    restore_stock_for_order(conn, order_row["id"], order_row["order_ref"])
+                audit_context = create_operation_context(
+                    order_id=order_row["id"],
+                    order_ref=order_row["order_ref"],
+                    trigger=AuditTrigger.STATUS_ACTION,
+                    action=AuditAction.STATUS_CHANGE,
+                    actor=_inventory_audit_actor(conn, request),
+                    status_before=order_row["status"],
+                    status_after=derived_order_status,
+                )
+                if derived_order_status in ("delivered", "completed", "confirmed"):
+                    from baker.services.order_stock import audited_auto_decrement_stock
+
+                    deduct_context = operation_context_for(
+                        audit_context, action=AuditAction.INVENTORY_DEDUCT
+                    )
+                    execute_inventory_audit_savepoint(
+                        conn,
+                        context=deduct_context,
+                        operation=lambda: audited_auto_decrement_stock(
+                            conn,
+                            order_row["id"],
+                            order_row["order_ref"],
+                            deduct_context,
+                        ),
+                        failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+                        failure_detail="work_item_status_inventory_failed",
+                    )
+                elif derived_order_status == "cancelled":
+                    from baker.services.order_stock import audited_restore_stock_for_order
+
+                    restore_context = operation_context_for(
+                        audit_context, action=AuditAction.INVENTORY_RESTORE
+                    )
+                    execute_inventory_audit_savepoint(
+                        conn,
+                        context=restore_context,
+                        operation=lambda: audited_restore_stock_for_order(
+                            conn,
+                            order_row["id"],
+                            order_row["order_ref"],
+                            restore_context,
+                        ),
+                        failure_reason=AuditReason.FAILURE_RESTORE_MUTATION,
+                        failure_detail="work_item_status_restore_failed",
+                    )
+                else:
+                    append_entry(
+                        conn,
+                        AuditEntryDraft(
+                            context=audit_context,
+                            outcome=AuditOutcome.NO_EFFECT,
+                            reason=AuditReason.STATUS_NO_EFFECT,
+                            applied_delta=0,
+                        ),
+                    )
 
                 # Log auto-sync in order_history (F6)
                 conn.execute(

@@ -9,13 +9,17 @@ failed decision.
 
 from __future__ import annotations
 
+import logging
 import re
+import sqlite3
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Iterable
+from typing import Callable, Iterable
 
 from baker.utils.time import normalize_timestamp, now_utc
+
+logger = logging.getLogger("baker.server")
 
 DEFAULT_QUERY_LIMIT = 100
 MAX_QUERY_LIMIT = 500
@@ -209,6 +213,28 @@ class AuditEntry:
     detail: str | None
 
 
+class InventoryAuditFault(Exception):
+    """Internal stock-stage failure carrying only safe audit evidence."""
+
+    def __init__(
+        self,
+        *,
+        reason: AuditReason,
+        detail: str,
+        context: OperationContext | None = None,
+        item: ItemSnapshot | None = None,
+        requested_delta: int | None = None,
+        before: InventorySnapshot | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+        self.context = context
+        self.item = item or ItemSnapshot()
+        self.requested_delta = requested_delta
+        self.before = before or InventorySnapshot()
+
+
 # Remove all assignment-looking fragments instead of trying to maintain a
 # fragile list of confidential field names. Reason codes retain diagnostics.
 _KEY_VALUE_RE = re.compile(r"\b[\w-]{1,32}\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|\S+)")
@@ -255,6 +281,71 @@ def create_operation_context(
         status_before=status_before,
         status_after=status_after,
     )
+
+
+def operation_context_for(
+    context: OperationContext,
+    *,
+    trigger: AuditTrigger | None = None,
+    action: AuditAction | None = None,
+) -> OperationContext:
+    """Derive an entry-stage context while retaining request correlation."""
+    return replace(
+        context,
+        trigger=trigger or context.trigger,
+        action=action or context.action,
+    )
+
+
+def execute_inventory_audit_savepoint(
+    conn,
+    *,
+    context: OperationContext,
+    operation: Callable[[], object],
+    failure_reason: AuditReason,
+    failure_detail: str,
+) -> bool:
+    """Atomically run stock effects and success audit, then persist safe failure.
+
+    A caught stock or audit fault rolls the complete group back before its
+    failed entry is appended. If SQLite itself is unavailable, evidence cannot
+    be written safely and the failure remains log-only, preserving the existing
+    non-blocking order transition behavior.
+    """
+    savepoint = f"order_inventory_audit_{uuid.uuid4().hex}"
+    try:
+        conn.execute(f"SAVEPOINT {savepoint}")
+        operation()
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return True
+    except Exception as exc:
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except sqlite3.Error:
+            logger.exception("order inventory audit savepoint rollback unavailable")
+            return False
+
+        fault = exc if isinstance(exc, InventoryAuditFault) else None
+        draft = AuditEntryDraft(
+            context=fault.context if fault and fault.context else context,
+            outcome=AuditOutcome.FAILED,
+            reason=fault.reason if fault else failure_reason,
+            item=fault.item if fault else ItemSnapshot(),
+            requested_delta=fault.requested_delta if fault else None,
+            applied_delta=0,
+            before=fault.before if fault else InventorySnapshot(),
+            after=fault.before if fault else InventorySnapshot(),
+            detail=fault.detail if fault else failure_detail,
+        )
+        try:
+            append_entry(conn, draft)
+        except sqlite3.Error:
+            logger.exception("order inventory audit failure evidence unavailable")
+        except Exception:
+            logger.exception("order inventory audit failure evidence rejected")
+        logger.exception("audited order inventory operation failed")
+        return False
 
 
 def snapshot_inventory(
