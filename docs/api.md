@@ -129,6 +129,7 @@ the full flow including brute-force lockout and rate limiting.
 | GET | `/api/orders` | AUTH | List orders (filterable by status, customer, due date, active_only). Delivered+fully-paid orders are filtered out of the default active view. |
 | POST | `/api/orders` | AUTH | Create a new order. Resolves/creates a customer via `customer_resolver`; creates `order_items` + work items; attaches photos; can auto-decrement stock for trưng bày products when `status=delivered`. |
 | GET | `/api/orders/{ref}/events` | AUTH | List events linked to an order (newest first). |
+| GET | `/api/orders/{ref}/inventory-audit` | AUTH | Read immutable inventory decisions and existing reconciliation links, newest first. |
 | GET | `/api/orders/{ref}` | AUTH | Order detail by `order_ref` or `id`. |
 | POST | `/api/orders/{ref}/acknowledge` | AUTH | Mark an order as acknowledged (sets `acknowledged_at` if null). |
 | PATCH | `/api/orders/{ref}` | AUTH | Update order fields (customer, delivery, items, notes). |
@@ -137,6 +138,91 @@ the full flow including brute-force lockout and rate limiting.
 | PATCH | `/api/orders/{ref}/payment` | AUTH | Record a payment (creates a new `payment_transactions` row if amount > 0). |
 
 **Status machine:** `new` → `confirmed` → `in_progress` → `ready` → `delivered` (or `cancelled`). Item statuses cascade with the order; extras/gifts auto-transition to match (F5).
+
+#### Inventory audit — `GET /api/orders/{ref}/inventory-audit` **[AUTH]**
+
+Returns read-only, append-only inventory evidence for the order addressed by
+`order_ref` or numeric `id`. Every authenticated staff role that can view the
+order may use this endpoint; there is no admin-only gate and no audit mutation
+route.
+
+Query parameters:
+
+| Parameter | Contract |
+|-----------|----------|
+| `limit` | Optional integer, default `100`, range `1..500`. Values above `500` are rejected with `422`. |
+| `offset` | Optional nonnegative integer, default `0`. |
+
+Entries are ordered deterministically by `createdAt DESC`, then `id DESC`.
+A known order without audit history returns an empty envelope; an unknown order
+returns `404`.
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "operationId": "182f85f3-a304-4bbb-beca-337860641cf7",
+      "orderId": 17,
+      "orderRef": "ORD-017",
+      "trigger": "status_action",
+      "action": "inventory_deduct",
+      "statusBefore": "new",
+      "statusAfter": "confirmed",
+      "actor": {
+        "identifier": "cashier",
+        "username": "cashier",
+        "staffId": 3,
+        "staffName": "Thu ngân",
+        "role": "staff"
+      },
+      "createdAt": "2026-09-04T03:00:00Z",
+      "outcome": "applied",
+      "reasonCode": "eligible_display_item",
+      "detail": null,
+      "item": {
+        "orderItemId": 91,
+        "productId": 31,
+        "productCode": "TB-31",
+        "productName": "Bánh trưng bày",
+        "isGift": false,
+        "isDisplay": true,
+        "source": "Tại tiệm - POS",
+        "requestedQuantity": 2,
+        "priceChipId": 9,
+        "priceChipLabel": "Miếng lớn",
+        "useInventoryPresent": true,
+        "useInventoryValue": true,
+        "resolvedBucket": "price_chip",
+        "resolvedPriceChipId": 9,
+        "resolvedPriceChipLabel": "Miếng lớn",
+        "resolvedUnitPrice": 45000
+      },
+      "requestedDelta": -2,
+      "appliedDelta": -2,
+      "before": {"fifoAvailable": 5, "negative": 0, "net": 5},
+      "after": {"fifoAvailable": 3, "negative": 0, "net": 3},
+      "stockMovementId": 701,
+      "negativeMovementId": null,
+      "relatedEntryId": null,
+      "reconciliationSessionId": 12,
+      "reconciliationSessionIds": [12],
+      "reconciliationLineIds": [33],
+      "reconciliationSaleRowIds": [44]
+    }
+  ],
+  "total": 1,
+  "hasMore": false,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+Missing inventory snapshots and reconciliation relationships are represented by
+explicit `null` values and empty identifier lists. Failure `detail` values are
+bounded and sanitized; they do not expose stack traces or raw confidential
+request values.
 
 ### 3.2 Work items — prefix `/api/orders`, tag `work-items`
 

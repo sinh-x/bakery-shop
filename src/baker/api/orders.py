@@ -47,11 +47,14 @@ from baker.services.order_inventory_audit import (
     AuditOutcome,
     AuditReason,
     AuditTrigger,
+    DEFAULT_QUERY_LIMIT,
+    MAX_QUERY_LIMIT,
     OperationContext,
     append_entry,
     create_operation_context,
     execute_inventory_audit_savepoint,
     operation_context_for,
+    query_order_audit_page,
 )
 from baker.services.address_library import (
     sync_on_order_edit as _sync_address_library_on_edit,
@@ -1192,6 +1195,33 @@ def get_order_events(
         if use_envelope:
             return paginated_envelope(items, total, lim, off)
         return items
+
+
+@router.get("/{ref}/inventory-audit")
+def get_order_inventory_audit(
+    ref: str,
+    limit: int = Query(
+        DEFAULT_QUERY_LIMIT,
+        ge=1,
+        le=MAX_QUERY_LIMIT,
+        description="Số bản ghi kiểm tra tồn kho tối đa",
+    ),
+    offset: int = Query(0, ge=0, description="Bỏ qua N bản ghi mới nhất"),
+):
+    """Return immutable inventory decisions for an order, newest first."""
+    with get_db() as conn:
+        order_row = conn.execute(
+            "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if order_row is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+        return query_order_audit_page(
+            conn,
+            order_id=int(order_row["id"]),
+            limit=limit,
+            offset=offset,
+        )
 
 
 @router.get("/{ref}")

@@ -9,6 +9,7 @@ failed decision.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -211,6 +212,15 @@ class AuditEntry:
     negative_movement_id: int | None
     related_entry_id: int | None
     detail: str | None
+
+
+@dataclass(frozen=True)
+class ReconciliationIdentifiers:
+    """Existing reconciliation rows related to one immutable audit entry."""
+
+    session_ids: tuple[int, ...] = ()
+    line_ids: tuple[int, ...] = ()
+    sale_row_ids: tuple[int, ...] = ()
 
 
 class InventoryAuditFault(Exception):
@@ -467,6 +477,225 @@ def count_order_entries(
         params,
     ).fetchone()
     return int(row["total"] if row else 0)
+
+
+def reconciliation_identifiers_for_entries(
+    conn,
+    entries: Iterable[AuditEntry],
+) -> dict[int, ReconciliationIdentifiers]:
+    """Resolve reconciliation IDs for a bounded page without N+1 queries.
+
+    Existing relationships can identify an order through sale-row order refs,
+    or identify a specific audit effect through linked order-item and stock-
+    movement IDs. JSON order-ref lists are parsed after a narrow ``instr``
+    candidate query so malformed legacy values cannot fail the endpoint.
+    """
+    page = list(entries)
+    mutable = {
+        entry.id: {"sessions": set(), "lines": set(), "sale_rows": set()}
+        for entry in page
+    }
+    if not page:
+        return {}
+
+    entries_by_ref: dict[str, list[AuditEntry]] = {}
+    for entry in page:
+        entries_by_ref.setdefault(entry.context.order_ref, []).append(entry)
+
+    for order_ref, matching_entries in entries_by_ref.items():
+        rows = conn.execute(
+            """SELECT rl.session_id, rl.id AS line_id, rsr.id AS sale_row_id,
+                      rsr.linked_order_ref, rsr.linked_order_refs
+               FROM reconciliation_sale_rows rsr
+               JOIN reconciliation_lines rl ON rl.id = rsr.line_id
+               WHERE rsr.linked_order_ref = ?
+                  OR instr(COALESCE(rsr.linked_order_refs, ''), ?) > 0""",
+            (order_ref, json.dumps(order_ref)),
+        ).fetchall()
+        for row in rows:
+            if not _sale_row_links_order(row, order_ref):
+                continue
+            for entry in matching_entries:
+                _add_reconciliation_row(mutable[entry.id], row)
+
+    _add_direct_reconciliation_links(
+        conn,
+        page,
+        mutable,
+        entry_attribute="order_item_id",
+        line_column="linked_order_item_id",
+    )
+    _add_direct_reconciliation_links(
+        conn,
+        page,
+        mutable,
+        entry_attribute="stock_movement_id",
+        line_column="linked_stock_movement_sale_id",
+    )
+    _add_direct_reconciliation_links(
+        conn,
+        page,
+        mutable,
+        entry_attribute="stock_movement_id",
+        line_column="linked_stock_movement_waste_id",
+    )
+
+    return {
+        entry_id: ReconciliationIdentifiers(
+            session_ids=tuple(sorted(values["sessions"])),
+            line_ids=tuple(sorted(values["lines"])),
+            sale_row_ids=tuple(sorted(values["sale_rows"])),
+        )
+        for entry_id, values in mutable.items()
+    }
+
+
+def audit_entry_to_dict(
+    entry: AuditEntry,
+    reconciliation: ReconciliationIdentifiers | None = None,
+) -> dict:
+    """Shape one immutable entry for the camelCase order API contract."""
+    links = reconciliation or ReconciliationIdentifiers()
+    actor = entry.context.actor
+    item = entry.item
+    return {
+        "id": entry.id,
+        "operationId": entry.context.operation_id,
+        "orderId": entry.context.order_id,
+        "orderRef": entry.context.order_ref,
+        "trigger": entry.context.trigger.value,
+        "action": entry.context.action.value,
+        "statusBefore": entry.context.status_before,
+        "statusAfter": entry.context.status_after,
+        "actor": {
+            "identifier": actor.identifier,
+            "username": actor.username,
+            "staffId": actor.staff_id,
+            "staffName": actor.staff_name,
+            "role": actor.role,
+        },
+        "createdAt": entry.context.created_at,
+        "outcome": entry.outcome.value,
+        "reasonCode": entry.reason.value,
+        "detail": entry.detail,
+        "item": {
+            "orderItemId": item.order_item_id,
+            "productId": item.product_id,
+            "productCode": item.product_code,
+            "productName": item.product_name,
+            "isGift": item.is_gift,
+            "isDisplay": item.is_display,
+            "source": item.source,
+            "requestedQuantity": item.requested_quantity,
+            "priceChipId": item.price_chip_id,
+            "priceChipLabel": item.price_chip_label,
+            "useInventoryPresent": item.use_inventory_present,
+            "useInventoryValue": item.use_inventory_value,
+            "resolvedBucket": item.resolved_bucket,
+            "resolvedPriceChipId": item.resolved_price_chip_id,
+            "resolvedPriceChipLabel": item.resolved_price_chip_label,
+            "resolvedUnitPrice": item.resolved_unit_price,
+        },
+        "requestedDelta": entry.requested_delta,
+        "appliedDelta": entry.applied_delta,
+        "before": _inventory_snapshot_to_dict(entry.before),
+        "after": _inventory_snapshot_to_dict(entry.after),
+        "stockMovementId": entry.stock_movement_id,
+        "negativeMovementId": entry.negative_movement_id,
+        "relatedEntryId": entry.related_entry_id,
+        "reconciliationSessionId": (
+            links.session_ids[0] if len(links.session_ids) == 1 else None
+        ),
+        "reconciliationSessionIds": list(links.session_ids),
+        "reconciliationLineIds": list(links.line_ids),
+        "reconciliationSaleRowIds": list(links.sale_row_ids),
+    }
+
+
+def query_order_audit_page(
+    conn,
+    *,
+    order_id: int,
+    limit: int = DEFAULT_QUERY_LIMIT,
+    offset: int = 0,
+) -> dict:
+    """Return a bounded, enriched, newest-first API envelope for one order."""
+    entries = query_order_entries(
+        conn,
+        order_id=order_id,
+        limit=limit,
+        offset=offset,
+    )
+    total = count_order_entries(conn, order_id=order_id)
+    reconciliation = reconciliation_identifiers_for_entries(conn, entries)
+    items = [
+        audit_entry_to_dict(entry, reconciliation.get(entry.id))
+        for entry in entries
+    ]
+    return {
+        "items": items,
+        "total": total,
+        "hasMore": offset + len(items) < total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def _add_direct_reconciliation_links(
+    conn,
+    entries: list[AuditEntry],
+    mutable: dict[int, dict[str, set]],
+    *,
+    entry_attribute: str,
+    line_column: str,
+) -> None:
+    entries_by_value: dict[int, list[AuditEntry]] = {}
+    for entry in entries:
+        value = getattr(entry.item, entry_attribute, None)
+        if value is None:
+            value = getattr(entry, entry_attribute, None)
+        if value is not None:
+            entries_by_value.setdefault(int(value), []).append(entry)
+    if not entries_by_value:
+        return
+
+    placeholders = ", ".join("?" for _ in entries_by_value)
+    rows = conn.execute(
+        "SELECT rl.session_id, rl.id AS line_id, rsr.id AS sale_row_id, "
+        f"rl.{line_column} AS match_id "
+        "FROM reconciliation_lines rl "
+        "LEFT JOIN reconciliation_sale_rows rsr ON rsr.line_id = rl.id "
+        f"WHERE rl.{line_column} IN ({placeholders})",
+        tuple(entries_by_value),
+    ).fetchall()
+    for row in rows:
+        for entry in entries_by_value.get(int(row["match_id"]), []):
+            _add_reconciliation_row(mutable[entry.id], row)
+
+
+def _add_reconciliation_row(target: dict[str, set], row) -> None:
+    target["sessions"].add(int(row["session_id"]))
+    target["lines"].add(int(row["line_id"]))
+    if row["sale_row_id"] is not None:
+        target["sale_rows"].add(int(row["sale_row_id"]))
+
+
+def _sale_row_links_order(row, order_ref: str) -> bool:
+    if row["linked_order_ref"] == order_ref:
+        return True
+    try:
+        refs = json.loads(row["linked_order_refs"] or "null")
+    except (TypeError, ValueError):
+        return False
+    return isinstance(refs, list) and order_ref in refs
+
+
+def _inventory_snapshot_to_dict(snapshot: InventorySnapshot) -> dict:
+    return {
+        "fifoAvailable": snapshot.fifo_available,
+        "negative": snapshot.negative,
+        "net": snapshot.net,
+    }
 
 
 def _canonical_utc(value: str) -> str:
