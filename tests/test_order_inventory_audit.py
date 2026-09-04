@@ -34,6 +34,7 @@ from baker.services.order_stock import (
     load_order_inventory_rows,
     reverse_order_stock_for_edit,
 )
+from tests.auth_helpers import _auth_headers, _seed_user
 
 pytestmark = pytest.mark.critical
 
@@ -367,14 +368,20 @@ def _create_chip(client, product_id: int, label: str, price: int) -> int:
     return int(response.json()["id"])
 
 
-def _create_api_order(client, items: list[dict], **overrides) -> dict:
+def _create_api_order(
+    client,
+    items: list[dict],
+    *,
+    headers: dict | None = None,
+    **overrides,
+) -> dict:
     payload = {
         "customerName": "Khách kiểm tra audit",
         "dueDate": "2026-09-04",
         "items": items,
         **overrides,
     }
-    response = client.post("/api/orders", json=payload)
+    response = client.post("/api/orders", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -409,6 +416,9 @@ def test_phase2_creation_decision_matrix_and_base_fallback(api_client):
         [
             {"productId": "1", "productName": "Áp dụng", "quantity": 2,
              "unitPrice": 17001, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Bật tồn", "quantity": 1,
+             "unitPrice": 17001, "priceChipId": chip_id,
+             "attributes": {"useInventory": True}},
             {"productId": "1", "productName": "Quà", "quantity": 1,
              "unitPrice": 17001, "priceChipId": chip_id, "isGift": True},
             {"productId": "1", "productName": "Tắt tồn", "quantity": 1,
@@ -434,6 +444,10 @@ def test_phase2_creation_decision_matrix_and_base_fallback(api_client):
         assert by_name["Áp dụng"].after.net == 3
         assert by_name["Áp dụng"].stock_movement_id is not None
         assert by_name["Áp dụng"].context.actor.identifier == "phase2-cashier"
+        assert by_name["Áp dụng"].context.trigger == AuditTrigger.ORDER_CREATION
+        assert by_name["Bật tồn"].outcome == AuditOutcome.APPLIED
+        assert by_name["Bật tồn"].reason == AuditReason.EXPLICIT_INVENTORY_OPT_IN
+        assert by_name["Bật tồn"].applied_delta == -1
         assert by_name["Quà"].reason == AuditReason.GIFT_ITEM
         assert by_name["Tắt tồn"].reason == AuditReason.EXPLICIT_INVENTORY_OPT_OUT
         assert by_name["Không trưng bày"].reason == AuditReason.NON_DISPLAY_PRODUCT
@@ -461,6 +475,68 @@ def test_phase2_creation_decision_matrix_and_base_fallback(api_client):
         assert entry.item.resolved_bucket == "base"
         assert entry.applied_delta == -1
 
+    default_skip = _create_api_order(
+        api_client,
+        [{"productId": "1", "productName": "Nguồn mặc định bỏ qua", "quantity": 1,
+          "unitPrice": 17001, "priceChipId": chip_id}],
+        source="Đặt trước",
+    )
+    assert api_client.post(
+        f"/api/orders/{default_skip['orderRef']}/status",
+        json={"status": "confirmed"},
+    ).status_code == 200
+    with get_db() as conn:
+        entry = query_order_entries(conn, order_ref=default_skip["orderRef"])[0]
+        assert entry.context.trigger == AuditTrigger.STATUS_ACTION
+        assert entry.outcome == AuditOutcome.SKIPPED
+        assert entry.reason == AuditReason.SOURCE_DEFAULT_SKIP
+        assert entry.applied_delta == 0
+
+
+def test_phase5_authenticated_actor_precedes_client_fallback(auth_client):
+    with get_db() as conn:
+        staff_id = int(
+            conn.execute(
+                "INSERT INTO staff (name, role) VALUES ('Nhân viên audit', 'cashier')"
+            ).lastrowid
+        )
+        token = _seed_user(conn, "audit.jwt", "staff")
+        conn.execute(
+            "UPDATE users SET staff_id = ? WHERE username = 'audit.jwt'",
+            (staff_id,),
+        )
+        product_id = int(
+            conn.execute(
+                "INSERT INTO products (name, category, base_price, cost, product_code) "
+                "VALUES ('Bánh JWT', 'banh_mi', 25000, 10000, 'AUD-JWT')"
+            ).lastrowid
+        )
+        conn.execute(
+            "INSERT INTO product_attribute_values "
+            "(product_id, attribute_type, value) VALUES (?, 'trung_bay', 'true')",
+            (product_id,),
+        )
+        create_lot_with_items(conn, product_id, None, 1)
+
+    order = _create_api_order(
+        auth_client,
+        [{"productId": str(product_id), "productName": "Bánh JWT", "quantity": 1,
+          "unitPrice": 25000}],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+        createdBy="spoofed-client-actor",
+        headers=_auth_headers(token),
+    )
+    with get_db() as conn:
+        entry = query_order_entries(conn, order_ref=order["orderRef"])[0]
+        assert entry.context.actor.identifier == "audit.jwt"
+        assert entry.context.actor.username == "audit.jwt"
+        assert entry.context.actor.staff_id == staff_id
+        assert entry.context.actor.staff_name == "Nhân viên audit"
+        assert entry.context.actor.role == "staff"
+        assert entry.context.actor.identifier != "spoofed-client-actor"
+
 
 def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
     _set_display(1)
@@ -471,9 +547,13 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
     )
     order = _create_api_order(
         api_client,
-        [{"productId": "1", "productName": "Vòng đời", "quantity": 2,
-          "unitPrice": 18001, "priceChipId": chip_id,
-          "attributes": {"useInventory": True}}],
+        [
+            {"productId": "1", "productName": "Vòng đời", "quantity": 2,
+             "unitPrice": 18001, "priceChipId": chip_id,
+             "attributes": {"useInventory": True}},
+            {"productId": "1", "productName": "Quà vòng đời", "quantity": 1,
+             "unitPrice": 18001, "priceChipId": chip_id, "isGift": True},
+        ],
         changedBy="ignored",
     )
     ref = order["orderRef"]
@@ -487,6 +567,13 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
     ).status_code == 200
     assert api_client.post(
         f"/api/orders/{ref}/status", json={"status": "in_progress"}
+    ).status_code == 200
+    assert api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "ready"}
+    ).status_code == 200
+    assert api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "in_progress", "reason": "quay lại xử lý"},
     ).status_code == 200
 
     response = api_client.patch(
@@ -517,8 +604,23 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
         assert AuditReason.IDEMPOTENT_REPEAT in reasons
         assert AuditReason.STATUS_NO_EFFECT in reasons
         assert AuditReason.CANCEL_RESTORE in reasons
+        assert {entry.outcome for entry in entries} == set(AuditOutcome)
+        status_entries = [
+            entry for entry in entries
+            if entry.context.trigger == AuditTrigger.STATUS_ACTION
+        ]
+        assert {entry.context.action for entry in status_entries} >= {
+            AuditAction.STATUS_CHANGE,
+            AuditAction.INVENTORY_DEDUCT,
+            AuditAction.INVENTORY_RESTORE,
+        }
+        cancel_entry = next(
+            entry for entry in entries if entry.reason == AuditReason.CANCEL_RESTORE
+        )
+        assert cancel_entry.outcome == AuditOutcome.REVERSED
         rejected_entry = next(entry for entry in entries if entry.detail == "invalid_status")
         assert rejected_entry.outcome == AuditOutcome.FAILED
+        assert rejected_entry.context.trigger == AuditTrigger.STATUS_ACTION
         edits = [
             entry for entry in entries
             if entry.reason in (AuditReason.EDIT_REVERSAL, AuditReason.EDIT_RE_EVALUATION)
@@ -529,7 +631,11 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
         reevaluation = next(e for e in edits if e.reason == AuditReason.EDIT_RE_EVALUATION)
         assert reevaluation.related_entry_id == reversal.id
         assert reversal.item.product_name == "Vòng đời"
+        assert reversal.context.trigger == AuditTrigger.REVERSAL
+        assert reversal.outcome == AuditOutcome.REVERSED
         assert reevaluation.item.product_name == "Vòng đời mới"
+        assert reevaluation.context.trigger == AuditTrigger.RE_EVALUATION
+        assert reevaluation.outcome == AuditOutcome.APPLIED
         assert _available(conn, 1, chip_id) == 4
 
 
@@ -589,6 +695,19 @@ def test_phase2_reconciliation_and_work_item_paths_share_trusted_context(api_cli
         assert entry.context.status_after == "confirmed"
         assert entry.outcome == AuditOutcome.APPLIED
 
+    response = api_client.post(
+        f"/api/orders/{order['orderRef']}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": "hủy công việc"},
+    )
+    assert response.status_code == 200, response.text
+    with get_db() as conn:
+        entry = query_order_entries(conn, order_ref=order["orderRef"])[0]
+        assert entry.context.trigger == AuditTrigger.STATUS_ACTION
+        assert entry.context.status_before == "confirmed"
+        assert entry.context.status_after == "cancelled"
+        assert entry.outcome == AuditOutcome.REVERSED
+        assert entry.reason == AuditReason.CANCEL_RESTORE
+
 
 def test_phase2_negative_edit_replaces_instead_of_accumulating_deficit(api_client):
     _set_display(1)
@@ -620,6 +739,66 @@ def test_phase2_negative_edit_replaces_instead_of_accumulating_deficit(api_clien
             AuditTrigger.RE_EVALUATION,
         }
         assert sum(entry.applied_delta or 0 for entry in edits) == 2
+        negative_entries = [
+            entry for entry in query_order_entries(conn, order_ref=order["orderRef"])
+            if entry.reason == AuditReason.NEGATIVE_SALE
+        ]
+        assert negative_entries
+        assert all(entry.outcome == AuditOutcome.APPLIED for entry in negative_entries)
+        assert all(entry.negative_movement_id is not None for entry in negative_entries)
+
+
+def test_phase5_order_edit_entry_point_records_sanitized_outer_failure(
+    monkeypatch,
+    api_client,
+):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Phase5 outer edit fault", 24501)
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    order = _create_api_order(
+        api_client,
+        [{"productId": "1", "productName": "Edit outer fault", "quantity": 1,
+          "unitPrice": 24501, "priceChipId": chip_id,
+          "attributes": {"useInventory": True}}],
+    )
+    ref = order["orderRef"]
+    assert api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "confirmed"}
+    ).status_code == 200
+
+    from baker.api import orders as orders_api
+
+    def fail_before_reversal(*args, **kwargs):
+        raise RuntimeError("token=outer-edit-secret")
+
+    monkeypatch.setattr(
+        orders_api,
+        "audited_reverse_order_stock_for_edit",
+        fail_before_reversal,
+    )
+    response = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"items": [
+            {"productId": "1", "productName": "Edit outer fault new", "quantity": 2,
+             "unitPrice": 24501, "priceChipId": chip_id,
+             "attributes": {"useInventory": True}}
+        ]},
+    )
+    assert response.status_code == 200
+    assert response.json()["accountingSyncWarning"] == "journal_sync_failed"
+
+    with get_db() as conn:
+        assert _available(conn, 1, chip_id) == 1
+        failed = query_order_entries(conn, order_ref=ref)[0]
+        assert failed.context.trigger == AuditTrigger.ORDER_EDIT
+        assert failed.context.action == AuditAction.ORDER_EDIT
+        assert failed.outcome == AuditOutcome.FAILED
+        assert failed.reason == AuditReason.FAILURE_UNEXPECTED
+        assert failed.detail == "edit_inventory_failed"
+        assert "outer-edit-secret" not in (failed.detail or "")
 
 
 def test_phase2_fifo_fault_rolls_back_partial_consumption(monkeypatch, api_client):

@@ -179,7 +179,7 @@ returns `404`.
       },
       "createdAt": "2026-09-04T03:00:00Z",
       "outcome": "applied",
-      "reasonCode": "eligible_display_item",
+      "reasonCode": "explicit_inventory_opt_in",
       "detail": null,
       "item": {
         "orderItemId": 91,
