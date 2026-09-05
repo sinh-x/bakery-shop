@@ -446,8 +446,17 @@ def _sale_restore_plans(conn, order_ref: str) -> list[dict]:
 
 def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
     """Reverse each outstanding sale effect exactly once on cancellation."""
-    del order_id
-    for plan in _sale_restore_plans(conn, order_ref):
+    plans = _sale_restore_plans(conn, order_ref)
+    item_rows = load_order_inventory_rows(conn, order_id)
+    captured_by_movement = {
+        movement["id"]: (item, before)
+        for movement, item, before in _capture_movement_snapshots(
+            conn,
+            [plan["movement"] for plan in plans],
+            item_rows,
+        )
+    }
+    for plan in plans:
         movement = plan["movement"]
         fifo_qty = plan["fifo_qty"]
         negative_qty = plan["negative_qty"]
@@ -488,10 +497,19 @@ def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
                     (product_id, chip_id),
                 )
         except Exception as exc:
+            item, before = captured_by_movement.get(
+                movement["id"], (ItemSnapshot(), InventorySnapshot())
+            )
             raise InventoryAuditFault(
                 reason=AuditReason.FAILURE_RESTORE_MUTATION,
                 detail="inventory_restore_mutation_failed",
+                item=item,
                 requested_delta=qty,
+                before=before,
+                stock_movement_id=movement["id"],
+                negative_movement_id=(
+                    plan["negative_movement_id"] if negative_qty > 0 else None
+                ),
             ) from exc
 
         Event(
@@ -687,18 +705,30 @@ def audited_auto_decrement_stock(
     try:
         auto_decrement_stock(conn, order_id, order_ref)
     except InventoryAuditFault as exc:
-        if decisions and exc.item == ItemSnapshot():
+        decision = next(
+            (
+                candidate
+                for candidate in decisions
+                if exc.item.order_item_id is not None
+                and candidate["item"].order_item_id == exc.item.order_item_id
+            ),
+            None,
+        )
+        if decision is None and decisions and exc.item == ItemSnapshot():
             decision = next(
                 (item for item in decisions if item.get("should_consume")),
                 decisions[0],
             )
+        if decision is not None:
             raise InventoryAuditFault(
                 reason=exc.reason,
                 detail=exc.detail,
                 context=context,
-                item=decision["item"],
+                item=(decision["item"] if exc.item == ItemSnapshot() else exc.item),
                 requested_delta=exc.requested_delta,
                 before=decision.get("before", InventorySnapshot()),
+                stock_movement_id=exc.stock_movement_id,
+                negative_movement_id=exc.negative_movement_id,
             ) from exc
         raise
 
@@ -962,17 +992,16 @@ def audited_restore_stock_for_order(
     try:
         restore_stock_for_order(conn, order_id, order_ref)
     except InventoryAuditFault as exc:
-        if captured and exc.item == ItemSnapshot():
-            movement, item, before = captured[0]
-            raise InventoryAuditFault(
-                reason=exc.reason,
-                detail=exc.detail,
-                context=context,
-                item=item,
-                requested_delta=-int(movement["quantity"]),
-                before=before,
-            ) from exc
-        raise
+        raise InventoryAuditFault(
+            reason=exc.reason,
+            detail=exc.detail,
+            context=exc.context or context,
+            item=exc.item,
+            requested_delta=exc.requested_delta,
+            before=exc.before,
+            stock_movement_id=exc.stock_movement_id,
+            negative_movement_id=exc.negative_movement_id,
+        ) from exc
     new_restores = conn.execute(
         """SELECT id, reason FROM stock_movements
            WHERE id > ? AND reference_id = ? AND movement_type = 'restore_sale'

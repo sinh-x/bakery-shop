@@ -235,6 +235,8 @@ class InventoryAuditFault(Exception):
         item: ItemSnapshot | None = None,
         requested_delta: int | None = None,
         before: InventorySnapshot | None = None,
+        stock_movement_id: int | None = None,
+        negative_movement_id: int | None = None,
     ) -> None:
         super().__init__(detail)
         self.reason = reason
@@ -243,6 +245,8 @@ class InventoryAuditFault(Exception):
         self.item = item or ItemSnapshot()
         self.requested_delta = requested_delta
         self.before = before or InventorySnapshot()
+        self.stock_movement_id = stock_movement_id
+        self.negative_movement_id = negative_movement_id
 
 
 # Remove all assignment-looking fragments instead of trying to maintain a
@@ -337,6 +341,21 @@ def execute_inventory_audit_savepoint(
             return False
 
         fault = exc if isinstance(exc, InventoryAuditFault) else None
+        before = fault.before if fault else InventorySnapshot()
+        after = before
+        if (
+            fault
+            and fault.item.product_id is not None
+            and fault.item.resolved_bucket is not None
+        ):
+            try:
+                after = snapshot_inventory(
+                    conn,
+                    fault.item.product_id,
+                    fault.item.resolved_price_chip_id,
+                )
+            except sqlite3.Error:
+                logger.exception("order inventory audit failure snapshot unavailable")
         draft = AuditEntryDraft(
             context=fault.context if fault and fault.context else context,
             outcome=AuditOutcome.FAILED,
@@ -344,8 +363,10 @@ def execute_inventory_audit_savepoint(
             item=fault.item if fault else ItemSnapshot(),
             requested_delta=fault.requested_delta if fault else None,
             applied_delta=0,
-            before=fault.before if fault else InventorySnapshot(),
-            after=fault.before if fault else InventorySnapshot(),
+            before=before,
+            after=after,
+            stock_movement_id=fault.stock_movement_id if fault else None,
+            negative_movement_id=fault.negative_movement_id if fault else None,
             detail=fault.detail if fault else failure_detail,
         )
         try:

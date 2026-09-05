@@ -1101,6 +1101,68 @@ def test_review_later_item_fifo_failure_keeps_exact_item_and_snapshot(api_client
         assert failed.after == failed.before
 
 
+def test_review_same_bucket_failure_uses_committed_post_rollback_snapshot(api_client):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Same bucket failure", 18803)
+    assert api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 1, "price_chip_id": chip_id},
+    ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Tạm dùng tồn", "quantity": 1,
+             "unitPrice": 18803, "priceChipId": chip_id,
+             "attributes": {"useInventory": True}},
+            {"productId": "1", "productName": "Thất bại cùng kho", "quantity": 1,
+             "unitPrice": 18803, "priceChipId": chip_id,
+             "attributes": {"useInventory": True}},
+        ],
+        source="Đặt trước",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        context = _service_context(int(order["id"]), ref)
+        assert not execute_inventory_audit_savepoint(
+            conn,
+            context=context,
+            operation=lambda: audited_auto_decrement_stock(
+                conn, int(order["id"]), ref, context
+            ),
+            failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+            failure_detail="fifo_outer_failed",
+        )
+        committed = InventorySnapshot(fifo_available=1, negative=0, net=1)
+        assert snapshot_inventory(conn, 1, chip_id) == committed
+        assert conn.execute(
+            "SELECT 1 FROM stock_movements WHERE reference_id = ?", (ref,)
+        ).fetchone() is None
+        entries = query_order_entries(conn, order_ref=ref)
+        assert len(entries) == 1
+        failed = entries[0]
+        failing_item_id = next(
+            row["id"]
+            for row in load_order_inventory_rows(conn, int(order["id"]))
+            if row["product_name"] == "Thất bại cùng kho"
+        )
+        assert failed.outcome == AuditOutcome.FAILED
+        assert failed.reason == AuditReason.FAILURE_INSUFFICIENT_STOCK
+        assert failed.detail == "inventory_fifo_rejected"
+        assert failed.item.order_item_id == failing_item_id
+        assert failed.item.product_name == "Thất bại cùng kho"
+        assert failed.item.resolved_price_chip_id == chip_id
+        assert failed.before == committed
+        assert failed.after == committed
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            conn.execute(
+                "UPDATE order_inventory_audit_entries SET detail = 'changed' "
+                "WHERE id = ?",
+                (failed.id,),
+            )
+        assert query_order_entries(conn, order_ref=ref)[0] == failed
+
+
 def test_phase2_fifo_fault_rolls_back_partial_consumption(monkeypatch, api_client):
     _set_display(1)
     chip_id = _create_chip(api_client, 1, "Phase2 fifo fault", 19001)
@@ -1267,3 +1329,113 @@ def test_phase2_restore_fault_rolls_back_partial_lot(monkeypatch, api_client):
         failed = query_order_entries(conn, order_ref=order["orderRef"])[0]
         assert failed.reason == AuditReason.FAILURE_RESTORE_MUTATION
         assert failed.detail == "inventory_restore_mutation_failed"
+
+
+@pytest.mark.parametrize("restore_kind", ["fifo", "negative"])
+def test_review_second_restore_fault_keeps_exact_item_and_committed_state(
+    monkeypatch,
+    api_client,
+    restore_kind,
+):
+    _set_display(1)
+    chip_id = _create_chip(
+        api_client, 1, f"Second {restore_kind} restore fault", 22002
+    )
+    if restore_kind == "fifo":
+        assert api_client.post(
+            "/api/products/1/stock/restock",
+            json={"quantity": 2, "price_chip_id": chip_id},
+        ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Hoàn mục một", "quantity": 1,
+             "unitPrice": 22002, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Hoàn mục hai", "quantity": 1,
+             "unitPrice": 22002, "priceChipId": chip_id},
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+    if restore_kind == "fifo":
+        original = order_stock.create_lot_with_items
+        calls = 0
+
+        def fail_second_fifo_restore(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("token=second-fifo-secret")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            order_stock, "create_lot_with_items", fail_second_fifo_restore
+        )
+
+    with get_db() as conn:
+        if restore_kind == "negative":
+            conn.execute(
+                f"""CREATE TEMP TRIGGER fail_second_negative_restore
+                    BEFORE UPDATE OF qty ON negative_balance
+                    WHEN OLD.product_id = 1
+                      AND OLD.price_chip_id = {chip_id}
+                      AND OLD.qty = 1
+                    BEGIN
+                      SELECT RAISE(ABORT, 'token=second-negative-secret');
+                    END"""
+            )
+        committed = snapshot_inventory(conn, 1, chip_id)
+        expected = (
+            InventorySnapshot(fifo_available=0, negative=0, net=0)
+            if restore_kind == "fifo"
+            else InventorySnapshot(fifo_available=0, negative=2, net=-2)
+        )
+        assert committed == expected
+        sale_movements = conn.execute(
+            "SELECT id FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        negative_movements = conn.execute(
+            "SELECT id FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'negative_sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        context = _service_context(
+            int(order["id"]), ref, AuditAction.INVENTORY_RESTORE
+        )
+        assert not execute_inventory_audit_savepoint(
+            conn,
+            context=context,
+            operation=lambda: audited_restore_stock_for_order(
+                conn, int(order["id"]), ref, context
+            ),
+            failure_reason=AuditReason.FAILURE_RESTORE_MUTATION,
+            failure_detail="restore_outer_failed",
+        )
+        assert snapshot_inventory(conn, 1, chip_id) == committed
+        assert conn.execute(
+            "SELECT 1 FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone() is None
+        failed = query_order_entries(conn, order_ref=ref)[0]
+        second_item_id = next(
+            row["id"]
+            for row in load_order_inventory_rows(conn, int(order["id"]))
+            if row["product_name"] == "Hoàn mục hai"
+        )
+        assert failed.outcome == AuditOutcome.FAILED
+        assert failed.reason == AuditReason.FAILURE_RESTORE_MUTATION
+        assert failed.detail == "inventory_restore_mutation_failed"
+        assert failed.item.order_item_id == second_item_id
+        assert failed.item.product_name == "Hoàn mục hai"
+        assert failed.stock_movement_id == sale_movements[1]["id"]
+        assert failed.negative_movement_id == (
+            negative_movements[1]["id"] if restore_kind == "negative" else None
+        )
+        assert failed.before == committed
+        assert failed.after == committed
+        assert "secret" not in (failed.detail or "")
