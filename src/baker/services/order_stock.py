@@ -45,7 +45,8 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         return
 
     order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price, oi.attributes, o.source
+        """SELECT oi.id, oi.product_id, oi.product_name, oi.quantity,
+                  oi.price_chip_id, oi.unit_price, oi.attributes, oi.is_gift, o.source
            FROM order_items oi
            JOIN orders o ON o.id = oi.order_id
            WHERE oi.order_id = ?
@@ -148,6 +149,16 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 },
             )
 
+        failure_decision = _decision_for_row(conn, item) if should_consume_fifo else None
+        failure_item = (
+            failure_decision["item"] if failure_decision is not None else ItemSnapshot()
+        )
+        failure_before = (
+            failure_decision["before"]
+            if failure_decision is not None
+            else InventorySnapshot()
+        )
+
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements
                (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
@@ -171,13 +182,17 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 raise InventoryAuditFault(
                     reason=reason,
                     detail="inventory_fifo_rejected",
+                    item=failure_item,
                     requested_delta=-qty,
+                    before=failure_before,
                 ) from exc
             except Exception as exc:
                 raise InventoryAuditFault(
                     reason=AuditReason.FAILURE_FIFO_MUTATION,
                     detail="inventory_fifo_mutation_failed",
+                    item=failure_item,
                     requested_delta=-qty,
+                    before=failure_before,
                 ) from exc
 
         if should_consume_fifo:
@@ -209,7 +224,9 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 raise InventoryAuditFault(
                     reason=AuditReason.FAILURE_NEGATIVE_BALANCE_MUTATION,
                     detail="negative_balance_mutation_failed",
+                    item=failure_item,
                     requested_delta=-qty,
+                    before=failure_before,
                 ) from exc
             Event(
                 summary=f"Ban am -{deficit} {item['product_name']}",
@@ -352,67 +369,118 @@ def reverse_order_stock_for_edit(conn, order_id: int, order_ref: str) -> None:
     )
 
 
-def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
-    """Reverse stock deductions for a cancelled order.
+def _restore_reason(order_ref: str, sale_movement_id: int) -> str:
+    return f"Restore order {order_ref} sale movement {sale_movement_id}"
 
-    Idempotent: skips if no sale movement exists or a restore already happened."""
-    sale_movements = conn.execute(
-        """SELECT id, product_id, price_chip_id, quantity
+
+def _sale_restore_plans(conn, order_ref: str) -> list[dict]:
+    """Return movement-aware outstanding FIFO/negative restore components."""
+    effects = conn.execute(
+        """SELECT id, product_id, price_chip_id, movement_type, quantity
            FROM stock_movements
-           WHERE reference_id = ? AND movement_type = 'sale'""",
+           WHERE reference_id = ? AND movement_type IN ('sale', 'negative_sale')
+           ORDER BY id""",
         (order_ref,),
     ).fetchall()
+    sales = []
+    last_sale_by_bucket: dict[tuple[int, int | None], int] = {}
+    negative_by_sale: dict[int, list] = {}
+    for movement in effects:
+        bucket = (movement["product_id"], movement["price_chip_id"])
+        if movement["movement_type"] == "sale":
+            sales.append(movement)
+            last_sale_by_bucket[bucket] = movement["id"]
+        else:
+            sale_id = last_sale_by_bucket.get(bucket)
+            if sale_id is not None:
+                negative_by_sale.setdefault(sale_id, []).append(movement)
 
-    for movement in sale_movements:
-        qty = -movement["quantity"]
-        chip_id = movement["price_chip_id"]
-        product_id = movement["product_id"]
+    restored_by_bucket: dict[tuple[int, int | None], int] = {}
+    restore_rows = conn.execute(
+        """SELECT product_id, price_chip_id, quantity
+           FROM stock_movements
+           WHERE reference_id = ? AND movement_type = 'restore_sale'
+           ORDER BY id""",
+        (order_ref,),
+    ).fetchall()
+    for movement in restore_rows:
+        bucket = (movement["product_id"], movement["price_chip_id"])
+        restored_by_bucket[bucket] = restored_by_bucket.get(bucket, 0) + max(
+            0, int(movement["quantity"])
+        )
 
-        already_restored = conn.execute(
-            "SELECT 1 FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale' AND product_id = ? AND price_chip_id IS NOT DISTINCT FROM ? LIMIT 1",
-            (order_ref, product_id, chip_id),
-        ).fetchone()
-        if already_restored:
-            continue
-
-        # If a matching negative_sale exists, only the FIFO-consumed portion
-        # was taken from lots; the deficit portion was recorded as negative
-        # balance and must be reversed by reducing negative_balance (not by
-        # creating new lot items, which would inflate stock).
-        negative_row = conn.execute(
-            """SELECT id, quantity FROM stock_movements
-               WHERE reference_id = ? AND movement_type = 'negative_sale'
-                 AND product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?
-               LIMIT 1""",
-            (order_ref, product_id, chip_id),
-        ).fetchone()
-        deficit = -int(negative_row["quantity"]) if negative_row else 0
-        fifo_consumed_qty = int(
+    plans = []
+    for sale in sales:
+        bucket = (sale["product_id"], sale["price_chip_id"])
+        fifo_qty = int(
             conn.execute(
                 "SELECT COUNT(*) AS qty FROM inventory_items "
                 "WHERE consumed_by_movement_id = ?",
-                (movement["id"],),
+                (sale["id"],),
             ).fetchone()["qty"]
         )
-
-        restore_cursor = conn.execute(
-            """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
-               VALUES (?, 'restore_sale', ?, ?, ?, ?, ?)""",
-            (product_id, qty, f"Restore order {order_ref}", order_ref, chip_id, now_utc()),
+        negative_movements = negative_by_sale.get(sale["id"], [])
+        negative_qty = sum(-int(row["quantity"]) for row in negative_movements)
+        already_restored = min(
+            fifo_qty + negative_qty, restored_by_bucket.get(bucket, 0)
         )
-        restore_movement_id = restore_cursor.lastrowid
+        restored_by_bucket[bucket] = max(
+            0, restored_by_bucket.get(bucket, 0) - already_restored
+        )
+        restored_fifo = min(fifo_qty, already_restored)
+        restored_negative = min(
+            negative_qty, already_restored - restored_fifo
+        )
+        plans.append(
+            {
+                "movement": sale,
+                "fifo_qty": fifo_qty - restored_fifo,
+                "negative_qty": negative_qty - restored_negative,
+                "negative_movement_id": (
+                    negative_movements[0]["id"] if negative_movements else None
+                ),
+            }
+        )
+    return plans
+
+
+def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
+    """Reverse each outstanding sale effect exactly once on cancellation."""
+    del order_id
+    for plan in _sale_restore_plans(conn, order_ref):
+        movement = plan["movement"]
+        fifo_qty = plan["fifo_qty"]
+        negative_qty = plan["negative_qty"]
+        qty = fifo_qty + negative_qty
+        if qty <= 0:
+            continue
+        chip_id = movement["price_chip_id"]
+        product_id = movement["product_id"]
+
+        conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id,
+                price_chip_id, created_at)
+               VALUES (?, 'restore_sale', ?, ?, ?, ?, ?)""",
+            (
+                product_id,
+                qty,
+                _restore_reason(order_ref, movement["id"]),
+                order_ref,
+                chip_id,
+                now_utc(),
+            ),
+        )
         try:
-            if fifo_consumed_qty > 0:
-                create_lot_with_items(conn, product_id, chip_id, fifo_consumed_qty)
-            if deficit > 0:
+            if fifo_qty > 0:
+                create_lot_with_items(conn, product_id, chip_id, fifo_qty)
+            if negative_qty > 0:
                 conn.execute(
                     """UPDATE negative_balance
                        SET qty = qty - ?, updated_at = ?
                        WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?""",
-                    (deficit, now_utc(), product_id, chip_id),
+                    (negative_qty, now_utc(), product_id, chip_id),
                 )
-                # Remove stale zero-quantity balances after a full restore.
                 conn.execute(
                     """DELETE FROM negative_balance
                        WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?
@@ -498,26 +566,31 @@ def _decision_for_row(conn, row) -> dict:
         use_inventory_present=use_present,
         use_inventory_value=use_enabled if use_present else None,
     )
-    if row["is_gift"]:
-        return {"item": base_item, "reason": AuditReason.GIFT_ITEM}
-
     product = _product_for_saved_item(conn, row["product_id"])
     if product is None:
-        return {"item": base_item, "reason": AuditReason.MISSING_PRODUCT}
+        reason = AuditReason.GIFT_ITEM if row["is_gift"] else AuditReason.MISSING_PRODUCT
+        return {"item": base_item, "reason": reason}
     product_id = int(product["id"])
     selected_chip_id = row["price_chip_id"]
     selected_chip = None
     if selected_chip_id is not None:
         selected_chip = conn.execute(
-            "SELECT label FROM product_price_chips WHERE id = ?",
-            (selected_chip_id,),
+            "SELECT label, price FROM product_price_chips "
+            "WHERE id = ? AND product_id = ?",
+            (selected_chip_id, product_id),
         ).fetchone()
+    is_display = conn.execute(
+        """SELECT 1 FROM product_attribute_values
+           WHERE product_id = ? AND attribute_type = 'trung_bay' AND value = 'true'""",
+        (product_id,),
+    ).fetchone() is not None
     item = ItemSnapshot(
         **{
             **base_item.__dict__,
             "product_id": product_id,
             "product_code": product["product_code"],
             "price_chip_label": selected_chip["label"] if selected_chip else None,
+            "is_display": is_display,
         }
     )
     fallback = False
@@ -533,6 +606,8 @@ def _decision_for_row(conn, row) -> dict:
                 chip_id = None
                 fallback = True
     except HTTPException as exc:
+        if row["is_gift"]:
+            return {"item": item, "reason": AuditReason.GIFT_ITEM}
         raise InventoryAuditFault(
             reason=AuditReason.FAILURE_INVALID_PRICE_CHIP,
             detail="invalid_price_chip",
@@ -546,15 +621,9 @@ def _decision_for_row(conn, row) -> dict:
             "SELECT label, price FROM product_price_chips WHERE id = ?",
             (chip_id,),
         ).fetchone()
-    is_display = conn.execute(
-        """SELECT 1 FROM product_attribute_values
-           WHERE product_id = ? AND attribute_type = 'trung_bay' AND value = 'true'""",
-        (product_id,),
-    ).fetchone() is not None
     item = ItemSnapshot(
         **{
             **item.__dict__,
-            "is_display": is_display,
             "resolved_bucket": "price_chip" if chip_id is not None else "base",
             "resolved_price_chip_id": chip_id,
             "resolved_price_chip_label": (
@@ -567,6 +636,9 @@ def _decision_for_row(conn, row) -> dict:
             ),
         }
     )
+    if row["is_gift"]:
+        return {"item": item, "reason": AuditReason.GIFT_ITEM}
+
     before = snapshot_inventory(conn, product_id, chip_id)
     if not is_display:
         reason = AuditReason.NON_DISPLAY_PRODUCT
@@ -583,7 +655,7 @@ def _decision_for_row(conn, row) -> dict:
     else:
         reason = AuditReason.SOURCE_DEFAULT_SKIP
         should_consume = False
-    if fallback and is_display:
+    if fallback and is_display and should_consume:
         reason = AuditReason.PRICE_CHIP_FALLBACK_TO_BASE
     return {
         "item": item,
@@ -880,6 +952,13 @@ def audited_restore_stock_for_order(
         (order_ref,),
     ).fetchall()
     captured = _capture_movement_snapshots(conn, movements, rows)
+    plans = {
+        plan["movement"]["id"]: plan
+        for plan in _sale_restore_plans(conn, order_ref)
+    }
+    max_movement = conn.execute(
+        "SELECT COALESCE(MAX(id), 0) AS id FROM stock_movements"
+    ).fetchone()["id"]
     try:
         restore_stock_for_order(conn, order_id, order_ref)
     except InventoryAuditFault as exc:
@@ -894,16 +973,31 @@ def audited_restore_stock_for_order(
                 before=before,
             ) from exc
         raise
+    new_restores = conn.execute(
+        """SELECT id, reason FROM stock_movements
+           WHERE id > ? AND reference_id = ? AND movement_type = 'restore_sale'
+           ORDER BY id""",
+        (max_movement, order_ref),
+    ).fetchall()
+    restores_by_reason = {row["reason"]: row for row in new_restores}
+    running_snapshots: dict[tuple[int, int | None], InventorySnapshot] = {}
     entries = []
-    for movement, item, before in captured:
-        after = snapshot_inventory(conn, movement["product_id"], movement["price_chip_id"])
-        restore = conn.execute(
-            """SELECT id FROM stock_movements WHERE reference_id = ?
-               AND movement_type = 'restore_sale' AND product_id = ?
-               AND price_chip_id IS NOT DISTINCT FROM ? ORDER BY id DESC LIMIT 1""",
-            (order_ref, movement["product_id"], movement["price_chip_id"]),
-        ).fetchone()
-        changed = after != before
+    for movement, item, captured_before in captured:
+        bucket = (movement["product_id"], movement["price_chip_id"])
+        before = running_snapshots.get(bucket, captured_before)
+        plan = plans[movement["id"]]
+        restore = restores_by_reason.get(
+            _restore_reason(order_ref, movement["id"])
+        )
+        changed = restore is not None
+        if changed:
+            after = InventorySnapshot.from_counts(
+                (before.fifo_available or 0) + plan["fifo_qty"],
+                (before.negative or 0) - plan["negative_qty"],
+            )
+        else:
+            after = before
+        running_snapshots[bucket] = after
         entries.append(
             append_entry(
                 conn,
@@ -917,6 +1011,9 @@ def audited_restore_stock_for_order(
                     before=before,
                     after=after,
                     stock_movement_id=restore["id"] if restore else None,
+                    negative_movement_id=(
+                        plan["negative_movement_id"] if changed else None
+                    ),
                 ),
             )
         )

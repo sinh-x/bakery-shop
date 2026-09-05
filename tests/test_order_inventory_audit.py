@@ -493,6 +493,114 @@ def test_phase2_creation_decision_matrix_and_base_fallback(api_client):
         assert entry.applied_delta == 0
 
 
+def test_review_fallback_preserves_opt_out_and_source_skip_reasons(api_client):
+    _set_display(1)
+
+    opt_out = _create_api_order(
+        api_client,
+        [{
+            "productId": "1",
+            "productName": "Fallback tắt tồn",
+            "quantity": 1,
+            "unitPrice": 987654,
+            "attributes": {"useInventory": False},
+        }],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    source_skip = _create_api_order(
+        api_client,
+        [{
+            "productId": "1",
+            "productName": "Fallback nguồn bỏ qua",
+            "quantity": 1,
+            "unitPrice": 987654,
+        }],
+        source="Đặt trước",
+    )
+    assert api_client.post(
+        f"/api/orders/{source_skip['orderRef']}/status",
+        json={"status": "confirmed"},
+    ).status_code == 200
+
+    with get_db() as conn:
+        opt_out_entry = query_order_entries(
+            conn, order_ref=opt_out["orderRef"]
+        )[0]
+        source_skip_entry = query_order_entries(
+            conn, order_ref=source_skip["orderRef"]
+        )[0]
+
+        assert opt_out_entry.outcome == AuditOutcome.SKIPPED
+        assert opt_out_entry.reason == AuditReason.EXPLICIT_INVENTORY_OPT_OUT
+        assert opt_out_entry.item.resolved_bucket == "base"
+        assert opt_out_entry.item.resolved_price_chip_id is None
+        assert opt_out_entry.applied_delta == 0
+        assert source_skip_entry.outcome == AuditOutcome.SKIPPED
+        assert source_skip_entry.reason == AuditReason.SOURCE_DEFAULT_SKIP
+        assert source_skip_entry.item.resolved_bucket == "base"
+        assert source_skip_entry.item.resolved_price_chip_id is None
+        assert source_skip_entry.applied_delta == 0
+
+
+def test_review_gift_snapshots_resolve_numeric_and_code_product_identity(api_client):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Gift identity chip", 17501)
+    with get_db() as conn:
+        product = conn.execute(
+            "SELECT product_code FROM products WHERE id = 1"
+        ).fetchone()
+        product_code = product["product_code"]
+
+    order = _create_api_order(
+        api_client,
+        [
+            {
+                "productId": "1",
+                "productName": "Quà theo mã số",
+                "quantity": 1,
+                "unitPrice": 17501,
+                "priceChipId": chip_id,
+                "isGift": True,
+            },
+            {
+                "productId": product_code,
+                "productName": "Quà theo mã sản phẩm",
+                "quantity": 1,
+                "unitPrice": 17501,
+                "priceChipId": chip_id,
+                "isGift": True,
+            },
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        gifts = {
+            entry.item.product_name: entry
+            for entry in query_order_entries(conn, order_ref=order["orderRef"])
+        }
+        assert set(gifts) == {"Quà theo mã số", "Quà theo mã sản phẩm"}
+        for name, entry in gifts.items():
+            assert entry.reason == AuditReason.GIFT_ITEM
+            assert entry.outcome == AuditOutcome.SKIPPED
+            assert entry.item.product_id == 1
+            assert entry.item.product_code == product_code
+            assert entry.item.product_name == name
+            assert entry.item.price_chip_id == chip_id
+            assert entry.item.price_chip_label == "Gift identity chip"
+            assert entry.item.is_gift is True
+            assert entry.item.is_display is True
+            assert entry.item.resolved_bucket == "price_chip"
+            assert entry.item.resolved_price_chip_id == chip_id
+            assert entry.item.resolved_price_chip_label == "Gift identity chip"
+            assert entry.before == InventorySnapshot()
+            assert entry.after == InventorySnapshot()
+
+
 def test_phase5_authenticated_actor_precedes_client_fallback(auth_client):
     with get_db() as conn:
         staff_id = int(
@@ -637,6 +745,142 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
         assert reevaluation.context.trigger == AuditTrigger.RE_EVALUATION
         assert reevaluation.outcome == AuditOutcome.APPLIED
         assert _available(conn, 1, chip_id) == 4
+
+
+def test_review_duplicate_bucket_cancel_restores_each_sale_once(api_client):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Duplicate restore", 18501)
+    assert api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Trùng một", "quantity": 1,
+             "unitPrice": 18501, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Trùng hai", "quantity": 1,
+             "unitPrice": 18501, "priceChipId": chip_id},
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+    assert api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "khách hủy"},
+    ).status_code == 200
+
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id) == InventorySnapshot(
+            fifo_available=2, negative=0, net=2
+        )
+        restores = conn.execute(
+            "SELECT id, quantity FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'restore_sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        assert [row["quantity"] for row in restores] == [1, 1]
+        cancel_entries = sorted(
+            (
+                entry for entry in query_order_entries(conn, order_ref=ref)
+                if entry.reason == AuditReason.CANCEL_RESTORE
+            ),
+            key=lambda entry: entry.id,
+        )
+        assert len(cancel_entries) == 2
+        assert [(entry.before.net, entry.after.net) for entry in cancel_entries] == [
+            (0, 1),
+            (1, 2),
+        ]
+        assert sum(entry.applied_delta or 0 for entry in cancel_entries) == 2
+        assert [entry.stock_movement_id for entry in cancel_entries] == [
+            row["id"] for row in restores
+        ]
+        assert len({entry.stock_movement_id for entry in cancel_entries}) == 2
+
+    assert api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "khôi phục lặp"},
+    ).status_code == 200
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id).net == 2
+        assert conn.execute(
+            "SELECT COUNT(*) AS qty FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()["qty"] == 2
+        repeated = query_order_entries(conn, order_ref=ref)[:2]
+        assert all(entry.outcome == AuditOutcome.NO_EFFECT for entry in repeated)
+        assert all(entry.reason == AuditReason.IDEMPOTENT_REPEAT for entry in repeated)
+        assert all(entry.applied_delta == 0 for entry in repeated)
+        assert all(entry.before == entry.after for entry in repeated)
+        assert all(entry.stock_movement_id is None for entry in repeated)
+
+
+def test_review_duplicate_bucket_oversold_cancel_clears_each_negative(api_client):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Duplicate negative restore", 18601)
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Âm trùng một", "quantity": 1,
+             "unitPrice": 18601, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Âm trùng hai", "quantity": 1,
+             "unitPrice": 18601, "priceChipId": chip_id},
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id).negative == 2
+
+    assert api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "hủy bán âm"},
+    ).status_code == 200
+
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id) == InventorySnapshot(
+            fifo_available=0, negative=0, net=0
+        )
+        restores = conn.execute(
+            "SELECT id, quantity FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'restore_sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        negative_sales = conn.execute(
+            "SELECT id FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'negative_sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        assert [row["quantity"] for row in restores] == [1, 1]
+        cancel_entries = sorted(
+            (
+                entry for entry in query_order_entries(conn, order_ref=ref)
+                if entry.reason == AuditReason.CANCEL_RESTORE
+            ),
+            key=lambda entry: entry.id,
+        )
+        assert len(cancel_entries) == 2
+        assert [(entry.before.negative, entry.after.negative) for entry in cancel_entries] == [
+            (2, 1),
+            (1, 0),
+        ]
+        assert [(entry.before.net, entry.after.net) for entry in cancel_entries] == [
+            (-2, -1),
+            (-1, 0),
+        ]
+        assert sum(entry.applied_delta or 0 for entry in cancel_entries) == 2
+        assert [entry.stock_movement_id for entry in cancel_entries] == [
+            row["id"] for row in restores
+        ]
+        assert [entry.negative_movement_id for entry in cancel_entries] == [
+            row["id"] for row in negative_sales
+        ]
 
 
 def test_phase2_reconciliation_and_work_item_paths_share_trusted_context(api_client):
@@ -799,6 +1043,62 @@ def test_phase5_order_edit_entry_point_records_sanitized_outer_failure(
         assert failed.reason == AuditReason.FAILURE_UNEXPECTED
         assert failed.detail == "edit_inventory_failed"
         assert "outer-edit-secret" not in (failed.detail or "")
+
+
+def test_review_later_item_fifo_failure_keeps_exact_item_and_snapshot(api_client):
+    _set_display(1)
+    first_chip = _create_chip(api_client, 1, "Failure first chip", 18801)
+    failing_chip = _create_chip(api_client, 1, "Failure second chip", 18802)
+    assert api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 1, "price_chip_id": first_chip},
+    ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Mục đủ tồn", "quantity": 1,
+             "unitPrice": 18801, "priceChipId": first_chip,
+             "attributes": {"useInventory": True}},
+            {"productId": "1", "productName": "Mục thiếu tồn", "quantity": 1,
+             "unitPrice": 18802, "priceChipId": failing_chip,
+             "attributes": {"useInventory": True}},
+        ],
+        source="Đặt trước",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        context = _service_context(int(order["id"]), ref)
+        assert not execute_inventory_audit_savepoint(
+            conn,
+            context=context,
+            operation=lambda: audited_auto_decrement_stock(
+                conn, int(order["id"]), ref, context
+            ),
+            failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+            failure_detail="fifo_outer_failed",
+        )
+        assert snapshot_inventory(conn, 1, first_chip).net == 1
+        assert snapshot_inventory(conn, 1, failing_chip).net == 0
+        assert conn.execute(
+            "SELECT 1 FROM stock_movements WHERE reference_id = ?", (ref,)
+        ).fetchone() is None
+        failed = query_order_entries(conn, order_ref=ref)[0]
+        saved_items = load_order_inventory_rows(conn, int(order["id"]))
+        failing_item_id = next(
+            row["id"] for row in saved_items if row["product_name"] == "Mục thiếu tồn"
+        )
+        assert failed.outcome == AuditOutcome.FAILED
+        assert failed.reason == AuditReason.FAILURE_INSUFFICIENT_STOCK
+        assert failed.detail == "inventory_fifo_rejected"
+        assert failed.item.order_item_id == failing_item_id
+        assert failed.item.product_id == 1
+        assert failed.item.product_name == "Mục thiếu tồn"
+        assert failed.item.price_chip_id == failing_chip
+        assert failed.item.price_chip_label == "Failure second chip"
+        assert failed.item.resolved_price_chip_id == failing_chip
+        assert failed.before == InventorySnapshot(fifo_available=0, negative=0, net=0)
+        assert failed.after == failed.before
 
 
 def test_phase2_fifo_fault_rolls_back_partial_consumption(monkeypatch, api_client):
