@@ -16,7 +16,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Callable, Iterable
+from typing import Callable, Final, Iterable
 
 from baker.utils.time import normalize_timestamp, now_utc
 
@@ -25,6 +25,38 @@ logger = logging.getLogger("baker.server")
 DEFAULT_QUERY_LIMIT = 100
 MAX_QUERY_LIMIT = 500
 MAX_DETAIL_LENGTH = 500
+
+# These are module-owned SQL structure, never request/user data. Keeping every
+# interpolated identifier and WHERE fragment in immutable constants makes the
+# narrow B608 suppressions below auditable while all row values remain bound.
+_AUDIT_INSERT_COLUMNS: Final[tuple[str, ...]] = (
+    "operation_id", "order_id", "order_ref", "trigger", "action",
+    "status_before", "status_after", "actor_identifier", "actor_username",
+    "actor_staff_id", "actor_staff_name", "actor_role", "created_at",
+    "outcome", "reason_code", "detail", "order_item_id", "product_id",
+    "product_code", "product_name", "is_gift", "is_display", "source",
+    "requested_quantity", "price_chip_id", "price_chip_label",
+    "use_inventory_present", "use_inventory_value", "resolved_bucket",
+    "resolved_price_chip_id", "resolved_price_chip_label",
+    "resolved_unit_price", "requested_delta", "applied_delta",
+    "before_fifo_available", "before_negative", "before_net",
+    "after_fifo_available", "after_negative", "after_net",
+    "stock_movement_id", "negative_movement_id", "related_entry_id",
+)
+_ORDER_FILTER_SQL: Final[frozenset[str]] = frozenset(
+    {
+        "order_id = ?",
+        "order_ref = ?",
+        "order_id = ? AND order_ref = ?",
+    }
+)
+_RECONCILIATION_LINE_COLUMNS: Final[frozenset[str]] = frozenset(
+    {
+        "linked_order_item_id",
+        "linked_stock_movement_sale_id",
+        "linked_stock_movement_waste_id",
+    }
+)
 
 
 class AuditTrigger(str, Enum):
@@ -407,20 +439,7 @@ def snapshot_inventory(
 def append_entry(conn, draft: AuditEntryDraft) -> AuditEntry:
     """Append one entry inside the caller's current transaction."""
     _validate_outcome_reason(draft.outcome, draft.reason)
-    columns = (
-        "operation_id", "order_id", "order_ref", "trigger", "action",
-        "status_before", "status_after", "actor_identifier", "actor_username",
-        "actor_staff_id", "actor_staff_name", "actor_role", "created_at",
-        "outcome", "reason_code", "detail", "order_item_id", "product_id",
-        "product_code", "product_name", "is_gift", "is_display", "source",
-        "requested_quantity", "price_chip_id", "price_chip_label",
-        "use_inventory_present", "use_inventory_value", "resolved_bucket",
-        "resolved_price_chip_id", "resolved_price_chip_label",
-        "resolved_unit_price", "requested_delta", "applied_delta",
-        "before_fifo_available", "before_negative", "before_net",
-        "after_fifo_available", "after_negative", "after_net",
-        "stock_movement_id", "negative_movement_id", "related_entry_id",
-    )
+    columns = _AUDIT_INSERT_COLUMNS
     item = draft.item
     actor = draft.context.actor
     values = (
@@ -441,9 +460,11 @@ def append_entry(conn, draft: AuditEntryDraft) -> AuditEntry:
         draft.stock_movement_id, draft.negative_movement_id, draft.related_entry_id,
     )
     placeholders = ", ".join("?" for _ in columns)
+    # ``columns`` is the immutable module tuple above and placeholders are only
+    # generated ``?`` tokens; neither SQL fragment can contain caller data.
     cursor = conn.execute(
         f"INSERT INTO order_inventory_audit_entries ({', '.join(columns)}) "
-        f"VALUES ({placeholders})",
+        f"VALUES ({placeholders})",  # nosec B608
         values,
     )
     return _get_entry(conn, int(cursor.lastrowid))
@@ -477,9 +498,11 @@ def query_order_entries(
     """Return one order's entries by ``created_at DESC, id DESC``."""
     where_sql, params = _order_filter(order_id=order_id, order_ref=order_ref)
     _validate_page(limit, offset)
+    # ``where_sql`` is selected only from the immutable internal allow-list;
+    # order identifiers and pagination remain bound parameters.
     rows = conn.execute(
         "SELECT * FROM order_inventory_audit_entries "
-        f"WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+        f"WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",  # nosec B608
         (*params, limit, offset),
     ).fetchall()
     return [_row_to_entry(row) for row in rows]
@@ -493,8 +516,10 @@ def count_order_entries(
 ) -> int:
     """Count immutable entries for one order without loading snapshots."""
     where_sql, params = _order_filter(order_id=order_id, order_ref=order_ref)
+    # ``where_sql`` is selected only from the immutable internal allow-list;
+    # the order ID/reference value remains a bound parameter.
     row = conn.execute(
-        f"SELECT COUNT(*) AS total FROM order_inventory_audit_entries WHERE {where_sql}",
+        f"SELECT COUNT(*) AS total FROM order_inventory_audit_entries WHERE {where_sql}",  # nosec B608
         params,
     ).fetchone()
     return int(row["total"] if row else 0)
@@ -670,6 +695,7 @@ def _add_direct_reconciliation_links(
     entry_attribute: str,
     line_column: str,
 ) -> None:
+    line_column = _validate_reconciliation_line_column(line_column)
     entries_by_value: dict[int, list[AuditEntry]] = {}
     for entry in entries:
         value = getattr(entry.item, entry_attribute, None)
@@ -681,12 +707,14 @@ def _add_direct_reconciliation_links(
         return
 
     placeholders = ", ".join("?" for _ in entries_by_value)
+    # ``line_column`` was validated against the immutable internal column
+    # allow-list; placeholders are generated ``?`` tokens and values are bound.
     rows = conn.execute(
         "SELECT rl.session_id, rl.id AS line_id, rsr.id AS sale_row_id, "
         f"rl.{line_column} AS match_id "
         "FROM reconciliation_lines rl "
         "LEFT JOIN reconciliation_sale_rows rsr ON rsr.line_id = rl.id "
-        f"WHERE rl.{line_column} IN ({placeholders})",
+        f"WHERE rl.{line_column} IN ({placeholders})",  # nosec B608
         tuple(entries_by_value),
     ).fetchall()
     for row in rows:
@@ -753,10 +781,23 @@ def _order_filter(
     if order_id is None and order_ref is None:
         raise ValueError("order_id or order_ref is required")
     if order_id is not None and order_ref is not None:
-        return "order_id = ? AND order_ref = ?", (order_id, order_ref)
-    if order_id is not None:
-        return "order_id = ?", (order_id,)
-    return "order_ref = ?", (order_ref,)
+        where_sql = "order_id = ? AND order_ref = ?"
+        params = (order_id, order_ref)
+    elif order_id is not None:
+        where_sql = "order_id = ?"
+        params = (order_id,)
+    else:
+        where_sql = "order_ref = ?"
+        params = (order_ref,)
+    if where_sql not in _ORDER_FILTER_SQL:
+        raise RuntimeError("order audit filter is not allow-listed")
+    return where_sql, params
+
+
+def _validate_reconciliation_line_column(line_column: str) -> str:
+    if line_column not in _RECONCILIATION_LINE_COLUMNS:
+        raise ValueError("reconciliation line column is not allow-listed")
+    return line_column
 
 
 def _get_entry(conn, entry_id: int) -> AuditEntry:

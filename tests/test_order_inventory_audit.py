@@ -10,6 +10,11 @@ from baker.db.schema import ensure_schema
 from baker.services.inventory_fifo import create_lot_with_items
 from baker.services import order_stock
 from baker.services.order_inventory_audit import (
+    _AUDIT_INSERT_COLUMNS,
+    _ORDER_FILTER_SQL,
+    _RECONCILIATION_LINE_COLUMNS,
+    _order_filter,
+    _validate_reconciliation_line_column,
     AuditAction,
     AuditActor,
     AuditEntryDraft,
@@ -88,6 +93,33 @@ def _context(
         operation_id=operation_id,
         created_at=created_at,
     )
+
+
+def test_dynamic_sql_fragments_are_immutable_and_explicitly_allow_listed():
+    assert isinstance(_AUDIT_INSERT_COLUMNS, tuple)
+    assert len(_AUDIT_INSERT_COLUMNS) == len(set(_AUDIT_INSERT_COLUMNS))
+    assert all(column.isidentifier() for column in _AUDIT_INSERT_COLUMNS)
+    assert _ORDER_FILTER_SQL == frozenset(
+        {
+            "order_id = ?",
+            "order_ref = ?",
+            "order_id = ? AND order_ref = ?",
+        }
+    )
+    assert {
+        _order_filter(order_id=1, order_ref=None)[0],
+        _order_filter(order_id=None, order_ref="AUDIT-001")[0],
+        _order_filter(order_id=1, order_ref="AUDIT-001")[0],
+    } == _ORDER_FILTER_SQL
+    assert _RECONCILIATION_LINE_COLUMNS == frozenset(
+        {
+            "linked_order_item_id",
+            "linked_stock_movement_sale_id",
+            "linked_stock_movement_waste_id",
+        }
+    )
+    with pytest.raises(ValueError, match="not allow-listed"):
+        _validate_reconciliation_line_column("linked_order_item_id OR 1=1")
 
 
 def test_operation_context_generates_unique_id_and_utc_timestamp():
