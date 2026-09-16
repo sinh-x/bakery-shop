@@ -14,9 +14,10 @@ import logging
 import re
 import sqlite3
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Callable, Final, Iterable
+from typing import Final
 
 from baker.utils.time import normalize_timestamp, now_utc
 
@@ -199,7 +200,7 @@ class InventorySnapshot:
             raise ValueError("net must equal FIFO available minus negative balance")
 
     @classmethod
-    def from_counts(cls, fifo_available: int, negative: int) -> "InventorySnapshot":
+    def from_counts(cls, fifo_available: int, negative: int) -> InventorySnapshot:
         available = int(fifo_available)
         negative_count = int(negative)
         return cls(
@@ -359,6 +360,11 @@ def execute_inventory_audit_savepoint(
     non-blocking order transition behavior.
     """
     savepoint = f"order_inventory_audit_{uuid.uuid4().hex}"
+    # SQLite RELEASE commits an outermost savepoint. Start an explicit outer
+    # transaction when the request has only performed reads so inventory and
+    # evidence remain rollback-able with the later order status mutation.
+    if not conn.in_transaction:
+        conn.execute("BEGIN")
     try:
         conn.execute(f"SAVEPOINT {savepoint}")
         operation()

@@ -4,11 +4,13 @@ import json
 
 from fastapi import HTTPException
 
+from baker.logging import logger
+from baker.models.event import Event
 from baker.services.inventory_fifo import (
     consume_fifo_items,
     create_lot_with_items,
-    normalize_price_value,
     normalize_price_chip,
+    normalize_price_value,
     resolve_price_bucket_chip_id,
     upsert_negative_balance,
 )
@@ -24,8 +26,6 @@ from baker.services.order_inventory_audit import (
     append_entry,
     snapshot_inventory,
 )
-from baker.logging import logger
-from baker.models.event import Event
 from baker.utils.time import now_utc
 
 
@@ -410,6 +410,7 @@ def _sale_restore_plans(conn, order_ref: str) -> list[dict]:
         )
 
     plans = []
+    negative_remaining_by_bucket: dict[tuple[int, int | None], int] = {}
     for sale in sales:
         bucket = (sale["product_id"], sale["price_chip_id"])
         fifo_qty = int(
@@ -431,11 +432,29 @@ def _sale_restore_plans(conn, order_ref: str) -> list[dict]:
         restored_negative = min(
             negative_qty, already_restored - restored_fifo
         )
+        outstanding_negative = negative_qty - restored_negative
+        if bucket not in negative_remaining_by_bucket:
+            negative_row = conn.execute(
+                "SELECT qty FROM negative_balance "
+                "WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?",
+                bucket,
+            ).fetchone()
+            negative_remaining_by_bucket[bucket] = max(
+                0, int(negative_row["qty"] if negative_row else 0)
+            )
+        # Reconciliation can net or clear a bucket's aggregate negative balance
+        # after this order's sale. Restore only the deficit that still exists;
+        # otherwise cancellation would claim a larger effect than storage can
+        # apply and audit snapshot construction could underflow below zero.
+        outstanding_negative = min(
+            outstanding_negative, negative_remaining_by_bucket[bucket]
+        )
+        negative_remaining_by_bucket[bucket] -= outstanding_negative
         plans.append(
             {
                 "movement": sale,
                 "fifo_qty": fifo_qty - restored_fifo,
-                "negative_qty": negative_qty - restored_negative,
+                "negative_qty": outstanding_negative,
                 "negative_movement_id": (
                     negative_movements[0]["id"] if negative_movements else None
                 ),
@@ -845,7 +864,6 @@ def _snapshot_for_movement(
         "SELECT id, product_code, name FROM products WHERE id = ?",
         (movement["product_id"],),
     ).fetchone()
-    matched = None
     matched_snapshot = None
     match_index = 0
     for row in item_rows:
@@ -855,7 +873,6 @@ def _snapshot_for_movement(
             and decision.get("chip_id") == movement["price_chip_id"]
         ):
             if match_index == bucket_occurrence:
-                matched = row
                 matched_snapshot = decision["item"]
                 break
             match_index += 1
@@ -920,6 +937,14 @@ def audited_reverse_order_stock_for_edit(
         (order_ref,),
     ).fetchall()
     captured = _capture_movement_snapshots(conn, movements, rows)
+    plans = {
+        plan["movement"]["id"]: plan
+        for plan in _sale_restore_plans(conn, order_ref)
+    }
+    last_movement_by_bucket = {
+        (movement["product_id"], movement["price_chip_id"]): movement["id"]
+        for movement in movements
+    }
     try:
         mutation = reverse_operation or reverse_order_stock_for_edit
         mutation(conn, order_id, order_ref)
@@ -936,8 +961,27 @@ def audited_reverse_order_stock_for_edit(
             before=before,
         ) from exc
     entries = []
-    for movement, item, before in captured:
-        after = snapshot_inventory(conn, movement["product_id"], movement["price_chip_id"])
+    running_snapshots: dict[tuple[int, int | None], InventorySnapshot] = {}
+    for movement, item, captured_before in captured:
+        bucket = (movement["product_id"], movement["price_chip_id"])
+        before = running_snapshots.get(bucket, captured_before)
+        plan = plans.get(movement["id"])
+        if plan is None:
+            after = before
+        else:
+            restored_negative = min(
+                plan["negative_qty"], before.negative or 0
+            )
+            after = InventorySnapshot.from_counts(
+                (before.fifo_available or 0) + plan["fifo_qty"],
+                (before.negative or 0) - restored_negative,
+            )
+        if last_movement_by_bucket[bucket] == movement["id"]:
+            # Use the actual mutation result for the final entry in each
+            # bucket. This both anchors the chain to actual storage and makes
+            # the last entry absorb any legacy-data discrepancy in the plan.
+            after = snapshot_inventory(conn, *bucket)
+        running_snapshots[bucket] = after
         entries.append(
             append_entry(
                 conn,

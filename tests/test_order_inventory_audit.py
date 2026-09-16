@@ -7,14 +7,12 @@ import pytest
 
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
-from baker.services.inventory_fifo import create_lot_with_items
 from baker.services import order_stock
+from baker.services.inventory_fifo import create_lot_with_items
 from baker.services.order_inventory_audit import (
     _AUDIT_INSERT_COLUMNS,
     _ORDER_FILTER_SQL,
     _RECONCILIATION_LINE_COLUMNS,
-    _order_filter,
-    _validate_reconciliation_line_column,
     AuditAction,
     AuditActor,
     AuditEntryDraft,
@@ -23,6 +21,8 @@ from baker.services.order_inventory_audit import (
     AuditTrigger,
     InventorySnapshot,
     ItemSnapshot,
+    _order_filter,
+    _validate_reconciliation_line_column,
     append_entries,
     append_entry,
     count_order_entries,
@@ -779,6 +779,60 @@ def test_phase2_status_edit_cancel_repeat_and_rejection_evidence(api_client):
         assert _available(conn, 1, chip_id) == 4
 
 
+def test_review_duplicate_bucket_edit_reversal_snapshots_do_not_overcount(
+    api_client,
+):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Duplicate edit reversal", 18251)
+    assert api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Dòng cũ một", "quantity": 1,
+             "unitPrice": 18251, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Dòng cũ hai", "quantity": 1,
+             "unitPrice": 18251, "priceChipId": chip_id},
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    response = api_client.patch(
+        f"/api/orders/{order['orderRef']}",
+        json={"items": [
+            {"productId": "1", "productName": "Dòng mới", "quantity": 1,
+             "unitPrice": 18251, "priceChipId": chip_id}
+        ]},
+    )
+    assert response.status_code == 200
+
+    with get_db() as conn:
+        reversals = sorted(
+            (
+                entry
+                for entry in query_order_entries(
+                    conn, order_ref=order["orderRef"], limit=100
+                )
+                if entry.reason == AuditReason.EDIT_REVERSAL
+            ),
+            key=lambda entry: entry.id,
+        )
+        assert len(reversals) == 2
+        assert [entry.item.product_name for entry in reversals] == [
+            "Dòng cũ một",
+            "Dòng cũ hai",
+        ]
+        assert [entry.before.net for entry in reversals] == [0, 1]
+        assert [entry.after.net for entry in reversals] == [1, 2]
+        assert [entry.applied_delta for entry in reversals] == [1, 1]
+        assert sum(entry.applied_delta or 0 for entry in reversals) == 2
+        assert snapshot_inventory(conn, 1, chip_id).net == 1
+
+
 def test_review_duplicate_bucket_cancel_restores_each_sale_once(api_client):
     _set_display(1)
     chip_id = _create_chip(api_client, 1, "Duplicate restore", 18501)
@@ -913,6 +967,72 @@ def test_review_duplicate_bucket_oversold_cancel_clears_each_negative(api_client
         assert [entry.negative_movement_id for entry in cancel_entries] == [
             row["id"] for row in negative_sales
         ]
+
+
+def test_cancel_restores_only_negative_balance_still_outstanding(api_client):
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Partially reconciled negative", 18602)
+    order = _create_api_order(
+        api_client,
+        [
+            {"productId": "1", "productName": "Âm đã đối soát một", "quantity": 1,
+             "unitPrice": 18602, "priceChipId": chip_id},
+            {"productId": "1", "productName": "Âm đã đối soát hai", "quantity": 1,
+             "unitPrice": 18602, "priceChipId": chip_id},
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id).negative == 2
+        # Reconciliation may settle part of the aggregate deficit before the
+        # originating order is cancelled. The remaining unit is the only
+        # inventory effect cancellation can truthfully reverse.
+        conn.execute(
+            "UPDATE negative_balance SET qty = 1 "
+            "WHERE product_id = ? AND price_chip_id = ?",
+            (1, chip_id),
+        )
+
+    response = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "hủy sau đối soát"},
+    )
+    assert response.status_code == 200
+
+    with get_db() as conn:
+        assert snapshot_inventory(conn, 1, chip_id) == InventorySnapshot(
+            fifo_available=0, negative=0, net=0
+        )
+        restores = conn.execute(
+            "SELECT quantity FROM stock_movements WHERE reference_id = ? "
+            "AND movement_type = 'restore_sale' ORDER BY id",
+            (ref,),
+        ).fetchall()
+        assert [row["quantity"] for row in restores] == [1]
+        cancel_entries = sorted(
+            (
+                entry for entry in query_order_entries(conn, order_ref=ref)
+                if entry.context.action == AuditAction.INVENTORY_RESTORE
+            ),
+            key=lambda entry: entry.id,
+        )
+        assert len(cancel_entries) == 2
+        assert [entry.outcome for entry in cancel_entries] == [
+            AuditOutcome.REVERSED,
+            AuditOutcome.NO_EFFECT,
+        ]
+        assert [entry.reason for entry in cancel_entries] == [
+            AuditReason.CANCEL_RESTORE,
+            AuditReason.IDEMPOTENT_REPEAT,
+        ]
+        assert [(entry.before.net, entry.after.net) for entry in cancel_entries] == [
+            (-1, 0),
+            (0, 0),
+        ]
+        assert [entry.applied_delta for entry in cancel_entries] == [1, 0]
 
 
 def test_phase2_reconciliation_and_work_item_paths_share_trusted_context(api_client):
@@ -1193,6 +1313,49 @@ def test_review_same_bucket_failure_uses_committed_post_rollback_snapshot(api_cl
                 (failed.id,),
             )
         assert query_order_entries(conn, order_ref=ref)[0] == failed
+
+
+def test_status_rejection_rolls_back_pre_update_inventory_side_effects(
+    monkeypatch,
+    api_client,
+):
+    from baker.models.order import Order
+
+    _set_display(1)
+    chip_id = _create_chip(api_client, 1, "Rejected transition", 18901)
+    assert api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 1, "price_chip_id": chip_id},
+    ).status_code == 200
+    order = _create_api_order(
+        api_client,
+        [{"productId": "1", "productName": "Không được trừ", "quantity": 1,
+          "unitPrice": 18901, "priceChipId": chip_id,
+          "attributes": {"useInventory": True}}],
+        source="Đặt trước",
+    )
+    monkeypatch.setattr(Order, "update_status", staticmethod(lambda *args: False))
+
+    response = api_client.post(
+        f"/api/orders/{order['orderRef']}/status",
+        json={"status": "confirmed"},
+    )
+    assert response.status_code == 422
+
+    with get_db() as conn:
+        saved_order = conn.execute(
+            "SELECT status FROM orders WHERE id = ?", (int(order["id"]),)
+        ).fetchone()
+        assert saved_order["status"] == "new"
+        assert snapshot_inventory(conn, 1, chip_id).net == 1
+        assert conn.execute(
+            "SELECT 1 FROM stock_movements WHERE reference_id = ?",
+            (order["orderRef"],),
+        ).fetchone() is None
+        entries = query_order_entries(conn, order_ref=order["orderRef"])
+        assert len(entries) == 1
+        assert entries[0].outcome == AuditOutcome.FAILED
+        assert entries[0].detail == "status_transition_rejected"
 
 
 def test_phase2_fifo_fault_rolls_back_partial_consumption(monkeypatch, api_client):

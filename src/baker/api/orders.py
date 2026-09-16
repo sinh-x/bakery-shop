@@ -340,7 +340,13 @@ def _record_status_rejection(
     context: OperationContext,
     detail_code: str,
 ) -> None:
-    """Durably append a sanitized rejection before the HTTP rollback path."""
+    """Persist only rejection evidence before the HTTP exception rollback.
+
+    A rejection may be discovered after pre-update inventory work. Roll that
+    transaction back first so committing the durable evidence cannot commit a
+    stock mutation for a status change that the order model rejected.
+    """
+    conn.rollback()
     try:
         append_entry(
             conn,
