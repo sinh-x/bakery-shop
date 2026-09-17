@@ -129,4 +129,99 @@ class StockLabels {
   static const khongPhanLoai = 'Không phân loại';
   static const soDongBan = 'Số dòng bán';
   static const dongBanCu = 'Dòng bán cũ';
+
+  // Per-order inventory review (DG-429 Phase 4)
+  static const inventoryReviewTab = 'Kiểm tra tồn kho';
+  static const inventoryAuditLoading = 'Đang tải kiểm tra tồn kho...';
+  static const inventoryAuditEmpty = 'Đơn hàng chưa có lịch sử tồn kho';
+  static const inventoryAuditError = 'Không thể tải kiểm tra tồn kho';
+  static const inventoryAuditRetainedError =
+      'Không thể cập nhật. Dữ liệu đã tải vẫn được giữ lại.';
+  static const inventoryAuditRetry = 'Thử lại';
+  static const inventoryAuditRefresh = 'Làm mới';
+  static const inventoryAuditLoadMore = 'Tải thêm';
+  static const inventoryAuditLoadingMore = 'Đang tải thêm...';
+  static const inventoryAuditOperation = 'Thao tác';
+  static const inventoryAuditTime = 'Thời gian';
+  static const inventoryAuditActor = 'Nhân viên';
+  static const inventoryAuditAction = 'Hành động';
+  static const inventoryAuditOutcome = 'Kết quả';
+  static const inventoryAuditProduct = 'Sản phẩm';
+  static const inventoryAuditPriceChip = 'Tùy chọn giá';
+  static const inventoryAuditRequestedDelta = 'Thay đổi yêu cầu';
+  static const inventoryAuditAppliedDelta = 'Thay đổi thực tế';
+  static const inventoryAuditBeforeNet = 'Tồn trước';
+  static const inventoryAuditAfterNet = 'Tồn sau';
+  static const inventoryAuditReason = 'Lý do';
+  static const inventoryAuditDetails = 'Chi tiết tồn kho và mã kỹ thuật';
+  static const inventoryAuditBefore = 'Trước';
+  static const inventoryAuditAfter = 'Sau';
+  static const inventoryAuditFifo = 'Tồn FIFO';
+  static const inventoryAuditNegative = 'Tồn âm';
+  static const inventoryAuditNet = 'Tồn ròng';
+  static const inventoryAuditEntryId = 'Mã bản ghi';
+  static const inventoryAuditOperationId = 'Mã thao tác';
+  static const inventoryAuditOrderItemId = 'Mã dòng đơn hàng';
+  static const inventoryAuditProductId = 'Mã sản phẩm';
+  static const inventoryAuditStockMovementId = 'Mã biến động kho';
+  static const inventoryAuditNegativeMovementId = 'Mã biến động tồn âm';
+  static const inventoryAuditRelatedEntryId = 'Mã bản ghi liên quan';
+  static const inventoryAuditReconciliationSessionIds = 'Mã phiên đối soát';
+  static const inventoryAuditReconciliationLineIds = 'Mã dòng đối soát';
+  static const inventoryAuditReconciliationSaleRowIds = 'Mã dòng bán đối soát';
+  static const inventoryAuditUnknown = 'Không xác định';
+  static const inventoryAuditNone = 'Không có';
+
+  static String inventoryAuditOperationTitle(int count) =>
+      '$inventoryAuditOperation ($count bản ghi)';
+
+  static String inventoryAuditActionLabel(String value) =>
+      const {
+        'order_create': 'Tạo đơn hàng',
+        'status_change': 'Đổi trạng thái',
+        'order_edit': 'Sửa đơn hàng',
+        'inventory_deduct': 'Trừ tồn kho',
+        'inventory_restore': 'Hoàn tồn kho',
+        'inventory_reverse': 'Đảo biến động cũ',
+        'inventory_reevaluate': 'Đánh giá lại tồn kho',
+      }[value] ??
+      inventoryAuditUnknown;
+
+  static String inventoryAuditOutcomeLabel(String value) =>
+      const {
+        'applied': 'Đã áp dụng',
+        'reversed': 'Đã đảo',
+        'skipped': 'Đã bỏ qua',
+        'no_effect': 'Không thay đổi',
+        'failed': 'Thất bại',
+      }[value] ??
+      inventoryAuditUnknown;
+
+  static String inventoryAuditReasonLabel(String value) =>
+      const {
+        'eligible_display_item': 'Sản phẩm trưng bày hợp lệ',
+        'gift_item': 'Sản phẩm quà tặng',
+        'non_display_product': 'Không phải sản phẩm trưng bày',
+        'explicit_inventory_opt_in': 'Đã chọn dùng tồn kho',
+        'explicit_inventory_opt_out': 'Đã chọn không dùng tồn kho',
+        'missing_product': 'Không tìm thấy sản phẩm',
+        'source_default_consume': 'Nguồn đơn mặc định dùng tồn kho',
+        'source_default_skip': 'Nguồn đơn mặc định không dùng tồn kho',
+        'idempotent_repeat': 'Thao tác lặp lại',
+        'status_no_effect': 'Trạng thái không làm thay đổi tồn kho',
+        'price_chip_fallback_to_base':
+            'Dùng tồn giá cơ sở thay cho tùy chọn giá',
+        'cancel_restore': 'Hoàn tồn do hủy đơn',
+        'edit_reversal': 'Đảo tồn trước khi sửa',
+        'edit_re_evaluation': 'Đánh giá lại sau khi sửa',
+        'negative_sale': 'Ghi nhận bán âm tồn',
+        'failure_invalid_product': 'Sản phẩm không hợp lệ',
+        'failure_invalid_price_chip': 'Tùy chọn giá không hợp lệ',
+        'failure_insufficient_stock': 'Không đủ tồn kho',
+        'failure_fifo_mutation': 'Không thể cập nhật tồn FIFO',
+        'failure_negative_balance_mutation': 'Không thể cập nhật tồn âm',
+        'failure_restore_mutation': 'Không thể hoàn tồn kho',
+        'failure_unexpected': 'Không thể xử lý tồn kho',
+      }[value] ??
+      inventoryAuditUnknown;
 }

@@ -5479,3 +5479,102 @@ def test_v104_registered_in_migration_chain():
     # v104 is pure DDL — no callable, SQL block carries the schema.
     assert MIGRATIONS[104]["sql"].strip() != ""
     assert "callable" not in MIGRATIONS[104] or MIGRATIONS[104]["callable"] is None
+
+
+# ---------------------------------------------------------------------------
+# Migration v105 — append-only per-order inventory audit (DG-429 Phase 1).
+# ---------------------------------------------------------------------------
+
+
+def _assert_order_inventory_audit_schema(conn) -> None:
+    columns = _schema_columns(conn, "order_inventory_audit_entries")
+    assert set(columns) >= {
+        "id", "operation_id", "order_id", "order_ref", "trigger", "action",
+        "status_before", "status_after", "actor_identifier", "actor_username",
+        "actor_staff_id", "actor_staff_name", "actor_role", "created_at",
+        "outcome", "reason_code", "detail", "order_item_id", "product_id",
+        "product_code", "product_name", "is_gift", "is_display", "source",
+        "requested_quantity", "price_chip_id", "price_chip_label",
+        "use_inventory_present", "use_inventory_value", "resolved_bucket",
+        "resolved_price_chip_id", "resolved_price_chip_label",
+        "resolved_unit_price", "requested_delta", "applied_delta",
+        "before_fifo_available", "before_negative", "before_net",
+        "after_fifo_available", "after_negative", "after_net",
+        "stock_movement_id", "negative_movement_id", "related_entry_id",
+    }
+    for name in (
+        "operation_id", "order_id", "order_ref", "trigger", "action",
+        "actor_identifier", "created_at", "outcome", "reason_code",
+    ):
+        assert columns[name]["notnull"] == 1
+    for nullable_name in (
+        "order_item_id", "product_id", "price_chip_id", "use_inventory_present",
+        "use_inventory_value", "before_net", "after_net", "detail",
+    ):
+        assert columns[nullable_name]["notnull"] == 0
+
+    index_names = {
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA index_list(order_inventory_audit_entries)"
+        ).fetchall()
+    }
+    assert {
+        "idx_order_inventory_audit_order_created",
+        "idx_order_inventory_audit_ref_created",
+        "idx_order_inventory_audit_operation",
+    } <= index_names
+    order_index = conn.execute(
+        "PRAGMA index_xinfo(idx_order_inventory_audit_order_created)"
+    ).fetchall()
+    indexed_columns = [row for row in order_index if row["key"] == 1]
+    assert [row["name"] for row in indexed_columns] == [
+        "order_id", "created_at", "id"
+    ]
+    assert [row["desc"] for row in indexed_columns] == [0, 1, 1]
+
+    trigger_names = {
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+        ).fetchall()
+    }
+    assert "trg_order_inventory_audit_no_update" in trigger_names
+    assert "trg_order_inventory_audit_no_delete" in trigger_names
+
+
+def test_schema_migration_v105_fresh_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 105
+        _assert_order_inventory_audit_schema(conn)
+
+
+def test_schema_migration_v104_to_v105_has_no_historical_backfill():
+    with get_db() as conn:
+        _migrate_to_version(conn, 104)
+        cursor = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, items) "
+            "VALUES ('PRE-V105', 'Khách cũ', '[]')"
+        )
+        assert cursor.lastrowid is not None
+
+        _migrate_to_version(conn, 105)
+
+        assert _migrated_version(conn) == 105
+        _assert_order_inventory_audit_schema(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM order_inventory_audit_entries"
+        ).fetchone()[0]
+        assert count == 0
+
+
+def test_schema_migration_v105_idempotent_and_registered():
+    assert max(MIGRATIONS) == 105
+    assert MIGRATIONS[105]["sql"].strip()
+    assert "callable" not in MIGRATIONS[105]
+    with get_db() as conn:
+        ensure_schema(conn)
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 105
+        _assert_order_inventory_audit_schema(conn)

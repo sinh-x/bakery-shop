@@ -591,6 +591,10 @@ MIGRATIONS = {
         "description": "payment_transaction_photos join table linking a single photo to an individual payment transaction (DG-410 Phase 1)",
         "sql": PAYMENT_TRANSACTION_PHOTOS_SCHEMA,
     },
+    105: {
+        "description": "Append-only per-order inventory audit entries and newest-first indexes (DG-429 Phase 1)",
+        "sql": ORDER_INVENTORY_AUDIT_SCHEMA,
+    },
 }
 
 def ensure_schema(conn):

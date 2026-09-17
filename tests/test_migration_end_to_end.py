@@ -6,9 +6,8 @@ data row. This complements the per-version tests in ``test_db_schema.py``
 (which target individual migrations) by asserting the *combined* result of
 the entire chain.
 
-The plan specifies ``v0→v87``; the chain has since been extended (v88
-composite indexes, v89 assigned_staff_id, v90 force_password_change, v91
-cash_drawer). This test runs the full chain to the current max and asserts
+The plan specifies ``v0→v87``; the chain has since been extended through v105
+(order inventory audit). This test runs the full chain to the current max and asserts
 v87's surface explicitly, so it satisfies the FR-DB-1 requirement and stays
 accurate as the chain grows.
 """
@@ -20,7 +19,7 @@ from baker.db.schema import MIGRATIONS, ensure_schema
 
 pytestmark = pytest.mark.critical
 
-# Every table created across all migrations (v1–v91). Sourced from the
+# Every table created across all migrations (v1–v105). Sourced from the
 # migration survey; kept in sync with ``docs/database-schema.md``.
 _EXPECTED_TABLES = {
     # v1
@@ -96,6 +95,8 @@ _EXPECTED_TABLES = {
     "address_library", "customer_addresses",
     # v104
     "payment_transaction_photos",
+    # v105
+    "order_inventory_audit_entries",
 }
 
 # Key composite / unique indexes that must exist after the full chain.
@@ -114,6 +115,9 @@ _EXPECTED_INDEXES = {
     "idx_checklist_entries_unique",
     "idx_catalog_photo_tags_unique",
     "idx_event_history_event",
+    "idx_order_inventory_audit_order_created",  # v105
+    "idx_order_inventory_audit_ref_created",    # v105
+    "idx_order_inventory_audit_operation",      # v105
 }
 
 # Chart-of-accounts codes that must be seeded (v44 + runtime additions v54/v73/v76/v85).

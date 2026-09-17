@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/order.dart';
+import '../models/order_inventory_audit.dart';
 import '../models/order_photo.dart';
 import '../models/paginated_response.dart';
 import 'api_client.dart';
@@ -62,6 +63,24 @@ class OrderService {
   Future<Order> getOrder(String ref) async {
     final response = await _dio.get('/api/orders/$ref');
     return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<OrderInventoryAuditPage> getInventoryAudit(
+    String ref, {
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    if (limit < 1 || limit > 500) {
+      throw RangeError.range(limit, 1, 500, 'limit');
+    }
+    if (offset < 0) throw RangeError.range(offset, 0, null, 'offset');
+    final response = await _dio.get(
+      '/api/orders/$ref/inventory-audit',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    return OrderInventoryAuditPage.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   Future<Order> createOrder({
