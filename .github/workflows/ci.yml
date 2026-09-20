@@ -87,7 +87,7 @@ jobs:
           echo "docker=$(( dk || fallback ))" >> "$GITHUB_OUTPUT"
 
   fast-gate:
-    # Phase 4.3/4.4 — fast smoke tier as PR early-exit gate (<5 min target).
+    # Phase 4.3/4.4 — bounded critical-flow tier as a PR early-exit gate.
     # Phase 4.7 — only runs when the `filter` job detects Python-stack changes
     # or triggers the both-stacks fallback (FR6, AC6).
     needs: filter
@@ -119,9 +119,11 @@ jobs:
       - name: Fast gate tests
         # Phase 4.4 — runs `fast or critical` so critical-flow tests
         # (auth/payments/POS/migrations) are never skipped in the fast gate.
-        # Phase 5.5 — `-n auto` parallelises via pytest-xdist so the 947-test
-        # gate completes comfortably under the 5-min timeout (OPS-1).
-        timeout-minutes: 5
+        # Phase 5.5 — `-n auto` parallelises via pytest-xdist. The critical
+        # suite now exceeds 1,300 tests, so retain a bounded 8-minute cap that
+        # accommodates slower hosted runners while remaining below full-suite
+        # and coverage job bounds (OPS-1).
+        timeout-minutes: 8
         env:
           BAKER_BCRYPT_ROUNDS: "4"
         run: python -m pytest tests -v -n auto -m "fast or critical"

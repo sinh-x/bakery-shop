@@ -2,13 +2,17 @@
 
 import json
 import logging
+import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from baker.api.auth import resolve_actor
-from baker.api.orders import _generate_unique_public_order_code
+from baker.api.orders import (
+    _generate_unique_public_order_code,
+    _inventory_audit_actor,
+)
 from baker.services.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
@@ -23,7 +27,15 @@ from baker.utils.time import now_utc
 from baker.models.order import Order, OrderItem
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
-from baker.services.order_stock import auto_decrement_stock
+from baker.services.order_stock import audited_auto_decrement_stock
+from baker.services.order_inventory_audit import (
+    AuditAction,
+    AuditActor,
+    AuditReason,
+    AuditTrigger,
+    create_operation_context,
+    execute_inventory_audit_savepoint,
+)
 
 logger = logging.getLogger("baker.server")
 
@@ -338,6 +350,9 @@ def _create_sale_orders(
     session_id: int,
     latest_by_key: dict[tuple[int, int | None], dict],
     actor: str,
+    audit_actor: AuditActor,
+    operation_id: str,
+    operation_created_at: str,
 ) -> list[list[dict]]:
     # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
     # entries for reconciliation sale orders (reuses the normal order
@@ -439,7 +454,26 @@ def _create_sale_orders(
                 payment_txn.save(conn)
 
                 Order.update_status(conn, order.order_ref, "delivered", "")
-                auto_decrement_stock(conn, order.id or 0, order.order_ref)
+                audit_context = create_operation_context(
+                    order_id=order.id or 0,
+                    order_ref=order.order_ref,
+                    trigger=AuditTrigger.ORDER_CREATION,
+                    action=AuditAction.INVENTORY_DEDUCT,
+                    actor=audit_actor,
+                    status_before="new",
+                    status_after="delivered",
+                    operation_id=operation_id,
+                    created_at=operation_created_at,
+                )
+                execute_inventory_audit_savepoint(
+                    conn,
+                    context=audit_context,
+                    operation=lambda: audited_auto_decrement_stock(
+                        conn, order.id or 0, order.order_ref, audit_context
+                    ),
+                    failure_reason=AuditReason.FAILURE_FIFO_MUTATION,
+                    failure_detail="reconciliation_sale_inventory_failed",
+                )
 
                 run_journal_sync(
                     _sync_delivered_order_journal,
@@ -641,7 +675,10 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
     # identity rather than trusting free-text client input. Grace period
     # (AUTH_REQUIRED=false) falls back to payload.staff_name.
     staff_name = resolve_actor(request, payload.staff_name.strip()) or payload.staff_name.strip()
+    operation_id = str(uuid.uuid4())
+    operation_created_at = now_utc()
     with get_db() as conn:
+        audit_actor = _inventory_audit_actor(conn, request, payload.staff_name.strip())
         _validate_submit(payload)
 
         latest_products = _load_display_products(conn)
@@ -694,6 +731,9 @@ def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
             session_id,
             latest_by_key,
             staff_name,
+            audit_actor,
+            operation_id,
+            operation_created_at,
         )
 
         waste_movement_ids_by_option: dict[tuple[int, int | None], int] = {}

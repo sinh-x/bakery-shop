@@ -1394,6 +1394,132 @@ CREATE INDEX IF NOT EXISTS idx_payment_transaction_photos_photo
     ON payment_transaction_photos(photo_id);
 """
 
+
+# DG-429 Phase 1: immutable evidence for per-order display-inventory decisions.
+# All links to operational rows are deliberately scalar snapshots rather than
+# foreign keys: product, item, chip, movement, and even order rows may change
+# later, while this evidence must remain readable exactly as recorded. The
+# update/delete triggers enforce the append-only contract below the service
+# layer. History starts when v105 is deployed; this DDL performs no backfill.
+ORDER_INVENTORY_AUDIT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_inventory_audit_entries (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id                TEXT NOT NULL,
+    order_id                    INTEGER NOT NULL,
+    order_ref                   TEXT NOT NULL,
+    trigger                     TEXT NOT NULL CHECK(trigger IN (
+                                    'order_creation', 'status_action', 'order_edit',
+                                    'reversal', 're_evaluation'
+                                )),
+    action                      TEXT NOT NULL CHECK(action IN (
+                                    'order_create', 'status_change', 'order_edit',
+                                    'inventory_deduct', 'inventory_restore',
+                                    'inventory_reverse', 'inventory_reevaluate'
+                                )),
+    status_before               TEXT,
+    status_after                TEXT,
+    actor_identifier            TEXT NOT NULL,
+    actor_username              TEXT,
+    actor_staff_id              INTEGER,
+    actor_staff_name            TEXT,
+    actor_role                  TEXT,
+    created_at                  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+                                CHECK(created_at GLOB '*Z'),
+    outcome                     TEXT NOT NULL CHECK(outcome IN (
+                                    'applied', 'reversed', 'skipped', 'no_effect', 'failed'
+                                )),
+    reason_code                 TEXT NOT NULL CHECK(reason_code IN (
+                                    'eligible_display_item',
+                                    'gift_item',
+                                    'non_display_product',
+                                    'explicit_inventory_opt_in',
+                                    'explicit_inventory_opt_out',
+                                    'missing_product',
+                                    'source_default_consume',
+                                    'source_default_skip',
+                                    'idempotent_repeat',
+                                    'status_no_effect',
+                                    'price_chip_fallback_to_base',
+                                    'cancel_restore',
+                                    'edit_reversal',
+                                    'edit_re_evaluation',
+                                    'negative_sale',
+                                    'failure_invalid_product',
+                                    'failure_invalid_price_chip',
+                                    'failure_insufficient_stock',
+                                    'failure_fifo_mutation',
+                                    'failure_negative_balance_mutation',
+                                    'failure_restore_mutation',
+                                    'failure_unexpected'
+                                )),
+    detail                      TEXT,
+    order_item_id               INTEGER,
+    product_id                  INTEGER,
+    product_code                TEXT,
+    product_name                TEXT,
+    is_gift                     INTEGER CHECK(is_gift IS NULL OR is_gift IN (0, 1)),
+    is_display                  INTEGER CHECK(is_display IS NULL OR is_display IN (0, 1)),
+    source                      TEXT,
+    requested_quantity          INTEGER,
+    price_chip_id               INTEGER,
+    price_chip_label            TEXT,
+    use_inventory_present       INTEGER CHECK(
+                                    use_inventory_present IS NULL OR use_inventory_present IN (0, 1)
+                                ),
+    use_inventory_value         INTEGER CHECK(
+                                    use_inventory_value IS NULL OR use_inventory_value IN (0, 1)
+                                ),
+    resolved_bucket             TEXT CHECK(
+                                    resolved_bucket IS NULL OR resolved_bucket IN ('base', 'price_chip')
+                                ),
+    resolved_price_chip_id      INTEGER,
+    resolved_price_chip_label   TEXT,
+    resolved_unit_price         INTEGER,
+    requested_delta             INTEGER,
+    applied_delta               INTEGER,
+    before_fifo_available       INTEGER,
+    before_negative             INTEGER,
+    before_net                  INTEGER,
+    after_fifo_available        INTEGER,
+    after_negative              INTEGER,
+    after_net                   INTEGER,
+    stock_movement_id           INTEGER,
+    negative_movement_id        INTEGER,
+    related_entry_id            INTEGER,
+    CHECK (
+        (before_fifo_available IS NULL AND before_negative IS NULL AND before_net IS NULL)
+        OR
+        (before_fifo_available IS NOT NULL AND before_negative IS NOT NULL
+         AND before_net = before_fifo_available - before_negative)
+    ),
+    CHECK (
+        (after_fifo_available IS NULL AND after_negative IS NULL AND after_net IS NULL)
+        OR
+        (after_fifo_available IS NOT NULL AND after_negative IS NOT NULL
+         AND after_net = after_fifo_available - after_negative)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_inventory_audit_order_created
+    ON order_inventory_audit_entries(order_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_inventory_audit_ref_created
+    ON order_inventory_audit_entries(order_ref, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_inventory_audit_operation
+    ON order_inventory_audit_entries(operation_id, id);
+
+CREATE TRIGGER IF NOT EXISTS trg_order_inventory_audit_no_update
+BEFORE UPDATE ON order_inventory_audit_entries
+BEGIN
+    SELECT RAISE(ABORT, 'order inventory audit entries are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_order_inventory_audit_no_delete
+BEFORE DELETE ON order_inventory_audit_entries
+BEGIN
+    SELECT RAISE(ABORT, 'order inventory audit entries are append-only');
+END;
+"""
+
 __all__ = [
     'INITIAL_SCHEMA',
     'STAFF_AND_PEOPLE_SCHEMA',
@@ -1484,4 +1610,5 @@ __all__ = [
     'SEED_MESSAGE_TEMPLATES',
     'ADDRESS_LIBRARY_SCHEMA',
     'PAYMENT_TRANSACTION_PHOTOS_SCHEMA',
+    'ORDER_INVENTORY_AUDIT_SCHEMA',
 ]

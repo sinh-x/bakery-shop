@@ -8,9 +8,11 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/order_service.dart';
 import '../../data/models/order.dart';
 import '../../data/models/payment_transaction.dart';
+import '../../data/providers/order/order_inventory_audit_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/providers/logged_by_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/stock.dart';
 import 'package:bakery_app/shared/labels/templates.dart';
 import 'package:bakery_app/shared/utils/api_error.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
@@ -30,6 +32,7 @@ import 'widgets/order_detail/order_detail_helpers.dart';
 import 'widgets/order_detail/order_detail_transactions_tab.dart';
 import 'widgets/order_detail/order_detail_work_items_tab.dart';
 import 'widgets/order_detail/order_edit_payment_sheet.dart';
+import 'widgets/order_detail/order_inventory_review_tab.dart';
 import 'widgets/order_detail/order_print_checklist_dialog.dart';
 import 'widgets/order_detail/order_record_payment_sheet.dart';
 import 'widgets/order_detail/order_receipt_type_selector.dart';
@@ -50,14 +53,16 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     with SingleTickerProviderStateMixin {
-  static const _tabCount = 4;
+  static const _inventoryReviewTabIndex = 4;
+  static const _tabCount = 5;
   late final TabController _tabController;
   bool _acknowledgedOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabCount, vsync: this);
+    _tabController = TabController(length: _tabCount, vsync: this)
+      ..addListener(_loadInventoryAuditOnFirstSelection);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _acknowledgeIfNeeded();
     });
@@ -65,8 +70,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController
+      ..removeListener(_loadInventoryAuditOnFirstSelection)
+      ..dispose();
     super.dispose();
+  }
+
+  void _loadInventoryAuditOnFirstSelection() {
+    if (_tabController.index != _inventoryReviewTabIndex) return;
+    ref
+        .read(orderInventoryAuditProvider(widget.orderRef).notifier)
+        .loadFirstPage();
   }
 
   Order? get _order =>
@@ -352,11 +366,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           tabs: const [
             Tab(text: OrdersLabels.orderDetailTabGeneral),
             Tab(text: OrdersLabels.orderDetailTabWorkItems),
             Tab(text: OrdersLabels.orderDetailTabTransactions),
             Tab(text: OrdersLabels.orderDetailTabCustomer),
+            Tab(text: StockLabels.inventoryReviewTab),
           ],
         ),
       ),
@@ -453,6 +469,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       baseUrl: baseUrl,
                     ),
                     OrderDetailCustomerTab(customerId: order.customerId),
+                    OrderInventoryReviewTab(orderRef: order.orderRef),
                   ],
                 ),
               ),
