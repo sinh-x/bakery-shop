@@ -14,23 +14,23 @@ class _FakeAddressService extends AddressService {
 
   final AddressAutocompleteResponse _response =
       const AddressAutocompleteResponse(
-    pastOrders: <AddressSuggestion>[
-      AddressSuggestion(
-        id: 1,
-        displayAddress: '123 Lê Lợi',
-        googleMapsUrl: 'https://maps.app.goo.gl/abc',
-        isCustomerAddress: true,
-      ),
-    ],
-    library: <AddressSuggestion>[
-      AddressSuggestion(
-        id: 2,
-        displayAddress: '45 Trần Phú',
-        googleMapsUrl: null,
-        isCustomerAddress: false,
-      ),
-    ],
-  );
+        pastOrders: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 1,
+            displayAddress: '123 Lê Lợi',
+            googleMapsUrl: 'https://maps.app.goo.gl/abc',
+            isCustomerAddress: true,
+          ),
+        ],
+        library: <AddressSuggestion>[
+          AddressSuggestion(
+            id: 2,
+            displayAddress: '45 Trần Phú',
+            googleMapsUrl: null,
+            isCustomerAddress: false,
+          ),
+        ],
+      );
 
   @override
   Future<AddressAutocompleteResponse> autocomplete({
@@ -49,13 +49,16 @@ void main() {
     'addressAutocompleteProvider returns empty response when query too short',
     () async {
       final container = ProviderContainer(
-        overrides: [addressServiceProvider.overrideWithValue(_FakeAddressService())],
+        overrides: [
+          addressServiceProvider.overrideWithValue(_FakeAddressService()),
+        ],
       );
       addTearDown(container.dispose);
 
       const request = AddressAutocompleteRequest(query: 'a', customerId: null);
-      final result =
-          await container.read(addressAutocompleteProvider(request).future);
+      final result = await container.read(
+        addressAutocompleteProvider(request).future,
+      );
       expect(result.pastOrders, isEmpty);
       expect(result.library, isEmpty);
     },
@@ -71,8 +74,9 @@ void main() {
       addTearDown(container.dispose);
 
       const request = AddressAutocompleteRequest(query: '123', customerId: 7);
-      final result =
-          await container.read(addressAutocompleteProvider(request).future);
+      final result = await container.read(
+        addressAutocompleteProvider(request).future,
+      );
 
       expect(fake.callCount, 1);
       expect(fake.lastQuery, '123');
@@ -85,41 +89,58 @@ void main() {
     },
   );
 
-  test(
-    'AddressAutocompleteQueryNotifier debounces query changes',
-    () async {
-      final container = ProviderContainer(
-        overrides: [addressServiceProvider.overrideWithValue(_FakeAddressService())],
-      );
-      addTearDown(container.dispose);
+  test('AddressAutocompleteQueryNotifier debounces query changes', () async {
+    final container = ProviderContainer(
+      overrides: [
+        addressServiceProvider.overrideWithValue(_FakeAddressService()),
+      ],
+    );
+    addTearDown(container.dispose);
 
-      final notifier =
-          container.read(addressAutocompleteQueryProvider.notifier);
+    final notifier = container.read(addressAutocompleteQueryProvider.notifier);
 
-      // Rapid typing should not publish immediately.
-      notifier.onQueryChanged('1', customerId: null);
-      notifier.onQueryChanged('12', customerId: null);
-      notifier.onQueryChanged('123', customerId: null);
-      expect(container.read(addressAutocompleteQueryProvider).query, '');
+    // Rapid typing should not publish immediately.
+    notifier.onQueryChanged('1', customerId: null);
+    notifier.onQueryChanged('12', customerId: null);
+    notifier.onQueryChanged('123', customerId: null);
+    expect(container.read(addressAutocompleteQueryProvider).query, '');
 
-      // After the debounce window the latest query is published.
-      await Future.delayed(
-        kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
-      );
-      expect(container.read(addressAutocompleteQueryProvider).query, '123');
-    },
-  );
+    // After the debounce window the latest query is published.
+    await Future.delayed(
+      kAddressAutocompleteDebounce + const Duration(milliseconds: 50),
+    );
+    expect(container.read(addressAutocompleteQueryProvider).query, '123');
+  });
+
+  testWidgets('query publishes latest input at exactly 300 ms', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(addressAutocompleteQueryProvider.notifier);
+    notifier.onQueryChanged('old', customerId: 1);
+    await tester.pump(const Duration(milliseconds: 100));
+    notifier.onQueryChanged('  ab  ', customerId: 7);
+    await tester.pump(const Duration(milliseconds: 299));
+    expect(container.read(addressAutocompleteQueryProvider).query, '');
+    await tester.pump(const Duration(milliseconds: 1));
+    final request = container.read(addressAutocompleteQueryProvider);
+    expect(request.query, '  ab  ');
+    expect(request.customerId, 7);
+    expect(request.isValid, isTrue);
+  });
 
   test(
     'AddressAutocompleteQueryNotifier.onCustomerChanged updates immediately',
     () {
       final container = ProviderContainer(
-        overrides: [addressServiceProvider.overrideWithValue(_FakeAddressService())],
+        overrides: [
+          addressServiceProvider.overrideWithValue(_FakeAddressService()),
+        ],
       );
       addTearDown(container.dispose);
 
-      final notifier =
-          container.read(addressAutocompleteQueryProvider.notifier);
+      final notifier = container.read(
+        addressAutocompleteQueryProvider.notifier,
+      );
       notifier.onQueryChanged('123', customerId: null);
       notifier.onCustomerChanged(42);
 
@@ -133,12 +154,15 @@ void main() {
     'AddressAutocompleteQueryNotifier.clear cancels in-flight debounce',
     () async {
       final container = ProviderContainer(
-        overrides: [addressServiceProvider.overrideWithValue(_FakeAddressService())],
+        overrides: [
+          addressServiceProvider.overrideWithValue(_FakeAddressService()),
+        ],
       );
       addTearDown(container.dispose);
 
-      final notifier =
-          container.read(addressAutocompleteQueryProvider.notifier);
+      final notifier = container.read(
+        addressAutocompleteQueryProvider.notifier,
+      );
       notifier.onQueryChanged('123', customerId: null);
       notifier.clear();
 
@@ -164,18 +188,35 @@ void main() {
   });
 
   test('AddressAutocompleteRequest.isValid requires 2+ non-space chars', () {
-    expect(const AddressAutocompleteRequest(query: '', customerId: null).isValid,
-        isFalse);
-    expect(const AddressAutocompleteRequest(query: ' ', customerId: null).isValid,
-        isFalse);
-    expect(const AddressAutocompleteRequest(query: 'a', customerId: null).isValid,
-        isFalse);
     expect(
-        const AddressAutocompleteRequest(query: 'ab', customerId: null).isValid,
-        isTrue);
+      const AddressAutocompleteRequest(query: '', customerId: null).isValid,
+      isFalse,
+    );
     expect(
-        const AddressAutocompleteRequest(query: '  abc  ', customerId: null)
-            .isValid,
-        isTrue);
+      const AddressAutocompleteRequest(query: ' ', customerId: null).isValid,
+      isFalse,
+    );
+    expect(
+      const AddressAutocompleteRequest(query: 'a', customerId: null).isValid,
+      isFalse,
+    );
+    expect(
+      const AddressAutocompleteRequest(
+        query: '  a  ',
+        customerId: null,
+      ).isValid,
+      isFalse,
+    );
+    expect(
+      const AddressAutocompleteRequest(query: 'ab', customerId: null).isValid,
+      isTrue,
+    );
+    expect(
+      const AddressAutocompleteRequest(
+        query: '  abc  ',
+        customerId: null,
+      ).isValid,
+      isTrue,
+    );
   });
 }
