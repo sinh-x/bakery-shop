@@ -99,8 +99,9 @@ class _FakeOrderService extends OrderService {
       'latitude': latitude,
       'longitude': longitude,
     });
-    if (failFirst && createOrderCallCount == 1)
+    if (failFirst && createOrderCallCount == 1) {
       throw StateError('isolated save failure');
+    }
     if (createOrderCompleter != null) return createOrderCompleter!.future;
     return Order(
       id: '1',
@@ -196,8 +197,8 @@ Widget _buildCheckoutApp({
       posCartProvider.overrideWith(() => _SeededPosCartNotifier(items)),
       if (addressService != null) ...[
         addressServiceProvider.overrideWithValue(addressService),
-        shippingFeeBusProvider.overrideWith(() => _AddressFeeConfig()),
-        shippingFeeDoorProvider.overrideWith(() => _AddressFeeConfig()),
+        shippingFeeBusProvider.overrideWith(_AddressFeeConfig.new),
+        shippingFeeDoorProvider.overrideWith(_AddressFeeConfig.new),
       ],
       if (orderService != null)
         orderServiceProvider.overrideWithValue(orderService),
@@ -319,8 +320,9 @@ void main() {
               _,
               next,
             ) {
-              if (next.googleMapsUrl == 'https://maps.example/$source/$type')
+              if (next.googleMapsUrl == 'https://maps.example/$source/$type') {
                 callbacks++;
+              }
             });
             final gesture = await tester.startGesture(
               tester.getCenter(find.text('12 $source $type').last),

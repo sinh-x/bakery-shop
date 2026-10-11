@@ -392,8 +392,9 @@ void main() {
             var callbacks = 0;
             final subscription = container.listen(provider, (_, next) {
               if (next.existingGoogleMapsUrl ==
-                  'https://maps.example/$source/$type')
+                  'https://maps.example/$source/$type') {
                 callbacks++;
+              }
             });
             final gesture = await tester.startGesture(
               tester.getCenter(find.text('12 $source $type').last),

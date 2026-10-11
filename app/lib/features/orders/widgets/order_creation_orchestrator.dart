@@ -192,7 +192,9 @@ class OrderCreationOrchestratorState
     final epoch = container.read(formDraftSessionEpochProvider);
     void persist() {
       if (container.read(formDraftSessionEpochProvider) != epoch ||
-          !identical(container.read(provider), state)) return;
+          !identical(container.read(provider), state)) {
+        return;
+      }
       final drafts = container.read(orderDraftProvider.notifier);
       if (draft.isNotEmpty) {
         drafts.save(draft);
@@ -206,8 +208,6 @@ class OrderCreationOrchestratorState
       persist();
     }
   }
-
-  // Submission and photo payloads remain in OrderSubmissionMixin.
 
   @override
   void initState() {
