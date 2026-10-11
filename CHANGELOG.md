@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.8.33+146] — 2026-10-11
+- Add cake ad generation tooling and ignore local media
+
 ## [0.8.27+139] — 2026-08-20
 
 All merged PRs in the range v0.8.21–v0.8.26, grouped by DG ticket. Reconstructed from `git log v0.8.21..develop --merges --oneline`. Note: the v0.8.21–v0.8.26 release entries were omitted from the CHANGELOG by the `version-bump.yml` auto-patch workflow, so their PRs are consolidated into this v0.8.27 entry instead of being split across per-version sections.

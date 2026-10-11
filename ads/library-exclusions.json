@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "policy": "Permanent ads-library exclusions. Keep originals for reference, never publish excluded selections or reuse their numbers. No ZIP generation.",
+  "collections": {
+    "20261020": {
+      "excluded_index_files": [
+        "06.jpg",
+        "07.jpg",
+        "08.jpg",
+        "13.jpg",
+        "14.jpg",
+        "18.jpg",
+        "19.jpg",
+        "20.jpg"
+      ],
+      "highest_assigned_number": 31,
+      "next_number": 32
+    }
+  },
+  "exclusions": [
+    {
+      "collection": "20261020",
+      "number": 7,
+      "cake_type": "Bánh kem",
+      "index_file": "20261020/index/07.jpg",
+      "source_sha256": "33af97dbead9b7fdae349e0f5483fbfc6dfef2d0343b706678e19b56d508bfd7",
+      "crop_xyxy": [690, 894, 982, 1178],
+      "image_sha256": "4f6e389acbb71582bf6050a98c9e6858eae43cd029111625218e5e3d729ff9dc",
+      "known_image_sha256": [
+        "07608d6249b5585fdd2c13f4019c26e357dd8194043b2de6e6b48a03e12ee09f",
+        "307da1aafed92e2fdaa462dbbb7174fbd5f3127dc2f058d40c2e9d74f9d5895a",
+        "4f6e389acbb71582bf6050a98c9e6858eae43cd029111625218e5e3d729ff9dc",
+        "e23cd71dea05c3b48494e34421b9a976f6e2163891afdd0869b628e2ec900e3d"
+      ],
+      "known_file_sha256": [
+        "37f28b45b0579533c3d979e244aa259a84adb97a3d43af4073213ac1f9033972",
+        "61c932c5ead38a251ed576679dc1da1681d0f2af1760437e3457ab1aa98f8f4c",
+        "73ab03eb7ec35ff0264dc2db37ae2821e2a2cf9b4c7f451b971f87d15c5c6ee8",
+        "ba9d30c2ac9c74796a1e46d745f11d40601755715cf7042013bb8b8a63fd036f",
+        "d0d709d71626cc56580b222adc4b002d98988a37d1f4073a33c27de21ac65f01",
+        "e07c6351aeee2def0c085c52332f99906a40b5a940b43d5ff7810e85baa0c618",
+        "e68180e80fc64df2e14764b1cc1649cdedd682484b01aa2e48058ed39337385c",
+        "f88794244eb186568246040f2a4b60447b3da67343026541254f486c2d4b466e"
+      ],
+      "reason": "Removed at the user’s request after index review; never re-add or reuse 07.jpg."
+    },
+    {
+      "collection": "20261020",
+      "number": 6,
+      "cake_type": "Bánh kem sữa tươi",
+      "index_file": "20261020/index/06.jpg",
+      "source_sha256": "33af97dbead9b7fdae349e0f5483fbfc6dfef2d0343b706678e19b56d508bfd7",
+      "crop_xyxy": [
+        382,
+        887,
+        680,
+        1201
+      ],
+      "image_sha256": "2a06071d120e31dff85126bdfe0cc50f12aeb6f503665f998c229d7efc429e68",
+      "known_image_sha256": [
+        "281cf7d8a634033d141190a8dde1b72513efd10d6bb22afaef03591f44290d7e",
+        "2a06071d120e31dff85126bdfe0cc50f12aeb6f503665f998c229d7efc429e68",
+        "5e5a4980ecdf0c063a91ba4285a6feb6c75645cc4b38d904286af10fb83fdbfc",
+        "6fc7436d55fef3b41697b2fd09d1e27972805d7982e184badd93e33f0ecde200"
+      ],
+      "known_file_sha256": [
+        "0136ff350329f71430e8a19e2253727615a9f34c9cb99544c9ff20e62e5db7e1",
+        "8b18f1cc36aaf208e35a075acc85ece6e2c24e4343361dd1e442531363977455",
+        "922c15111776aceec84c32491021146248eeb9b6169d9bbd2ae97085f3d597b6",
+        "ad05c63390ab4bd0d038f8d2b42aeb06cd0302b21725bb3b089e994fea943cbd",
+        "b2f9355b29e0f8d6323a5afc76f096454b31b2dda619599a350ea200b14e6f39",
+        "b7bdff7472995ae5363b7211a3d5d88ea1141ae164e699ef4659ff6403376bf4",
+        "d9e534f410e3f896fd2527ae136acfd60372c07c91061608bc9b20497e1d8b9d",
+        "fe3026a23b485a39ea95dc38f8f152b4c1a8a780710896a60d3d2871a08cab43"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 8,
+      "cake_type": "Bánh rau câu flan",
+      "index_file": "20261020/index/08.jpg",
+      "source_sha256": "291f264a780cab933ecf3a1b165efd6c4c9372e68375a407a4ba547878237ba3",
+      "crop_xyxy": null,
+      "image_sha256": "ec37e2e08124dcc6d6b9972aecafcf83ffaf502701f4080eaa5248377508d457",
+      "known_image_sha256": [
+        "16f2a626ffb3807efadf7f924f61fb348fd882e2e6fa6c15e483484e2332b11f",
+        "205d9cfdb8852013580f8dc5836497f4fd6c3d4143cc9f4b6c8b16629d2d836f",
+        "ec37e2e08124dcc6d6b9972aecafcf83ffaf502701f4080eaa5248377508d457"
+      ],
+      "known_file_sha256": [
+        "2f928878ed4ff9450a765b1d93dc3ebbb98ecc7f6fe9a63bf5c3b69c1fde1d81",
+        "8faed212709ebcd70cd21cef0310bbd43067d629e44c3641658b1aac997a37a8",
+        "935df3e3092a7497132614293dd7f4cceceeb4b54c8bf6c169775132e19dc7c1",
+        "9fb7586d364c6f07ed5c699e6c1be03401137578ffc6d980b39964be19594c7d",
+        "c92b3d0b569dbfcd42faa0d768dfe9053267a5c14ca98706a83ad36fc5bede61",
+        "c935c570ee6f627a352494b10d394da61f2cc8c3af093317d264955d9973e070"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 13,
+      "cake_type": "Bánh mousse mix vị",
+      "index_file": "20261020/index/13.jpg",
+      "source_sha256": "bd8548528c14ec0ce497ee3882ad1968a23f756629af4dbcaec89d7debebbab8",
+      "crop_xyxy": null,
+      "image_sha256": "5722a2338c16d17d3e988c50910a78fc6c3363830f6a9719b69b8784cfd4bcfd",
+      "known_image_sha256": [
+        "518e5687cef6a5e400515944cf246adc3f4da5acd0a91f45ed510961d4a25945",
+        "5722a2338c16d17d3e988c50910a78fc6c3363830f6a9719b69b8784cfd4bcfd",
+        "8347f7be8db9639b6b68e2fd07b37a15dbc897beabca58401defe84c2f3f0119"
+      ],
+      "known_file_sha256": [
+        "028a343ca3ddb74ba4e7354227dd5ccf3adf047e3506bb19a1eedf01aa4f1c95",
+        "311759513d2d3924cb1c4ae04f14c658d1f2e40b1444cfec1796a4c8085fc645",
+        "6a4a983318a2707e25cbec05b77a28a8ac1edbdc5e9ba39930ef14adbf4c7c15",
+        "82d752dafb91e89ced268c3733721026e142d0436d6860c49f5d7d8a501173d1",
+        "9357da7c6f047f1485cb1155653a1c165bf17b5063d839941add423eb68a0c3c",
+        "9432003aa8bafb3188ce270278ad97c98bc58d67b6018dc6206ece7266921e2c"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 14,
+      "cake_type": "Bó hoa kem sữa tươi",
+      "index_file": "20261020/index/14.jpg",
+      "source_sha256": "fd669ebece7360a0f0fd170305bb65e776a93a36def44f3caaf7b53a756bec58",
+      "crop_xyxy": null,
+      "image_sha256": "485ae710dbd20572740982d75e4c9afe9d79ddff054fa3996f3941d1b61035e0",
+      "known_image_sha256": [
+        "485ae710dbd20572740982d75e4c9afe9d79ddff054fa3996f3941d1b61035e0",
+        "8727e6361f714f66a566a9c828a3e22c40fa4ae5f350514662981aed50babe6f",
+        "a0b63b859081e343d2e5d315b240fd84a99881f4e8dccff6709e1ed9f73cabfb",
+        "af4a123ad4e6f62bfa6f360444ccb66bf37249c30c2f4f8ae1aa312d078a6f13"
+      ],
+      "known_file_sha256": [
+        "000c75b5376bd33f61566b59877961c272bee79c8ec0e40f1deb3c7ed99cbc1b",
+        "31fd34ab1802ed350d1b4c23fcb2dbb7ea1c626bef48ad94d3432892212ab4c0",
+        "9fd60bd8733310c8cfe1427720b47f58944b2af8cd7ff070f82ea45ba1bbd7fb",
+        "b404b5df1363178378d64ca4d84a7070b043d09d49e370ebb1cdfdd9f7bb82b7",
+        "bdf64f7ca5e94d92a92108ad7c0272eb60b734005256f89039fef6066c64006b",
+        "ef2b497f0f2f08c1f349369a0b95852a9330acce2a865d7947fe652e7fc8765b",
+        "fffe9213ac5e5bbee9f7d5adeacc7c125b0aa901c495be3b5fdc1a0d1711ca23"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 18,
+      "cake_type": "Bánh bông lan trứng muối",
+      "index_file": "20261020/index/18.jpg",
+      "source_sha256": "bb7e425b461ba7fc6ab36028026baf64ae9317c997a0f668714c94283061708d",
+      "crop_xyxy": null,
+      "image_sha256": "9727cbb4789a77516873787a31cf34e54c86fc739347ff40bd8610aa3fbd9d42",
+      "known_image_sha256": [
+        "1e18e6b2fd1d404c4bafdaec4bf73ce483f2028c708a822cd9129f796feac660",
+        "9727cbb4789a77516873787a31cf34e54c86fc739347ff40bd8610aa3fbd9d42",
+        "9c8d1113fc45975b825013594ad6231d2dd1b5bf4006299cf089b40688e45879"
+      ],
+      "known_file_sha256": [
+        "aaa6294c0a988041265399a34943e16615883b2ef7075acf2db63e3e33d96d32",
+        "b750a38796e27b059cc9a03c157064f55b9a85dae5380f00fb43f4702e52506e",
+        "ddd7bd89935b2d8e04a78d15fbbaf25cee97e44ec5d856d4bb692affcf803c8c",
+        "fd4df17d43a621717fcfcb8134c2fb4c66d82bbf9535743847ae39958022017a"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 19,
+      "cake_type": "Bánh bông lan trứng muối",
+      "index_file": "20261020/index/19.jpg",
+      "source_sha256": "2a0be96000c50efb9cda546aa205c32c819d3651933227fec0cc509654e7fdf1",
+      "crop_xyxy": null,
+      "image_sha256": "03bc182aaf24c08e24870d357b42000de5e57bfaed44dc851c7c387f0a7f1898",
+      "known_image_sha256": [
+        "03bc182aaf24c08e24870d357b42000de5e57bfaed44dc851c7c387f0a7f1898",
+        "09feeee81cd8e34aa9e77e2366eed2a55730ffebc8ec8c9099778331ecf19905",
+        "f5bcd0e8b2842b98150b1979104cb0a6b88c8a5740013fcdc22debd57e523d73"
+      ],
+      "known_file_sha256": [
+        "3784998c511192120f6a122cb332864e3cd3fd5a6e95f2c454f4b258c73f4915",
+        "48e9a10d476f969090f01f7c13a27b47a3f8bc2ce3446139856c19bb1fe300e6",
+        "7008479e1720512ccb9726a869f06affb58fe342722b37186dfdd09e00ca4a2f",
+        "8497a32f5495e84cd2be72ee87ce1c28380a07104770aeb3d30f5ab444c18469"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    },
+    {
+      "collection": "20261020",
+      "number": 20,
+      "cake_type": "Bánh bông lan trứng muối",
+      "index_file": "20261020/index/20.jpg",
+      "source_sha256": "8287cce3e67b22a5a115a794638c2326a878e0117f6b1eb92ea395cc8b8d39d9",
+      "crop_xyxy": null,
+      "image_sha256": "a7f212f98516384786deaadcacc437d3676afb073543c9675bbc8218d84a780f",
+      "known_image_sha256": [
+        "2cf526326504e17afe77b84dea7e07f110f4934aa6b3409e69c5302642c636dc",
+        "a7f212f98516384786deaadcacc437d3676afb073543c9675bbc8218d84a780f",
+        "c30424cb051b798ffa270b03fd9c0b6a8897ce5640225d20760dc85dcb1cfca8"
+      ],
+      "known_file_sha256": [
+        "003baf3012b47d184d3571afddc610cb5fb7a9c668d810988e7ea56e69f0a0e2",
+        "2a2a60637c5c1a1ec02d59f56fa1fee0f47ad3390606d6c46a8d80ec1b611f36",
+        "a420b15930b60b804a5e6c694fdf854c377b34ce58792ba4ebee230472dd840b",
+        "bfe8b35e03a4cb51f245380f4436d7bd975850d3b982fb57f40c02d18eea1628"
+      ],
+      "reason": "Removed from the ads library at the user’s request; do not re-add or reuse this number."
+    }
+  ]
+}

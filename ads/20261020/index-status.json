@@ -1,0 +1,7 @@
+{
+  "workflow": "raw -> index -> user confirmation by index filename -> final ads",
+  "approved_index_files": ["01.jpg", "02.jpg", "03.jpg", "04.jpg", "05.jpg", "09.jpg", "10.jpg", "11.jpg", "12.jpg", "15.jpg", "16.jpg", "17.jpg", "21.jpg", "22.jpg", "23.jpg", "24.jpg", "25.jpg", "26.jpg", "27.jpg", "28.jpg", "29.jpg", "30.jpg", "31.jpg"],
+  "pending_index_files": [],
+  "confirmation": "User requested 07.jpg removal, the ordered final list, and proceeding with final publication; 30.jpg was explicitly confirmed as Bánh kem. The new raw upload was assigned 31.jpg, and the user confirmed Bánh kem and approved adding it to the shortened set.",
+  "instruction": "Use index filenames for communication. New uploads must begin as pending. Permanent index exclusions override approval. Retired indexes are never reused."
+}
