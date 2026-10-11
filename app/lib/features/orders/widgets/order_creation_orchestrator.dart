@@ -5,6 +5,7 @@ import '../../../data/models/order_draft.dart';
 import '../../../features/pos/utils/pos_cart_wizard_sync.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/order/order_draft_provider.dart';
+import '../../../providers/form_draft_session_notifier.dart';
 import 'gated_page_physics.dart';
 import 'order_creation_config.dart';
 import 'order_stage_indicator.dart';
@@ -65,6 +66,9 @@ class OrderCreationOrchestratorState
   @override
   NotifierProvider<OrderCreateStateNotifier, OrderCreateState> get provider =>
       config.orderStateProvider;
+
+  Future<void>? _draftRestore;
+  bool _draftRestored = true;
 
   void _goToStage(int stage) {
     final clamped = stage.clamp(1, config.stageCount);
@@ -145,8 +149,11 @@ class OrderCreationOrchestratorState
     notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
     notifier.updateGpsFields(
       latitude: draft.latitude,
+      clearLatitude: draft.latitude == null,
       longitude: draft.longitude,
+      clearLongitude: draft.longitude == null,
       googleMapsUrl: draft.googleMapsUrl,
+      clearGoogleMapsUrl: draft.googleMapsUrl == null,
     );
     if (draft.customerId != null) {
       notifier.restoreCustomerFromDraft(draft.customerId!);
@@ -155,16 +162,12 @@ class OrderCreationOrchestratorState
     notifier.goToStage(targetStage);
   }
 
-  /// Persists the current wizard state to `orderDraftProvider` unless a
-  /// submission has already completed (`_submitted`) — in which case this is
-  /// a no-op. The post-submit draft clear is owned by the workflow's
-  /// `onAfterSubmit` hook (run earlier in the submission spine), so re-clearing
-  /// here would modify a provider during `deactivate` (which runs inside a
-  /// build phase) and trigger a riverpod build-phase guard. Mirrors the
-  /// pre-refactor `order_create_screen._saveDraft` early-return.
-  void _saveDraft() {
+  /// Save the current draft, except after success or before hydration.
+  /// Exit writes are deferred outside build and cannot overwrite a newer
+  /// state or cross an authenticated-session boundary.
+  void _saveDraft({bool defer = false}) {
     if (!config.enableDraft) return;
-    if (submitted) return;
+    if (submitted || !_draftRestored) return;
     final state = ref.read(provider);
     final draft = OrderDraft(
       customerName: state.wizardData.customerName,
@@ -185,31 +188,42 @@ class OrderCreationOrchestratorState
       longitude: state.longitude,
       googleMapsUrl: state.googleMapsUrl,
     );
-    if (draft.isNotEmpty) {
-      ref.read(orderDraftProvider.notifier).save(draft);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final epoch = container.read(formDraftSessionEpochProvider);
+    void persist() {
+      if (container.read(formDraftSessionEpochProvider) != epoch ||
+          !identical(container.read(provider), state)) {
+        return;
+      }
+      final drafts = container.read(orderDraftProvider.notifier);
+      if (draft.isNotEmpty) {
+        drafts.save(draft);
+      } else {
+        drafts.clear();
+      }
+    }
+    if (defer) {
+      Future.microtask(persist);
     } else {
-      ref.read(orderDraftProvider.notifier).clear();
+      persist();
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // FR2/FR3 — Shared submission pipeline with workflow hooks (Phase 2).
-  // The common spine (validate → onBeforeSubmit → createOrder → photo upload
-  // → refresh orderListProvider → onAfterSubmit → onNavigateAfterSubmit)
-  // and the per-item payload builder / default photo-upload loop live in
-  // [OrderSubmissionMixin] so this file stays under the 400-line threshold
-  // (DG-322 / CQ-1). `submitOrder` remains public on this state class via the
-  // mixin, so host screens can still call it through a
-  // `GlobalKey<OrderCreationOrchestratorState>`.
-  // ---------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
-    // FR6: restore the draft (no-op when `enableDraft=false`). Done in
-    // initState because the draft restore must land before the first build
-    // so the initial stage reflects the persisted state.
-    _restoreDraft();
+    // Hydrate outside build, before mounting any stage/controller. The first
+    // visible form therefore uses the retained stage and address, not live
+    // stale state. Do not restore a draft after disposal or a session clear.
+    if (config.enableDraft && ref.read(orderDraftProvider) != null) {
+      _draftRestored = false;
+      final epoch = ref.read(formDraftSessionEpochProvider);
+      _draftRestore = Future.microtask(() {
+        if (!mounted) return;
+        if (ref.read(formDraftSessionEpochProvider) == epoch) _restoreDraft();
+        _draftRestored = true;
+      });
+    }
     // FR7: seed wizard items from the POS cart on init (no-op when
     // `enableCartSync=false`). Deferred to a post-frame callback because the
     // orchestrator is constructed inside its host screen's build, and
@@ -233,12 +247,22 @@ class OrderCreationOrchestratorState
   void deactivate() {
     // FR6: persist the draft on exit so a partially-filled normal order
     // survives the user backing out of the wizard. No-op for POS.
-    if (config.enableDraft) _saveDraft();
+    if (config.enableDraft) _saveDraft(defer: true);
     super.deactivate();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_draftRestore == null) return _buildWizard();
+    return FutureBuilder<void>(
+      future: _draftRestore,
+      builder: (_, snapshot) => snapshot.connectionState == ConnectionState.done
+          ? _buildWizard()
+          : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildWizard() {
     final state = ref.watch(provider);
 
     return Column(

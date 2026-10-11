@@ -9,6 +9,7 @@ import '../../shared/gift_config.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../data/providers/products_provider.dart';
 import '../form_draft_session_notifier.dart';
+import 'order_draft_provider.dart';
 
 class OrderCreateState {
   final List<DraftOrderItem> items;
@@ -85,7 +86,10 @@ class OrderCreateState {
 class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   @override
   OrderCreateState build() {
-    ref.listen(formDraftSessionEpochProvider, (_, _) => reset());
+    ref.listen(formDraftSessionEpochProvider, (_, _) {
+      ref.read(orderDraftProvider.notifier).clear();
+      reset();
+    });
     final defaultDue = defaultDueDateTime(DateTime.now());
     return OrderCreateState(
       wizardData: const OrderWizardData(),
