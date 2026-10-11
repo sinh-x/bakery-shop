@@ -74,6 +74,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   void initState() {
     super.initState();
     ref.listenManual<OrderCreateState>(posOrderStateProvider, (_, next) {
+      // Successful cleanup resets live state; it must not replace the
+      // submitted retained snapshot before the shared spine clears it.
+      if (ref.read(posCheckoutProvider).navigatingAfterCheckout) return;
       ref
           .read(formDraftSessionProvider.notifier)
           .retainDraft(OrderDraftContexts.posCheckout, next);

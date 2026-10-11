@@ -12,7 +12,11 @@ import 'package:bakery_app/providers/form_draft_session_notifier.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/pos_provider.dart';
 import 'package:bakery_app/data/models/product.dart';
-import 'package:flutter/material.dart' show TimeOfDay;
+import 'package:flutter/material.dart';
+import 'package:bakery_app/data/models/order_draft.dart';
+import 'package:bakery_app/providers/order/order_draft_provider.dart';
+import 'package:bakery_app/features/orders/widgets/order_creation_config.dart';
+import 'package:bakery_app/features/orders/widgets/order_creation_orchestrator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
@@ -27,6 +31,146 @@ void main() {
   tearDown(() {
     container.dispose();
   });
+
+  for (final type in ['bus', 'door']) {
+    test(
+      'DG-438 edit $type pair and null survive same-session provider reopen without context leak',
+      () {
+        final context = OrderDraftContexts.editOrder('ADDRESS-$type');
+        final provider = orderEditWizardProvider(context);
+        final other = orderEditWizardProvider(
+          OrderDraftContexts.editOrder('OTHER'),
+        );
+        final notifier = container.read(provider.notifier);
+        notifier.seedFromOrder(
+          source: '',
+          deliveryType: type,
+          shippingFee: 20000,
+          dueDate: null,
+          dueTime: null,
+          assignedStaffId: null,
+          existingLatitude: 10,
+          existingLongitude: 106,
+          existingGoogleMapsUrl: 'https://maps.example/stale',
+          deliveryPhoneDiverged: false,
+          customerName: 'Test',
+          customerPhone: '',
+          deliveryAddress: 'Old',
+          deliveryPhone: '',
+          notes: '',
+        );
+        notifier
+          ..setDeliveryAddress('12 Selected')
+          ..setAddressSelected('https://maps.example/selected');
+        container.invalidate(provider);
+        expect(container.read(provider).deliveryAddress, '12 Selected');
+        expect(
+          container.read(provider).existingGoogleMapsUrl,
+          'https://maps.example/selected',
+        );
+        expect(container.read(provider).existingLatitude, isNull);
+        expect(container.read(provider).existingLongitude, isNull);
+        container.read(provider.notifier)
+          ..setDeliveryAddress('12 Linkless')
+          ..setAddressSelected(null);
+        container.invalidate(provider);
+        expect(container.read(provider).deliveryAddress, '12 Linkless');
+        expect(container.read(provider).existingGoogleMapsUrl, isNull);
+        expect(container.read(other).deliveryAddress, isEmpty);
+        expect(
+          container.read(posOrderStateProvider).wizardData.deliveryAddress,
+          isEmpty,
+        );
+        expect(
+          container.read(orderCreateStateProvider).wizardData.deliveryAddress,
+          isEmpty,
+        );
+        container.read(formDraftSessionProvider.notifier).clearAll();
+        expect(container.read(provider).deliveryAddress, isEmpty);
+        expect(container.read(provider).existingGoogleMapsUrl, isNull);
+      },
+    );
+
+    testWidgets(
+      'DG-438 create $type null draft restoration clears poisoned live fields',
+      (tester) async {
+        container
+            .read(orderCreateStateProvider.notifier)
+            .updateGpsFields(
+              latitude: 10,
+              longitude: 106,
+              googleMapsUrl: 'https://maps.example/stale',
+            );
+        container
+            .read(orderDraftProvider.notifier)
+            .save(
+              OrderDraft(
+                customerName: 'Test',
+                deliveryType: type,
+                deliveryAddress: '12 Linkless',
+                currentStage: 3,
+              ),
+            );
+        final visibleStates = <OrderCreateState>[];
+        final config = OrderCreationConfig(
+          orderStateProvider: orderCreateStateProvider,
+          posMode: false,
+          enableDraft: true,
+          enableCartSync: false,
+          enableSwipeNavigation: false,
+          stage1Builder: (_, _) => const SizedBox.shrink(),
+          stage2Builder: (_, _) => const SizedBox.shrink(),
+          stage3Builder: (_, _) => const SizedBox.shrink(),
+          stage4Builder: (_, _) => const SizedBox.shrink(),
+          stageContainerBuilder: (_, stages, stage) {
+            visibleStates.add(container.read(orderCreateStateProvider));
+            return stages[stage - 1];
+          },
+        );
+        Widget host() => UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(body: OrderCreationOrchestrator(config: config)),
+          ),
+        );
+        await tester.pumpWidget(host());
+        await tester.pumpAndSettle();
+        final restored = container.read(orderCreateStateProvider);
+        expect(visibleStates.first.currentStage, 3);
+        expect(visibleStates.first.wizardData.deliveryType, type);
+        expect(visibleStates.first.wizardData.deliveryAddress, '12 Linkless');
+        expect(visibleStates.first.googleMapsUrl, isNull);
+        expect(restored.wizardData.deliveryAddress, '12 Linkless');
+        expect(restored.googleMapsUrl, isNull);
+        expect(restored.latitude, isNull);
+        expect(restored.longitude, isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        expect(
+          container.read(orderDraftProvider)!.deliveryAddress,
+          '12 Linkless',
+        );
+        container.read(formDraftSessionProvider.notifier).clearAll();
+        await tester.pump();
+        expect(
+          container.read(orderCreateStateProvider).wizardData.deliveryAddress,
+          isEmpty,
+        );
+        expect(
+          container.read(orderDraftProvider),
+          isNull,
+          reason: 'closed create draft cannot cross authenticated sessions',
+        );
+        await tester.pumpWidget(host());
+        await tester.pumpAndSettle();
+        expect(
+          container.read(orderCreateStateProvider).wizardData.deliveryAddress,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   test('record-payment contexts retain values and photos without leaking', () {
     final contextA = OrderDraftContexts.recordPayment('ORD-A');

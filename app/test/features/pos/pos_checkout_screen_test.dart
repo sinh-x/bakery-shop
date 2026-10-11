@@ -1,4 +1,14 @@
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
+
+import 'package:bakery_app/data/api/address_service.dart';
+import 'package:bakery_app/data/models/address.dart';
+import 'package:bakery_app/features/orders/widgets/address_autocomplete_field.dart';
+import 'package:bakery_app/features/orders/providers/order_draft_contexts.dart';
+import 'package:bakery_app/features/orders/providers/order_edit_wizard_notifier.dart';
+import 'package:bakery_app/providers/address/address_autocomplete_provider.dart';
+import 'package:bakery_app/providers/form_draft_session_notifier.dart';
+import 'package:bakery_app/data/providers/config_provider.dart';
 
 import 'package:bakery_app/data/api/payment_transaction_service.dart';
 import 'package:bakery_app/data/models/payment_transaction.dart';
@@ -40,13 +50,17 @@ class _FakeCustomerService extends CustomerService {
 }
 
 class _FakeOrderService extends OrderService {
-  _FakeOrderService({this.createOrderCompleter}) : super(Dio());
+  _FakeOrderService({this.createOrderCompleter, this.failFirst = false})
+    : super(Dio());
+  final bool failFirst;
+  final locations = <Map<String, dynamic>>[];
   final List<String?> paymentMethods = <String?>[];
   final List<String?> statuses = <String?>[];
   final List<String?> sources = <String?>[];
   final List<String?> customerNames = <String?>[];
   final List<String> deliveryTypes = <String>[];
-  final List<List<Map<String, dynamic>>> createdItems = <List<Map<String, dynamic>>>[];
+  final List<List<Map<String, dynamic>>> createdItems =
+      <List<Map<String, dynamic>>>[];
   final Completer<Order>? createOrderCompleter;
   int createOrderCallCount = 0;
 
@@ -79,11 +93,24 @@ class _FakeOrderService extends OrderService {
     customerNames.add(customerName);
     deliveryTypes.add(deliveryType);
     createdItems.add(items);
+    locations.add({
+      'deliveryAddress': deliveryAddress,
+      'googleMapsUrl': googleMapsUrl,
+      'latitude': latitude,
+      'longitude': longitude,
+    });
+    if (failFirst && createOrderCallCount == 1)
+      throw StateError('isolated save failure');
     if (createOrderCompleter != null) return createOrderCompleter!.future;
     return Order(
       id: '1',
       orderRef: 'ORD-001',
       customerName: customerName,
+      deliveryType: deliveryType,
+      deliveryAddress: deliveryAddress,
+      googleMapsUrl: googleMapsUrl,
+      latitude: latitude,
+      longitude: longitude,
       items: const [],
       totalPrice: 0,
       createdAt: DateTime(2026, 5, 20),
@@ -142,12 +169,23 @@ Widget _buildCheckoutApp({
   OrderService? orderService,
   _FakePaymentTransactionService? txnSvc,
   bool fastPath = false,
+  AddressService? addressService,
 }) {
   final router = GoRouter(
     routes: [
-      GoRoute(path: '/pos', builder: (context, state) => const Text('POS Home')),
-      GoRoute(path: '/pos/checkout', builder: (context, state) => PosCheckoutScreen(fastPath: fastPath)),
-      GoRoute(path: '/pos/receipt/:ref', builder: (context, state) => Text('Receipt ${state.pathParameters['ref']}')),
+      GoRoute(
+        path: '/pos',
+        builder: (context, state) => const Text('POS Home'),
+      ),
+      GoRoute(
+        path: '/pos/checkout',
+        builder: (context, state) => PosCheckoutScreen(fastPath: fastPath),
+      ),
+      GoRoute(
+        path: '/pos/receipt/:ref',
+        builder: (context, state) =>
+            Text('Receipt ${state.pathParameters['ref']}'),
+      ),
     ],
     initialLocation: '/pos/checkout',
   );
@@ -156,7 +194,13 @@ Widget _buildCheckoutApp({
   return ProviderScope(
     overrides: [
       posCartProvider.overrideWith(() => _SeededPosCartNotifier(items)),
-      if (orderService != null) orderServiceProvider.overrideWithValue(orderService),
+      if (addressService != null) ...[
+        addressServiceProvider.overrideWithValue(addressService),
+        shippingFeeBusProvider.overrideWith(() => _AddressFeeConfig()),
+        shippingFeeDoorProvider.overrideWith(() => _AddressFeeConfig()),
+      ],
+      if (orderService != null)
+        orderServiceProvider.overrideWithValue(orderService),
       customerServiceProvider.overrideWithValue(_FakeCustomerService()),
       paymentTransactionServiceProvider.overrideWithValue(service),
     ],
@@ -184,7 +228,202 @@ Future<void> _navigateToPayment(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+class _AddressFeeConfig extends ConfigValuesNotifier {
+  _AddressFeeConfig() : super('test');
+  @override
+  Future<List<String>> build() async => ['25000'];
+}
+
+class _CheckoutAddressService extends AddressService {
+  _CheckoutAddressService(this.source, this.type) : super(Dio());
+  final String source;
+  final String type;
+  int calls = 0;
+  @override
+  Future<AddressAutocompleteResponse> autocomplete({
+    required String query,
+    int? customerId,
+  }) async {
+    calls++;
+    final suggestions = [
+      AddressSuggestion(
+        displayAddress: '12 $source $type',
+        googleMapsUrl: 'https://maps.example/$source/$type',
+      ),
+      const AddressSuggestion(displayAddress: '12 Linkless'),
+    ];
+    return AddressAutocompleteResponse(
+      pastOrders: source == 'pastOrders' ? suggestions : [],
+      library: source == 'library' ? suggestions : [],
+    );
+  }
+}
+
 void main() {
+  for (final type in ['bus', 'door']) {
+    for (final source in ['pastOrders', 'library']) {
+      for (final pointer in [
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.touch,
+      ]) {
+        testWidgets(
+          'DG-438 pos/$type/$source/${pointer.name}: binding, null, retained reopen and failed retry',
+          (tester) async {
+            tester.view.physicalSize = const Size(1200, 1200);
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            final fake = _FakeOrderService(failFirst: true);
+            final addresses = _CheckoutAddressService(source, type);
+            await tester.pumpWidget(
+              _buildCheckoutApp(
+                items: [PosCartItem(product: _product(), quantity: 1)],
+                orderService: fake,
+                addressService: addresses,
+              ),
+            );
+            await tester.pumpAndSettle();
+            final container = ProviderScope.containerOf(
+              tester.element(find.byType(PosCheckoutScreen)),
+              listen: false,
+            );
+            final notifier = container.read(posOrderStateProvider.notifier);
+            notifier.updateWizardData(
+              container
+                  .read(posOrderStateProvider)
+                  .wizardData
+                  .copyWith(deliveryType: type),
+            );
+            notifier.updateGpsFields(
+              latitude: 10,
+              longitude: 106,
+              googleMapsUrl: 'https://maps.example/stale',
+            );
+            final other = OrderDraftContexts.editOrder('OTHER');
+            container
+                .read(orderEditWizardProvider(other).notifier)
+                .setDeliveryAddress('Other only');
+            for (var i = 0; i < 2; i++) {
+              await tester.tap(find.text(OrdersLabels.continueLabel));
+              await tester.pumpAndSettle();
+            }
+            final field = find.descendant(
+              of: find.byType(AddressAutocompleteField),
+              matching: find.byType(TextFormField),
+            );
+            await tester.enterText(field, '12');
+            await tester.pump(kAddressAutocompleteDebounce);
+            await tester.pumpAndSettle();
+            var callbacks = 0;
+            final subscription = container.listen(posOrderStateProvider, (
+              _,
+              next,
+            ) {
+              if (next.googleMapsUrl == 'https://maps.example/$source/$type')
+                callbacks++;
+            });
+            final gesture = await tester.startGesture(
+              tester.getCenter(find.text('12 $source $type').last),
+              kind: pointer,
+            );
+            await tester.pump();
+            await gesture.up();
+            await tester.pumpAndSettle();
+            subscription.close();
+            expect(callbacks, 1);
+            expect(addresses.calls, 1);
+            expect(find.byType(ListTile), findsNothing);
+            var state = container.read(posOrderStateProvider);
+            expect(state.wizardData.deliveryAddress, '12 $source $type');
+            expect(state.googleMapsUrl, 'https://maps.example/$source/$type');
+            expect(state.latitude, isNull);
+            expect(state.longitude, isNull);
+            await tester.pump(const Duration(seconds: 4));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text(OrdersLabels.backLabel));
+            await tester.pumpAndSettle();
+            expect(container.read(posOrderStateProvider).currentStage, 2);
+            await tester.tap(find.text(OrdersLabels.continueLabel));
+            await tester.pumpAndSettle();
+            expect(container.read(posOrderStateProvider).currentStage, 3);
+            final router = GoRouter.of(
+              tester.element(find.byType(PosCheckoutScreen)),
+            );
+            router.go('/pos');
+            await tester.pumpAndSettle();
+            router.go('/pos/checkout');
+            await tester.pumpAndSettle();
+            expect(
+              tester.widget<TextFormField>(field).controller!.text,
+              '12 $source $type',
+            );
+            expect(
+              container.read(posOrderStateProvider).googleMapsUrl,
+              'https://maps.example/$source/$type',
+            );
+            await tester.enterText(field, '12');
+            await tester.pump(kAddressAutocompleteDebounce);
+            await tester.pumpAndSettle();
+            final requestsBeforeSelection = addresses.calls;
+            await tester.tap(find.text('12 Linkless').last);
+            await tester.pumpAndSettle();
+            expect(addresses.calls, requestsBeforeSelection);
+            await tester.pump(const Duration(seconds: 4));
+            await tester.pumpAndSettle();
+            state = container.read(posOrderStateProvider);
+            expect(state.googleMapsUrl, isNull);
+            expect(state.latitude, isNull);
+            expect(state.longitude, isNull);
+            await tester.tap(find.text(OrdersLabels.continueLabel));
+            await tester.pumpAndSettle();
+            expect(container.read(posOrderStateProvider).currentStage, 4);
+            await _navigateToPayment(tester);
+            expect(container.read(posOrderStateProvider).currentStage, 5);
+            final submit = find.widgetWithText(
+              OutlinedButton,
+              OrdersLabels.payLater,
+            );
+            expect(submit, findsOneWidget);
+            await tester.ensureVisible(submit);
+            await tester.tap(submit);
+            await tester.pumpAndSettle();
+            expect(fake.createOrderCallCount, 1);
+            expect(
+              container.read(posOrderStateProvider).wizardData.deliveryAddress,
+              '12 Linkless',
+            );
+            expect(
+              container.read(formDraftSessionProvider),
+              contains(OrderDraftContexts.posCheckout),
+            );
+            await tester.pump(const Duration(seconds: 4));
+            await tester.pumpAndSettle();
+            await tester.ensureVisible(submit);
+            await tester.tap(submit);
+            await tester.pumpAndSettle();
+            expect(fake.createOrderCallCount, 2);
+            expect(fake.deliveryTypes, [type, type]);
+            for (final location in fake.locations) {
+              expect(location, {
+                'deliveryAddress': '12 Linkless',
+                'googleMapsUrl': null,
+                'latitude': null,
+                'longitude': null,
+              });
+            }
+            expect(find.text('Receipt ORD-001'), findsOneWidget);
+            expect(
+              container.read(formDraftSessionProvider),
+              isNot(contains(OrderDraftContexts.posCheckout)),
+            );
+            expect(container.read(formDraftSessionProvider), contains(other));
+            expect(addresses.calls, 1, reason: 'same query/customer cache');
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    }
+  }
   group('posCheckoutLocalDueDate', () {
     test('formats local date as yyyy-mm-dd', () {
       final value = posCheckoutLocalDueDate(DateTime(2026, 5, 18, 9, 30));
@@ -223,29 +462,54 @@ void main() {
           data: {'detail': 'Sản phẩm Bánh su kem không đủ tồn kho'},
         ),
       );
-      expect(resolvePosCheckoutErrorMessage(error), 'Sản phẩm Bánh su kem không đủ tồn kho');
+      expect(
+        resolvePosCheckoutErrorMessage(error),
+        'Sản phẩm Bánh su kem không đủ tồn kho',
+      );
     });
     test('returns shared validation fallback when 422 detail is missing', () {
       final error = DioException(
         requestOptions: RequestOptions(path: '/api/orders'),
-        response: Response(requestOptions: RequestOptions(path: '/api/orders'), statusCode: 422, data: <String, dynamic>{}),
+        response: Response(
+          requestOptions: RequestOptions(path: '/api/orders'),
+          statusCode: 422,
+          data: <String, dynamic>{},
+        ),
       );
-      expect(resolvePosCheckoutErrorMessage(error), SharedLabels.apiValidationError);
-      expect(resolvePosCheckoutErrorMessage(error), isNot(contains('DioException')));
+      expect(
+        resolvePosCheckoutErrorMessage(error),
+        SharedLabels.apiValidationError,
+      );
+      expect(
+        resolvePosCheckoutErrorMessage(error),
+        isNot(contains('DioException')),
+      );
     });
-    test('returns SharedLabels.apiError when DioException response is null', () {
-      final error = DioException(requestOptions: RequestOptions(path: '/api/orders'));
-      expect(resolvePosCheckoutErrorMessage(error), SharedLabels.apiError);
-    });
+    test(
+      'returns SharedLabels.apiError when DioException response is null',
+      () {
+        final error = DioException(
+          requestOptions: RequestOptions(path: '/api/orders'),
+        );
+        expect(resolvePosCheckoutErrorMessage(error), SharedLabels.apiError);
+      },
+    );
     test('returns OrdersLabels.loiMayChu for non-422 server responses', () {
       final error = DioException(
         requestOptions: RequestOptions(path: '/api/orders'),
-        response: Response(requestOptions: RequestOptions(path: '/api/orders'), statusCode: 500, data: <String, dynamic>{'detail': 'Internal Server Error'}),
+        response: Response(
+          requestOptions: RequestOptions(path: '/api/orders'),
+          statusCode: 500,
+          data: <String, dynamic>{'detail': 'Internal Server Error'},
+        ),
       );
       expect(resolvePosCheckoutErrorMessage(error), OrdersLabels.loiMayChu);
     });
     test('returns StockLabels.loiHeThong for non-Dio exceptions', () {
-      expect(resolvePosCheckoutErrorMessage(Exception('unexpected')), StockLabels.loiHeThong);
+      expect(
+        resolvePosCheckoutErrorMessage(Exception('unexpected')),
+        StockLabels.loiHeThong,
+      );
     });
   });
 
@@ -257,11 +521,18 @@ void main() {
     // removed: quantity editing is covered by Stage 1 tests, and the
     // empty-cart guard is unchanged (not part of Phase 4 scope).
 
-    testWidgets('submits selected transfer method to order creation', (tester) async {
+    testWidgets('submits selected transfer method to order creation', (
+      tester,
+    ) async {
       final fakeOrderService = _FakeOrderService();
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+        ),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -274,7 +545,10 @@ void main() {
       await tester.tap(find.text(OrdersLabels.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      final createButton = find.widgetWithText(
+        FilledButton,
+        OrdersLabels.payNow,
+      );
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -287,10 +561,14 @@ void main() {
       expect(find.text('Receipt ORD-001'), findsOneWidget);
     });
 
-    testWidgets('payment segment selection has visible selected styling', (tester) async {
+    testWidgets('payment segment selection has visible selected styling', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -304,7 +582,9 @@ void main() {
       final segmentedButtons = find.byType(SegmentedButton<String>);
       expect(segmentedButtons, findsWidgets);
 
-      var segmented = tester.widget<SegmentedButton<String>>(segmentedButtons.last);
+      var segmented = tester.widget<SegmentedButton<String>>(
+        segmentedButtons.last,
+      );
       expect(segmented.selected, {'cash'});
 
       await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
@@ -316,11 +596,22 @@ void main() {
       expect(segmented.selected, {'transfer'});
     });
 
-    testWidgets('submits useInventory false for force-sold cart lines', (tester) async {
+    testWidgets('submits useInventory false for force-sold cart lines', (
+      tester,
+    ) async {
       final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1, useInventory: false);
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        useInventory: false,
+      );
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+        ),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -328,68 +619,105 @@ void main() {
       // (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      final createButton = find.widgetWithText(
+        FilledButton,
+        OrdersLabels.payNow,
+      );
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
 
-
-      expect(fakeOrderService.createdItems.single.single['attributes'], {'useInventory': 'false'});
+      expect(fakeOrderService.createdItems.single.single['attributes'], {
+        'useInventory': 'false',
+      });
     });
 
-    testWidgets('submits gift items with productId and isGift flag', (tester) async {
+    testWidgets('submits gift items with productId and isGift flag', (
+      tester,
+    ) async {
       final fakeOrderService = _FakeOrderService();
       final normalItem = PosCartItem(product: _product(), quantity: 1);
       final giftItem = PosCartItem(
-        product: const Product(id: 42, name: 'Nen', basePrice: 5000, category: 'phu_kien', active: 1, attributes: {'_gift': 'true'}),
+        product: const Product(
+          id: 42,
+          name: 'Nen',
+          basePrice: 5000,
+          category: 'phu_kien',
+          active: 1,
+          attributes: {'_gift': 'true'},
+        ),
         quantity: 1,
         isGift: true,
       );
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem], orderService: fakeOrderService));
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[normalItem, giftItem],
+          orderService: fakeOrderService,
+        ),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
       // Advance to the dedicated payment step before submit (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      final createButton = find.widgetWithText(
+        FilledButton,
+        OrdersLabels.payNow,
+      );
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
 
-
-      final giftPayload = fakeOrderService.createdItems.single.firstWhere((item) => item['isGift'] == true);
+      final giftPayload = fakeOrderService.createdItems.single.firstWhere(
+        (item) => item['isGift'] == true,
+      );
       expect(giftPayload['productId'], '42');
       expect(giftPayload['productName'], 'Nen');
     });
 
-    testWidgets('opens wizard review before order creation and keeps cart state', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 2);
+    testWidgets(
+      'opens wizard review before order creation and keeps cart state',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 2);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
+        await _navigateToReview(tester);
 
-      expect(fakeOrderService.createOrderCallCount, 0);
-      // Stage 4 review uses the unified summary-card title (DG-218 Phase 4).
-      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
-      // The product line renders as "name x<qty> — <price>" in ProductSummaryCard.
-      expect(find.textContaining('Banh mi bo toi'), findsOneWidget);
-      expect(find.text('Receipt ORD-001'), findsNothing);
-    });
+        expect(fakeOrderService.createOrderCallCount, 0);
+        // Stage 4 review uses the unified summary-card title (DG-218 Phase 4).
+        expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
+        // The product line renders as "name x<qty> — <price>" in ProductSummaryCard.
+        expect(find.textContaining('Banh mi bo toi'), findsOneWidget);
+        expect(find.text('Receipt ORD-001'), findsNothing);
+      },
+    );
 
     testWidgets('review shows gift line totals as zero', (tester) async {
       final normalItem = PosCartItem(product: _product(), quantity: 1);
       final giftItem = PosCartItem(
-        product: const Product(id: -1, name: 'Nen', basePrice: 5000, attributes: {'_gift': 'true'}),
+        product: const Product(
+          id: -1,
+          name: 'Nen',
+          basePrice: 5000,
+          attributes: {'_gift': 'true'},
+        ),
         quantity: 1,
         isGift: true,
       );
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem]),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -406,11 +734,18 @@ void main() {
       expect(find.text(formatVND(20000)), findsWidgets);
     });
 
-    testWidgets('edit order from review preserves cart and selected payment', (tester) async {
+    testWidgets('edit order from review preserves cart and selected payment', (
+      tester,
+    ) async {
       final fakeOrderService = _FakeOrderService();
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+        ),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -437,7 +772,10 @@ void main() {
       // Re-enter the payment step; the transfer selection persists.
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      final createButton = find.widgetWithText(
+        FilledButton,
+        OrdersLabels.payNow,
+      );
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -449,180 +787,249 @@ void main() {
       expect(fakeOrderService.paymentMethods, <String?>['transfer']);
     });
 
-    testWidgets('finalize submits create order once while processing and clears after success', (tester) async {
+    testWidgets(
+      'finalize submits create order once while processing and clears after success',
+      (tester) async {
+        final createCompleter = Completer<Order>();
+        final fakeOrderService = _FakeOrderService(
+          createOrderCompleter: createCompleter,
+        );
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _navigateToReview(tester);
+
+        // Stage 4 review sub-step is shown (unified summary card title).
+        expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
+
+        // Advance to the dedicated payment step.
+        await _navigateToPayment(tester);
+
+        // Tap the submit button — _isProcessing guard prevents a second call.
+        final btn = find.byType(FilledButton);
+        expect(btn, findsOneWidget);
+        await tester.ensureVisible(btn);
+        await tester.pumpAndSettle();
+        await tester.tap(btn);
+        // B5 dialog appears; dismiss it to continue submit flow.
+
+        // While the first call is still processing (completer not yet resolved),
+        // tap again — should be a no-op because _isProcessing is true.
+        await tester.tap(btn);
+        await tester.pump();
+
+        expect(fakeOrderService.createOrderCallCount, 1);
+        expect(find.text('POS Home'), findsNothing);
+
+        createCompleter.complete(
+          Order(
+            id: '2',
+            orderRef: 'ORD-LOCK',
+            customerName: OrdersLabels.khachLe,
+            items: const [],
+            totalPrice: 0,
+            createdAt: DateTime(2026, 5, 20),
+            updatedAt: DateTime(2026, 5, 20),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+        expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'AC-6: submitted order contains isBirthday, age, rut_tien, cash_fee, cash_amount',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(
+          product: _product(),
+          quantity: 1,
+          isBirthday: true,
+          age: '5',
+          rutTien: true,
+          cashFee: 5000,
+          cashAmount: 20000,
+        );
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
+
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+
+        final submitted = fakeOrderService.createdItems.single;
+        final regularItem = submitted.firstWhere((i) => i['isGift'] != true);
+        expect(regularItem['isBirthday'], isTrue);
+        expect(regularItem['age'], 5);
+        expect(regularItem['attributes']['rut_tien'], 'true');
+        expect(regularItem['attributes']['cash_fee'], '5000');
+        expect(regularItem['attributes']['cash_amount'], '20000');
+      },
+    );
+
+    testWidgets(
+      'AC-5: _buildOrderItems() includes the notes field in the submitted item map',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(
+          product: _product(),
+          quantity: 1,
+          notes: 'Không đường, ít bơ',
+        );
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
+
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+
+        // Regression guard for DG-298 Phase 1: _buildOrderItems() must serialize
+        // the per-item `notes` field into the API request map so per-item notes
+        // persist through checkout (FR-1, AC-5).
+        final submitted = fakeOrderService.createdItems.single;
+        expect(submitted, hasLength(1));
+        expect(submitted.single['notes'], 'Không đường, ít bơ');
+      },
+    );
+
+    testWidgets(
+      'AC-5: _buildOrderItems() preserves distinct notes per cart item',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final firstItem = PosCartItem(
+          product: _product(),
+          quantity: 1,
+          notes: 'Không đường',
+        );
+        final secondItem = PosCartItem(
+          product: const Product(
+            id: 2,
+            name: 'Bánh su kem',
+            basePrice: 15000,
+            category: 'bread',
+            active: 1,
+          ),
+          quantity: 2,
+          notes: 'Thêm kem',
+        );
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[firstItem, secondItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
+
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+
+        // FR-1 / AC-4: each cart item's notes serialize independently.
+        final submitted = fakeOrderService.createdItems.single;
+        expect(submitted, hasLength(2));
+        final firstPayload = submitted.firstWhere((i) => i['productId'] == '1');
+        final secondPayload = submitted.firstWhere(
+          (i) => i['productId'] == '2',
+        );
+        expect(firstPayload['notes'], 'Không đường');
+        expect(secondPayload['notes'], 'Thêm kem');
+      },
+    );
+
+    testWidgets(
+      'Pay Later: submits order with skipPayment and empty payment method',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
+
+        await tester.ensureVisible(find.text(OrdersLabels.payLater));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.payLater));
+        await tester.pumpAndSettle();
+
+        expect(fakeOrderService.createOrderCallCount, 1);
+        expect(fakeOrderService.paymentMethods, <String?>['']);
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
+
+    testWidgets('Pay Later: disables Pay Later button while processing', (
+      tester,
+    ) async {
       final createCompleter = Completer<Order>();
-      final fakeOrderService = _FakeOrderService(createOrderCompleter: createCompleter);
+      final fakeOrderService = _FakeOrderService(
+        createOrderCompleter: createCompleter,
+      );
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-
-      // Stage 4 review sub-step is shown (unified summary card title).
-      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
-
-      // Advance to the dedicated payment step.
-      await _navigateToPayment(tester);
-
-      // Tap the submit button — _isProcessing guard prevents a second call.
-      final btn = find.byType(FilledButton);
-      expect(btn, findsOneWidget);
-      await tester.ensureVisible(btn);
-      await tester.pumpAndSettle();
-      await tester.tap(btn);
-      // B5 dialog appears; dismiss it to continue submit flow.
-
-
-      // While the first call is still processing (completer not yet resolved),
-      // tap again — should be a no-op because _isProcessing is true.
-      await tester.tap(btn);
-      await tester.pump();
-
-      expect(fakeOrderService.createOrderCallCount, 1);
-      expect(find.text('POS Home'), findsNothing);
-
-      createCompleter.complete(Order(
-        id: '2',
-        orderRef: 'ORD-LOCK',
-        customerName: OrdersLabels.khachLe,
-        items: const [],
-        totalPrice: 0,
-        createdAt: DateTime(2026, 5, 20),
-        updatedAt: DateTime(2026, 5, 20),
-      ));
-
-      await tester.pumpAndSettle();
-      expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
-    });
-
-    testWidgets('AC-6: submitted order contains isBirthday, age, rut_tien, cash_fee, cash_amount', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        isBirthday: true,
-        age: '5',
-        rutTien: true,
-        cashFee: 5000,
-        cashAmount: 20000,
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+        ),
       );
-
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-
-
-      final submitted = fakeOrderService.createdItems.single;
-      final regularItem = submitted.firstWhere((i) => i['isGift'] != true);
-      expect(regularItem['isBirthday'], isTrue);
-      expect(regularItem['age'], 5);
-      expect(regularItem['attributes']['rut_tien'], 'true');
-      expect(regularItem['attributes']['cash_fee'], '5000');
-      expect(regularItem['attributes']['cash_amount'], '20000');
-    });
-
-    testWidgets('AC-5: _buildOrderItems() includes the notes field in the submitted item map', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        notes: 'Không đường, ít bơ',
+      final payLaterButton = find.widgetWithText(
+        OutlinedButton,
+        OrdersLabels.payLater,
       );
-
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
-
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-
-
-      // Regression guard for DG-298 Phase 1: _buildOrderItems() must serialize
-      // the per-item `notes` field into the API request map so per-item notes
-      // persist through checkout (FR-1, AC-5).
-      final submitted = fakeOrderService.createdItems.single;
-      expect(submitted, hasLength(1));
-      expect(submitted.single['notes'], 'Không đường, ít bơ');
-    });
-
-    testWidgets('AC-5: _buildOrderItems() preserves distinct notes per cart item', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final firstItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        notes: 'Không đường',
-      );
-      final secondItem = PosCartItem(
-        product: const Product(id: 2, name: 'Bánh su kem', basePrice: 15000, category: 'bread', active: 1),
-        quantity: 2,
-        notes: 'Thêm kem',
-      );
-
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[firstItem, secondItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
-
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-
-
-      // FR-1 / AC-4: each cart item's notes serialize independently.
-      final submitted = fakeOrderService.createdItems.single;
-      expect(submitted, hasLength(2));
-      final firstPayload = submitted.firstWhere((i) => i['productId'] == '1');
-      final secondPayload = submitted.firstWhere((i) => i['productId'] == '2');
-      expect(firstPayload['notes'], 'Không đường');
-      expect(secondPayload['notes'], 'Thêm kem');
-    });
-
-    testWidgets('Pay Later: submits order with skipPayment and empty payment method', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
-
-      await tester.ensureVisible(find.text(OrdersLabels.payLater));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.payLater));
-      await tester.pumpAndSettle();
-
-      expect(fakeOrderService.createOrderCallCount, 1);
-      expect(fakeOrderService.paymentMethods, <String?>['']);
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
-
-    testWidgets('Pay Later: disables Pay Later button while processing', (tester) async {
-      final createCompleter = Completer<Order>();
-      final fakeOrderService = _FakeOrderService(createOrderCompleter: createCompleter);
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
-
-      final payLaterButton = find.widgetWithText(OutlinedButton, OrdersLabels.payLater);
       await tester.ensureVisible(payLaterButton);
       await tester.pumpAndSettle();
 
@@ -634,24 +1041,30 @@ void main() {
       final btn = tester.widget<OutlinedButton>(payLaterButton);
       expect(btn.onPressed, isNull);
 
-      createCompleter.complete(Order(
-        id: '2',
-        orderRef: 'ORD-PL',
-        customerName: OrdersLabels.khachLe,
-        items: const [],
-        totalPrice: 0,
-        createdAt: DateTime(2026, 5, 20),
-        updatedAt: DateTime(2026, 5, 20),
-      ));
+      createCompleter.complete(
+        Order(
+          id: '2',
+          orderRef: 'ORD-PL',
+          customerName: OrdersLabels.khachLe,
+          items: const [],
+          totalPrice: 0,
+          createdAt: DateTime(2026, 5, 20),
+          updatedAt: DateTime(2026, 5, 20),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Receipt ORD-PL'), findsOneWidget);
     });
   });
 
   group('Stage 1 reachability and cart sync (DG-218 Phase 3)', () {
-    testWidgets('Stage 1 is reachable via the stage indicator (AC1)', (tester) async {
+    testWidgets('Stage 1 is reachable via the stage indicator (AC1)', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
       await tester.pumpAndSettle();
 
       // Checkout opens on Stage 2; the Stage 1 indicator label is tappable.
@@ -664,52 +1077,68 @@ void main() {
       expect(find.text('Banh mi bo toi'), findsOneWidget);
     });
 
-    testWidgets('Stage 1 edit writes back to posCartProvider so submit reflects the edit (AC2)', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'Stage 1 edit writes back to posCartProvider so submit reflects the edit (AC2)',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      // Navigate to Stage 1 via the indicator.
-      await tester.tap(find.text(OrdersLabels.stage1Label).first);
-      await tester.pumpAndSettle();
+        // Navigate to Stage 1 via the indicator.
+        await tester.tap(find.text(OrdersLabels.stage1Label).first);
+        await tester.pumpAndSettle();
 
-      // Edit the product quantity in the wizard Stage 1 (1 -> 2).
-      await tester.tap(find.byIcon(Icons.add_circle_outline));
-      await tester.pumpAndSettle();
+        // Edit the product quantity in the wizard Stage 1 (1 -> 2).
+        await tester.tap(find.byIcon(Icons.add_circle_outline));
+        await tester.pumpAndSettle();
 
-      // Continue out of Stage 1 — this syncs the wizard edits back to the
-      // POS cart (single source of truth at submit) and advances to Stage 2.
-      await tester.tap(find.text(OrdersLabels.continueLabel));
-      await tester.pumpAndSettle();
+        // Continue out of Stage 1 — this syncs the wizard edits back to the
+        // POS cart (single source of truth at submit) and advances to Stage 2.
+        await tester.tap(find.text(OrdersLabels.continueLabel));
+        await tester.pumpAndSettle();
 
-      // Stage 2 → Stage 3 (delivery)
-      await tester.tap(find.text('Tiếp tục'));
-      await tester.pumpAndSettle();
-      // Stage 3 (pickup simplified) → Stage 4 (review) via "Giao ngay"
-      await tester.tap(find.text(OrdersLabels.pickupNow));
-      await tester.pumpAndSettle();
-      // Advance to Stage 5 (dedicated payment step).
-      await _navigateToPayment(tester);
+        // Stage 2 → Stage 3 (delivery)
+        await tester.tap(find.text('Tiếp tục'));
+        await tester.pumpAndSettle();
+        // Stage 3 (pickup simplified) → Stage 4 (review) via "Giao ngay"
+        await tester.tap(find.text(OrdersLabels.pickupNow));
+        await tester.pumpAndSettle();
+        // Advance to Stage 5 (dedicated payment step).
+        await _navigateToPayment(tester);
 
-      // Submit (cash) and assert the created order reflects the edited qty.
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
+        // Submit (cash) and assert the created order reflects the edited qty.
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
 
+        expect(fakeOrderService.createOrderCallCount, 1);
+        final submittedItems = fakeOrderService.createdItems.single;
+        final regularItem = submittedItems.firstWhere(
+          (i) => i['isGift'] != true,
+        );
+        expect(regularItem['quantity'], 2);
+        expect(regularItem['productId'], '1');
+      },
+    );
 
-      expect(fakeOrderService.createOrderCallCount, 1);
-      final submittedItems = fakeOrderService.createdItems.single;
-      final regularItem = submittedItems.firstWhere((i) => i['isGift'] != true);
-      expect(regularItem['quantity'], 2);
-      expect(regularItem['productId'], '1');
-    });
-
-    testWidgets('returning to Stage 1 seeds wizard items from the cart', (tester) async {
+    testWidgets('returning to Stage 1 seeds wizard items from the cart', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 3);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text(OrdersLabels.stage1Label).first);
@@ -728,9 +1157,13 @@ void main() {
   });
 
   group('Stage 4 dedicated payment step (DG-218 Phase 4)', () {
-    testWidgets('AC5: review sub-step uses the unified summary cards', (tester) async {
+    testWidgets('AC5: review sub-step uses the unified summary cards', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -745,108 +1178,150 @@ void main() {
       expect(find.text(OrdersLabels.summaryDelivery), findsOneWidget);
     });
 
-    testWidgets('AC4: Stage 4 review has no payment selector; payment step is separate', (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'AC4: Stage 4 review has no payment selector; payment step is separate',
+      (tester) async {
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+        await tester.pumpWidget(
+          _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
+        await _navigateToReview(tester);
 
-      // The review sub-step must NOT contain the payment SegmentedButton
-      // (FR-5): payment is presented as a dedicated step after review.
-      expect(find.byType(SegmentedButton<String>), findsNothing);
-      expect(find.text(OrdersLabels.tienMat), findsNothing);
-      expect(find.text(OrdersLabels.chuyenKhoan), findsNothing);
-      expect(find.text(OrdersLabels.payNow), findsNothing);
+        // The review sub-step must NOT contain the payment SegmentedButton
+        // (FR-5): payment is presented as a dedicated step after review.
+        expect(find.byType(SegmentedButton<String>), findsNothing);
+        expect(find.text(OrdersLabels.tienMat), findsNothing);
+        expect(find.text(OrdersLabels.chuyenKhoan), findsNothing);
+        expect(find.text(OrdersLabels.payNow), findsNothing);
 
-      // Advancing opens the dedicated payment step with the selector.
-      await _navigateToPayment(tester);
-      expect(find.byType(SegmentedButton<String>), findsOneWidget);
-      expect(find.text(OrdersLabels.tienMat), findsOneWidget);
-      expect(find.text(OrdersLabels.chuyenKhoan), findsOneWidget);
-      expect(find.text(OrdersLabels.payNow), findsOneWidget);
-    });
+        // Advancing opens the dedicated payment step with the selector.
+        await _navigateToPayment(tester);
+        expect(find.byType(SegmentedButton<String>), findsOneWidget);
+        expect(find.text(OrdersLabels.tienMat), findsOneWidget);
+        expect(find.text(OrdersLabels.chuyenKhoan), findsOneWidget);
+        expect(find.text(OrdersLabels.payNow), findsOneWidget);
+      },
+    );
 
-    testWidgets('AC4/AC8: cash path submits, shows receipt, and clears the cart', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC4/AC8: cash path submits, shows receipt, and clears the cart',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      // Default selection is cash; submit directly.
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pumpAndSettle();
+        // Default selection is cash; submit directly.
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pumpAndSettle();
 
-      expect(fakeOrderService.paymentMethods, <String?>['cash']);
-      // Receipt screen is shown.
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
+        expect(fakeOrderService.paymentMethods, <String?>['cash']);
+        // Receipt screen is shown.
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
 
-    testWidgets('AC4/AC8: transfer skip-photo path submits as transfer and shows receipt', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC4/AC8: transfer skip-photo path submits as transfer and shows receipt',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      // DG-370 Phase 2: the order summary section now appears above the
-      // payment fields; ensure the transfer option is visible before tapping.
-      await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
+        // DG-370 Phase 2: the order summary section now appears above the
+        // payment fields; ensure the transfer option is visible before tapping.
+        await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      // Skip the transfer proof photo.
-      await tester.tap(find.text(OrdersLabels.skip));
-      await tester.pumpAndSettle();
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        // Skip the transfer proof photo.
+        await tester.tap(find.text(OrdersLabels.skip));
+        await tester.pumpAndSettle();
 
-      expect(fakeOrderService.paymentMethods, <String?>['transfer']);
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
+        expect(fakeOrderService.paymentMethods, <String?>['transfer']);
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
 
-    testWidgets('AC8: POS defaults khách lẻ + Tại tiệm - POS applied on submit', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC8: POS defaults khách lẻ + Tại tiệm - POS applied on submit',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pumpAndSettle();
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pumpAndSettle();
 
-      // FR-9: the walk-in customer and POS source defaults are applied.
-      expect(fakeOrderService.createOrderCallCount, 1);
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
+        // FR-9: the walk-in customer and POS source defaults are applied.
+        expect(fakeOrderService.createOrderCallCount, 1);
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
   });
 
   group('Target bank account selector (DG-244 Phase 2, FR7/AC7)', () {
-    testWidgets('AC1: cash method does not show the TK đích dropdown', (tester) async {
+    testWidgets('AC1: cash method does not show the TK đích dropdown', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
@@ -859,210 +1334,258 @@ void main() {
       expect(find.text(ExpensesLabels.paymentSourceAnVCB), findsNothing);
     });
 
-    testWidgets('AC1: transfer method shows the TK đích dropdown with empty default and both VCB options',
-        (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC1: transfer method shows the TK đích dropdown with empty default and both VCB options',
+      (tester) async {
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      // DG-370 Phase 2: summary section may push this off-screen on the
-      // default 800x600 test surface; scroll it into view first.
-      await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
+        // DG-370 Phase 2: summary section may push this off-screen on the
+        // default 800x600 test surface; scroll it into view first.
+        await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
 
-      expect(find.text(ExpensesLabels.paymentTargetAccountLabel), findsOneWidget);
-      expect(find.text(ExpensesLabels.paymentNoAccount), findsOneWidget);
+        expect(
+          find.text(ExpensesLabels.paymentTargetAccountLabel),
+          findsOneWidget,
+        );
+        expect(find.text(ExpensesLabels.paymentNoAccount), findsOneWidget);
 
-      // The closed dropdown only renders the selected item's child; verify
-      // the full option set via the inner DropdownButton's items list.
-      final dropdown = tester.widget<DropdownButton<String?>>(
-        find.descendant(
-          of: find.byType(DropdownButtonFormField<String?>),
-          matching: find.byType(DropdownButton<String?>),
-        ),
-      );
-      final itemValues = dropdown.items!.map((i) => i.value).toList();
-      expect(itemValues, [null, ExpensesLabels.paymentSourcePhuongVCB, ExpensesLabels.paymentSourceAnVCB]);
-    });
+        // The closed dropdown only renders the selected item's child; verify
+        // the full option set via the inner DropdownButton's items list.
+        final dropdown = tester.widget<DropdownButton<String?>>(
+          find.descendant(
+            of: find.byType(DropdownButtonFormField<String?>),
+            matching: find.byType(DropdownButton<String?>),
+          ),
+        );
+        final itemValues = dropdown.items!.map((i) => i.value).toList();
+        expect(itemValues, [
+          null,
+          ExpensesLabels.paymentSourcePhuongVCB,
+          ExpensesLabels.paymentSourceAnVCB,
+        ]);
+      },
+    );
 
-    testWidgets('AC7: selecting TK Ân VCB threads paymentSource into the created transaction',
-        (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final fakeTxnSvc = _FakePaymentTransactionService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC7: selecting TK Ân VCB threads paymentSource into the created transaction',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final fakeTxnSvc = _FakePaymentTransactionService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[cartItem],
-          orderService: fakeOrderService,
-          txnSvc: fakeTxnSvc,
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+            txnSvc: fakeTxnSvc,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      // Switch to transfer to reveal the target account selector.
-      await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
+        // Switch to transfer to reveal the target account selector.
+        await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
 
-      // Select TK Ân VCB from the dropdown.
-      // DG-370 Phase 2: ensure the dropdown is on-screen before tapping.
-      await tester.ensureVisible(find.byType(DropdownButtonFormField<String?>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButtonFormField<String?>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(ExpensesLabels.paymentSourceAnVCB).last);
-      await tester.pumpAndSettle();
+        // Select TK Ân VCB from the dropdown.
+        // DG-370 Phase 2: ensure the dropdown is on-screen before tapping.
+        await tester.ensureVisible(
+          find.byType(DropdownButtonFormField<String?>),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(DropdownButtonFormField<String?>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(ExpensesLabels.paymentSourceAnVCB).last);
+        await tester.pumpAndSettle();
 
-      // Submit (skip the transfer proof photo).
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.tap(find.text(OrdersLabels.skip));
-      await tester.pumpAndSettle();
+        // Submit (skip the transfer proof photo).
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.tap(find.text(OrdersLabels.skip));
+        await tester.pumpAndSettle();
 
-      // AC7: the created transaction carries the selected account.
-      expect(fakeTxnSvc.paymentSources, isNotEmpty);
-      expect(fakeTxnSvc.paymentSources.first, ExpensesLabels.paymentSourceAnVCB);
-    });
+        // AC7: the created transaction carries the selected account.
+        expect(fakeTxnSvc.paymentSources, isNotEmpty);
+        expect(
+          fakeTxnSvc.paymentSources.first,
+          ExpensesLabels.paymentSourceAnVCB,
+        );
+      },
+    );
 
-    testWidgets('AC8: transfer with no account selected submits with null paymentSource', (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final fakeTxnSvc = _FakePaymentTransactionService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets(
+      'AC8: transfer with no account selected submits with null paymentSource',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final fakeTxnSvc = _FakePaymentTransactionService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[cartItem],
-          orderService: fakeOrderService,
-          txnSvc: fakeTxnSvc,
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+            txnSvc: fakeTxnSvc,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await _navigateToReview(tester);
-      await _navigateToPayment(tester);
+        await _navigateToReview(tester);
+        await _navigateToPayment(tester);
 
-      // DG-370 Phase 2: scroll the transfer option into view before tapping.
-      await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.chuyenKhoan));
-      await tester.pumpAndSettle();
+        // DG-370 Phase 2: scroll the transfer option into view before tapping.
+        await tester.ensureVisible(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.chuyenKhoan));
+        await tester.pumpAndSettle();
 
-      // Do NOT select an account — leave the dropdown at its empty default.
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.tap(find.text(OrdersLabels.skip));
-      await tester.pumpAndSettle();
+        // Do NOT select an account — leave the dropdown at its empty default.
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.tap(find.text(OrdersLabels.skip));
+        await tester.pumpAndSettle();
 
-      // NFR3/AC8: null/empty account is accepted and submitted as null.
-      expect(fakeTxnSvc.paymentSources, isNotEmpty);
-      expect(fakeTxnSvc.paymentSources.first, isNull);
-    });
+        // NFR3/AC8: null/empty account is accepted and submitted as null.
+        expect(fakeTxnSvc.paymentSources, isNotEmpty);
+        expect(fakeTxnSvc.paymentSources.first, isNull);
+      },
+    );
   });
 
   group('B1a round-trip preserves notes and photos (leave → re-enter)', () {
-    testWidgets('notes seeded from cart survive write-back on back navigation', (tester) async {
-      final cartItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        notes: 'Không đường',
-      );
+    testWidgets(
+      'notes seeded from cart survive write-back on back navigation',
+      (tester) async {
+        final cartItem = PosCartItem(
+          product: _product(),
+          quantity: 1,
+          notes: 'Không đường',
+        );
 
-      late WidgetRef capturedRef;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            posCartProvider.overrideWith(() => _SeededPosCartNotifier([cartItem])),
-            customerServiceProvider.overrideWithValue(_FakeCustomerService()),
-            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
-          ],
-          child: Consumer(
-            builder: (context, ref, _) {
-              capturedRef = ref;
-              return const SizedBox.shrink();
-            },
+        late WidgetRef capturedRef;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              posCartProvider.overrideWith(
+                () => _SeededPosCartNotifier([cartItem]),
+              ),
+              customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+              paymentTransactionServiceProvider.overrideWithValue(
+                _FakePaymentTransactionService(),
+              ),
+            ],
+            child: Consumer(
+              builder: (context, ref, _) {
+                capturedRef = ref;
+                return const SizedBox.shrink();
+              },
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      // Seed posOrderStateProvider from cart (simulating _initPosState).
-      final cart = capturedRef.read(posCartProvider);
-      final item = cart.items.single;
-      capturedRef.read(posOrderStateProvider.notifier).updateItems([
-        DraftOrderItem(
-          product: item.product,
-          quantity: item.quantity,
-          notes: item.notes,
-        ),
-      ]);
+        // Seed posOrderStateProvider from cart (simulating _initPosState).
+        final cart = capturedRef.read(posCartProvider);
+        final item = cart.items.single;
+        capturedRef.read(posOrderStateProvider.notifier).updateItems([
+          DraftOrderItem(
+            product: item.product,
+            quantity: item.quantity,
+            notes: item.notes,
+          ),
+        ]);
 
-      // Verify notes are seeded.
-      var posState = capturedRef.read(posOrderStateProvider);
-      expect(posState.items.single.notes, 'Không đường');
+        // Verify notes are seeded.
+        var posState = capturedRef.read(posOrderStateProvider);
+        expect(posState.items.single.notes, 'Không đường');
 
-      // Simulate user editing notes in POS state.
-      capturedRef.read(posOrderStateProvider.notifier).updateItems([
-        DraftOrderItem(
-          product: item.product,
-          quantity: item.quantity,
-          notes: 'Không đường, ít bơ',
-        ),
-      ]);
+        // Simulate user editing notes in POS state.
+        capturedRef.read(posOrderStateProvider.notifier).updateItems([
+          DraftOrderItem(
+            product: item.product,
+            quantity: item.quantity,
+            notes: 'Không đường, ít bơ',
+          ),
+        ]);
 
-      // Write back to cart (simulating _writeBackToCart).
-      final updated = capturedRef.read(posOrderStateProvider);
-      final cartItems = updated.items.map((di) => PosCartItem(
-        product: di.product,
-        quantity: di.quantity,
-        notes: di.notes,
-        pendingPhotos: List<XFile>.from(di.pendingPhotos),
-      )).toList();
-      capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
+        // Write back to cart (simulating _writeBackToCart).
+        final updated = capturedRef.read(posOrderStateProvider);
+        final cartItems = updated.items
+            .map(
+              (di) => PosCartItem(
+                product: di.product,
+                quantity: di.quantity,
+                notes: di.notes,
+                pendingPhotos: List<XFile>.from(di.pendingPhotos),
+              ),
+            )
+            .toList();
+        capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
 
-      // Re-seed from the now-lossless cart.
-      final updatedCart = capturedRef.read(posCartProvider);
-      capturedRef.read(posOrderStateProvider.notifier).updateItems([
-        DraftOrderItem(
-          product: updatedCart.items.single.product,
-          quantity: updatedCart.items.single.quantity,
-          notes: updatedCart.items.single.notes,
-        ),
-      ]);
+        // Re-seed from the now-lossless cart.
+        final updatedCart = capturedRef.read(posCartProvider);
+        capturedRef.read(posOrderStateProvider.notifier).updateItems([
+          DraftOrderItem(
+            product: updatedCart.items.single.product,
+            quantity: updatedCart.items.single.quantity,
+            notes: updatedCart.items.single.notes,
+          ),
+        ]);
 
-      // Assert notes preserved on the re-seeded POS state.
-      posState = capturedRef.read(posOrderStateProvider);
-      expect(posState.items.single.notes, 'Không đường, ít bơ');
-    });
+        // Assert notes preserved on the re-seeded POS state.
+        posState = capturedRef.read(posOrderStateProvider);
+        expect(posState.items.single.notes, 'Không đường, ít bơ');
+      },
+    );
 
-    testWidgets('pendingPhotos seeded from cart survive write-back', (tester) async {
+    testWidgets('pendingPhotos seeded from cart survive write-back', (
+      tester,
+    ) async {
       late WidgetRef capturedRef;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            posCartProvider.overrideWith(() => _SeededPosCartNotifier([
-              PosCartItem(product: _product(), quantity: 1, pendingPhotos: <XFile>[]),
-            ])),
+            posCartProvider.overrideWith(
+              () => _SeededPosCartNotifier([
+                PosCartItem(
+                  product: _product(),
+                  quantity: 1,
+                  pendingPhotos: <XFile>[],
+                ),
+              ]),
+            ),
             customerServiceProvider.overrideWithValue(_FakeCustomerService()),
-            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
+            paymentTransactionServiceProvider.overrideWithValue(
+              _FakePaymentTransactionService(),
+            ),
           ],
           child: Consumer(
             builder: (context, ref, _) {
@@ -1086,15 +1609,22 @@ void main() {
       ]);
 
       // Verify photos seeded.
-      expect(capturedRef.read(posOrderStateProvider).items.single.pendingPhotos, isEmpty);
+      expect(
+        capturedRef.read(posOrderStateProvider).items.single.pendingPhotos,
+        isEmpty,
+      );
 
       // Write back to cart.
       final state = capturedRef.read(posOrderStateProvider);
-      final cartItems = state.items.map((di) => PosCartItem(
-        product: di.product,
-        quantity: di.quantity,
-        pendingPhotos: List<XFile>.from(di.pendingPhotos),
-      )).toList();
+      final cartItems = state.items
+          .map(
+            (di) => PosCartItem(
+              product: di.product,
+              quantity: di.quantity,
+              pendingPhotos: List<XFile>.from(di.pendingPhotos),
+            ),
+          )
+          .toList();
       capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
 
       // Re-seed.
@@ -1103,7 +1633,9 @@ void main() {
         DraftOrderItem(
           product: updatedCart.items.single.product,
           quantity: updatedCart.items.single.quantity,
-          pendingPhotos: List<XFile>.from(updatedCart.items.single.pendingPhotos),
+          pendingPhotos: List<XFile>.from(
+            updatedCart.items.single.pendingPhotos,
+          ),
         ),
       ]);
 
@@ -1113,68 +1645,74 @@ void main() {
       );
     });
 
-    testWidgets('AC-1/AC-2/AC-5: attributes round-trip via cartItemToDraft and draftItemToCart preserves all values',
-        (tester) async {
-      late WidgetRef capturedRef;
-      final cartItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        isBirthday: true,
-        age: '5',
-        rutTien: true,
-        cashFee: 10000,
-        cashAmount: 50000,
-        useInventory: false,
-      );
+    testWidgets(
+      'AC-1/AC-2/AC-5: attributes round-trip via cartItemToDraft and draftItemToCart preserves all values',
+      (tester) async {
+        late WidgetRef capturedRef;
+        final cartItem = PosCartItem(
+          product: _product(),
+          quantity: 1,
+          isBirthday: true,
+          age: '5',
+          rutTien: true,
+          cashFee: 10000,
+          cashAmount: 50000,
+          useInventory: false,
+        );
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            posCartProvider.overrideWith(() => _SeededPosCartNotifier([cartItem])),
-            customerServiceProvider.overrideWithValue(_FakeCustomerService()),
-            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
-          ],
-          child: Consumer(
-            builder: (context, ref, _) {
-              capturedRef = ref;
-              return const SizedBox.shrink();
-            },
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              posCartProvider.overrideWith(
+                () => _SeededPosCartNotifier([cartItem]),
+              ),
+              customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+              paymentTransactionServiceProvider.overrideWithValue(
+                _FakePaymentTransactionService(),
+              ),
+            ],
+            child: Consumer(
+              builder: (context, ref, _) {
+                capturedRef = ref;
+                return const SizedBox.shrink();
+              },
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      final cart = capturedRef.read(posCartProvider);
-      final drafts = cart.items.map(cartItemToDraft).toList();
-      capturedRef.read(posOrderStateProvider.notifier).updateItems(drafts);
+        final cart = capturedRef.read(posCartProvider);
+        final drafts = cart.items.map(cartItemToDraft).toList();
+        capturedRef.read(posOrderStateProvider.notifier).updateItems(drafts);
 
-      var posState = capturedRef.read(posOrderStateProvider);
-      expect(posState.items.single.isBirthday, isTrue);
-      expect(posState.items.single.age, '5');
-      expect(posState.items.single.attributes['rut_tien'], 'true');
-      expect(posState.items.single.attributes['cash_fee'], '10000');
-      expect(posState.items.single.attributes['cash_amount'], '50000');
+        var posState = capturedRef.read(posOrderStateProvider);
+        expect(posState.items.single.isBirthday, isTrue);
+        expect(posState.items.single.age, '5');
+        expect(posState.items.single.attributes['rut_tien'], 'true');
+        expect(posState.items.single.attributes['cash_fee'], '10000');
+        expect(posState.items.single.attributes['cash_amount'], '50000');
 
-      final updated = capturedRef.read(posOrderStateProvider);
-      final cartItems = updated.items.map(draftItemToCart).toList();
-      capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
+        final updated = capturedRef.read(posOrderStateProvider);
+        final cartItems = updated.items.map(draftItemToCart).toList();
+        capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
 
-      final updatedCart = capturedRef.read(posCartProvider);
-      expect(updatedCart.items.single.isBirthday, isTrue);
-      expect(updatedCart.items.single.age, '5');
-      expect(updatedCart.items.single.rutTien, isTrue);
-      expect(updatedCart.items.single.cashFee, 10000);
-      expect(updatedCart.items.single.cashAmount, 50000);
-      expect(updatedCart.items.single.useInventory, isFalse);
+        final updatedCart = capturedRef.read(posCartProvider);
+        expect(updatedCart.items.single.isBirthday, isTrue);
+        expect(updatedCart.items.single.age, '5');
+        expect(updatedCart.items.single.rutTien, isTrue);
+        expect(updatedCart.items.single.cashFee, 10000);
+        expect(updatedCart.items.single.cashAmount, 50000);
+        expect(updatedCart.items.single.useInventory, isFalse);
 
-      final reseeded = updatedCart.items.map(cartItemToDraft).toList();
-      capturedRef.read(posOrderStateProvider.notifier).updateItems(reseeded);
+        final reseeded = updatedCart.items.map(cartItemToDraft).toList();
+        capturedRef.read(posOrderStateProvider.notifier).updateItems(reseeded);
 
-      posState = capturedRef.read(posOrderStateProvider);
-      expect(posState.items.single.isBirthday, isTrue);
-      expect(posState.items.single.age, '5');
-      expect(posState.items.single.attributes['rut_tien'], 'true');
-    });
+        posState = capturedRef.read(posOrderStateProvider);
+        expect(posState.items.single.isBirthday, isTrue);
+        expect(posState.items.single.age, '5');
+        expect(posState.items.single.attributes['rut_tien'], 'true');
+      },
+    );
   });
 
   // DG-370 Phase 3 — fast-path navigation wiring (FR1/FR3/FR4, AC1/AC5).
@@ -1183,108 +1721,121 @@ void main() {
   // deliverImmediately=true so the order is created with status="delivered".
   // "Quay lại" from fast-path Stage 5 returns to /pos (not Stage 4).
   group('DG-370 Phase 3: fast-path navigation (Giao ngay & Thanh toán)', () {
-    testWidgets('AC1: fast-path lands on Stage 5 with Giao ngay defaults and creates order with status=delivered (cash)',
-        (tester) async {
-      final fakeOrderService = _FakeOrderService();
+    testWidgets(
+      'AC1: fast-path lands on Stage 5 with Giao ngay defaults and creates order with status=delivered (cash)',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+            fastPath: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Fast-path skips Stages 1-4 and lands on Stage 5 (payment step): the
+        // cash/transfer SegmentedButton and the "Thanh toán ngay" button are
+        // immediately visible (no need to navigate through stages).
+        expect(find.byType(SegmentedButton<String>), findsOneWidget);
+        expect(find.text(OrdersLabels.payNow), findsOneWidget);
+
+        // The order summary section (Phase 2) is also visible on Stage 5.
+        expect(find.text(OrdersLabels.summaryProducts), findsOneWidget);
+
+        // Submit with cash (default) — deliverImmediately=true should produce
+        // status="delivered" (FR4/AC1).
+        final createButton = find.widgetWithText(
+          FilledButton,
+          OrdersLabels.payNow,
+        );
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pumpAndSettle();
+
+        expect(fakeOrderService.createOrderCallCount, 1);
+        // FR4 / AC1: fast-path orders are created with status "delivered".
+        expect(fakeOrderService.statuses.single, 'delivered');
+        // AC1: Giao ngay defaults — customer="Khách lẻ", source="Tại tiệm - POS",
+        // delivery="pickup".
+        expect(fakeOrderService.customerNames.single, OrdersLabels.khachLe);
+        expect(fakeOrderService.sources.single, OrdersLabels.taiTiemPOS);
+        expect(fakeOrderService.deliveryTypes.single, 'pickup');
+        // Receipt screen is shown after submit.
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'AC5: fast-path "Quay lại" returns to the POS product grid (not Stage 4)',
+      (tester) async {
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(items: <PosCartItem>[cartItem], fastPath: true),
+        );
+        await tester.pumpAndSettle();
+
+        // Confirm we're on Stage 5 (payment step).
+        expect(find.text(OrdersLabels.payNow), findsOneWidget);
+
+        // Tap "Quay lại" — fast-path override should route back to /pos
+        // (POS Home), NOT to Stage 4 review.
+        final backButton = find.text(OrdersLabels.backLabel);
+        expect(backButton, findsOneWidget);
+        await tester.ensureVisible(backButton);
+        await tester.pumpAndSettle();
+        await tester.tap(backButton);
+        await tester.pumpAndSettle();
+
+        // AC5: returned to the POS product grid, not Stage 4 review.
+        expect(find.text('POS Home'), findsOneWidget);
+        // Stage 4 review summary should NOT be visible.
+        expect(find.text(OrdersLabels.reviewSummary), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'AC1: fast-path pay-later still creates order with status=delivered',
+      (tester) async {
+        final fakeOrderService = _FakeOrderService();
+        final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+        await tester.pumpWidget(
+          _buildCheckoutApp(
+            items: <PosCartItem>[cartItem],
+            orderService: fakeOrderService,
+            fastPath: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Pay later — even on the fast path, the order status is "delivered"
+        // because deliverImmediately=true is wired for the whole fast-path
+        // payment step (FR4).
+        await tester.ensureVisible(find.text(OrdersLabels.payLater));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(OrdersLabels.payLater));
+        await tester.pumpAndSettle();
+
+        expect(fakeOrderService.createOrderCallCount, 1);
+        expect(fakeOrderService.statuses.single, 'delivered');
+        expect(fakeOrderService.paymentMethods.single, '');
+        expect(find.text('Receipt ORD-001'), findsOneWidget);
+      },
+    );
+
+    testWidgets('fast-path does not show Stage 1-4 content on init', (
+      tester,
+    ) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(_buildCheckoutApp(
-        items: <PosCartItem>[cartItem],
-        orderService: fakeOrderService,
-        fastPath: true,
-      ));
-      await tester.pumpAndSettle();
-
-      // Fast-path skips Stages 1-4 and lands on Stage 5 (payment step): the
-      // cash/transfer SegmentedButton and the "Thanh toán ngay" button are
-      // immediately visible (no need to navigate through stages).
-      expect(find.byType(SegmentedButton<String>), findsOneWidget);
-      expect(find.text(OrdersLabels.payNow), findsOneWidget);
-
-      // The order summary section (Phase 2) is also visible on Stage 5.
-      expect(find.text(OrdersLabels.summaryProducts), findsOneWidget);
-
-      // Submit with cash (default) — deliverImmediately=true should produce
-      // status="delivered" (FR4/AC1).
-      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
-      await tester.ensureVisible(createButton);
-      await tester.pumpAndSettle();
-      await tester.tap(createButton);
-      await tester.pumpAndSettle();
-
-      expect(fakeOrderService.createOrderCallCount, 1);
-      // FR4 / AC1: fast-path orders are created with status "delivered".
-      expect(fakeOrderService.statuses.single, 'delivered');
-      // AC1: Giao ngay defaults — customer="Khách lẻ", source="Tại tiệm - POS",
-      // delivery="pickup".
-      expect(fakeOrderService.customerNames.single, OrdersLabels.khachLe);
-      expect(fakeOrderService.sources.single, OrdersLabels.taiTiemPOS);
-      expect(fakeOrderService.deliveryTypes.single, 'pickup');
-      // Receipt screen is shown after submit.
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
-
-    testWidgets('AC5: fast-path "Quay lại" returns to the POS product grid (not Stage 4)',
-        (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-
-      await tester.pumpWidget(_buildCheckoutApp(
-        items: <PosCartItem>[cartItem],
-        fastPath: true,
-      ));
-      await tester.pumpAndSettle();
-
-      // Confirm we're on Stage 5 (payment step).
-      expect(find.text(OrdersLabels.payNow), findsOneWidget);
-
-      // Tap "Quay lại" — fast-path override should route back to /pos
-      // (POS Home), NOT to Stage 4 review.
-      final backButton = find.text(OrdersLabels.backLabel);
-      expect(backButton, findsOneWidget);
-      await tester.ensureVisible(backButton);
-      await tester.pumpAndSettle();
-      await tester.tap(backButton);
-      await tester.pumpAndSettle();
-
-      // AC5: returned to the POS product grid, not Stage 4 review.
-      expect(find.text('POS Home'), findsOneWidget);
-      // Stage 4 review summary should NOT be visible.
-      expect(find.text(OrdersLabels.reviewSummary), findsNothing);
-    });
-
-    testWidgets('AC1: fast-path pay-later still creates order with status=delivered',
-        (tester) async {
-      final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-
-      await tester.pumpWidget(_buildCheckoutApp(
-        items: <PosCartItem>[cartItem],
-        orderService: fakeOrderService,
-        fastPath: true,
-      ));
-      await tester.pumpAndSettle();
-
-      // Pay later — even on the fast path, the order status is "delivered"
-      // because deliverImmediately=true is wired for the whole fast-path
-      // payment step (FR4).
-      await tester.ensureVisible(find.text(OrdersLabels.payLater));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OrdersLabels.payLater));
-      await tester.pumpAndSettle();
-
-      expect(fakeOrderService.createOrderCallCount, 1);
-      expect(fakeOrderService.statuses.single, 'delivered');
-      expect(fakeOrderService.paymentMethods.single, '');
-      expect(find.text('Receipt ORD-001'), findsOneWidget);
-    });
-
-    testWidgets('fast-path does not show Stage 1-4 content on init', (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-
-      await tester.pumpWidget(_buildCheckoutApp(
-        items: <PosCartItem>[cartItem],
-        fastPath: true,
-      ));
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem], fastPath: true),
+      );
       await tester.pumpAndSettle();
 
       // Stage 1 "Tiếp tục" button should not be present — we jumped to 5.

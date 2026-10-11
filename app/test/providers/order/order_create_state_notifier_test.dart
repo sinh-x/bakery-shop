@@ -5,6 +5,8 @@ import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
+import 'package:bakery_app/providers/order/order_draft_provider.dart';
+import 'package:bakery_app/providers/form_draft_session_notifier.dart';
 import 'package:bakery_app/shared/gift_config.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -72,6 +74,84 @@ Product _phuKienProduct({
 }
 
 void main() {
+  for (final flow in ['create', 'pos']) {
+    for (final type in ['bus', 'door']) {
+      test(
+        'DG-438 $flow/$type nullable GPS replacement, stage preservation and session clear',
+        () {
+          final container = ProviderContainer();
+          addTearDown(container.dispose);
+          final provider = flow == 'pos'
+              ? posOrderStateProvider
+              : orderCreateStateProvider;
+          final otherProvider = flow == 'pos'
+              ? orderCreateStateProvider
+              : posOrderStateProvider;
+          final notifier = container.read(provider.notifier);
+          notifier.updateWizardData(
+            OrderWizardData(
+              customerName: 'Test',
+              deliveryType: type,
+              deliveryAddress: '12 Selected',
+            ),
+          );
+          notifier.updateGpsFields(
+            latitude: 10,
+            longitude: 106,
+            googleMapsUrl: 'https://maps.example/old',
+          );
+          notifier.updateGpsFields();
+          expect(container.read(provider).latitude, 10);
+          expect(
+            container.read(provider).googleMapsUrl,
+            'https://maps.example/old',
+          );
+          notifier.updateGpsFields(
+            googleMapsUrl: 'https://maps.example/selected',
+            clearLatitude: true,
+            clearLongitude: true,
+          );
+          notifier
+            ..goToStage(4)
+            ..goToStage(2)
+            ..goToStage(3);
+          expect(
+            container.read(provider).googleMapsUrl,
+            'https://maps.example/selected',
+          );
+          expect(container.read(provider).latitude, isNull);
+          expect(container.read(provider).longitude, isNull);
+          notifier.updateGpsFields(
+            clearGoogleMapsUrl: true,
+            clearLatitude: true,
+            clearLongitude: true,
+          );
+          expect(container.read(provider).googleMapsUrl, isNull);
+          expect(
+            container.read(provider).wizardData.deliveryAddress,
+            '12 Selected',
+          );
+          expect(
+            container.read(otherProvider).wizardData.deliveryAddress,
+            isEmpty,
+          );
+          container
+              .read(orderDraftProvider.notifier)
+              .save(
+                OrderDraft(
+                  deliveryType: type,
+                  deliveryAddress: '12 Selected',
+                  googleMapsUrl: 'https://maps.example/selected',
+                ),
+              );
+          container.read(formDraftSessionProvider.notifier).clearAll();
+          expect(container.read(provider).wizardData.deliveryAddress, isEmpty);
+          expect(container.read(provider).googleMapsUrl, isNull);
+          expect(container.read(orderDraftProvider), isNull);
+        },
+      );
+    }
+  }
   group('OrderCreateStateNotifier.checkAutoGift', () {
     test('adds gift extras when tang_kem total >= giftThreshold', () async {
       final giftProducts = <Product>[
@@ -94,9 +174,7 @@ void main() {
         name: 'Bánh kem sinh nhật',
         basePrice: GiftConfig.giftThreshold,
       );
-      notifier.updateItems([
-        DraftOrderItem(product: qualifying, quantity: 1),
-      ]);
+      notifier.updateItems([DraftOrderItem(product: qualifying, quantity: 1)]);
 
       await notifier.checkAutoGift();
 
@@ -105,7 +183,8 @@ void main() {
       expect(gifts, hasLength(GiftConfig.giftExtras.length));
       for (final gift in gifts) {
         final configured = GiftConfig.giftExtras.firstWhere(
-          (entry) => entry.$1.trim().toLowerCase() ==
+          (entry) =>
+              entry.$1.trim().toLowerCase() ==
               gift.product.name.trim().toLowerCase(),
         );
         expect(gift.unitPrice, configured.$2);
@@ -129,9 +208,7 @@ void main() {
         name: 'Bánh kem nhỏ',
         basePrice: GiftConfig.giftThreshold - 1,
       );
-      notifier.updateItems([
-        DraftOrderItem(product: qualifying, quantity: 1),
-      ]);
+      notifier.updateItems([DraftOrderItem(product: qualifying, quantity: 1)]);
 
       await notifier.checkAutoGift();
 
@@ -158,9 +235,7 @@ void main() {
         name: 'Bánh kem sinh nhật',
         basePrice: GiftConfig.giftThreshold,
       );
-      notifier.updateItems([
-        DraftOrderItem(product: qualifying, quantity: 1),
-      ]);
+      notifier.updateItems([DraftOrderItem(product: qualifying, quantity: 1)]);
 
       await notifier.checkAutoGift();
       await notifier.checkAutoGift();
@@ -300,16 +375,19 @@ void main() {
       expect(state.canNavigateToStage(4), isFalse);
     });
 
-    test('allows stage 2 when items present but blocks stage 3 without customer name', () {
-      const product = Product(id: 1, name: 'Bánh', basePrice: 10000);
-      final state = OrderCreateState(
-        items: [DraftOrderItem(product: product)],
-        wizardData: const OrderWizardData(),
-        currentStage: 1,
-      );
-      expect(state.canNavigateToStage(2), isTrue);
-      expect(state.canNavigateToStage(3), isFalse);
-    });
+    test(
+      'allows stage 2 when items present but blocks stage 3 without customer name',
+      () {
+        const product = Product(id: 1, name: 'Bánh', basePrice: 10000);
+        final state = OrderCreateState(
+          items: [DraftOrderItem(product: product)],
+          wizardData: const OrderWizardData(),
+          currentStage: 1,
+        );
+        expect(state.canNavigateToStage(2), isTrue);
+        expect(state.canNavigateToStage(3), isFalse);
+      },
+    );
 
     test('allows stage 3 when items and customer name present', () {
       const product = Product(id: 1, name: 'Bánh', basePrice: 10000);
@@ -365,16 +443,10 @@ void main() {
 
   group('OrderCreateStateNotifier.restoreCustomerFromDraft', () {
     test('restores customer into wizardData', () async {
-      const customer = Customer(
-        id: 42,
-        name: 'Mai',
-        phone: '0901234567',
-      );
+      const customer = Customer(id: 42, name: 'Mai', phone: '0901234567');
       final fakeService = _FakeCustomerService(customer);
       final container = ProviderContainer(
-        overrides: [
-          customerServiceProvider.overrideWithValue(fakeService),
-        ],
+        overrides: [customerServiceProvider.overrideWithValue(fakeService)],
       );
       addTearDown(container.dispose);
 
@@ -402,10 +474,14 @@ void main() {
       await notifier.restoreCustomerFromDraft(99);
 
       final stateAfter = container.read(orderCreateStateProvider);
-      expect(stateAfter.wizardData.selectedCustomer,
-          stateBefore.wizardData.selectedCustomer);
-      expect(stateAfter.wizardData.customerName,
-          stateBefore.wizardData.customerName);
+      expect(
+        stateAfter.wizardData.selectedCustomer,
+        stateBefore.wizardData.selectedCustomer,
+      );
+      expect(
+        stateAfter.wizardData.customerName,
+        stateBefore.wizardData.customerName,
+      );
     });
   });
 
