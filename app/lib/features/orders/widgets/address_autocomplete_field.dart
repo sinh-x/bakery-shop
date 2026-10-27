@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/address.dart';
 import '../../../providers/address/address_autocomplete_provider.dart';
 import '../../../shared/labels/address_labels.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import '../../../shared/labels/orders.dart';
+import 'address_autocomplete_overlay.dart';
+
 /// Reusable delivery-address field with autocomplete suggestions from the
 /// address library (DG-385 Phase 4 / FR1/FR2/FR5/AC1/AC2/AC5/AC7).
 ///
@@ -77,6 +79,8 @@ class _AddressAutocompleteFieldState
     extends ConsumerState<AddressAutocompleteField> {
   late final FocusNode _focusNode;
   final LayerLink _layerLink = LayerLink();
+  // Keep only this field's dropdown inside its text-field tap boundary.
+  final Object _tapRegionGroup = Object();
   OverlayEntry? _overlayEntry;
   bool _ownFocusNode = false;
   AddressAutocompleteResponse _lastResponse =
@@ -232,6 +236,7 @@ class _AddressAutocompleteFieldState
     return CompositedTransformTarget(
       link: _layerLink,
       child: TextFormField(
+        groupId: _tapRegionGroup,
         controller: widget.controller,
         focusNode: _focusNode,
         enabled: widget.enabled,
@@ -258,134 +263,26 @@ class _AddressAutocompleteFieldState
         targetAnchor: Alignment.bottomLeft,
         followerAnchor: Alignment.topLeft,
         offset: const Offset(0, 4),
-        child: Material(
-          elevation: 4,
-          borderRadius: BorderRadius.circular(8),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: mediaQuery.size.height * 0.3,
-              minWidth: 200,
-            ),
-            child: _buildOverlayBody(
-              _lastResponse,
-              _overlayLoading,
-              _overlayError,
+        // Without this region, mouse down unfocuses the field and removes
+        // the overlay before the tile's onTap can finish on pointer up.
+        child: TextFieldTapRegion(
+          groupId: _tapRegionGroup,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: mediaQuery.size.height * 0.3,
+                minWidth: 200,
+              ),
+              child: AddressAutocompleteOverlay(
+                response: _lastResponse,
+                loading: _overlayLoading,
+                hasError: _overlayError,
+                onSelected: _selectSuggestion,
+              ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOverlayBody(
-    AddressAutocompleteResponse response,
-    bool loading,
-    bool hasError,
-  ) {
-    if (loading) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: 12),
-            Text(AddressLabels.autocompleteLoading),
-          ],
-        ),
-      );
-    }
-    if (hasError) {
-      return Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          AddressLabels.autocompleteError,
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
-      );
-    }
-    final pastOrders = response.pastOrders;
-    final library = response.library;
-    if (pastOrders.isEmpty && library.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text(AddressLabels.autocompleteNoResults),
-      );
-    }
-
-    // Build the flat list of tiles for the dropdown. Section headers are
-    // only shown when BOTH groups have results (FR4). When only one group
-    // has results, the section is rendered inline without a header so the
-    // dropdown stays compact for the common single-source case.
-    final showHeaders = pastOrders.isNotEmpty && library.isNotEmpty;
-    final children = <Widget>[];
-
-    if (pastOrders.isNotEmpty) {
-      if (showHeaders) {
-        children.add(const _SectionHeader(AddressLabels.autocompleteSectionPastOrders));
-      }
-      for (final suggestion in pastOrders) {
-        children.add(_suggestionTile(suggestion));
-      }
-    }
-    if (library.isNotEmpty) {
-      if (showHeaders) {
-        children.add(const _SectionHeader(AddressLabels.autocompleteSectionLibrary));
-      }
-      for (final suggestion in library) {
-        children.add(_suggestionTile(suggestion));
-      }
-    }
-
-    return ListView(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      children: children,
-    );
-  }
-
-  Widget _suggestionTile(AddressSuggestion suggestion) {
-    return ListTile(
-      dense: true,
-      leading: const Icon(Icons.location_on_outlined, size: 18),
-      title: Text(suggestion.displayAddress),
-      subtitle: suggestion.isCustomerAddress
-          ? const Text(
-              AddressLabels.customerAddressBadge,
-              style: TextStyle(fontSize: 11),
-            )
-          : null,
-      trailing: suggestion.googleMapsUrl != null
-          ? const Icon(Icons.map_outlined, size: 16)
-          : null,
-      onTap: () => _selectSuggestion(suggestion),
-    );
-  }
-}
-
-/// Section header for the grouped autocomplete dropdown (FR4/AC3).
-///
-/// Renders a small, non-interactive label header above a group of
-/// suggestions. Only shown when both groups have results so the single-
-/// source case stays compact.
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

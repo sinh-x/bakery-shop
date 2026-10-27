@@ -13,6 +13,8 @@ updated, or removed. Pickup and bus orders do NOT trigger library sync.
 
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from baker.db.connection import get_db
 
 
@@ -80,6 +82,67 @@ def _create_customer(client, name="Khách A", phone="0901234567"):
     resp = client.post("/api/customers", json={"name": name, "phone": phone})
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+@pytest.mark.parametrize("flow", ["create", "edit", "pos"])
+@pytest.mark.parametrize("delivery_type", ["bus", "door"])
+def test_selected_address_pair_save_readback_and_explicit_null(
+    api_client, flow, delivery_type
+):
+    """DG-438: isolated existing POST/PATCH/GET contracts; no new policy."""
+    address = f"12 Nguyễn Huệ {flow} {delivery_type}"
+    url = f"https://maps.example/{flow}/{delivery_type}"
+    order = _create_order(
+        api_client,
+        delivery_type=delivery_type,
+        delivery_address="Old address" if flow == "edit" else address,
+        google_maps_url="https://maps.example/stale" if flow == "edit" else url,
+        latitude=10.0 if flow == "edit" else None,
+        longitude=106.0 if flow == "edit" else None,
+        source="Tại tiệm - POS" if flow == "pos" else "Test",
+    )
+    ref = order["orderRef"]
+    if flow == "edit":
+        _edit_order(
+            api_client, ref, deliveryAddress=address, googleMapsUrl=url,
+            latitude=None, longitude=None,
+        )
+    saved = api_client.get(f"/api/orders/{ref}")
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["deliveryType"] == delivery_type
+    assert body["deliveryAddress"] == address
+    assert body["googleMapsUrl"] == url
+    assert body["latitude"] is None
+    assert body["longitude"] is None
+    with get_db() as conn:
+        assert _library_count(conn) == (1 if delivery_type == "door" else 0)
+
+    # Seed another location, then select a linkless replacement. PATCH must
+    # clear all three nullable fields, not merely omit them.
+    _edit_order(api_client, ref, latitude=10.0, longitude=106.0)
+    _edit_order(
+        api_client, ref, deliveryAddress="12 Linkless", googleMapsUrl=None,
+        latitude=None, longitude=None,
+    )
+    cleared = api_client.get(f"/api/orders/{ref}").json()
+    assert cleared["deliveryAddress"] == "12 Linkless"
+    assert cleared["googleMapsUrl"] is None
+    assert cleared["latitude"] is None
+    assert cleared["longitude"] is None
+    with get_db() as conn:
+        assert _library_count(conn) == 0
+
+    # Linkless new orders use the same existing create endpoint (POS too).
+    linkless = _create_order(
+        api_client, delivery_type=delivery_type, delivery_address="12 Linkless",
+        latitude=None, longitude=None,
+    )
+    reopened = api_client.get(f"/api/orders/{linkless['orderRef']}").json()
+    assert reopened["deliveryAddress"] == "12 Linkless"
+    assert reopened["googleMapsUrl"] is None
+    assert reopened["latitude"] is None
+    assert reopened["longitude"] is None
 
 
 # --- FR3 / AC3: create_order upserts library for door delivery + link ------
