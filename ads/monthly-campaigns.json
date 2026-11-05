@@ -1,0 +1,23 @@
+{
+  "policy": "Đã thống nhất mã YY-LNN, ví dụ 26-N41: hai số cuối năm, dấu gạch ngang, một chữ tháng tiếng Việt và số ảnh gốc. Không có khoảng trắng hoặc từ; không đánh số lại ảnh. Năm đầy đủ luôn lưu trong tên file và hồ sơ.",
+  "documentation": "docs/marketing-campaign-codes.md",
+  "agreement_date": "2026-11-01",
+  "agreement_scope": "Month mapping and display-code format only; not image/publication approval.",
+  "display_pattern": "{year_code:02d}-{letter}{index:02d}",
+  "year_code_digits": 2,
+  "filename_pattern": "{year:04d}-{month:02d}-{slug}-{index:02d}.jpg",
+  "months": {
+    "1": {"letter": "A", "slug": "a", "pronunciation": "a"},
+    "2": {"letter": "B", "slug": "b", "pronunciation": "bê"},
+    "3": {"letter": "C", "slug": "c", "pronunciation": "xê"},
+    "4": {"letter": "D", "slug": "d", "pronunciation": "dê"},
+    "5": {"letter": "E", "slug": "e", "pronunciation": "e"},
+    "6": {"letter": "G", "slug": "g", "pronunciation": "giê"},
+    "7": {"letter": "H", "slug": "h", "pronunciation": "hát"},
+    "8": {"letter": "K", "slug": "k", "pronunciation": "ca"},
+    "9": {"letter": "L", "slug": "l", "pronunciation": "e-lờ"},
+    "10": {"letter": "M", "slug": "m", "pronunciation": "em-mờ"},
+    "11": {"letter": "N", "slug": "n", "pronunciation": "en-nờ"},
+    "12": {"letter": "T", "slug": "t", "pronunciation": "tê"}
+  }
+}

@@ -18,3 +18,9 @@ samples/
 /*.txt
 /baker.db
 /.claude/ai-sessions.md
+
+# Ads assets/tooling stay local; retain only the shared guide and durable policies.
+/ads/*
+!/ads/README.md
+!/ads/library-exclusions.json
+!/ads/monthly-campaigns.json

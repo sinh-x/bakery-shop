@@ -15,6 +15,13 @@
       ],
       "highest_assigned_number": 31,
       "next_number": 32
+    },
+    "20261101-bo-cap": {
+      "excluded_index_files": [],
+      "highest_assigned_number": 46,
+      "next_number": 47,
+      "reused_index_files": ["20261020/index/09.jpg"],
+      "note": "32–43 identify DB sources; 44–46 identify the three selected Doan Gia uploads from the 20-11 folder. 09 retains its existing identity. The user approved these exact 16 photos with frame/logo and no visible codes; see 20261101-bo-cap/photo-approval.json. Seven other uploads remain reference-only without ad indexes. Number allocation is not posting authorization."
     }
   },
   "exclusions": [
