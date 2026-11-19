@@ -24,3 +24,7 @@ samples/
 !/ads/README.md
 !/ads/library-exclusions.json
 !/ads/monthly-campaigns.json
+
+# Cake-tag artwork, exports, and supporting assets stay local; track only code.
+/designs/cake-tags/teachers-day/*
+!/designs/cake-tags/teachers-day/render-cake-tags.py

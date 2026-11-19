@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.34+150] — 2026-11-19
+- chore(designs): track cake-tag script and ignore local assets
+
+## [0.8.34+148] — 2026-11-05
+- chore(ads): retain shared policies and ignore local workspace
+
 ## [0.8.33+146] — 2026-10-11
 - Add cake ad generation tooling and ignore local media
 
