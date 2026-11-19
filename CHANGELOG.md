@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.8.35+151] — 2026-11-19
+- Merge origin/develop into develop
+
 ## [0.8.34+150] — 2026-11-19
 - chore(designs): track cake-tag script and ignore local assets
 
