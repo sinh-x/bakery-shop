@@ -146,6 +146,12 @@ def test_cash_resolution_leaves_closed_drawer_unchanged(api_client):
     with get_db() as conn:
         assert CashDrawer.get_by_id(conn, int(first['id'])).expected_balance(conn) == 0
         assert CashDrawer.get_by_id(conn, int(second['id'])).expected_balance(conn) == 100000
+        snapshot = CashDrawer._aggregate_breakdown(conn, int(second['id']))
+        assert snapshot['cashIn'] == (100000, 1)
+        assert snapshot['sale'] == (0, 0)
+        transactions, _ = CashDrawer.get_transactions(conn, int(second['id']))
+        movement = next(item for item in transactions if item['type'] == 'payment_destination')
+        assert movement['reference'] == ref
     assert api_client.post('/api/cash-drawer/close', json={'countedAmount': 100000}).status_code == 200
     assert api_client.post(url + '/invalidate', json={}).status_code == 409
 
@@ -185,6 +191,20 @@ def test_assignment_scoped_to_order_and_actor(api_client):
     result = api_client.post(f'/api/orders/{ref}/transactions/{txn_id}/destination', json=payload,
                              headers={'Authorization': f'Bearer {token}'})
     assert result.json()['destinationResolvedBy'] == 'verified-staff'
+
+
+def test_concurrent_assignment_posts_only_one_movement(api_client):
+    from concurrent.futures import ThreadPoolExecutor
+    ref, response = receipt(api_client)
+    url = f"/api/orders/{ref}/transactions/{response.json()['id']}/destination"
+    def assign(source):
+        return api_client.post(url, json={'method': 'transfer', 'payment_source': source}).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(assign, ['TK Phượng VCB', 'TK Ân VCB']))
+    assert sorted(results) == [200, 409]
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM journal_entries WHERE source_type='payment_destination'").fetchone()[0] == 1
+        assert balances(conn)['1400'] == 0
 
 
 def test_unknown_creation_rolls_back_if_journal_fails(api_client, monkeypatch):

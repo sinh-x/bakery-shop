@@ -24,6 +24,17 @@ Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: Padding(
     )));
 
 void main() {
+  test('destination movements are cash transfers, not new sales or refunds', () {
+    final breakdown = aggregateCashDrawerBreakdown([
+      _txn(id: '1', type: 'payment_destination', amount: 100000),
+      _txn(id: '2', type: 'payment_destination', amount: -100000),
+    ]);
+    final rows = breakdown.rows;
+    expect(rows.firstWhere((row) => row.category == CashDrawerBreakdownCategory.cashIn).totalAmount, 100000);
+    expect(rows.firstWhere((row) => row.category == CashDrawerBreakdownCategory.cashOut).totalAmount, -100000);
+    expect(rows.firstWhere((row) => row.category == CashDrawerBreakdownCategory.sale).totalAmount, 0);
+    expect(rows.firstWhere((row) => row.category == CashDrawerBreakdownCategory.refund).totalAmount, 0);
+  });
   group('CashDrawerBreakdownCard (DG-359 Phase 1, DG-363 Phase 3)', () {
     testWidgets(
         'FR1/FR2: renders all 8 categories in 2 groups with totals and counts, '

@@ -5546,7 +5546,7 @@ def _assert_order_inventory_audit_schema(conn) -> None:
 def test_schema_migration_v105_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 105
+        assert _migrated_version(conn) == max(MIGRATIONS)
         _assert_order_inventory_audit_schema(conn)
 
 
@@ -5570,11 +5570,11 @@ def test_schema_migration_v104_to_v105_has_no_historical_backfill():
 
 
 def test_schema_migration_v105_idempotent_and_registered():
-    assert max(MIGRATIONS) == 105
+    assert 105 in MIGRATIONS
     assert MIGRATIONS[105]["sql"].strip()
     assert "callable" not in MIGRATIONS[105]
     with get_db() as conn:
         ensure_schema(conn)
         ensure_schema(conn)
-        assert _migrated_version(conn) == 105
+        assert _migrated_version(conn) == max(MIGRATIONS)
         _assert_order_inventory_audit_schema(conn)

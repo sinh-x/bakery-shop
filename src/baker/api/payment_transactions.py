@@ -250,6 +250,7 @@ def create_transaction(ref: str, body: TransactionCreate):
 def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
     """Cập nhật giao dịch thanh toán."""
     with get_db() as conn:
+        conn.execute('BEGIN IMMEDIATE')
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
@@ -276,6 +277,10 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             fields = {"amount", "type", "method", "payment_source", "createdAt"}
             if fields.intersection(body.model_fields_set):
                 raise HTTPException(status_code=422, detail="Dùng đối soát nơi nhận; hủy và ghi lại nếu sai giao dịch")
+            if body.note is not None:
+                txn.note = body.note
+                conn.execute('UPDATE payment_transactions SET note=? WHERE id=?', (txn.note, txn.id))
+            return txn.to_api_dict()  # Do not churn original/locked journals.
 
         # FR3/NFR1 (DG-415): normalize optional `createdAt` override to UTC Z.
         new_created_at = None
@@ -321,9 +326,6 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             (txn.amount, txn.type, txn.method, txn.note, txn.payment_source,
              txn.created_at, txn.id),
         )
-
-        if txn.has_unknown_origin:
-            return txn.to_api_dict()  # Note-only edit: do not churn locked journals.
 
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /

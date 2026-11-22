@@ -75,6 +75,10 @@ CashDrawerBreakdownCategory _categoryForType(
       // only the non-shipping portion and busShipping gets the rest.
       if (amount < 0) return CashDrawerBreakdownCategory.refund;
       return CashDrawerBreakdownCategory.sale;
+    case 'payment_destination':
+      return amount >= 0
+          ? CashDrawerBreakdownCategory.cashIn
+          : CashDrawerBreakdownCategory.cashOut;
     case 'unidentified_sale':
       return CashDrawerBreakdownCategory.sale;
     case 'expense':
