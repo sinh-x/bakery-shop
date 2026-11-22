@@ -163,6 +163,8 @@ def _resolve_transaction_asset_code(
     journal sync — the entry still balances and is reassignable via Edit
     Payment.
     """
+    if method == "unknown":
+        return "1400"
     ps = (payment_source or "").strip()
     if ps and ps in TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE:
         return TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE[ps]
@@ -432,7 +434,7 @@ def _sync_payment_journal(
     ).fetchone())
     if has_payment_source_col:
         txn_row = conn.execute(
-            "SELECT created_at, payment_source FROM payment_transactions WHERE id = ?",
+            "SELECT * FROM payment_transactions WHERE id = ?",
             (txn_id,),
         ).fetchone()
     else:
@@ -449,6 +451,11 @@ def _sync_payment_journal(
         txn_row["payment_source"] if txn_row and "payment_source" in txn_row.keys() else ""
     ) or ""
     effective_source = payment_source if payment_source else persisted_source
+
+    # A resolved unknown-origin receipt retains its original neutral posting.
+    # Destination assignment is a separate journal, never a second payment.
+    if txn_row and "destination_resolved_at" in txn_row.keys() and txn_row["destination_resolved_at"]:
+        method, effective_source = "unknown", ""
 
     description, lines = _build_payment_journal_lines(
         conn,
@@ -470,7 +477,7 @@ def _sync_payment_journal(
             source_id=txn_id,
             lines=lines,
             transaction_date=transaction_date,
-            drawer_id=_active_drawer_id(conn),
+            drawer_id=None if method == "unknown" else _active_drawer_id(conn),
         )
     elif _is_locked(conn, existing_id):
         _reverse_journal_entry(conn, existing_id)
@@ -481,7 +488,7 @@ def _sync_payment_journal(
             source_id=txn_id,
             lines=lines,
             transaction_date=transaction_date,
-            drawer_id=_active_drawer_id(conn),
+            drawer_id=None if method == "unknown" else _active_drawer_id(conn),
         )
     else:
         _update_journal_entry_in_place(

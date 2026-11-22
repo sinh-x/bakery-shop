@@ -184,6 +184,11 @@ def create_transaction(ref: str, body: TransactionCreate):
             detail=f"Phương thức thanh toán không hợp lệ. Cho phép: {valid_methods}",
         )
 
+    if body.method == "unknown" and (
+        body.type not in ("deposit", "payment", "full_payment") or body.payment_source
+    ):
+        raise HTTPException(status_code=422, detail="Chỉ ghi nhận tiền đến chưa rõ nơi nhận, không chọn tài khoản")
+
     # FR3/NFR1 (DG-415): normalize optional `createdAt` to UTC Z. When absent
     # the model defaults to now_utc() on insert (see PaymentTransaction.save).
     created_at_override = None
@@ -261,6 +266,13 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
                 status_code=422,
                 detail="Không thể sửa giao dịch đã hủy",
             )
+
+        if txn.has_unknown_origin or body.method == "unknown":
+            # Destination assignment uses its own atomic endpoint. Financial
+            # corrections to these receipts require invalidate + replacement.
+            fields = {"amount", "type", "method", "payment_source", "createdAt"}
+            if fields.intersection(body.model_fields_set):
+                raise HTTPException(status_code=422, detail="Dùng đối soát nơi nhận; hủy và ghi lại nếu sai giao dịch")
 
         # FR3/NFR1 (DG-415): normalize optional `createdAt` override to UTC Z.
         new_created_at = None
