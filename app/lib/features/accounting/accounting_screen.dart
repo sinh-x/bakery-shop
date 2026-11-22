@@ -6,6 +6,7 @@ import 'package:bakery_app/shared/labels/accounting.dart';
 import 'widgets/accounts_tab.dart';
 import 'widgets/journal_tab.dart';
 import 'widgets/balances_tab.dart';
+import 'widgets/unresolved_receipts_tab.dart';
 
 class AccountingScreen extends ConsumerStatefulWidget {
   const AccountingScreen({super.key});
@@ -21,7 +22,7 @@ class _AccountingScreenState extends ConsumerState<AccountingScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -38,10 +39,12 @@ class _AccountingScreenState extends ConsumerState<AccountingScreen>
         actions: const [AppBarOverflowMenu()],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           tabs: const [
             Tab(icon: Icon(Icons.account_tree), text: AccountingLabels.accountingTabAccounts),
             Tab(icon: Icon(Icons.receipt_long), text: AccountingLabels.accountingTabJournal),
             Tab(icon: Icon(Icons.account_balance), text: AccountingLabels.accountingTabBalances),
+            Tab(icon: Icon(Icons.help_outline), text: AccountingLabels.unresolvedReceipts),
           ],
         ),
       ),
@@ -51,6 +54,7 @@ class _AccountingScreenState extends ConsumerState<AccountingScreen>
           AccountsTab(),
           JournalTab(),
           BalancesTab(),
+          UnresolvedReceiptsTab(),
         ],
       ),
     );

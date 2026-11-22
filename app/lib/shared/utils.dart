@@ -89,6 +89,8 @@ String paymentMethodLabel(String method) {
       return OrdersLabels.methodCash;
     case 'transfer':
       return OrdersLabels.methodTransfer;
+    case 'unknown':
+      return OrdersLabels.methodUnknown;
     case 'debt':
       return OrdersLabels.methodDebt;
     default:

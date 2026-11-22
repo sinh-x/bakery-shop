@@ -121,7 +121,15 @@ class OrderRecordPaymentNotifier extends Notifier<OrderRecordPaymentState> {
   /// remaining balance exists. The amount controller write is performed by
   /// the widget (TextEditingController integration, acceptable-use); the
   /// notifier only owns the type selection.
-  void setType(String type) => _set(state.copyWith(type: type));
+  void setType(String type) => _set(
+    state.copyWith(
+      type: type,
+      method: state.method == 'unknown' &&
+              (type == 'refund' || type == 'tien_rut')
+          ? 'cash'
+          : state.method,
+    ),
+  );
 
   void setMethod(String method) => _set(
     state.copyWith(

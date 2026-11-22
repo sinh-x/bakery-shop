@@ -553,6 +553,9 @@ class OrdersLabels {
   static const txnTypeFullPayment = 'Thanh toán đủ';
   static const txnTypeRefund = 'Hoàn tiền';
   static const txnTypeRutTien = 'Tiền rút';
+  static const methodUnknown = 'Chưa rõ nơi nhận';
+  static const unknownReceiptHint =
+      'Chỉ ghi khi đã nhận tiền. Khoản này được trừ vào số còn thiếu và chờ đối soát nơi nhận.';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
   static const methodDebt = 'Nợ';

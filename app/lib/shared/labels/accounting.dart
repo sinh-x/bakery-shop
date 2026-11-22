@@ -8,6 +8,22 @@
 class AccountingLabels {
   AccountingLabels._();
 
+  static const unresolvedReceipts = 'Đối soát nơi nhận';
+  static const unresolvedSearch = 'Tìm mã đơn hoặc tên khách';
+  static const noUnresolvedReceipts = 'Không có khoản tiền chưa rõ nơi nhận';
+  static const assignDestination = 'Xác nhận nơi nhận';
+  static const destinationAssigned = 'Đã đối soát nơi nhận';
+  static const destinationResolvedAt = 'Đối soát lúc';
+  static const destinationResolvedBy = 'Người đối soát';
+  static const destinationCorrectionHint =
+      'Nếu sai số tiền hoặc loại giao dịch, hãy hủy và ghi lại để giữ lịch sử.';
+  static const assignmentConfirm =
+      'Chỉ xác nhận khi đã kiểm tra nơi nhận. Thao tác không ghi thêm thanh toán. Tiền mặt cần ngăn kéo đang mở.';
+  static const previousPage = 'Trang trước';
+  static const nextPage = 'Trang sau';
+  static String unresolvedSummary(int count, String amount) =>
+      '$count khoản chưa rõ nơi nhận · $amount';
+
   // Accounting
   static const accountingTitle = 'Kế toán';
   static const accountingTabAccounts = 'Tài khoản';
@@ -63,6 +79,8 @@ class AccountingLabels {
     switch (sourceType) {
       case 'expense':
         return accountingSourceTypeExpense;
+      case 'payment_destination':
+        return unresolvedReceipts;
       case 'payment_transaction':
         return accountingSourceTypePayment;
       case 'order':

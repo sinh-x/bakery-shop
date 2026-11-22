@@ -14,7 +14,11 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     @Default('cash') String method,
     required double amount,
     @JsonKey(name: 'note') @Default('') String notes,
-    @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)
+    @JsonKey(
+      name: 'createdAt',
+      fromJson: parseApiDateTime,
+      toJson: timestampToJson,
+    )
     DateTime? createdAt,
     @JsonKey(
       name: 'invalidatedAt',
@@ -24,8 +28,17 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     DateTime? invalidatedAt,
     @JsonKey(name: 'invalidatedBy') @Default('') String invalidatedBy,
     @JsonKey(name: 'paymentSource') String? paymentSource,
+    @Default('known') String destinationStatus,
+    @JsonKey(fromJson: parseApiDateTime, toJson: timestampToJson)
+    DateTime? destinationResolvedAt,
+    @Default('') String destinationResolvedBy,
   }) = _PaymentTransaction;
 
   factory PaymentTransaction.fromJson(Map<String, dynamic> json) =>
       _$PaymentTransactionFromJson(json);
+}
+
+extension PaymentDestinationState on PaymentTransaction {
+  bool get hasUnknownOrigin =>
+      method == 'unknown' || destinationResolvedAt != null;
 }
