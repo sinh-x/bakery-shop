@@ -456,6 +456,12 @@ def _sync_payment_journal(
     # Destination assignment is a separate journal, never a second payment.
     if txn_row and "destination_resolved_at" in txn_row.keys() and txn_row["destination_resolved_at"]:
         method, effective_source = "unknown", ""
+    if method == "unknown" and existing_id is not None:
+        latest = conn.execute("SELECT description FROM journal_entries WHERE id=?", (existing_id,)).fetchone()
+        if latest["description"].startswith("Reversal:"):
+            # Restoring a locked receipt appends a new posting; overwriting
+            # its reversal would leave the locked original counted twice.
+            existing_id = None
 
     description, lines = _build_payment_journal_lines(
         conn,

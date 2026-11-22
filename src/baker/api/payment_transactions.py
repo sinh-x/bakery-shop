@@ -1,6 +1,7 @@
 """Payment transaction API routes."""
 
 import logging
+import math
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
@@ -167,7 +168,7 @@ def list_transactions(
 @router.post("/{ref}/transactions", status_code=201)
 def create_transaction(ref: str, body: TransactionCreate):
     """Tạo giao dịch thanh toán mới."""
-    if body.amount <= 0:
+    if not math.isfinite(body.amount) or body.amount <= 0:
         raise HTTPException(status_code=422, detail="Số tiền phải lớn hơn 0")
 
     valid_types = [t.value for t in TransactionType]
@@ -232,6 +233,8 @@ def create_transaction(ref: str, body: TransactionCreate):
             source_type="payment_transaction",
             source_id=txn.id,
         )
+        if body.method == "unknown" and sync_status != "ok":
+            raise HTTPException(status_code=409, detail="Chưa ghi sổ được giao dịch; vui lòng thử lại")
         _sync_order_revenue_after_payment(conn, order_id)
 
         row = conn.execute(
@@ -319,6 +322,9 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
              txn.created_at, txn.id),
         )
 
+        if txn.has_unknown_origin:
+            return txn.to_api_dict()  # Note-only edit: do not churn locked journals.
+
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
         # shipping_fee (DG-191 Phase 2). DG-244 Phase 4: payment_source
@@ -351,11 +357,13 @@ def delete_transaction(ref: str, txn_id: int):
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
-            "SELECT id, amount, type, method, payment_source FROM payment_transactions WHERE id = ? AND order_id = ?",
+            "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
             (txn_id, order_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
+        if PaymentTransaction.from_row(row).has_unknown_origin:
+            raise HTTPException(status_code=422, detail="Hãy hủy giao dịch để giữ lịch sử đối soát")
         payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
 
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
@@ -401,6 +409,7 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
     ``order_history``.
     """
     with get_db() as conn:
+        conn.execute('BEGIN IMMEDIATE')
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
@@ -415,6 +424,9 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
                 detail="Giao dịch đã được hủy trước đó",
             )
 
+        from baker.services.payment_destination import post_destination_movement
+        txn = PaymentTransaction.from_row(row)
+        post_destination_movement(conn, txn, reverse=True)
         invalidated_at = _now_iso()
         invalidated_by = resolve_actor(request, body.invalidatedBy)
         conn.execute(
@@ -440,6 +452,9 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
             source_id=txn_id,
         )
         _sync_order_revenue_after_payment(conn, order_id)
+
+        if txn.has_unknown_origin and sync_status != "ok":
+            raise HTTPException(status_code=409, detail="Không thể hủy bút toán; giao dịch chưa thay đổi")
 
         # FR10: audit trail.
         try:
@@ -470,6 +485,7 @@ def restore_transaction(ref: str, txn_id: int):
     ``action_type='restore'`` to ``order_history``.
     """
     with get_db() as conn:
+        conn.execute('BEGIN IMMEDIATE')
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
@@ -484,6 +500,9 @@ def restore_transaction(ref: str, txn_id: int):
                 detail="Giao dịch chưa bị hủy, không cần khôi phục",
             )
 
+        from baker.services.payment_destination import post_destination_movement
+        txn = PaymentTransaction.from_row(row)
+        post_destination_movement(conn, txn)
         conn.execute(
             "UPDATE payment_transactions "
             "SET invalidated_at = NULL, invalidated_by = '' WHERE id = ?",
@@ -507,6 +526,9 @@ def restore_transaction(ref: str, txn_id: int):
             source_id=txn_id,
         )
         _sync_order_revenue_after_payment(conn, order_id)
+
+        if txn.has_unknown_origin and sync_status != "ok":
+            raise HTTPException(status_code=409, detail="Không thể khôi phục bút toán; giao dịch chưa thay đổi")
 
         # FR10: audit trail.
         try:

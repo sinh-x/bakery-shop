@@ -2092,13 +2092,16 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
         # Update the latest payment transaction's method
         txn_row = conn.execute(
-            "SELECT id, amount, type FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
         if not txn_row:
             raise HTTPException(
                 status_code=404, detail="Không tìm thấy giao dịch thanh toán"
             )
+
+        if PaymentTransaction.from_row(txn_row).has_unknown_origin:
+            raise HTTPException(status_code=422, detail="Dùng đối soát nơi nhận cho giao dịch này")
 
         conn.execute(
             "UPDATE payment_transactions SET method = ? WHERE id = ?",
