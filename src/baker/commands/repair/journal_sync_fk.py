@@ -72,6 +72,23 @@ def repair_journal_sync_fk_cmd(order_id, repair_all, dry_run):
                             _sync_completed_order_journal(conn, oid, order_ref)
                         else:
                             _sync_delivered_order_journal(conn, oid, order_ref)
+                        try:
+                            conn.execute(
+                                """
+                                DELETE FROM journal_sync_failure_log
+                                WHERE source_type = 'order'
+                                  AND source_id = ?
+                                  AND error_message LIKE '%FOREIGN KEY%'
+                                """,
+                                (oid,),
+                            )
+                        except Exception:  # noqa: BLE001 — cleanup must not stop repairs
+                            logger.warning(
+                                "Failed to delete FK failure logs for order %d (%s)",
+                                oid,
+                                order_ref,
+                                exc_info=True,
+                            )
                         results.append({
                             "order_id": oid,
                             "order_ref": order_ref,
