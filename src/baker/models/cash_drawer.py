@@ -329,7 +329,7 @@ class CashDrawer:
             JOIN accounts a1101
                  ON a1101.id = jl1101.account_id AND a1101.code = '1101'
             LEFT JOIN payment_transactions pt
-                 ON je.source_type = 'payment_transaction' AND je.source_id = pt.id
+                 ON je.source_type IN ('payment_transaction', 'payment_destination') AND je.source_id = pt.id
             LEFT JOIN orders o ON o.id = pt.order_id
             LEFT JOIN events e
                  ON je.source_type = 'expense' AND je.source_id = e.id
@@ -349,7 +349,7 @@ class CashDrawer:
             source_type = row["source_type"]
             reference = ""
             reference_detail = ""
-            if source_type == "payment_transaction":
+            if source_type in ("payment_transaction", "payment_destination"):
                 reference = row["order_ref"] or ""
                 reference_detail = row["customer_name"] or ""
             elif source_type == "expense":
@@ -492,6 +492,10 @@ class CashDrawer:
                         accumulate("sale", sale_portion, 1)
                     if shipping > 0:
                         accumulate("busShipping", shipping, 1)
+            elif source_type == "payment_destination":
+                # Asset reclassification, not a second sale/refund. New in
+                # v106, so the v97 historical backfill cannot encounter it.
+                accumulate("cashIn" if net_1101 >= 0 else "cashOut", net_1101, 1)
             elif source_type == "expense":
                 accumulate("expense", net_1101, 1)
             elif source_type in ("cash_drawer_cash_in", "owner_capital"):

@@ -7,6 +7,7 @@ import '../../models/payment_transaction.dart';
 import '../../models/payment_transaction_photo.dart';
 import '../../../shared/providers/logged_by_provider.dart';
 import 'order_detail_notifier.dart';
+import '../payment_destination_provider.dart';
 
 class OrderPaymentTransactionsNotifier
     extends AsyncNotifier<List<PaymentTransaction>> {
@@ -46,6 +47,7 @@ class OrderPaymentTransactionsNotifier
       paymentSource: paymentSource,
       createdAt: createdAt,
     );
+    ref.invalidate(unresolvedPaymentDestinationsProvider);
     final current = state.value ?? [];
     state = AsyncData([...current, txn]);
     ref.read(orderDetailProvider(orderRef).notifier).refresh();
@@ -98,6 +100,7 @@ class OrderPaymentTransactionsNotifier
       invalidatedBy: invalidatedBy,
       reason: reason,
     );
+    ref.invalidate(unresolvedPaymentDestinationsProvider);
     final current = state.value ?? [];
     state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
     ref.read(orderDetailProvider(orderRef).notifier).refresh();
@@ -107,6 +110,7 @@ class OrderPaymentTransactionsNotifier
   Future<PaymentTransaction> restore(String txnId) async {
     final service = ref.read(paymentTransactionServiceProvider);
     final updated = await service.restoreTransaction(orderRef, txnId);
+    ref.invalidate(unresolvedPaymentDestinationsProvider);
     final current = state.value ?? [];
     state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
     ref.read(orderDetailProvider(orderRef).notifier).refresh();

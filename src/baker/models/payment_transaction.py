@@ -19,6 +19,7 @@ class PaymentMethod(str, Enum):
     CASH = "cash"
     TRANSFER = "transfer"
     CARD = "card"
+    UNKNOWN = "unknown"
 
 
 # Outflow transaction types as a tuple (deterministic order for SQL IN
@@ -82,12 +83,22 @@ class PaymentTransaction:
     created_at: Optional[str] = None
     invalidated_at: Optional[str] = None
     invalidated_by: str = ""
+    destination_resolved_at: Optional[str] = None
+    destination_resolved_by: str = ""
+
+    @property
+    def has_unknown_origin(self) -> bool:
+        return self.method == "unknown" or self.destination_resolved_at is not None
 
     def save(self, conn) -> int:
         if self.type not in [t.value for t in TransactionType]:
             raise ValueError(f"Invalid transaction type: {self.type}")
         if self.method not in [m.value for m in PaymentMethod]:
             raise ValueError(f"Invalid payment method: {self.method}")
+        if self.method == "unknown" and (
+            self.type not in ("deposit", "payment", "full_payment") or self.payment_source
+        ):
+            raise ValueError("Unknown destination requires an incoming receipt without a bank source")
         # DG-415 FR3: honor a caller-provided `created_at` override (normalized
         # to UTC Z upstream); fall back to now_utc() when unset so the default
         # behaviour (server-stamped "now") is preserved.
@@ -123,6 +134,10 @@ class PaymentTransaction:
             if "payment_source" in row.keys()
             else "",
             created_at=row["created_at"],
+            destination_resolved_at=row["destination_resolved_at"]
+            if "destination_resolved_at" in row.keys() else None,
+            destination_resolved_by=row["destination_resolved_by"]
+            if "destination_resolved_by" in row.keys() else "",
             invalidated_at=row["invalidated_at"]
             if "invalidated_at" in row.keys()
             else None,
@@ -143,6 +158,11 @@ class PaymentTransaction:
             "createdAt": self.created_at,
             "invalidatedAt": self.invalidated_at,
             "invalidatedBy": self.invalidated_by,
+            "destinationResolvedAt": self.destination_resolved_at,
+            "destinationResolvedBy": self.destination_resolved_by,
+            "destinationStatus": "resolved" if self.destination_resolved_at else (
+                "unresolved" if self.method == "unknown" else "known"
+            ),
         }
 
     @staticmethod

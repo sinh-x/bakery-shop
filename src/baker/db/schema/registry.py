@@ -84,6 +84,8 @@ from .migrations.v100 import _migrate_v100_message_templates
 from .migrations.v102 import _migrate_v102_backfill_address_library
 from .migrations.v103 import _migrate_v103_orders_delivery_type_index
 
+from .migrations.v106 import _migrate_v106_unknown_payment_destination
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -594,6 +596,11 @@ MIGRATIONS = {
     105: {
         "description": "Append-only per-order inventory audit entries and newest-first indexes (DG-429 Phase 1)",
         "sql": ORDER_INVENTORY_AUDIT_SCHEMA,
+    },
+    106: {
+        "description": "Neutral incoming receipts and destination resolution metadata (DG-444)",
+        "sql": "",
+        "callable": _migrate_v106_unknown_payment_destination,
     },
 }
 

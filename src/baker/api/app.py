@@ -24,6 +24,7 @@ from baker.api.middleware import AuthMiddleware, LoggingMiddleware
 from baker.api.order_photos import router as order_photos_router
 from baker.api.orders import router as orders_router
 from baker.api.payment_transactions import router as payment_transactions_router
+from baker.api.payment_destinations import router as payment_destinations_router
 from baker.api.printing import router as printing_router
 from baker.api.product_attributes import router as product_attributes_router
 from baker.api.product_attribute_options import router as product_attribute_options_router
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(order_photos_router)
     app.include_router(work_items_router)
     app.include_router(payment_transactions_router)
+    app.include_router(payment_destinations_router)
     app.include_router(cake_queue_router)
     app.include_router(blanks_router)
     app.include_router(product_attributes_router)

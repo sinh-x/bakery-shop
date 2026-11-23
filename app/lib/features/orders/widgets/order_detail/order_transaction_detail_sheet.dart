@@ -1,12 +1,10 @@
-// EXEMPT: 200-line threshold exceeded because the transaction detail sheet
-// renders payment, deposit, and refund sections with per-row formatting that
-// does not split cleanly into independent widgets without duplicating state.
-// Reviewed 2026-07-30.
 import 'package:bakery_app/shared/utils.dart' show formatVND, paymentMethodLabel, showTopSnackBar, txnTypeLabel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/payment_transaction.dart';
+import '../../../accounting/widgets/assign_payment_destination_button.dart';
+import '../../../../shared/labels/accounting.dart';
 import '../../../../providers/order_providers.dart';
 import '../../providers/order_transaction_detail_notifier.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
@@ -16,8 +14,6 @@ import 'txn_photo_section.dart';
 import 'package:bakery_app/shared/labels/expenses.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-/// Bottom sheet showing a single payment transaction's details with
-/// invalidate / restore / edit actions.
 class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
   const OrderTransactionDetailSheet({
     super.key,
@@ -38,7 +34,6 @@ class OrderTransactionDetailSheet extends ConsumerStatefulWidget {
 class _OrderTransactionDetailSheetState
     extends ConsumerState<OrderTransactionDetailSheet> {
   PaymentTransaction get txn => widget.txn;
-
   @override
   Widget build(BuildContext context) {
     final acting = ref.watch(orderTransactionDetailProvider);
@@ -115,6 +110,11 @@ class _OrderTransactionDetailSheetState
             ),
           if (dateStr.isNotEmpty)
             OrderDetailRow(label: OrdersLabels.txnDateTimeLabel, value: dateStr),
+          if (txn.destinationResolvedAt != null)
+            OrderDetailRow(
+              label: AccountingLabels.destinationAssigned,
+              value: '${formatDisplay(txn.destinationResolvedAt)} · ${txn.destinationResolvedBy}',
+            ),
           if (txn.notes.isNotEmpty)
             OrderDetailRow(label: OrdersLabels.txnNoteLabel, value: txn.notes),
           if (isInvalidated) ...[
@@ -141,12 +141,14 @@ class _OrderTransactionDetailSheetState
           if (acting)
             const Center(child: CircularProgressIndicator())
           else ...[
-            // review-auto cycle 1 CQ-3: hide the Edit action for invalidated
-            // transactions — FR6 freezes them on the backend (any PATCH
-            // returns 422), so surfacing Edit only produces a generic API
-            // error. Mirror the existing invalidate/restore branching: when
-            // `isInvalidated` only the Restore action is offered.
-            if (!isInvalidated) ...[
+            if (!isInvalidated && txn.method == 'unknown')
+              AssignPaymentDestinationButton(
+                orderRef: widget.orderRef,
+                transactionId: txn.id,
+                onAssigned: () => Navigator.pop(context),              ),
+            if (txn.hasUnknownOrigin)
+              const Text(AccountingLabels.destinationCorrectionHint),
+            if (!isInvalidated && !txn.hasUnknownOrigin) ...[
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
@@ -178,14 +180,6 @@ class _OrderTransactionDetailSheetState
       ),
     );
   }
-
-  // ── Per-transaction photo (DG-410 Phase 4 / CQ-1) ─────────────────────────
-  //
-  // The detail sheet's photo section is now rendered by the shared
-  // [TxnPhotoSection] widget (see txn_photo_section.dart), which centralizes
-  // the pick / remove / busy-state logic that previously lived as
-  // duplicated `_pickTxnPhoto` / `_buildTxnPhotoSection` copies here and in
-  // the edit sheet.
 
   Future<void> _onInvalidate() async {
     final reason = await _showInvalidateReasonDialog();

@@ -12,11 +12,10 @@ import '../../providers/order_form_operation_notifier.dart';
 import '../../../../shared/models/form_draft_context.dart';
 import '../../../pos/widgets/pos_checkout_dialogs.dart';
 import 'package:bakery_app/shared/utils/vnd_units.dart';
-import 'package:bakery_app/shared/widgets/target_account_dropdown.dart';
+import 'order_receipt_fields.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/widgets/discard_form_draft_action.dart';
-import 'txn_date_time_picker_row.dart';
 import '../../../../providers/form_draft_session_notifier.dart';
 
 /// Sanitizes an account name for use as a photo tag: spaces → hyphens,
@@ -89,10 +88,6 @@ class _OrderRecordPaymentSheetState
       // Display the amount in thousands (user types 200 → means 200,000)
       _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
     }
-  }
-
-  void _onMethodSelected(String method) {
-    _draftNotifier.setMethod(method);
   }
 
   /// Opens the camera/gallery picker (FR2) reusing the POS checkout
@@ -224,18 +219,6 @@ class _OrderRecordPaymentSheetState
     final s = ref.watch(orderRecordPaymentDraftProvider(_draftContext));
     final operation = ref.watch(orderFormOperationProvider(_draftContext));
 
-    const types = [
-      ('deposit', OrdersLabels.txnTypeDeposit),
-      ('payment', OrdersLabels.txnTypePayment),
-      ('full_payment', OrdersLabels.txnTypeFullPayment),
-      ('tien_rut', OrdersLabels.txnTypeRutTien),
-      ('refund', OrdersLabels.txnTypeRefund),
-    ];
-    const methods = [
-      ('cash', OrdersLabels.methodCash),
-      ('transfer', OrdersLabels.methodTransfer),
-    ];
-
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -251,125 +234,14 @@ class _OrderRecordPaymentSheetState
           children: [
             Text(OrdersLabels.addPayment, style: theme.textTheme.titleMedium),
             const SizedBox(height: 16),
-            Text(OrdersLabels.txnType, style: theme.textTheme.labelMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: types
-                  .map(
-                    (t) => ChoiceChip(
-                      label: Text(t.$2),
-                      selected: s.type == t.$1,
-                      onSelected: (_) => _onTypeSelected(t.$1),
-                    ),
-                  )
-                  .toList(),
+            OrderReceiptFields(
+              state: s,
+              notifier: _draftNotifier,
+              amountController: _amountCtrl,
+              notesController: _notesCtrl,
+              onTypeSelected: _onTypeSelected,
+              onPickPhoto: _pickTransferPhoto,
             ),
-            const SizedBox(height: 12),
-            Text(
-              OrdersLabels.paymentMethod,
-              style: theme.textTheme.labelMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: methods
-                  .map(
-                    (m) => ChoiceChip(
-                      label: Text(m.$2),
-                      selected: s.method == m.$1,
-                      onSelected: (_) => _onMethodSelected(m.$1),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _amountCtrl,
-              decoration: const InputDecoration(
-                labelText: OrdersLabels.paymentAmountLabel,
-                border: OutlineInputBorder(),
-                suffixText: ',000đ',
-                helperText: OrdersLabels.paymentThousandsHint,
-              ),
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return SharedLabels.fieldRequired;
-                }
-                final n = double.tryParse(v.trim());
-                if (n == null || n <= 0) {
-                  return SharedLabels.invalidPrice;
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notesCtrl,
-              decoration: const InputDecoration(
-                labelText: OrdersLabels.paymentNotes,
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // DG-415 Phase 3 / FR1, FR7 — date+time picker defaults to now
-            // and is limited to past→today. The notifier merges date+time so
-            // the picked timestamp persists as UTC Z on save (AC2).
-            TxnDateTimePickerRow(
-              dateTime: s.createdAt ?? DateTime.now(),
-              onDateChanged: ref
-                  .read(orderRecordPaymentDraftProvider(_draftContext).notifier)
-                  .setCreatedDate,
-              onTimeChanged: ref
-                  .read(orderRecordPaymentDraftProvider(_draftContext).notifier)
-                  .setCreatedTime,
-            ),
-            if (s.method == 'transfer') ...[
-              const SizedBox(height: 12),
-              TargetAccountDropdown(
-                value: s.paymentSource,
-                onChanged: (value) => ref
-                    .read(
-                      orderRecordPaymentDraftProvider(_draftContext).notifier,
-                    )
-                    .setPaymentSource(value),
-              ),
-              const SizedBox(height: 8),
-              // Photo attachment button (FR2): reuses the
-              // `showTransferSourceDialog` pattern from POS checkout. The
-              // selected photo is uploaded after the payment is recorded
-              // (FR3) with tags 'chuyen-khoan,<sanitized-account>' (FR4).
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Tooltip(
-                  message: OrdersLabels.attachTransferPhotoTooltip,
-                  child: TextButton.icon(
-                    onPressed: _pickTransferPhoto,
-                    icon: const Icon(Icons.photo_camera_outlined, size: 20),
-                    label: Text(
-                      s.pendingTransferPhoto == null
-                          ? OrdersLabels.attachTransferPhoto
-                          : OrdersLabels.transferPhotoSelected,
-                    ),
-                  ),
-                ),
-              ),
-              if (s.pendingTransferPhoto != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(left: 8, top: 2),
-                  child: Text(
-                    s.pendingTransferPhoto!.name,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ],
             const SizedBox(height: 16),
             DiscardFormDraftAction(
               isDirty: s.isDirty,

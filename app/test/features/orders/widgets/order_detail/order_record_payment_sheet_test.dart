@@ -104,6 +104,36 @@ class _DelayedPhotoOrderService extends OrderService {
 }
 
 void main() {
+  testWidgets('unknown receipts retain exact drafts and are unavailable for refunds', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    Widget sheet(String orderRef) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: SingleChildScrollView(
+        child: OrderRecordPaymentSheet(orderRef: orderRef, remaining: 100000),
+      ))),
+    );
+    await tester.pumpWidget(sheet('ORD-A'));
+    await tester.tap(find.text(OrdersLabels.methodUnknown));
+    await tester.pumpAndSettle();
+    expect(find.text(OrdersLabels.unknownReceiptHint), findsOneWidget);
+    final key = OrderDraftContexts.recordPayment('ORD-A');
+    expect(container.read(orderRecordPaymentDraftProvider(key)).method, 'unknown');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(sheet('ORD-B'));
+    expect(container.read(orderRecordPaymentDraftProvider(
+      OrderDraftContexts.recordPayment('ORD-B'),
+    )).method, 'cash');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(sheet('ORD-A'));
+    await tester.pumpAndSettle();
+    expect(find.text(OrdersLabels.unknownReceiptHint), findsOneWidget);
+    await tester.tap(find.text(OrdersLabels.txnTypeRefund));
+    await tester.pumpAndSettle();
+    expect(find.text(OrdersLabels.methodUnknown), findsNothing);
+    expect(container.read(orderRecordPaymentDraftProvider(key)).method, 'cash');
+  });
+
   group('OrderRecordPaymentSheet photo flow (FR2/FR3/FR4/AC2/AC3)', () {
     testWidgets(
       'delayed upload removes only its photo from a reopened edited draft',
